@@ -1,4 +1,4 @@
-from femaster_api import InpReader
+from femaster_api import InpReader, MassElement, MassSection
 
 
 DECK = """\
@@ -8,6 +8,8 @@ DECK = """\
 20, 1.0, 0.0, 0.0
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 50, 10, 20
+*ELEMENT, TYPE=MASS, ELSET=POINT_MASS
+100, 20
 *NSET, NAME=ROOT
 10
 *MATERIAL, NAME=STEEL
@@ -15,6 +17,8 @@ DECK = """\
 210000.0, 0.3
 *TRUSSSECTION, ELSET=BAR, MATERIAL=STEEL
 100.0
+*MASS, ELSET=POINT_MASS
+0.01
 *SUPPORT, SUPPORT_COLLECTOR=BC
 ROOT, 0.0, 0.0, 0.0
 *LOADCASE, TYPE=EIGENFREQ, NAME=MODES
@@ -34,7 +38,9 @@ def test_inp_reader_builds_public_model():
     assert part.nodes[10].x == 0.0
     assert part.nodes[20].x == 1.0
     assert part.elements[50].nodes == (10, 20)
+    assert isinstance(part.elements[100], MassElement)
     assert part.regions.nodes["ROOT"].members == [10]
     assert project.materials["STEEL"].elasticity.youngs_modulus == 210000.0
+    assert any(isinstance(section, MassSection) for section in part.sections)
     assert project.support_collectors["BC"].supports[0].target == "ROOT"
     assert project.steps["MODES"].number_of_modes == 3

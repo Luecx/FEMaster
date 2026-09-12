@@ -2,8 +2,8 @@
 
 Project mirrors the semantic scope of FEMaster input: reusable Parts own local
 topology, while shared definitions, assembly regions/surfaces, constraints,
-collectors, features and analysis steps live at project level. The class also
-provides the single write/run boundary requested by the public Python API.
+assembly point-properties, collectors, features and analysis steps live at
+project level. The class also provides the public write/run boundary.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from .model.features import FeatureRepository
 from .model.materials import MaterialRepository, ProfileRepository
 from .model.mesh import Surface
 from .model.regions import RegionRepository
+from .model.sections import AssemblySectionRepository
 from .model.steps import StepRepository
 from .repository import NamedRepository
 
@@ -32,6 +33,10 @@ class Project:
     The default Part lives exclusively inside ``parts`` at position zero. Project
     keeps no second default-part pointer or duplicate mesh repository. All
     part-local topology is therefore reached through ``project.parts``.
+
+    ``sections`` contains only the point-element property assignments that are
+    legal directly in ASSEMBLY scope. Ordinary solid, shell, beam and truss
+    sections belong to their owning Part.
     """
 
     def __init__(self, name: str = "model") -> None:
@@ -45,6 +50,7 @@ class Project:
         self.instances = InstanceRepository()
         self.regions   = RegionRepository()
         self.surfaces  = NamedRepository[Surface]()
+        self.sections  = AssemblySectionRepository()
 
         # ------------------------------------------------------------------
         # Shared global definitions
@@ -87,6 +93,7 @@ class Project:
             self.instances.to_femaster(),
             self.regions.to_femaster(),
             "\n\n".join(surface.to_femaster() for surface in self.surfaces),
+            self.sections.to_femaster(),
         ))
 
         assembly = ""

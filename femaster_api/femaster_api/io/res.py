@@ -1,11 +1,17 @@
-"""Reader for FEMaster text result (RES) files."""
+"""Reader for FEMaster native text result (RES) files.
+
+The native writer uses semantic string identifiers for entity fields: entities
+from the default Instance retain bare integer ids while explicit Instances use
+qualified names such as ``bolt.17``. The reader preserves those identifiers
+instead of coercing them to dense numeric indices.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterator
 
-from ..fields import Field, FieldDomain, FieldType
+from ..fields import Field, FieldDomain, FieldIndex, FieldKey, FieldType
 from ..results import Frame, LoadCase, Result
 
 
@@ -73,7 +79,7 @@ class ResReader:
         if "VALUE_COLS" in keys:
             value_cols = int(keys["VALUE_COLS"])
         elif "COLS" in keys:
-            value_cols = int(keys["COLS"]) - index_cols
+            value_cols = int(keys["COLS"])
         else:
             value_cols = 0
 
@@ -100,28 +106,42 @@ class ResReader:
             if line.upper().startswith("END FIELD"):
                 break
 
-            values = tuple(float(token) for token in line.replace(",", " ").split())
-            if value_cols == 0:
-                value_cols = max(0, len(values) - index_cols)
-            key = self._field_key(values, index_cols, read_rows)
-            field.set(key, values[index_cols:index_cols + value_cols])
+            tokens = line.replace(",", " ").split()
+            if len(tokens) < index_cols + value_cols:
+                raise ValueError(
+                    f"field {name!r} expected at least {index_cols + value_cols} columns, "
+                    f"got {len(tokens)}"
+                )
+
+            key = self._field_key(tokens[:index_cols], read_rows)
+            values = tuple(float(token) for token in tokens[index_cols:index_cols + value_cols])
+            field.set(key, values)
             read_rows += 1
 
             if rows and read_rows >= rows:
                 break
 
+        if rows and read_rows != rows:
+            raise ValueError(f"field {name!r} expected {rows} rows, got {read_rows}")
+
         return field
 
-    @staticmethod
-    def _field_key(
-        values: tuple[float, ...],
-        index_cols: int,
-        fallback: int,
-    ) -> int | tuple[int, ...]:
-        if index_cols == 0:
+    @classmethod
+    def _field_key(cls, tokens: list[str], fallback: int) -> FieldKey:
+        if not tokens:
             return fallback
-        index = tuple(int(value) for value in values[:index_cols])
-        return index[0] if len(index) == 1 else index
+
+        values = tuple(cls._semantic_id(token) for token in tokens)
+        return values[0] if len(values) == 1 else values
+
+    @staticmethod
+    def _semantic_id(token: str) -> FieldIndex:
+        """Preserve qualified instance ids while keeping bare ids as integers."""
+
+        try:
+            return int(token)
+        except ValueError:
+            return token
 
     @staticmethod
     def _field_domain(keys: dict[str, str], index_cols: int) -> FieldDomain:

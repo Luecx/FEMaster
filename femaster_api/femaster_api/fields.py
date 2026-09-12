@@ -15,10 +15,9 @@ from .repository import NamedObject, NamedRepository
 
 
 class FieldDomain(Enum):
-    """Physical storage domain of one FEMaster field."""
+    """Physical storage domains implemented by FEMaster ModelData."""
 
     UNKNOWN       = "UNKNOWN"
-    GLOBAL        = "GLOBAL"
     NODE          = "NODE"
     ELEMENT       = "ELEMENT"
     ELEMENT_NODAL = "ELEMENT_NODAL"
@@ -33,9 +32,14 @@ class FieldType(Enum):
     POSITION                   = "POSITION"
     DISPLACEMENT               = "DISPLACEMENT"
     MODE_SHAPE                 = "MODE_SHAPE"
+    BUCKLING_MODE              = "BUCKLING_MODE"
+    EIGENVALUE                 = "EIGENVALUE"
+    PARTICIPATION              = "PARTICIPATION"
     VELOCITY                   = "VELOCITY"
     ACCELERATION               = "ACCELERATION"
     REACTION_FORCE             = "REACTION_FORCE"
+    EXTERNAL_FORCE             = "EXTERNAL_FORCE"
+    INTERNAL_FORCE             = "INTERNAL_FORCE"
     TEMPERATURE                = "TEMPERATURE"
     HEAT_FLUX                  = "HEAT_FLUX"
     STRESS                     = "STRESS"
@@ -56,42 +60,84 @@ class FieldType(Enum):
 
     @classmethod
     def from_name(cls, name: str) -> "FieldType":
-        """Resolve common FEMaster/FRD field names to one canonical type."""
+        """Resolve current FEMaster, RES and FRD aliases to one canonical type.
 
-        normalized = name.strip().upper().replace("-", "_").replace(" ", "_")
+        Transient, modal and buckling writers currently append frame/mode numbers
+        to several field names. Those suffixes deliberately do not create new
+        semantic field types: ``MODE_SHAPE_3`` still resolves to MODE_SHAPE.
+        """
+
+        normalized = "".join(character for character in name.upper() if character.isalnum())
+
+        prefixes = (
+            ("MODESHAPE", cls.MODE_SHAPE),
+            ("BUCKLINGMODE", cls.BUCKLING_MODE),
+            ("PARTICIPATION", cls.PARTICIPATION),
+            ("DISPLACEMENT", cls.DISPLACEMENT),
+            ("VELOCITY", cls.VELOCITY),
+            ("ACCELERATION", cls.ACCELERATION),
+        )
+        for prefix, field_type in prefixes:
+            if normalized.startswith(prefix):
+                return field_type
+
         aliases = {
+            "POSITION": cls.POSITION,
             "DISP": cls.DISPLACEMENT,
             "U": cls.DISPLACEMENT,
             "MODE": cls.MODE_SHAPE,
-            "MODE_SHAPE": cls.MODE_SHAPE,
+            "EIGENVALUE": cls.EIGENVALUE,
+            "EIGENVALUES": cls.EIGENVALUE,
+            "VELO": cls.VELOCITY,
+            "ACCE": cls.ACCELERATION,
+            "FORC": cls.REACTION_FORCE,
+            "REACTIONFORCE": cls.REACTION_FORCE,
+            "REACTIONFORCES": cls.REACTION_FORCE,
+            "EXTFORC": cls.EXTERNAL_FORCE,
+            "EXTERNALFORCE": cls.EXTERNAL_FORCE,
+            "EXTERNALFORCES": cls.EXTERNAL_FORCE,
+            "INTFORC": cls.INTERNAL_FORCE,
+            "INTERNALFORCE": cls.INTERNAL_FORCE,
+            "INTERNALFORCES": cls.INTERNAL_FORCE,
             "E": cls.STRAIN,
+            "STRAIN": cls.STRAIN,
             "S": cls.STRESS,
             "STRESS": cls.STRESS,
-            "S_TOP": cls.STRESS_TOP,
-            "S_BOT": cls.STRESS_BOTTOM,
+            "STOP": cls.STRESS_TOP,
+            "STRESSTOP": cls.STRESS_TOP,
+            "SBOT": cls.STRESS_BOTTOM,
+            "STRESSBOTTOM": cls.STRESS_BOTTOM,
             "SHR": cls.SHELL_RESULTANTS,
+            "SHELLRESULTANTS": cls.SHELL_RESULTANTS,
             "SF": cls.SECTION_FORCE,
+            "SECTIONFORCE": cls.SECTION_FORCE,
             "SHEAR": cls.SHEAR_FLOW,
+            "SHEARFLOW": cls.SHEAR_FLOW,
             "PEEQ": cls.EQUIVALENT_PLASTIC_STRAIN,
         }
         if normalized in aliases:
             return aliases[normalized]
 
         for item in cls:
-            if normalized in {item.name, item.value}:
+            if normalized in {
+                "".join(character for character in item.name.upper() if character.isalnum()),
+                "".join(character for character in item.value.upper() if character.isalnum()),
+            }:
                 return item
         return cls.UNKNOWN
 
 
-FieldKey = int | tuple[int, ...] | str
+FieldIndex = int | str
+FieldKey = FieldIndex | tuple[FieldIndex, ...]
 
 
 class Field(NamedObject):
     """Sparse field with explicit domain, semantics and component names.
 
     Values are keyed by their semantic model identifier. Node and element fields
-    normally use an integer key; element-nodal and integration-point fields may
-    use tuples such as ``(element_id, local_index)``.
+    may use either bare local ids (``17``) or instance-qualified RES identifiers
+    (``"bolt.17"``). Element-location fields use tuples such as
+    ``("bolt.17", local_index)``.
     """
 
     def __init__(
@@ -110,7 +156,7 @@ class Field(NamedObject):
 
     @property
     def cols(self) -> int:
-        """Return the number of value columns represented by each row."""
+        """Return the number of numerical components in one field row."""
 
         if self.components:
             return len(self.components)

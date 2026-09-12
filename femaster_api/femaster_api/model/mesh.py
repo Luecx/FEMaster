@@ -2,14 +2,15 @@
 
 Nodes and elements preserve the sparse integer identifiers supplied by the user.
 Repositories own deterministic model order but never renumber topology. Concrete
-element classes carry the FEMaster TYPE token and validate connectivity size.
+element classes mirror the TYPE names registered by the current FEMaster parser
+and validate connectivity size before export.
 """
 
 from __future__ import annotations
 
-from .typing import ElementReference
 from .._format import block, csv, keyword
-from ..repository import IdRepository
+from ..repository import IdRepository, NamedObject
+from .typing import ElementReference
 
 
 class Node:
@@ -59,11 +60,18 @@ class Element:
         return csv((self.id, *self.nodes))
 
 
+# -----------------------------------------------------------------------------
+# Solid elements
+# -----------------------------------------------------------------------------
+
+
 class C3D4(Element):
     type_name, node_count = "C3D4", 4
 
 
 class C3D5(Element):
+    """Five-node pyramid accepted by FEMaster and expanded internally to C3D8."""
+
     type_name, node_count = "C3D5", 5
 
 
@@ -95,20 +103,30 @@ class C3D20R(Element):
     type_name, node_count = "C3D20R", 20
 
 
-class C2D3(Element):
-    type_name, node_count = "C2D3", 3
+# -----------------------------------------------------------------------------
+# Beam and truss elements
+# -----------------------------------------------------------------------------
 
 
-class C2D4(Element):
-    type_name, node_count = "C2D4", 4
+class B33(Element):
+    type_name, node_count = "B33", 2
 
 
-class C2D6(Element):
-    type_name, node_count = "C2D6", 6
+class T3(Element):
+    """Two-node truss using the native short FEMaster TYPE name."""
+
+    type_name, node_count = "T3", 2
 
 
-class C2D8(Element):
-    type_name, node_count = "C2D8", 8
+class T3D2(Element):
+    """Abaqus-compatible alias for the same two-node truss formulation."""
+
+    type_name, node_count = "T3D2", 2
+
+
+# -----------------------------------------------------------------------------
+# Shell elements
+# -----------------------------------------------------------------------------
 
 
 class S3(Element):
@@ -127,21 +145,86 @@ class S8(Element):
     type_name, node_count = "S8", 8
 
 
-class B33(Element):
-    type_name, node_count = "B33", 2
+class MITC4(Element):
+    type_name, node_count = "MITC4", 4
 
 
-class T3D2(Element):
-    type_name, node_count = "T3D2", 2
+class MITC8(Element):
+    type_name, node_count = "MITC8", 8
+
+
+class QSPT(Element):
+    type_name, node_count = "QSPT", 4
+
+
+class MITC3FRT(Element):
+    type_name, node_count = "MITC3FRT", 3
+
+
+class MITC4FRT(Element):
+    type_name, node_count = "MITC4FRT", 4
+
+
+class MITC6FRT(Element):
+    type_name, node_count = "MITC6FRT", 6
+
+
+class MITC8FRT(Element):
+    type_name, node_count = "MITC8FRT", 8
+
+
+# -----------------------------------------------------------------------------
+# One-node point elements
+# -----------------------------------------------------------------------------
+
+
+class MassElement(Element):
+    """One-node MASS topology receiving its value from a MassSection."""
+
+    type_name, node_count = "MASS", 1
+
+
+class RotaryInertiaElement(Element):
+    """One-node ROTARYI topology receiving a RotaryInertiaSection."""
+
+    type_name, node_count = "ROTARYI", 1
+
+
+class SpringElement(Element):
+    """One-node SPRING1 topology receiving a SpringSection."""
+
+    type_name, node_count = "SPRING1", 1
 
 
 ELEMENT_TYPES: dict[str, type[Element]] = {
     item.type_name: item
     for item in (
-        C3D4, C3D5, C3D6, C3D8, C3D8R, C3D10, C3D15, C3D20, C3D20R,
-        C2D3, C2D4, C2D6, C2D8,
-        S3, S4, S6, S8,
-        B33, T3D2,
+        C3D4,
+        C3D5,
+        C3D6,
+        C3D8,
+        C3D8R,
+        C3D10,
+        C3D15,
+        C3D20,
+        C3D20R,
+        B33,
+        T3,
+        T3D2,
+        S3,
+        S4,
+        MITC4,
+        S6,
+        S8,
+        MITC8,
+        QSPT,
+        MITC3FRT,
+        MITC4FRT,
+        MITC6FRT,
+        MITC8FRT,
+        MassElement,
+        RotaryInertiaElement,
+        SpringElement,
     )
 }
 
@@ -167,18 +250,17 @@ class ElementRepository(IdRepository[Element]):
         return "\n\n".join(result)
 
 
-class Surface:
-    """Named surface assembled from element-side references."""
+class Surface(NamedObject):
+    """Named element-boundary surface definition.
+
+    Each entry references either a local element id or an ELSET name together
+    with the FEMaster boundary-side index. The same object is valid in Part and
+    Assembly scope; ownership determines where Project exports it.
+    """
 
     def __init__(self, name: str) -> None:
-        from ..repository import NamedObject
-
-        self._named = NamedObject(name)
+        super().__init__(name)
         self.entries: list[tuple[ElementReference, int]] = []
-
-    @property
-    def name(self) -> str:
-        return self._named.name
 
     def add(self, element: ElementReference, side: int) -> "Surface":
         """Append one element or ELSET side reference."""
@@ -190,6 +272,6 @@ class Surface:
         """Return this surface as one FEMaster SURFACE block."""
 
         return block([
-            keyword("SURFACE", NAME=self.name),
-            *(csv((element, side)) for element, side in self.entries),
+            keyword("SURFACE", NAME=self.name, TYPE="ELEMENT"),
+            *(csv((element, f"S{side}")) for element, side in self.entries),
         ])
