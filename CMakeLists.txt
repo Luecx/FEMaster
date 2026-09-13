@@ -168,6 +168,30 @@ if(NOT argparse_FOUND)
     endif()
 endif()
 
+# LZ4 is the only compression codec used by FEMR v1. Resolve it like the other
+# explicit dependencies so configuring FEMaster never requires network access.
+find_package(lz4 CONFIG QUIET)
+if(NOT TARGET lz4::lz4
+        AND NOT TARGET LZ4::lz4
+        AND NOT TARGET lz4_static
+        AND NOT TARGET lz4_shared)
+    find_path(LZ4_INCLUDE_DIR
+            NAMES lz4.h
+            HINTS ${FEMASTER_DEPS_INCLUDE_HINTS}
+            DOC "Directory containing lz4.h"
+    )
+    find_library(LZ4_LIBRARY
+            NAMES lz4 liblz4
+            DOC "LZ4 compression library"
+    )
+    if(NOT LZ4_INCLUDE_DIR OR NOT LZ4_LIBRARY)
+        message(FATAL_ERROR
+                "LZ4 was not found. Install its CMake package or set "
+                "LZ4_INCLUDE_DIR/LZ4_LIBRARY."
+        )
+    endif()
+endif()
+
 # -----------------------------------------------------------------------------
 # Sources and core target
 # -----------------------------------------------------------------------------
@@ -203,6 +227,19 @@ if(argparse_FOUND)
     target_link_libraries(femaster_core PUBLIC argparse::argparse)
 else()
     target_include_directories(femaster_core PUBLIC "${ARGPARSE_INCLUDE_DIR}")
+endif()
+
+if(TARGET lz4::lz4)
+    target_link_libraries(femaster_core PUBLIC lz4::lz4)
+elseif(TARGET LZ4::lz4)
+    target_link_libraries(femaster_core PUBLIC LZ4::lz4)
+elseif(TARGET lz4_static)
+    target_link_libraries(femaster_core PUBLIC lz4_static)
+elseif(TARGET lz4_shared)
+    target_link_libraries(femaster_core PUBLIC lz4_shared)
+else()
+    target_include_directories(femaster_core PUBLIC "${LZ4_INCLUDE_DIR}")
+    target_link_libraries(femaster_core PUBLIC "${LZ4_LIBRARY}")
 endif()
 
 target_compile_definitions(femaster_core

@@ -378,6 +378,7 @@ void Model::compile() {
 
     // node mapping to map back to instance + local id
     _data->node_mapping.resize(static_cast<std::size_t>(total_nodes));
+    _data->element_mapping.resize(static_cast<std::size_t>(total_elements));
 
     // Rebuild the compiled set namespaces. Each Sets container automatically
     // propagates additions into its global *ALL parent collection.
@@ -495,6 +496,10 @@ void Model::compile() {
             }
 
             _data->elements[static_cast<std::size_t>(global_id)] = std::move(element);
+            _data->element_mapping[static_cast<std::size_t>(global_id)] = {
+                instance,
+                local_id
+            };
             _data->elem_sets.all()->add(global_id);
             element_map.emplace(local_id, global_id);
         }

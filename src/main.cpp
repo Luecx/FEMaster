@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 #include <argparse/argparse.hpp>
 
 #include "core/config.h"
@@ -68,13 +69,10 @@ int main(int argc, char** argv) {
         .choices("femaster", "abaqus")
         .help("Input deck syntax (default: femaster).");
 
-    program.add_argument("--no-res")
-        .flag()
-        .help("Disable native FEMaster .res result output.");
-
-    program.add_argument("--no-frd")
-        .flag()
-        .help("Disable CalculiX/CGX .frd result output.");
+    program.add_argument("--output-format")
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .choices("res", "frd", "femr")
+        .help("Result formats to write (default: res frd).");
 
     // ---- Documentation mode flags (flat, no nested parser) ----
     program.add_argument("--document")
@@ -131,8 +129,16 @@ int main(int argc, char** argv) {
     std::string       output_file = program.get<std::string>("--output");
 
     fem::io::writer::WriterFileFormats writer_formats;
-    writer_formats.res = !program.get<bool>("--no-res");
-    writer_formats.frd = !program.get<bool>("--no-frd");
+    if (program.is_used("--output-format")) {
+        writer_formats = {};
+        writer_formats.res = false;
+        writer_formats.frd = false;
+        for (const auto& output_format : program.get<std::vector<std::string>>("--output-format")) {
+            writer_formats.res  = writer_formats.res  || output_format == "res";
+            writer_formats.frd  = writer_formats.frd  || output_format == "frd";
+            writer_formats.femr = writer_formats.femr || output_format == "femr";
+        }
+    }
 
     fem::global_config.max_threads = ncpus;
 
@@ -241,6 +247,7 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "CPU(s)     : ", ncpus);
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
+    fem::logging::info(true, "Write .femr: ", writer_formats.femr ? "yes" : "no");
     fem::logging::info(true, "");
 
     // Dispatch only the input syntax; both readers share FEMaster model/solver behavior
