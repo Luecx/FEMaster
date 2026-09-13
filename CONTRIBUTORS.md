@@ -7,3 +7,5 @@ documentation, validation, and user feedback.
 
 - **Sergio Pluchinsky** – Extensive testing of FEMaster, bug reports, validation of workflows,
   and continuous feedback on usability and solver behavior.
+- **Peter Heese (heesepeter)** - Implementation of FEMR compressed binary result output 
+  and testing of FEMR result output in FEMaster.
