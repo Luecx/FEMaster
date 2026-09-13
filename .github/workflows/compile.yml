@@ -1,0 +1,192 @@
+name: Compile Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to compile
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - linux
+          - windows
+          - macos
+
+permissions:
+  contents: read
+
+jobs:
+  compile-linux:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install LZ4 and Intel oneAPI MKL
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build wget gpg liblz4-dev
+
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | \
+            sudo tee /etc/apt/sources.list.d/oneAPI.list
+
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-mkl-devel intel-oneapi-openmp
+
+      - name: Configure Linux MKL OpenMP
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
+            -DLZ4_INCLUDE_DIR=/usr/include \
+            -DLZ4_LIBRARY=/usr/lib/x86_64-linux-gnu/liblz4.a
+
+      - name: Compile Linux MKL OpenMP
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+  compile-windows:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install Intel oneAPI Base Toolkit
+        shell: pwsh
+        run: |
+          winget source update
+          winget install -e --id Intel.OneAPI.BaseToolkit --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+
+          if (!(Test-Path "C:\Program Files (x86)\Intel\oneAPI\setvars.bat")) {
+            Write-Error "Intel oneAPI setvars.bat was not found."
+            exit 1
+          }
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install LZ4 Windows
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v1.10.0 https://github.com/lz4/lz4.git deps/lz4
+
+          cmake -S deps/lz4/build/cmake -B deps/lz4-build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/deps/lz4-install" `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DLZ4_BUILD_CLI=OFF
+
+          cmake --build deps/lz4-build
+          cmake --install deps/lz4-build
+
+      - name: Configure Windows Intel MKL OpenMP
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          cmake --preset windows-intel-mkl-omp -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include -Dlz4_DIR=%GITHUB_WORKSPACE%\deps\lz4-install\lib\cmake\lz4
+
+      - name: Compile Windows Intel MKL OpenMP
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          cmake --build --preset windows-intel-mkl-omp
+
+  compile-macos:
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install macOS dependencies
+        shell: bash
+        run: brew install lz4 libomp ninja
+
+      - name: Configure macOS OpenMP Accelerate
+        shell: bash
+        run: |
+          LIBOMP_PREFIX="$(brew --prefix libomp)"
+          LZ4_PREFIX="$(brew --prefix lz4)"
+
+          cmake --preset macos-omp-accelerate \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_PREFIX_PATH="${LIBOMP_PREFIX}" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
+            -DLZ4_INCLUDE_DIR="${LZ4_PREFIX}/include" \
+            -DLZ4_LIBRARY="${LZ4_PREFIX}/lib/liblz4.a" \
+            -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
+            -DOpenMP_CXX_LIB_NAMES=omp \
+            -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib"
+
+      - name: Compile macOS OpenMP Accelerate
+        shell: bash
+        run: cmake --build --preset macos-omp-accelerate

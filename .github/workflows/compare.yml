@@ -56,11 +56,11 @@ jobs:
           git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
           cp -r deps/argparse/include/argparse deps/include/argparse
 
-      - name: Install Intel oneMKL
+      - name: Install LZ4 and Intel oneMKL
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gpg
+          sudo apt-get install -y wget gpg liblz4-dev
 
           wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
             gpg --dearmor | \

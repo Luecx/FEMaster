@@ -122,12 +122,12 @@ jobs:
           git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
           cp -r deps/argparse/include/argparse deps/include/argparse
 
-      - name: Install Intel oneAPI MKL Linux
+      - name: Install LZ4 and Intel oneAPI MKL Linux
         if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gpg
+          sudo apt-get install -y wget gpg liblz4-dev
 
           wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
             gpg --dearmor | \
@@ -157,6 +157,25 @@ jobs:
         with:
           arch: x64
 
+      - name: Install LZ4 Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v1.10.0 https://github.com/lz4/lz4.git deps/lz4
+
+          cmake -S deps/lz4/build/cmake -B deps/lz4-build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/deps/lz4-install" `
+            -DBUILD_SHARED_LIBS=OFF `
+            -DLZ4_BUILD_CLI=OFF
+
+          cmake --build deps/lz4-build
+          cmake --install deps/lz4-build
+
       - name: Check Intel oneAPI Windows
         if: runner.os == 'Windows'
         shell: cmd
@@ -169,11 +188,11 @@ jobs:
           where icx-cl
           icx-cl --version
 
-      - name: Install OpenMP macOS
+      - name: Install LZ4 and OpenMP macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install libomp ninja
+          brew install lz4 libomp ninja
           echo "macOS: $(sw_vers -productVersion)"
           echo "arch : $(uname -m)"
           [[ "$(uname -m)" == "arm64" ]]
@@ -184,7 +203,10 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
           cmake --preset ${{ matrix.configure_preset }} \
-            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
+            -DLZ4_INCLUDE_DIR=/usr/include \
+            -DLZ4_LIBRARY=/usr/lib/x86_64-linux-gnu/liblz4.a
 
       - name: Build Linux MKL OpenMP
         if: runner.os == 'Linux'
@@ -200,7 +222,7 @@ jobs:
           CONFIGURE_PRESET: ${{ matrix.configure_preset }}
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          cmake --preset %CONFIGURE_PRESET% -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include
+          cmake --preset %CONFIGURE_PRESET% -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include -Dlz4_DIR=%GITHUB_WORKSPACE%\deps\lz4-install\lib\cmake\lz4
 
       - name: Build Windows Intel MKL OpenMP
         if: runner.os == 'Windows'
@@ -216,11 +238,15 @@ jobs:
         shell: bash
         run: |
           LIBOMP_PREFIX="$(brew --prefix libomp)"
+          LZ4_PREFIX="$(brew --prefix lz4)"
 
           cmake --preset ${{ matrix.configure_preset }} \
             -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_PREFIX_PATH="${LIBOMP_PREFIX}" \
+            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
+            -DLZ4_INCLUDE_DIR="${LZ4_PREFIX}/include" \
+            -DLZ4_LIBRARY="${LZ4_PREFIX}/lib/liblz4.a" \
             -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
             -DOpenMP_CXX_LIB_NAMES=omp \
             -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib"
