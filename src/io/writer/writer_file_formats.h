@@ -7,6 +7,7 @@ namespace writer {
 struct WriterFileFormats {
     bool res = true;
     bool frd = true;
+    bool femr = false;
 };
 
 } // namespace writer

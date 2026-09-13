@@ -1,6 +1,7 @@
 #pragma once
 
 #include "writer_frd.h"
+#include "writer_femr.h"
 #include "writer_res.h"
 #include "writer_file_formats.h"
 #include "writer_step_type.h"
@@ -27,6 +28,7 @@ class ResultWriters {
     private:
     std::unique_ptr<ResWriter> res_writer;
     std::unique_ptr<FrdWriter> frd_writer;
+    std::unique_ptr<FemrWriter> femr_writer;
 
     public:
     ResultWriters(const std::string& job_base_name,

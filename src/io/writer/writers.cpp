@@ -22,6 +22,10 @@ ResultWriters::ResultWriters(const std::string& job_base_name,
     if (options.frd) {
         frd_writer.reset(new FrdWriter(job_base_name + ".frd"));
     }
+
+    if (options.femr) {
+        femr_writer.reset(new FemrWriter(job_base_name + ".femr"));
+    }
 }
 
 ResultWriters::~ResultWriters() {
@@ -30,7 +34,8 @@ ResultWriters::~ResultWriters() {
 
 ResultWriters::ResultWriters(ResultWriters&& other) noexcept
     : res_writer(std::move(other.res_writer)),
-      frd_writer(std::move(other.frd_writer)) {}
+      frd_writer(std::move(other.frd_writer)),
+      femr_writer(std::move(other.femr_writer)) {}
 
 ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
     if (this != &other) {
@@ -38,6 +43,7 @@ ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
 
         res_writer = std::move(other.res_writer);
         frd_writer = std::move(other.frd_writer);
+        femr_writer = std::move(other.femr_writer);
     }
 
     return *this;
@@ -51,11 +57,18 @@ void ResultWriters::close() {
     if (frd_writer) {
         frd_writer->close();
     }
+
+    if (femr_writer) {
+        femr_writer->close();
+    }
 }
 
 void ResultWriters::write_model_data(const model::ModelData& model_data) {
     if (frd_writer) {
         frd_writer->write_model_data(model_data);
+    }
+    if (femr_writer) {
+        femr_writer->write_model_data(model_data);
     }
 }
 
@@ -66,6 +79,9 @@ void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
 
     if (frd_writer) {
         frd_writer->add_loadcase(id, step_type);
+    }
+    if (femr_writer) {
+        femr_writer->add_loadcase(id, step_type);
     }
 }
 
@@ -79,6 +95,9 @@ void ResultWriters::write_field(const model::Field& field,
 
     if (frd_writer) {
         frd_writer->write_field(field, field_name, model_data, frame_value);
+    }
+    if (femr_writer) {
+        femr_writer->write_field(field, field_name, model_data, frame_value);
     }
 }
 

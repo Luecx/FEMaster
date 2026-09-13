@@ -36,6 +36,14 @@ Header-only library for large-scale eigenvalue problems.
 License: Mozilla Public License 2.0
 License file: licenses/spectra.txt
 
+LZ4
+---
+Fast lossless compression library by Yann Collet and contributors.
+FEMR version 1 links against the official upstream LZ4 implementation.
+License: BSD 2-Clause
+Upstream source: https://github.com/lz4/lz4
+License file: licenses/lz4.txt
+
 Intel oneAPI Math Kernel Library (oneMKL)
 -----------------------------------------
 Numerical runtime code from oneMKL is statically linked into MKL-enabled

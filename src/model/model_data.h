@@ -50,6 +50,7 @@
 #include "instance.h"
 
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -100,6 +101,8 @@ struct ModelData {
 
     // mapping global node back to local instance nodes
     std::vector<std::tuple<Instance::Ptr, Index>> node_mapping;
+    // mapping global element back to local instance elements
+    std::vector<std::tuple<Instance::Ptr, Index>> element_mapping;
 
     // Dense assembly topology produced by Model::compile(). Vector indices are
     // global identifiers, while each Instance retains the corresponding map from

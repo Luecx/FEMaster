@@ -1,7 +1,7 @@
 """Clean Python modeling API for FEMaster decks and result files."""
 
 from ._version import __version__
-from .backend import FEMaster, Frame, LoadCase, ProcessResult, Result, ResultReader
+from .backend import FEMaster, Frame, LoadCase, ProcessResult, Result, ResultReader, open_results
 from .export.femaster_writer import FEMasterWriter
 from .importers import FEMasterInputError, FEMasterReader, load_model_from_inp
 from .model import (
@@ -138,6 +138,7 @@ __all__ = [
     "Frame",
     "LoadCase",
     "load_model_from_inp",
+    "open_results",
     "LoadCollector",
     "LoadCollectorRepository",
     "LoadRepository",
