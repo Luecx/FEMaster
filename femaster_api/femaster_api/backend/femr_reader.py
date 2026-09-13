@@ -81,6 +81,7 @@ class FemrResults:
         self._file = self.path.open("rb")
         self._loadcases: dict[int, FemrLoadCase] = {}
         self._data: dict[int, _DataRef] = {}
+        self._instances: dict[int, str] = {}
         try:
             self._scan()
         except Exception:
@@ -93,6 +94,10 @@ class FemrResults:
 
     def loadcase(self, id: int = 1) -> FemrLoadCase:
         return self._loadcases[id]
+
+    @property
+    def instances(self) -> dict[int, str]:
+        return dict(self._instances)
 
     def close(self) -> None:
         self._file.close()
@@ -152,6 +157,8 @@ class FemrResults:
                 current_loadcase = FemrLoadCase(loadcase_id, step_type)
                 self._loadcases[loadcase_id] = current_loadcase
                 current_frame = None
+            elif kind == b"INST":
+                self._instances = _parse_instances(raw)
             elif kind == b"FRAM":
                 loadcase_id, frame_id, value = struct.unpack_from("<iId", raw)
                 current_loadcase = self._loadcases.setdefault(loadcase_id, FemrLoadCase(loadcase_id, 0))
@@ -210,6 +217,28 @@ def _parse_metadata(raw: bytes) -> _FieldMeta:
     domain, dtype_size = struct.unpack_from("<BB", raw, end)
     rows, components = struct.unpack_from("<QQ", raw, end + 4)
     return _FieldMeta(field_id, loadcase_id, frame_id, name, domain, dtype_size, rows, components)
+
+
+def _parse_instances(raw: bytes) -> dict[int, str]:
+    if len(raw) < 4:
+        raise ValueError("invalid FEMR instance table")
+    count = struct.unpack_from("<I", raw)[0]
+    pos = 4
+    instances: dict[int, str] = {}
+    for _ in range(count):
+        if pos + 6 > len(raw):
+            raise ValueError("truncated FEMR instance entry")
+        instance_id, name_size = struct.unpack_from("<iH", raw, pos)
+        pos += 6
+        if pos + name_size > len(raw):
+            raise ValueError("truncated FEMR instance name")
+        if instance_id in instances:
+            raise ValueError(f"duplicate FEMR instance id: {instance_id}")
+        instances[instance_id] = raw[pos:pos + name_size].decode("utf-8")
+        pos += name_size
+    if pos != len(raw):
+        raise ValueError("unexpected trailing bytes in FEMR instance table")
+    return instances
 
 
 def _verify(raw: bytes, expected: int, kind: bytes) -> None:

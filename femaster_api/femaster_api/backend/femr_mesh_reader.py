@@ -12,6 +12,8 @@ from .femr_reader import FemrResults, _CHUNK, _DataRef, _decompress, _verify
 @dataclass(frozen=True, slots=True)
 class FemrElement:
     id: int
+    instance_id: int
+    local_id: int
     type: str
     node_ids: tuple[int, ...]
 
@@ -22,6 +24,8 @@ class FemrMesh:
     elements: dict[int, FemrElement]
     node_ids: tuple[int, ...]
     element_ids: tuple[int, ...]
+    node_semantic_ids: dict[int, tuple[int, int]]
+    instance_names: dict[int, str]
 
     def node(self, id: int) -> tuple[float, float, float]:
         return self.nodes[id]
@@ -36,6 +40,16 @@ class FemrMesh:
     def element_at(self, row: int) -> FemrElement:
         """Return the element represented by an ELEMENT field row."""
         return self.elements[self.element_ids[row]]
+
+    def node_label(self, id: int) -> str:
+        instance_id, local_id = self.node_semantic_ids[id]
+        name = self.instance_names.get(instance_id, "")
+        return str(local_id) if not name else f"{name}.{local_id}"
+
+    def element_label(self, id: int) -> str:
+        element = self.elements[id]
+        name = self.instance_names.get(element.instance_id, "")
+        return str(element.local_id) if not name else f"{name}.{element.local_id}"
 
 
 class MeshFemrResults(FemrResults):
@@ -85,23 +99,29 @@ class MeshFemrResults(FemrResults):
         pos = 16
         nodes: dict[int, tuple[float, float, float]] = {}
         node_ids: list[int] = []
+        node_semantic_ids: dict[int, tuple[int, int]] = {}
         for _ in range(node_count):
-            if pos + 28 > len(raw):
+            if pos + 36 > len(raw):
                 raise ValueError("truncated FEMR node data")
-            node_id, x, y, z = struct.unpack_from("<iddd", raw, pos)
-            pos += 28
+            node_id, instance_id, local_id, x, y, z = struct.unpack_from("<iiiddd", raw, pos)
+            pos += 36
             if node_id in nodes:
                 raise ValueError(f"duplicate FEMR node id: {node_id}")
+            if instance_id not in self._instances:
+                raise ValueError(f"unknown FEMR node instance id: {instance_id}")
             nodes[node_id] = (x, y, z)
             node_ids.append(node_id)
+            node_semantic_ids[node_id] = (instance_id, local_id)
 
         elements: dict[int, FemrElement] = {}
         element_ids: list[int] = []
         for _ in range(element_count):
-            if pos + 6 > len(raw):
+            if pos + 14 > len(raw):
                 raise ValueError("truncated FEMR element header")
-            element_id, type_size = struct.unpack_from("<iH", raw, pos)
-            pos += 6
+            element_id, instance_id, local_id, type_size = struct.unpack_from("<iiiH", raw, pos)
+            pos += 14
+            if instance_id not in self._instances:
+                raise ValueError(f"unknown FEMR element instance id: {instance_id}")
             if pos + type_size + 2 > len(raw):
                 raise ValueError("truncated FEMR element type")
             element_type = raw[pos:pos + type_size].decode("utf-8")
@@ -115,12 +135,17 @@ class MeshFemrResults(FemrResults):
             pos += connectivity_size
             if element_id in elements:
                 raise ValueError(f"duplicate FEMR element id: {element_id}")
-            elements[element_id] = FemrElement(element_id, element_type, connectivity)
+            elements[element_id] = FemrElement(
+                element_id, instance_id, local_id, element_type, connectivity
+            )
             element_ids.append(element_id)
 
         if pos != len(raw):
             raise ValueError("unexpected trailing bytes in FEMR mesh chunk")
-        return FemrMesh(nodes, elements, tuple(node_ids), tuple(element_ids))
+        return FemrMesh(
+            nodes, elements, tuple(node_ids), tuple(element_ids),
+            node_semantic_ids, self._instances
+        )
 
 
 def open_results(path: str | Path) -> MeshFemrResults:

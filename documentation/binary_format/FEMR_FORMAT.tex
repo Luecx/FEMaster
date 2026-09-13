@@ -31,12 +31,18 @@ block, so loading one field never decompresses another field.
 \begin{description}
   \item[HEAD] Must be first. It stores the \texttt{FEMR} magic, major and minor
   version, byte order, scalar width, default compression and reserved data.
+  \item[INST] Stores each instance identifier once together with its
+  length-prefixed UTF-8 name.
   \item[MESH] Starts with \texttt{uint64} node and element counts. Each node
-  stores an explicit \texttt{int32} identifier and three \texttt{float64}
-  coordinates. Each element stores its explicit identifier, a length-prefixed
-  UTF-8 type name, node count and explicit node identifiers.
+  stores its dense/global, instance and part-local identifiers as three
+  \texttt{int32} values, followed by three \texttt{float64} coordinates. Each
+  element likewise stores its dense/global, instance and part-local identifiers,
+  followed by a length-prefixed UTF-8 type name, node count and dense/global node
+  identifiers.
   \item[LCAS] Stores the load-case identifier and step type.
   \item[FRAM] Stores load-case identifier, dense frame identifier and value.
+  Eigenfrequency and buckling frame identifiers are derived from the numeric
+  field-name suffix, so equal spectral values remain distinct frames.
   \item[FMET] Stores field identifier, load-case and frame identifiers, name,
   domain, scalar width, row count and component count.
   \item[FDAT] Stores the field identifier followed by its dense row-major scalar
@@ -55,7 +61,9 @@ readers reject unsupported domain codes found in a version 1 file.
 MESH ordering defines the stable dense result indexing. Node entry $i$ maps to
 row $i$ of every NODE field, and element entry $i$ maps to row $i$ of every
 ELEMENT field. Node and element identifiers are nevertheless stored explicitly;
-they must not be reconstructed from element connectivity.
+they must not be reconstructed from element connectivity. The accompanying
+instance and part-local identifiers preserve semantic labels such as
+\texttt{17} and \texttt{bolt.17}.
 
 \subsection{Lazy access}
 
