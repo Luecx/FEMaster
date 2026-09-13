@@ -60,19 +60,35 @@ jobs:
       - name: Configure Linux MKL OpenMP
         shell: bash
         run: |
+          set -o pipefail
           source /opt/intel/oneapi/setvars.sh
 
           cmake --preset linux-mkl-omp \
             -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
             -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
             -DLZ4_INCLUDE_DIR=/usr/include \
-            -DLZ4_LIBRARY=/usr/lib/x86_64-linux-gnu/liblz4.a
+            -DLZ4_LIBRARY=/usr/lib/x86_64-linux-gnu/liblz4.a \
+            2>&1 | tee compile-linux-configure.log
 
       - name: Compile Linux MKL OpenMP
         shell: bash
         run: |
+          set -o pipefail
           source /opt/intel/oneapi/setvars.sh
-          cmake --build --preset linux-mkl-omp
+          cmake --build --preset linux-mkl-omp \
+            2>&1 | tee compile-linux-build.log
+
+      - name: Upload Linux executable and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-linux
+          path: |
+            build/linux-mkl-omp/bin/
+            compile-linux-configure.log
+            compile-linux-build.log
+          if-no-files-found: warn
+          retention-days: 14
 
   compile-windows:
     if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
@@ -126,22 +142,50 @@ jobs:
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/deps/lz4-install" `
             -DBUILD_SHARED_LIBS=OFF `
-            -DLZ4_BUILD_CLI=OFF
+            -DLZ4_BUILD_CLI=OFF `
+            2>&1 | Tee-Object -FilePath compile-windows-lz4-configure.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build deps/lz4-build
-          cmake --install deps/lz4-build
+          cmake --build deps/lz4-build `
+            2>&1 | Tee-Object -FilePath compile-windows-lz4-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          cmake --install deps/lz4-build `
+            2>&1 | Tee-Object -FilePath compile-windows-lz4-install.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure Windows Intel MKL OpenMP
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          cmake --preset windows-intel-mkl-omp -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include -Dlz4_DIR=%GITHUB_WORKSPACE%\deps\lz4-install\lib\cmake\lz4
+          cmake --preset windows-intel-mkl-omp -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include -Dlz4_DIR=%GITHUB_WORKSPACE%\deps\lz4-install\lib\cmake\lz4 > compile-windows-configure.log 2>&1
+          set "status=%ERRORLEVEL%"
+          type compile-windows-configure.log
+          exit /b %status%
 
       - name: Compile Windows Intel MKL OpenMP
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          cmake --build --preset windows-intel-mkl-omp
+          cmake --build --preset windows-intel-mkl-omp > compile-windows-build.log 2>&1
+          set "status=%ERRORLEVEL%"
+          type compile-windows-build.log
+          exit /b %status%
+
+      - name: Upload Windows executable and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-windows
+          path: |
+            build/windows-intel-mkl-omp/bin/
+            compile-windows-configure.log
+            compile-windows-build.log
+            compile-windows-lz4-configure.log
+            compile-windows-lz4-build.log
+            compile-windows-lz4-install.log
+          if-no-files-found: warn
+          retention-days: 14
 
   compile-macos:
     if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
@@ -173,6 +217,7 @@ jobs:
       - name: Configure macOS OpenMP Accelerate
         shell: bash
         run: |
+          set -o pipefail
           LIBOMP_PREFIX="$(brew --prefix libomp)"
           LZ4_PREFIX="$(brew --prefix lz4)"
 
@@ -185,8 +230,24 @@ jobs:
             -DLZ4_LIBRARY="${LZ4_PREFIX}/lib/liblz4.a" \
             -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
             -DOpenMP_CXX_LIB_NAMES=omp \
-            -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib"
+            -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib" \
+            2>&1 | tee compile-macos-configure.log
 
       - name: Compile macOS OpenMP Accelerate
         shell: bash
-        run: cmake --build --preset macos-omp-accelerate
+        run: |
+          set -o pipefail
+          cmake --build --preset macos-omp-accelerate \
+            2>&1 | tee compile-macos-build.log
+
+      - name: Upload macOS executable and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-macos
+          path: |
+            build/macos-omp-accelerate/bin/
+            compile-macos-configure.log
+            compile-macos-build.log
+          if-no-files-found: warn
+          retention-days: 14
