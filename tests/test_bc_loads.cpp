@@ -93,6 +93,64 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     EXPECT_NEAR(total_x, 2.0, 1e-12);
 }
 
+TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
+    model::Model mdl;
+    mdl.set_node(0, 0.0, 0.0, 0.0);
+    mdl.set_node(1, 1.0, 0.0, 0.0);
+    mdl.set_node(2, 1.0, 1.0, 0.0);
+    mdl.set_node(3, 0.0, 1.0, 0.0);
+    mdl.set_node(4, 0.0, 0.0, 1.0);
+    mdl.set_node(5, 1.0, 0.0, 1.0);
+    mdl.set_node(6, 1.0, 1.0, 1.0);
+    mdl.set_node(7, 0.0, 1.0, 1.0);
+    mdl.set_element<model::C3D8>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_density(7.0);
+    mdl.add_material(material);
+
+    const auto part = mdl._data->parts.get();
+    ASSERT_NE(part, nullptr);
+
+    auto section = std::make_shared<SolidSection>();
+    section->material_ = material;
+    section->region_   = part->elem_sets.get(SET_ELEM_ALL);
+    mdl.add_section(section);
+    mdl.compile();
+
+    auto region = std::make_shared<model::ElementRegion>("SOLID");
+    region->add(mdl.compiled_element_id(0));
+
+    auto amplitude = std::make_shared<bc::Amplitude>("HALF", bc::Interpolation::Linear);
+    amplitude->add_sample(0.0, 0.0);
+    amplitude->add_sample(1.0, 0.5);
+
+    bc::InertialLoad load;
+    load.region_     = region;
+    load.center_acc_ = Vec3(-2.0, 0.0, 0.0);
+    load.amplitude_  = amplitude;
+
+    model::Field rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    rhs.set_zero();
+    load.apply(*mdl._data, rhs, 1.0);
+
+    Precision total_x = 0.0;
+    for (Index node = 0; node < 8; ++node) {
+        total_x += rhs(node, 0);
+    }
+
+    // Unit volume, density 7 and acceleration 2 give 14 force, scaled by amplitude 0.5.
+    EXPECT_NEAR(total_x, 7.0, 1e-12);
+
+    rhs.set_zero();
+    load.apply(*mdl._data, rhs, 1.0, true);
+    total_x = 0.0;
+    for (Index node = 0; node < 8; ++node) {
+        total_x += rhs(node, 0);
+    }
+    EXPECT_NEAR(total_x, 14.0, 1e-12);
+}
+
 TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     model::Model mdl;
     mdl.set_node(0, 0.0, 0.0, 0.0);
