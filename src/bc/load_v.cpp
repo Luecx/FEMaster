@@ -1,12 +1,13 @@
 /**
  * @file load_v.cpp
- * @brief Implements density-scaled distributed body-force assembly.
+ * @brief Implements distributed body-force assembly.
  *
  * The body-load vector is sanitized, optionally amplitude-scaled and supplied
  * as a spatial vector field to each selected structural element. The element
- * formulation owns the integration measure, shape functions and material
- * density scaling. A local orientation is evaluated at every integration point
- * when its basis may vary in space.
+ * formulation owns the integration measure and shape functions. VLOAD values
+ * are force densities and are therefore integrated without material-density
+ * scaling. A local orientation is evaluated at every integration point when
+ * its basis may vary in space.
  *
  * @see load_v.h
  * @author Finn Eggers
@@ -55,8 +56,9 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
  * Assembles distributed body force over the selected structural elements.
  *
  * Sparse input is sanitized and optionally amplitude-scaled. Element
- * formulations perform density-aware volume integration and nodal distribution;
- * an optional local basis is evaluated at each integration point.
+ * formulations perform consistent geometric integration and nodal distribution
+ * without applying material density; an optional local basis is evaluated at
+ * each integration point.
  *
  * @param model_data Global fields and element data required for assembly.
  * @param bc Generalized nodal field receiving the contribution.
@@ -101,9 +103,9 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             const Vec3 f0 = local_values;
             auto f = [f0](const Vec3& /*x*/) -> Vec3 { return f0; };
 
-            // The element multiplies the field by material density, shape
-            // functions and its geometric integration measure.
-            structural->integrate_vector_field(bc, /*scale_by_density=*/true, f);
+            // VLOAD is already a force density, so only shape functions and the
+            // geometric integration measure contribute here.
+            structural->integrate_vector_field(bc, /*scale_by_density=*/false, f);
         } else {
             // Preserve the local nominal vector and a raw pointer to the shared
             // orientation for the duration of this synchronous integration call.
@@ -117,7 +119,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
                 const auto axes        = ori->get_axes(local_point);
                 return axes * f_local;
             };
-            structural->integrate_vector_field(bc, /*scale_by_density=*/true, f);
+            structural->integrate_vector_field(bc, /*scale_by_density=*/false, f);
         }
     }
 }
@@ -125,8 +127,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
 /**
  * Builds the diagnostic representation of the distributed body load.
  *
- * The result identifies the target element region, its size, nominal vector and
- * density-scaling configuration.
+ * The result identifies the target element region, its size and nominal vector.
  *
  * @return Human-readable load description.
  */

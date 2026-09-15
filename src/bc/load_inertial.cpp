@@ -5,7 +5,9 @@
  * Distributed structural mass is handled through each element's density-scaled
  * vector-field integrator. Point elements are treated explicitly so their
  * concentrated translational mass and diagonal rotary inertia from
- * `PointMassSection` both contribute to rigid-body inertia loading.
+ * `PointMassSection` both contribute to rigid-body inertia loading. An optional
+ * amplitude scales the complete equivalent inertia load after the rigid-body
+ * acceleration field has been formed.
  *
  * Regular compiled PointElements participate when their element id belongs to
  * the selected ELSET. Auxiliary point elements created by native
@@ -41,7 +43,8 @@ namespace {
  * Translational acceleration contains reference-point, tangential and
  * centripetal terms. The section mass multiplies that acceleration directly at
  * the element node. Diagonal rotary inertia contributes Euler and gyroscopic
- * moments in the three nodal rotational directions.
+ * moments in the three nodal rotational directions. The complete contribution
+ * is multiplied by the load amplitude scale.
  *
  * @param point Point element carrying a PointMassSection.
  * @param positions Global nodal position field.
@@ -50,6 +53,7 @@ namespace {
  * @param center_acc Translational acceleration at the reference point.
  * @param omega Angular velocity.
  * @param alpha Angular acceleration.
+ * @param scale Scalar amplitude multiplier.
  */
 void apply_point_element_inertial_contribution(const model::PointElement& point,
                                                const model::Field& positions,
@@ -57,7 +61,8 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
                                                const Vec3& center,
                                                const Vec3& center_acc,
                                                const Vec3& omega,
-                                               const Vec3& alpha) {
+                                               const Vec3& alpha,
+                                               Precision scale) {
     if (!point._section) return;
 
     const auto* section = point._section->as<PointMassSection>();
@@ -73,7 +78,7 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
     const Vec3 x     = positions.row_vec3(node);
     const Vec3 r     = x - center;
     const Vec3 a_rot = alpha.cross(r) + omega.cross(omega.cross(r));
-    const Vec3 dF    = -section->mass_ * (center_acc + a_rot);
+    const Vec3 dF    = -scale * section->mass_ * (center_acc + a_rot);
 
     bc(node, 0) += dF(0);
     bc(node, 1) += dF(1);
@@ -82,7 +87,7 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
     if (bc.components >= 6) {
         const Vec3 Jalpha = section->rotary_inertia_.cwiseProduct(alpha);
         const Vec3 Jomega = section->rotary_inertia_.cwiseProduct(omega);
-        const Vec3 dM     = -(Jalpha + omega.cross(Jomega));
+        const Vec3 dM     = -scale * (Jalpha + omega.cross(Jomega));
 
         bc(node, 3) += dM(0);
         bc(node, 4) += dM(1);
@@ -97,25 +102,24 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
  *
  * Regular elements in `region_` are evaluated first. A PointElement uses its
  * concentrated section directly; other structural elements integrate the
- * acceleration field with density scaling. When `consider_point_masses_` is set,
+ * acceleration field with density scaling. The optional amplitude multiplies
+ * the complete inertia contribution. When `consider_point_masses_` is set,
  * auxiliary post-compile PointElements created by native POINTMASS commands are
  * added independently because they do not belong to the dense ELSET namespace.
  *
  * @param model_data Model topology, fields and point-element storage.
  * @param bc Generalized nodal field receiving the contribution.
- * @param time Unused analysis time retained by the common interface.
- * @param ignore_amplitude Unused common-interface flag.
+ * @param time Analysis time used for optional amplitude evaluation.
+ * @param ignore_amplitude Whether amplitude scaling is disabled.
  */
 void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
-    (void) time;
-    (void) ignore_amplitude;
-
     logging::error(region_ != nullptr,
         "InertialLoad: region not set");
     logging::error(model_data.positions != nullptr,
         "InertialLoad: positions field not set in model data");
 
     const auto& positions = *model_data.positions;
+    const Precision scale = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
 
     for (const ID el_id : *region_) {
         logging::error(el_id >= 0 && static_cast<std::size_t>(el_id) < model_data.elements.size(),
@@ -126,17 +130,17 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
 
         if (auto* point = el_ptr->as<model::PointElement>()) {
             apply_point_element_inertial_contribution(
-                *point, positions, bc, center_, center_acc_, omega_, alpha_);
+                *point, positions, bc, center_, center_acc_, omega_, alpha_, scale);
             continue;
         }
 
         auto* structural = el_ptr->as<model::StructuralElement>();
         if (!structural) continue;
 
-        auto acceleration = [c = center_, a0 = center_acc_, w = omega_, al = alpha_](const Vec3& x) -> Vec3 {
+        auto acceleration = [c = center_, a0 = center_acc_, w = omega_, al = alpha_, scale](const Vec3& x) -> Vec3 {
             const Vec3 r = x - c;
             const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
-            return -(a0 + a_rot);
+            return -scale * (a0 + a_rot);
         };
         structural->integrate_vector_field(bc, true, acceleration);
     }
@@ -148,7 +152,7 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
             logging::error(point != nullptr,
                 "InertialLoad: auxiliary point-element storage contains a non-point element");
             apply_point_element_inertial_contribution(
-                *point, positions, bc, center_, center_acc_, omega_, alpha_);
+                *point, positions, bc, center_, center_acc_, omega_, alpha_, scale);
         }
     }
 }
@@ -170,6 +174,10 @@ std::string InertialLoad::str() const {
        << ", alpha=["  << alpha_       (0) << ", " << alpha_       (1) << ", " << alpha_       (2) << "]"
        << ", consider_point_masses="
        << (consider_point_masses_ ? "true" : "false");
+
+    if (amplitude_) {
+        os << ", amplitude=" << amplitude_->name;
+    }
 
     return os.str();
 }
