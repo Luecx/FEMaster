@@ -3,7 +3,7 @@
  * @brief Registers Abaqus gravity loads.
  *
  * The supported Abaqus `DLOAD, GRAV` form combines a scalar acceleration with
- * its three-component direction and creates a FEMaster volume load on an
+ * its three-component direction and creates a FEMaster inertial load on an
  * element or element set. Procedure-specific amplitude handling determines
  * whether scaling is sampled immediately or retained for dynamic evaluation.
  *
@@ -22,7 +22,7 @@
 #include <string>
 
 #include "../parser_abq.h"
-#include "../../../bc/load_v.h"
+#include "../../../bc/load_inertial.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -89,10 +89,13 @@ void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         amplitude_ptr = model._data->amplitudes.get(resolved_amplitude);
                     }
 
-                    auto load = std::make_shared<bc::VLoad>();
-                    load->region_    = std::move(region);
-                    load->values_    = gravity;
-                    load->amplitude_ = std::move(amplitude_ptr);
+                    auto load = std::make_shared<bc::InertialLoad>();
+                    load->region_      = std::move(region);
+                    load->center_      = Vec3::Zero();
+                    load->center_acc_  = -gravity;
+                    load->omega_       = Vec3::Zero();
+                    load->alpha_       = Vec3::Zero();
+                    load->amplitude_   = std::move(amplitude_ptr);
                     model.add_load(std::move(load));
                 })
             )

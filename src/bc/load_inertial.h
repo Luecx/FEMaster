@@ -6,8 +6,8 @@
  * angular acceleration and angular velocity about a reference point. Structural
  * elements integrate the negative acceleration with their distributed density,
  * while optional point-mass handling adds concentrated translational and rotary
- * inertia contributions. The assembly details are implemented in
- * `load_inertial.cpp`.
+ * inertia contributions. An optional amplitude scales the complete equivalent
+ * inertia load.
  *
  * @see InertialLoad
  * @see Load
@@ -32,7 +32,8 @@ namespace bc {
  * `center_acc_ + alpha_ x r + omega_ x (omega_ x r)`. The applied equivalent
  * force uses the opposite sign. Structural elements supply their own density
  * and interpolation, while point-mass features can optionally be processed as
- * separate concentrated contributions.
+ * separate concentrated contributions. If present, `amplitude_` multiplies the
+ * complete equivalent force and moment contribution.
  */
 struct InertialLoad : public Load {
     // Shared ownership type for direct references to inertial loads.
@@ -69,7 +70,8 @@ struct InertialLoad : public Load {
 
     // Integrate the negative rigid-body acceleration over every selected
     // structural element using density scaling. Optionally add translational
-    // and rotary contributions of all point-mass features.
+    // and rotary contributions of all point-mass features and scale the final
+    // equivalent load with `amplitude_`.
     void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
     // Return the target region, reference point, translational acceleration,
