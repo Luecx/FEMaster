@@ -28,7 +28,7 @@
 #include "../bc/amplitude.h"
 #include "../bc/load.h"
 #include "../bc/load_collector.h"
-#include "../bc/support.h"
+#include "../bc/dirichlet/support.h"
 #include "../bc/support_collector.h"
 #include "../constraints/types/connector.h"
 #include "../constraints/types/contact.h"

@@ -42,7 +42,7 @@
 
 #include "inertia_relief.h"
 
-#include "../../bc/load_inertial.h"
+#include "../../bc/neumann/load_inertial.h"
 #include "../../core/logging.h"
 #include "../../model/element/element_structural.h"
 #include "../../model/element/point.h"
