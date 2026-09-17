@@ -14,7 +14,7 @@
 #pragma once
 
 #include "logging.h"
-#include "types_eig.h"
+#include "types_num.h"
 
 #include <chrono>
 #include <iomanip>

@@ -24,10 +24,6 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
-#ifdef USE_MKL
-#include <Eigen/PardisoSupport>
-#endif
-
 #include "types_num.h"
 
 namespace fem {

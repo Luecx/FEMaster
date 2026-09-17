@@ -17,6 +17,7 @@ option(FEMASTER_MKL_STATIC "Link the oneMKL component libraries statically" ON)
 option(FEMASTER_ENABLE_OPENMP "Enable OpenMP for FEMaster CPU loops" OFF)
 option(FEMASTER_DOUBLE_PRECISION "Use double precision arithmetic" ON)
 option(FEMASTER_FAST_EIGEN_COMPILE "Use Eigen compile-time reduction flags" ON)
+option(FEMASTER_ENABLE_PCH "Use a precompiled header for C++ sources" ON)
 option(FEMASTER_STATIC_RUNTIME "Link compiler C/C++ runtimes statically where supported" OFF)
 option(FEMASTER_FULLY_STATIC "Produce a fully static Linux executable" OFF)
 option(FEMASTER_TIME_REPORT "Enable compiler timing diagnostics where supported" OFF)
@@ -458,6 +459,15 @@ if(FEMASTER_ENABLE_CUDA)
 endif()
 
 # -----------------------------------------------------------------------------
+# Precompiled header
+# -----------------------------------------------------------------------------
+if(FEMASTER_ENABLE_PCH)
+    target_precompile_headers(femaster_core PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/src/core/pch.h>"
+    )
+endif()
+
+# -----------------------------------------------------------------------------
 # Compiler options
 # -----------------------------------------------------------------------------
 if(MSVC)
@@ -589,6 +599,7 @@ message(STATUS "  Build mode           : ${FEMASTER_BUILD_MODE}")
 message(STATUS "  C++ compiler         : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "  Output directory     : ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 message(STATUS "  Double precision     : ${FEMASTER_DOUBLE_PRECISION}")
+message(STATUS "  Precompiled header   : ${FEMASTER_ENABLE_PCH}")
 message(STATUS "  OpenMP loops         : ${FEMASTER_ENABLE_OPENMP} (${FEMASTER_OPENMP_RUNTIME})")
 message(STATUS "  oneMKL               : ${FEMASTER_ENABLE_MKL}")
 message(STATUS "    link/threading     : ${FEMASTER_MKL_LINK} / ${FEMASTER_MKL_THREADING}")

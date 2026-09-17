@@ -19,8 +19,3 @@
 #include "timer.h"
 #include "types_num.h"
 #include "types_eig.h"
-
-#ifdef SUPPORT_GPU
-#include "../cuda/assert_cuda.h"
-#include "../cuda/cuda.h"
-#endif
