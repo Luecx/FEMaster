@@ -188,7 +188,8 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
     // Nodal values are reconstructed from the integration-point samples in
     // natural coordinates using the topology-specific constant operator.
     const RowMatrix& E = this->extrapolation_matrix();
-    logging::error(E.rows() == rst.rows() && E.cols() == scheme.count(),
+    logging::error(E.rows() == rst.rows()
+                && E.cols() == static_cast<Eigen::Index>(scheme.count()),
         "SolidElement: invalid extrapolation matrix for element ", this->elem_id);
 
     const RowMatrix nodal_strain = E * ip_strain;

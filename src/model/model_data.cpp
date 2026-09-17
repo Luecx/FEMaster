@@ -323,7 +323,7 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
 
         for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
             const Index node_id = static_cast<Index>(element->nodes()[local_node]);
-            logging::error(node_id >= 0 && node_id < node_count,
+            logging::error(node_id < node_count,
                 "ModelData: node id out of range in element_nodal_to_nodal: ", node_id);
             ++node_offsets[static_cast<std::size_t>(node_id + 1)];
         }
