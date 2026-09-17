@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 
-#include "../../../bc/support.h"
+#include "../../../bc/dirichlet/support.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"

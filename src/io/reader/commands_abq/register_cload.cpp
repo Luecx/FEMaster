@@ -21,7 +21,7 @@
 #include <string>
 
 #include "../parser_abq.h"
-#include "../../../bc/load_c.h"
+#include "../../../bc/neumann/load_c.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"

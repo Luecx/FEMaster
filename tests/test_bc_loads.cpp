@@ -3,10 +3,10 @@
  * @brief Tests load accumulation, point masses and inertia relief on compiled models.
  */
 
-#include "../src/bc/load_c.h"
+#include "../src/bc/neumann/load_c.h"
 #include "../src/bc/load_collector.h"
-#include "../src/bc/load_inertial.h"
-#include "../src/bc/load_v.h"
+#include "../src/bc/neumann/load_inertial.h"
+#include "../src/bc/neumann/load_v.h"
 #include "../src/loadcase/tools/inertia_relief.h"
 #include "../src/material/material.h"
 #include "../src/model/model.h"

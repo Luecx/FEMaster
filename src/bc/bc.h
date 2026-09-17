@@ -1,38 +1,54 @@
 /**
  * @file bc.h
- * @brief Declares the common root type for boundary-condition objects.
+ * @brief Defines the common polymorphic root of FEMaster boundary conditions.
  *
- * The boundary-condition module contains loads, supports and their associated
- * collectors. `BoundaryCondition` provides the minimal polymorphic ownership
- * type shared by these objects without imposing assembly semantics on derived
- * classes. More specialized interfaces, such as `Load`, add the operations
- * required by their respective solver pipelines.
+ * The boundary-condition subsystem separates prescribed kinematic or thermal
+ * values, externally applied loads and conditions that contribute to both the
+ * right-hand side and the system operator. The concrete mathematical behavior
+ * is provided by the `Dirichlet`, `Neumann` and `Mixed` category bases in their
+ * respective subdirectories.
  *
- * @see BoundaryCondition
- * @see load.h
+ * `BoundaryCondition` itself deliberately carries no assembly interface. It is
+ * the semantic root used to identify all boundary-condition definitions while
+ * the category bases expose the operations appropriate to their algebraic role.
+ *
+ * @see Dirichlet
+ * @see Neumann
+ * @see Mixed
+ *
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 17.09.2026
  */
 
 #pragma once
 
 #include <memory>
 
-namespace fem {
-namespace bc {
+namespace fem::bc {
 
 /**
- * @brief Serves as the common ownership root of boundary-condition types.
+ * @brief Semantic root of all FEMaster boundary-condition definitions.
  *
- * The type deliberately contains no state and currently exposes only a shared
- * pointer alias. It establishes a stable extension point for functionality that
- * is common to every boundary condition while allowing specialized classes to
- * define their own application interfaces.
+ * A boundary condition modifies the unconstrained finite-element problem in one
+ * of three ways:
+ *
+ * - Dirichlet conditions prescribe primary variables through algebraic
+ *   constraint equations,
+ * - Neumann conditions contribute only to the assembled right-hand side,
+ * - mixed conditions contribute to both the right-hand side and the system
+ *   operator.
+ *
+ * This base class intentionally defines only polymorphic ownership and
+ * destruction. Derived category bases provide the actual assembly contracts so
+ * code cannot accidentally treat every boundary condition as the same algebraic
+ * operation.
  */
 struct BoundaryCondition {
-    // Shared ownership type used when boundary conditions are stored
-    // polymorphically by model and load-case data structures.
+    // Types
     using Ptr = std::shared_ptr<BoundaryCondition>;
+
+    // Polymorphic destruction
+    virtual ~BoundaryCondition() = default;
 };
-} // namespace bc
-} // namespace fem
+
+} // namespace fem::bc

@@ -13,7 +13,7 @@
  * @date 18.08.2026
  */
 
-#include "../src/bc/support.h"
+#include "../src/bc/dirichlet/support.h"
 #include "../src/bc/support_collector.h"
 #include "../src/cos/rectangular_system.h"
 #include "../src/model/model.h"

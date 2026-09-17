@@ -22,7 +22,7 @@
 #include <string>
 
 #include "../parser_abq.h"
-#include "../../../bc/support.h"
+#include "../../../bc/dirichlet/support.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
