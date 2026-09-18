@@ -29,6 +29,7 @@
 
 #include "../bc/load_collector.h"
 #include "../bc/support_collector.h"
+#include "../bc/thermal_collector.h"
 #include "../core/config.h"
 
 #include <charconv>
@@ -390,6 +391,29 @@ void Model::add_support(bc::Support support) {
 
     // Transfer the support into the selected collector
     _data->supp_cols.get()->add(std::move(support));
+}
+
+/**
+ * Transfers one thermal boundary condition into the active thermal collector.
+ *
+ * Temperature, heat-flux and mixed thermal definitions all reference compiled
+ * assembly regions. They are therefore registered only after model compilation
+ * and share one physical-domain collector independent of their algebraic
+ * Dirichlet, Neumann or Mixed category.
+ *
+ * @param condition Thermal boundary condition to register.
+ */
+void Model::add_thermal_condition(bc::ThermalCondition::Ptr condition) {
+    // Thermal boundary definitions operate on compiled assembly topology
+    logging::error(_data != nullptr && _data->compiled,
+        "Model: thermal conditions require a compiled model");
+    logging::error(condition != nullptr,
+        "Model: cannot add a null thermal condition");
+    logging::error(_data->thermal_cols.has_any() && _data->thermal_cols.get() != nullptr,
+        "Model: no thermal collector is active");
+
+    // Preserve the concrete condition through the thermal-domain marker
+    _data->thermal_cols.get()->add(std::move(condition));
 }
 
 /**

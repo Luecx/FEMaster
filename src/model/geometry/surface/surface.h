@@ -110,6 +110,10 @@ struct Surface : public SurfaceInterface {
     Precision integrate_scalar_field(
         const Field&       node_coords,
         const ScalarField& field) const override;
+    void integrate_scalar_field(
+        const Field&       node_coords,
+        Field&             target,
+        const ScalarField& field) const override;
     Vec3 integrate_vector_field(
         const Field&    node_coords,
         const VecField& field) const override;
@@ -120,6 +124,12 @@ struct Surface : public SurfaceInterface {
     Mat3 integrate_tensor_field(
         const Field&    node_coords,
         const TenField& field) const override;
+
+    // Scalar-weighted shape-product integration used by mixed boundary operators
+    DynamicMatrix integrate_scalar_shape_matrix(
+        const Field&       node_coords,
+        const ScalarField& field) const override;
+
     void integrate_triangular(
         const Field&                                                    node_coords,
         const Polygon&                                                  polygon,
@@ -133,3 +143,4 @@ struct Surface : public SurfaceInterface {
 #include "surface_geometry.inl"
 #include "surface_projection.inl"
 #include "surface_integrate.inl"
+#include "surface_shape_matrix.inl"

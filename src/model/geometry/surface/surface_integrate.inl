@@ -80,6 +80,52 @@ Precision Surface<N>::integrate_scalar_field(
 }
 
 /**
+ * Integrates a scalar field and assembles its consistent nodal contribution.
+ *
+ * At every quadrature point the scalar field is multiplied by the surface shape
+ * functions and the complete physical area weight. The contribution to node
+ * `i` is therefore
+ *
+ *     q_i += N_i(r,s) q(x(r,s)) dGamma.
+ *
+ * This is the scalar analogue of consistent vector surface loading and is used
+ * by thermal Neumann and mixed boundary conditions.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param target One-component nodal field receiving the contributions.
+ * @param field Scalar field evaluated at global positions.
+ */
+template<Index N>
+void Surface<N>::integrate_scalar_field(
+    const Field&       node_coords,
+    Field&             target,
+    const ScalarField& field
+) const {
+    // Gather the physical nodal coordinates and use the ordinary surface rule
+    const auto coordinates = node_coords_global(node_coords);
+    const auto& scheme      = integration_scheme();
+
+    // Assemble the consistent scalar nodal vector over the physical surface
+    for (Index local_ip = 0; local_ip < scheme.count(); ++local_ip) {
+        const auto point = scheme.get_point(local_ip);
+
+        const StaticMatrix<N, 1> shape = shape_function(point.r, point.s);
+        const auto jac      = jacobian(coordinates, point.r, point.s);
+        const auto position = interpolate(coordinates, point.r, point.s);
+
+        const Precision weighted_area =
+            jac.col(0).cross(jac.col(1)).norm() * point.w;
+        const Precision value = field(position);
+
+        // Scatter N_i q dGamma into thermal component zero of each surface node
+        for (Index local_id = 0; local_id < N; ++local_id) {
+            target(nodeIds[local_id], 0) +=
+                shape[local_id] * value * weighted_area;
+        }
+    }
+}
+
+/**
  * Integrates a vector field over the complete physical surface.
  *
  * The vector field is evaluated at the interpolated global position of each

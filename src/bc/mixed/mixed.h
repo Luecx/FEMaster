@@ -23,6 +23,7 @@
  * @see BoundaryCondition
  * @see Load
  * @see Neumann
+ * @see Convection
  *
  * @author Finn Eggers
  * @date 17.09.2026
