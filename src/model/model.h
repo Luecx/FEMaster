@@ -147,14 +147,14 @@ struct Model {
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    // Boundary-condition resources and collector entries. Loads and supports
-    // address compiled regions and therefore require an active collector after
-    // compilation. Amplitudes are shared named definitions and remain independent
-    // of the topology transition. Constraints deliberately have no registration
-    // helper; callers append their concrete type directly to ModelData.
-    void add_load     (bc::Load::Ptr load);
-    void add_amplitude(bc::Amplitude::Ptr amplitude);
-    void add_support  (bc::Support support);
+    // Boundary-condition resources and collector entries. Structural loads and
+    // supports retain their established collectors, while every thermal boundary
+    // condition is stored in one ThermalCollector irrespective of its algebraic
+    // Dirichlet, Neumann or Mixed category.
+    void add_load             (bc::Load::Ptr load);
+    void add_amplitude        (bc::Amplitude::Ptr amplitude);
+    void add_support          (bc::Support support);
+    void add_thermal_condition(bc::ThermalCondition::Ptr condition);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal

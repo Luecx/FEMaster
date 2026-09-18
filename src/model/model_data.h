@@ -30,6 +30,7 @@
 #include "../bc/load_collector.h"
 #include "../bc/dirichlet/support.h"
 #include "../bc/support_collector.h"
+#include "../bc/thermal_collector.h"
 #include "../constraints/types/connector.h"
 #include "../constraints/types/contact.h"
 #include "../constraints/types/coupling.h"
@@ -161,9 +162,12 @@ struct ModelData {
     std::vector<constraint::Rbm>       rbms;
     std::vector<constraint::Equation>  equations;
 
-    // Named support and load collectors shared by the model load cases
+    // Named structural and thermal boundary-condition collectors. Thermal
+    // collectors keep prescribed temperatures, heat fluxes and mixed conditions
+    // together while retaining their separate algebraic assembly passes.
     Sets<bc::SupportCollector> supp_cols;
     Sets<bc::LoadCollector>    load_cols;
+    Sets<bc::ThermalCollector> thermal_cols;
 
     // Construction
     ModelData() = default;

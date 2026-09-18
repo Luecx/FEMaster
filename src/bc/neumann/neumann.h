@@ -18,6 +18,7 @@
  * @see BoundaryCondition
  * @see Load
  * @see Mixed
+ * @see HeatFlux
  *
  * @author Finn Eggers
  * @date 17.09.2026

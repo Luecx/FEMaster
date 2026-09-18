@@ -13,6 +13,7 @@
  * from a single `Temperature` object.
  *
  * @see Dirichlet
+ * @see ThermalCondition
  * @see constraint::Equation
  *
  * @author Finn Eggers
@@ -22,6 +23,7 @@
 #pragma once
 
 #include "dirichlet.h"
+#include "../thermal.h"
 #include "../../core/types_num.h"
 #include "../../data/region.h"
 
@@ -50,7 +52,7 @@ namespace fem::bc {
  * The class defines only the prescribed primary variable. Thermal fluxes and
  * convection belong to the Neumann and mixed categories respectively.
  */
-struct Temperature : Dirichlet {
+struct Temperature : Dirichlet, ThermalCondition {
     // Types
     using Ptr = std::shared_ptr<Temperature>;
 
