@@ -80,6 +80,49 @@ Precision Surface<N>::integrate_scalar_field(
 }
 
 /**
+ * Integrates a scalar field into one local consistent surface load vector.
+ *
+ * The returned entries are ordered exactly like the surface connectivity and
+ * represent
+ *
+ *     q_i = integral_Gamma N_i q(x) dGamma.
+ *
+ * Keeping this operation local allows callers to parallelize independent
+ * surfaces and choose an appropriate global scatter strategy without exposing
+ * shared nodal storage to the integration kernel itself.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param field Scalar field evaluated at global positions.
+ * @return Local consistent scalar nodal vector in surface-connectivity order.
+ */
+template<Index N>
+DynamicVector Surface<N>::integrate_scalar_shape_vector(
+    const Field&       node_coords,
+    const ScalarField& field
+) const {
+    const auto coordinates = node_coords_global(node_coords);
+    const auto& scheme      = integration_scheme();
+
+    StaticVector<N> result = StaticVector<N>::Zero();
+
+    for (Index local_ip = 0; local_ip < scheme.count(); ++local_ip) {
+        const auto point = scheme.get_point(local_ip);
+
+        const StaticMatrix<N, 1> shape = shape_function(point.r, point.s);
+        const auto jac      = jacobian(coordinates, point.r, point.s);
+        const auto position = interpolate(coordinates, point.r, point.s);
+
+        const Precision weighted_area =
+            jac.col(0).cross(jac.col(1)).norm() * point.w;
+        const Precision value = field(position);
+
+        result.noalias() += shape * (value * weighted_area);
+    }
+
+    return DynamicVector(result);
+}
+
+/**
  * Integrates a scalar field and assembles its consistent nodal contribution.
  *
  * At every quadrature point the scalar field is multiplied by the surface shape
@@ -101,27 +144,15 @@ void Surface<N>::integrate_scalar_field(
     Field&             target,
     const ScalarField& field
 ) const {
-    // Gather the physical nodal coordinates and use the ordinary surface rule
-    const auto coordinates = node_coords_global(node_coords);
-    const auto& scheme      = integration_scheme();
+    // Keep the quadrature implementation in the local-vector routine. This
+    // serial convenience overload only scatters the already integrated values.
+    const DynamicVector local = integrate_scalar_shape_vector(node_coords, field);
 
-    // Assemble the consistent scalar nodal vector over the physical surface
-    for (Index local_ip = 0; local_ip < scheme.count(); ++local_ip) {
-        const auto point = scheme.get_point(local_ip);
+    logging::error(local.size() == N,
+        "Surface: local scalar load vector has invalid size");
 
-        const StaticMatrix<N, 1> shape = shape_function(point.r, point.s);
-        const auto jac      = jacobian(coordinates, point.r, point.s);
-        const auto position = interpolate(coordinates, point.r, point.s);
-
-        const Precision weighted_area =
-            jac.col(0).cross(jac.col(1)).norm() * point.w;
-        const Precision value = field(position);
-
-        // Scatter N_i q dGamma into thermal component zero of each surface node
-        for (Index local_id = 0; local_id < N; ++local_id) {
-            target(nodeIds[local_id], 0) +=
-                shape[local_id] * value * weighted_area;
-        }
+    for (Index local_id = 0; local_id < N; ++local_id) {
+        target(nodeIds[local_id], 0) += local(local_id);
     }
 }
 
