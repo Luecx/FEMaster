@@ -178,6 +178,17 @@ struct Model {
     // Optional stiffness-scaling fields act per element.
     SystemDofIds build_structural_dof_index_matrix();
     SystemDofIds build_thermal_dof_index_matrix();
+    SparseMatrix build_thermal_conductivity_matrix(
+        const SystemDofIds& system_dof_ids);
+    Field build_thermal_load_matrix(
+        const std::vector<std::string>& thermal_sets,
+        Precision time = 0);
+    SparseMatrix build_thermal_boundary_matrix(
+        const SystemDofIds& system_dof_ids,
+        const std::vector<std::string>& thermal_sets,
+        Precision time = 0);
+    constraint::Equations collect_thermal_constraints(
+        const std::vector<std::string>& thermal_sets);
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
@@ -217,6 +228,7 @@ struct Model {
     Field compute_volumes();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
+    Field compute_heat_flux(const Field& temperature);
 
     // Human-readable diagnostics. The overview reports semantic topology,
     // compiled assembly data and associated definitions through the hierarchical

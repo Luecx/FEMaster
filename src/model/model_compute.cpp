@@ -23,6 +23,7 @@
 
 #include "../core/config.h"
 #include "element/element_structural.h"
+#include "element/element_thermal.h"
 #include "model.h"
 
 #include <exception>
@@ -558,5 +559,56 @@ Field Model::compute_shear_flow(Field& displacement) {
     Eigen::setNbThreads(global_config.max_threads);
     return shear_flow;
 }
+
+/**
+ * Recovers conductive heat flux at all thermal element integration points.
+ *
+ * Thermal elements differentiate the scalar nodal temperature interpolation in
+ * reference coordinates and evaluate Fourier's law
+ *
+ *     q = -k grad(T).
+ *
+ * Each element writes into its globally enumerated `ELEMENT_IP` rows, so the
+ * model-level operation only allocates the common three-component output field
+ * and dispatches the recovery to every `ThermalElement`. Non-thermal elements
+ * leave their integration-point rows at zero.
+ *
+ * @param temperature Scalar global nodal temperature field.
+ * @return Three-component global heat-flux field on the `ELEMENT_IP` domain.
+ */
+Field Model::compute_heat_flux(const Field& temperature) {
+    // Validate the scalar nodal primary field before any element gathers local
+    // temperatures through global connectivity.
+    logging::error(temperature.domain == FieldDomain::NODE,
+        "Model: temperature field must use the NODE domain");
+    logging::error(temperature.components == 1,
+        "Model: temperature field must have exactly one component");
+    logging::error(temperature.rows == _data->field_rows(FieldDomain::NODE),
+        "Model: temperature field does not match the compiled nodal domain");
+
+    // ThermalElement implementations write directly into their disjoint global
+    // integration-point ranges established during model compilation.
+    Field heat_flux{
+        "HEAT_FLUX",
+        FieldDomain::ELEMENT_IP,
+        _data->field_rows(FieldDomain::ELEMENT_IP),
+        3
+    };
+    heat_flux.set_zero();
+
+    for (const auto& element : _data->elements) {
+        if (element == nullptr) {
+            continue;
+        }
+
+        if (auto* thermal = element->as<ThermalElement>()) {
+            thermal->compute_heat_flux(heat_flux, temperature);
+        }
+    }
+
+    heat_flux.check_finite("Heat flux");
+    return heat_flux;
+}
+
 
 }
