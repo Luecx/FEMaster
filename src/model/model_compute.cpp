@@ -9,13 +9,16 @@
  * weighting operation provided by `ModelData`.
  *
  * Nodal stress recovery, shell-face recovery, shell-resultant recovery, beam
- * section forces and shear flow may evaluate elements with OpenMP. Eigen and MKL
- * internal threading are temporarily restricted during those loops to avoid
- * nested oversubscription.
+ * section forces, shear flow and thermal heat-flux recovery may evaluate
+ * elements with OpenMP. Eigen and MKL internal threading are temporarily
+ * restricted during those loops to avoid nested oversubscription. Thermal flux
+ * is recovered first in disjoint ELEMENT_NODAL storage and then averaged to
+ * unique global nodes.
  *
  * @see Model
  * @see ModelData
  * @see StructuralElement
+ * @see ThermalElement
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -561,52 +564,123 @@ Field Model::compute_shear_flow(Field& displacement) {
 }
 
 /**
- * Recovers conductive heat flux at all thermal element integration points.
+ * Recovers conductive heat flux as a global nodal result field.
  *
- * Thermal elements differentiate the scalar nodal temperature interpolation in
- * reference coordinates and evaluate Fourier's law
+ * Each thermal element first produces one heat-flux vector per local node in its
+ * disjoint `ELEMENT_NODAL` row range. How those values are obtained is owned by
+ * the concrete formulation: solid elements evaluate Fourier's law at their
+ * integration points and apply their topology-specific extrapolation matrix,
+ * while other thermal formulations may evaluate the gradient directly at their
+ * nodes when that is their natural recovery scheme.
  *
- *     q = -k grad(T).
+ * Element recovery is parallel because no two elements write the same
+ * `ELEMENT_NODAL` rows. Afterwards
+ * `ModelData::element_nodal_to_nodal()` averages the discontinuous
+ * element-local values onto unique global nodes with unit element weights,
+ * matching the established nodal stress-recovery path.
  *
- * Each element writes into its globally enumerated `ELEMENT_IP` rows, so the
- * model-level operation only allocates the common three-component output field
- * and dispatches the recovery to every `ThermalElement`. Non-thermal elements
- * leave their integration-point rows at zero.
+ * No model-wide integration-point heat-flux field is created or exported.
  *
  * @param temperature Scalar global nodal temperature field.
- * @return Three-component global heat-flux field on the `ELEMENT_IP` domain.
+ * @return Three-component global `NODE` heat-flux field.
  */
 Field Model::compute_heat_flux(const Field& temperature) {
-    // Validate the scalar nodal primary field before any element gathers local
-    // temperatures through global connectivity.
+    // Validate the scalar primary field and compiled element-nodal enumeration
+    // required by the parallel local recovery path.
     logging::error(temperature.domain == FieldDomain::NODE,
         "Model: temperature field must use the NODE domain");
     logging::error(temperature.components == 1,
         "Model: temperature field must have exactly one component");
     logging::error(temperature.rows == _data->field_rows(FieldDomain::NODE),
         "Model: temperature field does not match the compiled nodal domain");
+    logging::error(_data->element_nodal_offsets != nullptr,
+        "Model: element nodal offsets are not initialized");
 
-    // ThermalElement implementations write directly into their disjoint global
-    // integration-point ranges established during model compilation.
-    Field heat_flux{
-        "HEAT_FLUX",
-        FieldDomain::ELEMENT_IP,
-        _data->field_rows(FieldDomain::ELEMENT_IP),
+    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
+    const Index element_count       = static_cast<Index>(_data->elements.size());
+
+    // Allocate disjoint element-local nodal storage and one participation weight
+    // per dense element. Non-thermal elements retain zero weight and therefore do
+    // not influence the global nodal average.
+    Field element_heat_flux{
+        "ELEMENT_NODAL_HEAT_FLUX",
+        FieldDomain::ELEMENT_NODAL,
+        total_element_nodes,
         3
     };
-    heat_flux.set_zero();
+    Field element_weights{
+        "HEAT_FLUX_ELEMENT_WEIGHTS",
+        FieldDomain::ELEMENT,
+        element_count,
+        1
+    };
+    element_heat_flux.set_zero();
+    element_weights.set_zero();
 
-    for (const auto& element : _data->elements) {
-        if (element == nullptr) {
-            continue;
-        }
+    // Prevent nested Eigen/MKL threading inside the explicit element-parallel
+    // recovery loop.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
 
-        if (auto* thermal = element->as<ThermalElement>()) {
-            thermal->compute_heat_flux(heat_flux, temperature);
+    // Element recovery may reject invalid geometry, material data or output
+    // layouts through logging::error(). C++ exceptions must not escape an OpenMP
+    // region, so retain the first failure and propagate it after the implicit
+    // parallel barrier.
+    std::exception_ptr failure = nullptr;
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    // Concrete thermal formulations write only into their own compiled
+    // ELEMENT_NODAL ranges, so successful recovery requires no synchronization.
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        try {
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) {
+                continue;
+            }
+
+            if (auto* thermal = element->as<ThermalElement>()) {
+                thermal->compute_heat_flux(element_heat_flux, temperature);
+                element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
+            }
+        } catch (...) {
+            // Match the established parallel result-recovery pattern: workers
+            // capture recoverable model errors locally and only synchronize when
+            // publishing the first exception.
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
+                }
+            }
         }
     }
 
-    heat_flux.check_finite("Heat flux");
+    // Restore the configured linear-algebra thread counts before propagating a
+    // captured failure or entering the independent nodal projection.
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
+
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+
+    // Average all participating element-local nodal vectors onto unique global
+    // nodes. The projection itself is parallelized over independent target nodes.
+    Field heat_flux = _data->element_nodal_to_nodal(
+        element_heat_flux,
+        element_weights,
+        "HEAT_FLUX"
+    );
+
+    heat_flux.check_finite("Nodal heat flux");
     return heat_flux;
 }
 
