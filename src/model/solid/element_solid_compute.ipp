@@ -334,41 +334,48 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
 }
 
 /**
- * Recovers the global conductive heat flux at every solid integration point.
+ * Recovers conductive heat flux as one vector per element node.
  *
- * The scalar nodal temperature field is differentiated with respect to global
- * reference coordinates. For the currently supported isotropic conductivity,
- * Fourier's law is
+ * Fourier's law is evaluated from the scalar nodal temperature interpolation,
  *
  *     q = -k grad_X(T)
  *       = -k (dN/dX)^T T_e.
  *
- * Results are written to the element's globally enumerated `ELEMENT_IP` rows
- * using the same quadrature rule that defines `num_ip()`. The output components
- * are the global x-, y- and z-components of heat flux.
+ * The gradient is first evaluated at the formulation's stable stiffness
+ * integration points and then recovered to the element nodes through the same
+ * topology-specific extrapolation operator used by structural nodal recovery.
+ * This is important for reduced and degenerated elements, where direct
+ * differentiation at a geometric node can be singular or intentionally differs
+ * from the formulation's recovery basis.
  *
- * @param heat_flux Global integration-point field receiving three heat-flux
- *                  components per row.
+ * No global `ELEMENT_IP` heat-flux field is created. The temporary integration-
+ * point values remain local to this function and the final vectors are written
+ * directly into the element's disjoint `ELEMENT_NODAL` range. This makes the
+ * operation safe for model-level parallel recovery.
+ *
+ * @param heat_flux Global element-nodal field receiving three heat-flux
+ *                  components per element node.
  * @param temperature Scalar global nodal temperature field.
  */
 template<Index N>
 void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperature) {
-    // Validate the input and output field layouts before gathering element data.
+    // Validate the scalar primary field and element-nodal output layout before
+    // gathering any element-local data.
     logging::error(temperature.domain == FieldDomain::NODE,
         "SolidElement: temperature field must use the NODE domain");
     logging::error(temperature.components == 1,
         "SolidElement: temperature field must have exactly one component");
-    logging::error(heat_flux.domain == FieldDomain::ELEMENT_IP,
-        "SolidElement: heat-flux field must use the ELEMENT_IP domain");
+    logging::error(heat_flux.domain == FieldDomain::ELEMENT_NODAL,
+        "SolidElement: heat-flux field must use the ELEMENT_NODAL domain");
     logging::error(heat_flux.components >= D,
         "SolidElement: heat-flux field requires at least three components");
 
-    const auto& scheme = this->integration_scheme_stiffness();
-    logging::error(this->ip_index(scheme.count()) <= heat_flux.rows,
+    const Index offset = static_cast<Index>(this->elem_nodal_offset);
+    logging::error(offset + N <= heat_flux.rows,
         "SolidElement: heat-flux field is too small for element ", this->elem_id);
 
-    // Gather the reference geometry, nodal temperatures and isotropic thermal
-    // conductivity once for all integration points.
+    // Gather reference geometry, scalar nodal temperatures and conductivity once
+    // for the complete recovery operation.
     const StaticMatrix<N, D> reference_coords  = this->node_coords_reference();
     const StaticVector<N>    local_temperature = this->template nodal_data<1>(temperature);
     auto*                    section           = this->get_section();
@@ -377,7 +384,11 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
         "Material has no thermal conductivity at element ", this->elem_id);
     const Precision conductivity = section->material_->get_thermal_conductivity();
 
-    // Apply Fourier's law at every globally enumerated thermal output point.
+    // Evaluate Fourier's law only in local temporary storage at the formulation's
+    // stable integration points. Nothing is written to global ELEMENT_IP storage.
+    const auto& scheme = this->integration_scheme_stiffness();
+    RowMatrix ip_flux = RowMatrix::Zero(scheme.count(), D);
+
     for (Index ip = 0; ip < scheme.count(); ++ip) {
         const auto point = scheme.get_point(ip);
 
@@ -389,11 +400,34 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
             point.t,
             det0
         );
-        const Vec3 flux = -conductivity * dN_dX.transpose() * local_temperature;
-        const Index row = this->ip_index(ip);
 
+        const Vec3 flux = -conductivity * dN_dX.transpose() * local_temperature;
         for (Dim component = 0; component < D; ++component) {
-            heat_flux(row, component) = flux(component);
+            ip_flux(ip, component) = flux(component);
+        }
+    }
+
+    // Recover the integration-point vectors to all element nodes. The constant
+    // topology-specific matrix also handles reduced-integration formulations by
+    // reproducing their admissible recovery space instead of evaluating a
+    // potentially singular nodal Jacobian directly.
+    const RowMatrix& E = this->extrapolation_matrix();
+    logging::error(E.rows() == static_cast<Eigen::Index>(N)
+                && E.cols() == static_cast<Eigen::Index>(scheme.count()),
+        "SolidElement: invalid heat-flux extrapolation matrix for element ",
+        this->elem_id);
+
+    const RowMatrix nodal_flux = E * ip_flux;
+    logging::error(nodal_flux.allFinite(),
+        "SolidElement: nodal heat flux contains NaN or Inf at element ",
+        this->elem_id);
+
+    // Write only the element-owned disjoint rows. Model-level OpenMP recovery can
+    // therefore evaluate different elements without synchronization.
+    for (Index local_node = 0; local_node < N; ++local_node) {
+        const Index row = offset + local_node;
+        for (Dim component = 0; component < D; ++component) {
+            heat_flux(row, component) = nodal_flux(local_node, component);
         }
     }
 }

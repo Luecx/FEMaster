@@ -215,10 +215,10 @@ struct Model {
         const Field& displacement);
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
-    // Result recovery from compiled structural elements. Returned fields use the
-    // domain appropriate to each quantity, including integration-point stress,
-    // element-nodal stress/strain, shell resultants and element-level compliance,
-    // volume, section-force and shear-flow measures.
+    // Result recovery from compiled structural and thermal elements. Structural
+    // quantities retain their established integration-point, element-nodal or
+    // nodal domains. Heat flux is recovered element-nodally by each thermal
+    // formulation and projected to a unique global NODE field before output.
     Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
