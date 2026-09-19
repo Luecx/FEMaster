@@ -110,6 +110,9 @@ struct Surface : public SurfaceInterface {
     Precision integrate_scalar_field(
         const Field&       node_coords,
         const ScalarField& field) const override;
+    DynamicVector integrate_scalar_shape_vector(
+        const Field&       node_coords,
+        const ScalarField& field) const override;
     void integrate_scalar_field(
         const Field&       node_coords,
         Field&             target,

@@ -23,12 +23,21 @@
 
 #include "convection.h"
 
+#include "../../core/config.h"
 #include "../../core/logging.h"
 #include "../../model/model_data.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <sstream>
+#include <vector>
+
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 
 namespace fem::bc {
 
@@ -81,7 +90,8 @@ void Convection::apply(model::ModelData& model_data,
                        model::Field&     rhs,
                        Precision         time,
                        bool              ignore_amplitude) {
-    // Validate the target and scalar thermal assembly context
+    // Validate the target and scalar thermal assembly context before entering the
+    // parallel surface traversal.
     logging::error(region_ != nullptr,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
@@ -89,29 +99,86 @@ void Convection::apply(model::ModelData& model_data,
     logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components == 1,
         "CONVECTION: target field must be a NODE field with exactly one component");
 
-    // A vanishing film coefficient removes both convection contributions exactly
+    // A vanishing film coefficient removes both convection contributions exactly.
     const Precision h = effective_film_coefficient(time, ignore_amplitude);
     if (h == Precision(0)) {
         return;
     }
 
     const Precision source = h * ambient_temperature_;
+    const auto& surface_ids   = region_->data();
+    const Index surface_count = static_cast<Index>(surface_ids.size());
+    const Index node_count    = rhs.rows;
+    Precision*  rhs_data      = rhs.data();
 
-    // Integrate the ambient heat source consistently over every selected surface
-    for (ID surface_id : *region_) {
-        logging::error(surface_id >= 0
-                    && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
-            "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
+#ifdef _OPENMP
+    const int worker_count = std::max(
+        1,
+        std::min(global_config.max_threads, static_cast<int>(std::max<Index>(surface_count, 1)))
+    );
+#else
+    const int worker_count = 1;
+#endif
 
-        const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
-        logging::error(surface != nullptr,
-            "CONVECTION: surface ", surface_id, " is not initialized");
+    std::atomic_bool   failed{false};
+    std::exception_ptr failure = nullptr;
 
-        surface->integrate_scalar_field(
-            *model_data.positions_reference,
-            rhs,
-            [source](const Vec3&) -> Precision { return source; }
-        );
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 256) num_threads(worker_count) if(worker_count > 1)
+#endif
+    // Integrate each surface independently and scatter only its local nodal
+    // vector. Atomic scalar additions preserve shared-edge contributions without
+    // one full nodal RHS allocation per worker.
+    for (Index surface_index = 0; surface_index < surface_count; ++surface_index) {
+        if (failed.load(std::memory_order_relaxed)) {
+            continue;
+        }
+
+        try {
+            const ID surface_id = surface_ids[static_cast<std::size_t>(surface_index)];
+            logging::error(surface_id >= 0
+                        && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
+
+            const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+            logging::error(surface != nullptr,
+                "CONVECTION: surface ", surface_id, " is not initialized");
+
+            const DynamicVector local = surface->integrate_scalar_shape_vector(
+                *model_data.positions_reference,
+                [source](const Vec3&) -> Precision { return source; }
+            );
+
+            logging::error(local.size() == surface->n_nodes && local.allFinite(),
+                "CONVECTION: local ambient source is invalid on surface ", surface_id);
+
+            for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
+                const ID node_id = surface->nodes()[local_node];
+                logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+                    "CONVECTION: surface references node ", node_id,
+                    " outside the thermal RHS domain");
+
+                const Precision contribution = local(local_node);
+#ifdef _OPENMP
+                #pragma omp atomic update
+#endif
+                rhs_data[static_cast<std::size_t>(node_id)] += contribution;
+            }
+        } catch (...) {
+            failed.store(true, std::memory_order_relaxed);
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
+                }
+            }
+        }
+    }
+
+    if (failure) {
+        std::rethrow_exception(failure);
     }
 }
 
@@ -137,7 +204,8 @@ void Convection::apply_matrix(model::ModelData&   model_data,
                               TripletList&        matrix,
                               Precision           time,
                               bool                ignore_amplitude) {
-    // Validate the surface target and scalar thermal system numbering
+    // Validate the surface target and scalar thermal system numbering before
+    // parallel local-operator evaluation.
     logging::error(region_ != nullptr,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
@@ -152,57 +220,119 @@ void Convection::apply_matrix(model::ModelData&   model_data,
         return;
     }
 
-    const auto& positions = *model_data.positions_reference;
+    const auto& positions     = *model_data.positions_reference;
+    const auto& surface_ids   = region_->data();
+    const Index surface_count = static_cast<Index>(surface_ids.size());
 
-    // Assemble one consistent Robin matrix for every selected reference surface
-    for (ID surface_id : *region_) {
-        logging::error(surface_id >= 0
-                    && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
-            "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
+#ifdef _OPENMP
+    const int worker_count = std::max(
+        1,
+        std::min(global_config.max_threads, static_cast<int>(std::max<Index>(surface_count, 1)))
+    );
+#else
+    const int worker_count = 1;
+#endif
 
-        const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
-        logging::error(surface != nullptr,
-            "CONVECTION: surface ", surface_id, " is not initialized");
+    // Each OpenMP worker owns its triplet buffer, eliminating synchronization
+    // from the quadratic local matrix scatter. Duplicate global entries are
+    // intentionally preserved for the final SparseMatrix construction.
+    std::vector<TripletList> thread_triplets(static_cast<std::size_t>(worker_count));
 
-        // Higher-order shape-product quadrature evaluates integral h N N^T dGamma
-        const DynamicMatrix local = surface->integrate_scalar_shape_matrix(
-            positions,
-            [h](const Vec3&) -> Precision { return h; }
-        );
+    std::atomic_bool   failed{false};
+    std::exception_ptr failure = nullptr;
 
-        logging::error(local.rows() == surface->n_nodes && local.cols() == surface->n_nodes,
-            "CONVECTION: local boundary matrix does not match surface connectivity");
-        logging::error(local.allFinite(),
-            "CONVECTION: local boundary matrix contains NaN or Inf");
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 128) num_threads(worker_count) if(worker_count > 1)
+#endif
+    for (Index surface_index = 0; surface_index < surface_count; ++surface_index) {
+        if (failed.load(std::memory_order_relaxed)) {
+            continue;
+        }
 
-        // Map the local surface operator to active scalar thermal system indices
-        for (Index i = 0; i < surface->n_nodes; ++i) {
-            const ID  node_i = surface->nodes()[i];
-            const int row    = system_dof_ids(static_cast<Eigen::Index>(node_i), 0);
+        try {
+#ifdef _OPENMP
+            const int worker = omp_get_thread_num();
+#else
+            const int worker = 0;
+#endif
+            auto& local_triplets = thread_triplets[static_cast<std::size_t>(worker)];
 
-            logging::error(row >= 0,
-                "CONVECTION: surface references thermally inactive node ", node_i);
+            const ID surface_id = surface_ids[static_cast<std::size_t>(surface_index)];
+            logging::error(surface_id >= 0
+                        && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
 
-            for (Index j = 0; j < surface->n_nodes; ++j) {
-                const ID  node_j = surface->nodes()[j];
-                const int col    = system_dof_ids(static_cast<Eigen::Index>(node_j), 0);
+            const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+            logging::error(surface != nullptr,
+                "CONVECTION: surface ", surface_id, " is not initialized");
 
-                logging::error(col >= 0,
-                    "CONVECTION: surface references thermally inactive node ", node_j);
+            const DynamicMatrix local = surface->integrate_scalar_shape_matrix(
+                positions,
+                [h](const Vec3&) -> Precision { return h; }
+            );
 
-                const Precision value = local(
-                    static_cast<Eigen::Index>(i),
-                    static_cast<Eigen::Index>(j)
-                );
+            logging::error(local.rows() == surface->n_nodes && local.cols() == surface->n_nodes,
+                "CONVECTION: local boundary matrix does not match surface connectivity");
+            logging::error(local.allFinite(),
+                "CONVECTION: local boundary matrix contains NaN or Inf");
 
-                // Adjacent surfaces may contribute to the same entry. Duplicate
-                // triplets are intentionally left for the global sparse assembly
-                // to sum.
-                if (value != Precision(0)) {
-                    matrix.emplace_back(row, col, value);
+            for (Index i = 0; i < surface->n_nodes; ++i) {
+                const ID node_i = surface->nodes()[i];
+                logging::error(node_i >= 0
+                            && static_cast<Eigen::Index>(node_i) < system_dof_ids.rows(),
+                    "CONVECTION: surface references invalid node ", node_i);
+
+                const int row = system_dof_ids(static_cast<Eigen::Index>(node_i), 0);
+                logging::error(row >= 0,
+                    "CONVECTION: surface references thermally inactive node ", node_i);
+
+                for (Index j = 0; j < surface->n_nodes; ++j) {
+                    const ID node_j = surface->nodes()[j];
+                    logging::error(node_j >= 0
+                                && static_cast<Eigen::Index>(node_j) < system_dof_ids.rows(),
+                        "CONVECTION: surface references invalid node ", node_j);
+
+                    const int col = system_dof_ids(static_cast<Eigen::Index>(node_j), 0);
+                    logging::error(col >= 0,
+                        "CONVECTION: surface references thermally inactive node ", node_j);
+
+                    const Precision value = local(
+                        static_cast<Eigen::Index>(i),
+                        static_cast<Eigen::Index>(j)
+                    );
+
+                    if (value != Precision(0)) {
+                        local_triplets.emplace_back(row, col, value);
+                    }
+                }
+            }
+        } catch (...) {
+            failed.store(true, std::memory_order_relaxed);
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
                 }
             }
         }
+    }
+
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+
+    // Concatenate the independent worker buffers once. Sparse construction later
+    // combines duplicate row/column entries from adjacent surfaces.
+    std::size_t additional = 0;
+    for (const auto& local : thread_triplets) {
+        additional += local.size();
+    }
+    matrix.reserve(matrix.size() + additional);
+
+    for (const auto& local : thread_triplets) {
+        matrix.insert(matrix.end(), local.begin(), local.end());
     }
 }
 

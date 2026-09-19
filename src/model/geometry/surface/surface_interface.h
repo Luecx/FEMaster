@@ -62,6 +62,9 @@ struct SurfaceInterface {
     virtual DynamicMatrix node_coords_natural() const = 0;
 
     virtual Precision integrate_scalar_field(const Field& node_coords, const ScalarField& field) const = 0;
+    virtual DynamicVector integrate_scalar_shape_vector(
+        const Field& node_coords,
+        const ScalarField& field) const = 0;
     virtual void integrate_scalar_field(const Field& node_coords, Field& target, const ScalarField& field) const = 0;
     virtual Vec3 integrate_vector_field(const Field& node_coords, const VecField& field) const = 0;
     virtual void integrate_vector_field(const Field& node_coords, Field& target, const VecField& field) const = 0;
