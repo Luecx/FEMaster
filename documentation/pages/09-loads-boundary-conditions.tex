@@ -291,26 +291,33 @@ FACE_B, TRVEC, 3.0, 0., 1., 0.
 
 \keywordpage{VLOAD}
 
-Native \cmd{VLOAD} applies a distributed three-component body-force or acceleration-type vector to an element or element set. The load is integrated with the physical mass measure of each selected structural element. For continuum and line elements this measure is obtained from density and geometry; for a regular \val{TYPE=MASS} point element it is the complete concentrated scalar assigned by \cmd{MASS}.
+Native \cmd{VLOAD} prescribes a three-component \emph{body-force density} on an element or element set. The components have units of force per unit volume (for example, \(\mathrm{N/mm^3}\)), \emph{not} acceleration. FEMaster integrates the load over the physical element volume without multiplying by material density:
+\[
+\boldsymbol f_e=\int_{\Omega_e}\boldsymbol N^T\boldsymbol b\,\mathrm d\Omega.
+\]
+The resulting force is independent of the mass density assigned to the material. This applies equally to globally defined loads and loads expressed in a local basis via \key{ORIENTATION}. \key{AMPLITUDE} optionally scales the prescribed force density.
 
-For mass-proportional acceleration such as gravity, the intended acceleration vector must use units consistent with the model. In a mm--s system, standard gravity is approximately \(9810\,\mathrm{mm/s^2}\). If a target ELSET contains a regular MASS element of mass \(m\), its contribution is the concentrated nodal force \(m\boldsymbol a\). Auxiliary native \cmd{POINTMASS} objects do not belong to public ELSETs and are therefore not loaded through \cmd{VLOAD}.
-
-\key{ORIENTATION} optionally supplies a local vector basis and \key{AMPLITUDE} optionally provides time scaling. The supported Abaqus equivalent is \cmd{DLOAD} with \val{GRAV}, where magnitude and direction are entered separately.
+For a gravity load, use a mass-proportional inertial load rather than entering acceleration components as \cmd{VLOAD}. The supported Abaqus \cmd{DLOAD} with \val{GRAV} interprets its magnitude and direction as acceleration and includes material density and selected regular concentrated masses via the \texttt{InertialLoad} path. The two commands therefore \emph{must not} be treated as numerically interchangeable. Auxiliary native \cmd{POINTMASS} definitions are not selected through a regular element set.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
-\key{ORIENTATION} & native optional & Named local vector basis. \\
-\key{AMPLITUDE} & optional & Named time scaling. \\
+\key{LOAD\_COLLECTOR} & native required & Destination load collector. \\
+\key{ORIENTATION} & native optional & Named local vector basis for the force density. \\
+\key{AMPLITUDE} & native optional & Named time-scaling function. \\
 \end{keywordparameters}
+
+\begin{keyworddata}
+\val{target, bx, by, bz} & Element or element-set target followed by three body-force-density components. \\
+\end{keyworddata}
 
 \exampleheading
 
 \begin{dialectexamples}
 \begin{femasterdeck}
-*VLOAD, LOAD_COLLECTOR=GRAVITY
-EALL, 0., 0., -9810.
+*VLOAD, LOAD_COLLECTOR=BODY_FORCE
+EALL, 0., 0., -0.01
 \end{femasterdeck}
 \begin{abaqusdeck}
+** A mass-proportional gravity load instead:
 *DLOAD
 EALL, GRAV, 9810., 0., 0., -1.
 \end{abaqusdeck}

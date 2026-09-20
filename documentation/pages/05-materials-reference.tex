@@ -3,13 +3,13 @@
 
 Materials define constitutive and inertial properties independently of the mesh. A material is created once, given a name, and referenced by one or more Sections. The same material may therefore be used by several element regions, Parts, or Instances without duplicating its constants.
 
-\cmd{MATERIAL} begins a material definition. The material-property keywords that follow---for example \cmd{ELASTIC}, \cmd{HYPERELASTIC}, \cmd{DENSITY}, and thermal expansion---belong to that material until the material definition ends with the next appropriate root-level model definition. A material may contain only the properties required by the intended analyses; for example, density is unnecessary for a purely elastic static stiffness calculation but is required when mass participates in the mechanics.
+\cmd{MATERIAL} begins a material definition. The material-property keywords that follow---for example \cmd{ELASTIC}, \cmd{PLASTIC}, \cmd{HYPERELASTIC}, \cmd{DENSITY}, and thermal expansion---belong to that material until the material definition ends with the next appropriate root-level model definition. A material may contain only the properties required by the intended analyses; for example, density is unnecessary for a purely elastic static stiffness calculation but is required when mass participates in the mechanics.
 
 \keywordpage{MATERIAL}
 
 \cmd{MATERIAL} creates a named material and makes it the current target for subsequent material-property keywords. Native FEMaster accepts the identifier through \key{MATERIAL} or \key{NAME}; Abaqus input uses \key{NAME}.
 
-The command itself does not define a constitutive law. Elasticity, hyperelasticity, density, and thermal expansion are added with separate keywords. This makes the material definition modular and keeps the physical meaning of each property explicit.
+The command itself does not define a constitutive law. Elasticity, plasticity, hyperelasticity, density, and thermal expansion are added with separate keywords. This makes the material definition modular and keeps the physical meaning of each property explicit.
 
 Material names must be unique. Sections reference the material by name, so one definition can be reused throughout the model.
 
@@ -117,6 +117,47 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 135000., 10000., 10000.,
 0.30, 0.30, 0.40,
 5000., 5000., 3500.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{PLASTIC}
+
+\cmd{PLASTIC} adds associative isotropic von Mises (\(J_2\)) elastoplasticity with tabulated isotropic hardening to the current material. The command is registered in \emph{both} the native FEMaster and supported Abaqus parsers. It requires an isotropic \cmd{ELASTIC} definition for the same material; orthotropic, generalized-isotropic, and hyperelastic definitions cannot be combined with the current \cmd{PLASTIC} implementation. The material keeps the Young's modulus and Poisson ratio defined by \cmd{ELASTIC}.
+
+Each data row gives the current uniaxial yield stress followed by the \emph{accumulated equivalent plastic strain}, not total strain. The first row must have zero equivalent plastic strain. Later strain values must increase strictly, while yield stresses must be positive and non-decreasing. FEMaster interpolates the yield stress linearly between rows and holds it constant beyond the last row (perfect plasticity after the supplied range). A single row describes a perfectly plastic material from initial yield.
+
+\key{TYPE} is optional and defaults to \val{J2}; accepted selectors are \val{J2}, \val{MISES}, \val{VONMISES}, and \val{VON\_MISES}. The material implementation provides small-strain and finite-strain constitutive responses for the supported axial, solid, and integrated-shell evaluation paths. A nonlinear analysis is required to evolve plastic history; a linear static analysis does not turn into an elastoplastic analysis merely because this keyword is present.
+
+When converting uniaxial test data to this table, subtract the elastic strain from the measured total strain before specifying the plastic-strain ordinate. Stress values and Young's modulus must use the same stress unit. For finite-strain applications, ensure that the stress and strain measures of the source test curve are appropriate to the chosen material calibration.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{J2} (default), \val{MISES}, \val{VONMISES}, or \val{VON\_MISES}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{yield stress, equivalent plastic strain} & One hardening point per row; the first plastic strain is zero and subsequent strains are strictly increasing. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*PLASTIC, TYPE=J2
+250., 0.
+300., 0.02
+350., 0.05
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*PLASTIC
+250., 0.
+300., 0.02
+350., 0.05
 \end{abaqusdeck}
 \end{dialectexamples}
 

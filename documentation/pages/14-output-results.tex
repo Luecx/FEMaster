@@ -253,6 +253,14 @@ Generalized nodal motion and force vectors use the six-component nodal order \do
 \]
 The component meaning of raw result data therefore depends on whether the Field contains generalized nodal quantities or stress/strain tensors.
 
+\subsection*{Structural stress and strain recovery}
+
+For solid elements, FEMaster evaluates constitutive stress and strain at the element's actual material integration points. Result recovery extrapolates those values to the element's local nodes with a topology-specific interpolation/extrapolation matrix; the global nodal result is then assembled from the contributions of incident elements. A reduced-integration element can only recover the spatial variation represented by its integration-point data (for example, a single-point \val{C3D8R} supplies a constant recovered value per element). Extrapolated element-nodal values and averaged nodal values therefore need not equal the original integration-point values.
+
+The distinction is particularly important at a material interface, a stress discontinuity, a sharp corner, or a strongly distorted mesh: nodal averaging can smooth physically different element-side values, and extrapolation may produce extrema outside the integration-point range. When comparing results with another solver or experimental stress measures, compare the same stress measure and recovery location, not merely a field with the same name. Local \val{ELEMENT\_IP}, \val{ELEMENT\_NODAL}, and global \val{NODE} domains retain different indexing and recovery semantics in the native \file{.res} format.
+
+FEMR version 1 stores \val{NODE} and \val{ELEMENT} result fields but does not serialize \val{ELEMENT\_NODAL}, \val{ELEMENT\_IP}, or \val{ELEMENT\_MP} fields. The writer skips unsupported domains with a warning; use \file{.res} when the local-field domain is needed. The absence of a local field in FEMR does not imply that FEMaster did not evaluate that quantity internally.
+
 \subsection*{Harmonic results}
 
 A complex harmonic quantity is written as separate real and imaginary components:

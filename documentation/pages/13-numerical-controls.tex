@@ -7,7 +7,7 @@ These settings can strongly affect robustness and computational cost, but they d
 
 \keywordpage{SOLVER}
 
-\cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
+\cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases and the supported Abaqus \cmd{STEP} procedures. In Abaqus input, it is a FEMaster extension and must appear after the procedure keyword has created the active analysis; it is not an Abaqus-native solver-selection card. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
 
 A direct method factorizes the sparse equation matrix and then solves by substitutions. Its convergence does not depend on an iterative stopping process, while its factorization memory can become substantial for large three-dimensional models.
 
@@ -33,7 +33,7 @@ C&0
 \]
 which requires a linear solver that can handle indefinite matrices and is therefore restricted to supported direct configurations.
 
-The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
+The registration applies to linear static, nonlinear static, linear buckling, topology-static, linear transient, and linear harmonic analyses. The eigenfrequency loadcase does not currently implement this \cmd{SOLVER} setting. The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
 
 The default CPU/direct configuration avoids iterative convergence and backend-specific GPU requirements. Indirect or GPU configurations exchange this baseline for different memory, scaling, and hardware characteristics; their numerical behaviour still depends on the physical model and constraint system.
 
@@ -50,9 +50,13 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 ...
 *END
 \end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus input does not translate Abaqus solver-selection controls to native \cmd{SOLVER} settings.
-\end{noabaqus}
+\begin{abaqusdeck}
+*STEP
+*STATIC
+*SOLVER, DEVICE=CPU, METHOD=INDIRECT
+...
+*END STEP
+\end{abaqusdeck}
 \end{dialectexamples}
 
 \keywordpage{CONSTRAINTMETHOD}
@@ -176,7 +180,7 @@ Adaptive stepping does not alter the equilibrium equations. It changes only how 
 
 \subsection*{Newton convergence}
 
-\key{MAXITER} limits Newton iterations per attempted increment; the default is 20. \key{TOL}, default \(10^{-8}\), controls the equilibrium convergence criterion. A small residual tolerance does not guarantee an accurate finite-element model: mesh discretization, constitutive assumptions, and load idealization remain independent error sources.
+\key{MAXITER} limits Newton iterations per attempted increment; the default is 20. \key{TOL}, default \(10^{-3}\), controls the normalized equilibrium-residual tolerance. Newton uses a maximum-component relative force residual, rather than the former RMS/L2 measure, and independently checks the relative displacement correction (currently \(10^{-2}\) in both load-control and arc-length implementations). Ordinarily \emph{both} criteria must pass. At the first residual evaluation, where no correction has yet been calculated, immediate convergence is allowed only when the residual is at most \(\min(\mathrm{TOL},10^{-8})\). Changing \key{TOL} does not change the separately configured internal displacement-correction tolerance. A small residual tolerance does not guarantee an accurate finite-element model: mesh discretization, constitutive assumptions, and load idealization remain independent error sources.
 
 \subsection*{Weak-row regularization}
 
@@ -199,8 +203,8 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
 \key{SLOW_ITERATIONS} & optional & Slow convergence threshold; default 10. \\
 \key{MAXIMUM_CUTBACKS} & optional & Cutback limit; default 20. \\
 \key{MAXITER} & optional & Newton iteration limit; default 20. \\
-\key{TOL} & optional & Equilibrium convergence tolerance; default \(10^{-8}\). \\
-\key{REGULARIZE_ZERO_ROWS} & optional & Enable weak-row regularization; default \val{ON}. \\
+\key{TOL} & optional & Relative force-residual tolerance; default \(10^{-3}\). A separate relative displacement-correction criterion is also enforced. \\
+\key{REGULARIZE_ZERO_ROWS} & optional & Enable weak-row regularization; default \val{OFF}. \\
 \key{REGULARIZATION_ALPHA} & optional & Regularization scale; default \(10^{-4}\). \\
 \end{keywordparameters}
 

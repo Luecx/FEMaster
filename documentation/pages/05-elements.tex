@@ -23,12 +23,12 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{C3D15} & 15 & Quadratic wedge solid. \\
 \val{C3D20} & 20 & Quadratic hexahedral solid with full stiffness integration. \\
 \val{C3D20R} & 20 & Quadratic hexahedral solid with reduced stiffness integration. \\
-\val{S3} & 3 & Legacy three-node triangular shell. \\
-\val{S4} & 4 & Legacy four-node quadrilateral shell. \\
-\val{MITC4} & 4 & Legacy four-node MITC shell with tied transverse shear interpolation. \\
-\val{S6} & 6 & Legacy six-node quadratic triangular shell. \\
-\val{S8} & 8 & Legacy eight-node quadratic quadrilateral shell. \\
-\val{MITC8} & 8 & Legacy eight-node MITC shell with tied transverse shear interpolation. \\
+\val{S3} & 3 & three-node triangular finite-rotation shell; alias of \val{MITC3FRT}. \\
+\val{S4} & 4 & four-node quadrilateral finite-rotation shell; alias of \val{MITC4FRT}. \\
+\val{MITC4} & 4 & four-node quadrilateral finite-rotation shell; alias of \val{MITC4FRT}. \\
+\val{S6} & 6 & six-node triangular finite-rotation shell; alias of \val{MITC6FRT}. \\
+\val{S8} & 8 & eight-node quadrilateral finite-rotation shell; alias of \val{MITC8FRT}. \\
+\val{MITC8} & 8 & eight-node quadrilateral finite-rotation shell; alias of \val{MITC8FRT}. \\
 \val{MITC3FRT} & 3 & Three-node finite-rotation shell. \\
 \val{MITC4FRT} & 4 & Four-node finite-rotation MITC shell. \\
 \val{MITC6FRT} & 6 & Six-node finite-rotation MITC shell. \\
@@ -59,7 +59,7 @@ The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6
 \caption{Current Abaqus shell-type mapping.}
 \end{table}
 
-This mapping is important: an Abaqus \val{S4} deck does \emph{not} select the native legacy \val{S4} formulation. It is translated to \val{MITC4FRT}. Native FEMaster input can still select the legacy shell names explicitly for comparison and regression work.
+The native and Abaqus shell labels above select the same finite-rotation implementations. In particular, native \val{S4}, \val{MITC4}, and \val{MITC4FRT}, as well as Abaqus \val{S4}/\val{S4R}, all select the current four-node \texttt{FRTShellS4}. The former separate linear shell implementations have been removed; keeping their input labels does not retain their former numerical behavior.
 
 \section{Solid elements}
 
@@ -270,18 +270,20 @@ Reduced integration changes the numerical character of the element; it is not me
 
 The formulation combines a quadratic hexahedral mesh with reduced integration. \val{C3D20} provides the corresponding fully integrated comparison formulation.
 
+Solid stress and strain recovery is performed at the constitutive integration points and then extrapolated to element nodes; global nodal results are averaged over element contributions. An element with fewer integration points cannot provide the same recovered spatial variation as its full-integration counterpart. See Chapter~\ref{chap:output-results} for the distinction between integration-point, element-nodal, and averaged nodal fields.
+
 \section{Shell elements}
 
 Shell elements reduce a three-dimensional thin structure to a two-dimensional midsurface with membrane, bending, and transverse-shear behaviour. Their kinematics represent structures whose thickness is small relative to the in-plane dimensions and whose result quantities are surface displacements, membrane forces, bending moments, transverse shear resultants, and top/bottom shell stresses rather than detailed three-dimensional through-thickness stress Fields.
 
 Shell quality depends strongly on surface mesh quality, normal consistency, aspect ratio, element warping, and thickness definition. The shell normal determines the top/bottom convention and affects pressure direction and result signs. In curved shell models, inconsistent normals therefore change the interpretation of bending results.
 
-\begin{warningbox}[Current and legacy shell families]
-The native shell elements \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{MITC8} are retained for legacy decks, verification, and comparison. The finite-rotation family consists of \val{MITC3FRT}, \val{MITC4FRT}, \val{MITC6FRT}, and \val{MITC8FRT}. The supported Abaqus shell labels are translated to this FRT family automatically.
+\begin{warningbox}[Shell input labels and current formulations]
+The native labels \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{MITC8} remain accepted as \emph{aliases} for the current finite-rotation \val{MITC3FRT}, \val{MITC4FRT}, \val{MITC6FRT}, and \val{MITC8FRT} implementations. They do not select the removed legacy linear shell formulations. The supported Abaqus shell labels also map to these four FRT implementations.
 \end{warningbox}
 
 \clearpage
-\subsection{\val{S3}: legacy 3-node triangular shell}
+\subsection{\val{S3}: 3-node finite-rotation triangular shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -294,11 +296,7 @@ The native shell elements \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, a
 <id>, <n1>, <n2>, <n3>
 \end{syntax}
 
-Native \val{S3} is the legacy three-node triangular shell. Triangular topology fills irregular surface meshes and transition regions, but a three-node triangle provides only low-order interpolation and typically needs a finer mesh than a regular quadrilateral discretization for smooth bending Fields.
-
-The element remains accepted so older FEMaster decks continue to run and legacy formulations can be compared with newer shells. \val{MITC3FRT} provides the corresponding current finite-rotation triangular formulation for geometrically nonlinear analyses and models with finite rotations.
-
-Extremely acute angles, abrupt size changes, and inconsistent normal orientation degrade triangular shell meshes. A dense mesh of poor triangles can still give inferior bending behaviour compared with a smaller set of well-shaped elements.
+\val{S3} is an accepted native input label for \val{MITC3FRT}. Triangular shell meshes cover irregular midsurfaces. This spelling selects the same current finite-rotation implementation as \val{MITC3FRT}; it is not a retained linear shell formulation.
 
 \clearpage
 \subsection{\val{MITC3FRT}: finite-rotation 3-node shell}
@@ -321,7 +319,7 @@ Its triangular topology represents irregular shell boundaries, local mesh transi
 For imported Abaqus input, both \val{S3} and \val{S3R} are translated to this formulation. The Abaqus suffix therefore does not select a separate reduced-integration implementation inside FEMaster.
 
 \clearpage
-\subsection{\val{S4}: legacy 4-node quadrilateral shell}
+\subsection{\val{S4}: 4-node finite-rotation quadrilateral shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -334,14 +332,10 @@ For imported Abaqus input, both \val{S3} and \val{S3R} are translated to this fo
 <id>, <n1>, <n2>, <n3>, <n4>
 \end{syntax}
 
-Native \val{S4} is the legacy four-node quadrilateral shell. Quadrilateral topology represents plates, webs, skins, and other surfaces with two natural in-plane directions, while this specific formulation retains legacy shell kinematics.
-
-The low-order formulation can suffer severe transverse-shear locking in thin bending-dominated problems. A coarse \val{S4} mesh may therefore appear dramatically too stiff while still satisfying equilibrium. Mesh refinement reduces this problem, while MITC interpolation addresses the shear constraint at formulation level.
-
-\val{MITC4FRT} is the corresponding current finite-rotation four-node formulation. \val{S4} remains available for compatibility, regression comparisons, and controlled studies of the legacy formulation.
+\val{S4} is an accepted native input label for \val{MITC4FRT}. This spelling selects the same current finite-rotation MITC quadrilateral implementation as \val{MITC4FRT}. It does not select the removed low-order linear shell implementation.
 
 \clearpage
-\subsection{\val{MITC4}: legacy 4-node shell with tied shear interpolation}
+\subsection{\val{MITC4}: 4-node finite-rotation MITC shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -354,11 +348,7 @@ The low-order formulation can suffer severe transverse-shear locking in thin ben
 <id>, <n1>, <n2>, <n3>, <n4>
 \end{syntax}
 
-\val{MITC4} uses the same four-node topology as \val{S4} but replaces the direct low-order transverse-shear interpolation with MITC-style tied shear interpolation. The purpose is to suppress the artificial shear constraint responsible for locking in thin bending problems.
-
-This element historically provided substantially less shear locking than \val{S4} on coarse thin-shell bending meshes. It remains available for regression and linear-formulation comparison. \val{MITC4FRT} combines the corresponding low-order MITC interpolation with the current finite-rotation shell formulation.
-
-MITC interpolation does not make a quadrilateral insensitive to mesh quality. Excessive warping, skew, poor aspect ratio, and inconsistent normals can still degrade both stiffness and stress recovery.
+\val{MITC4} is an accepted native input label for \val{MITC4FRT}. This spelling is an alias for \val{MITC4FRT}, including its finite-rotation kinematics and MITC shear treatment; it does not select a separate legacy linear formulation.
 
 \clearpage
 \subsection{\val{MITC4FRT}: finite-rotation 4-node MITC shell}
@@ -383,7 +373,7 @@ Tied shear interpolation addresses shear locking but does not eliminate geometri
 The supported Abaqus labels \val{S4} and \val{S4R} are both translated to \val{MITC4FRT}.
 
 \clearpage
-\subsection{\val{S6}: legacy 6-node triangular shell}
+\subsection{\val{S6}: 6-node finite-rotation triangular shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -396,9 +386,7 @@ The supported Abaqus labels \val{S4} and \val{S4R} are both translated to \val{M
 <id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>
 \end{syntax}
 
-Native \val{S6} is the legacy six-node quadratic triangular shell. The midside nodes improve geometric representation and allow a smoother in-plane and bending interpolation than \val{S3}. It remains available for older curved triangular shell meshes and comparisons with the corresponding FRT formulation.
-
-\val{MITC6FRT} provides the corresponding current finite-rotation formulation. The higher-order triangle can represent curved boundaries effectively, but badly curved or highly skewed elements can create poor mappings despite the higher interpolation order.
+\val{S6} is an accepted native input label for \val{MITC6FRT}. This spelling selects the same current finite-rotation six-node triangular implementation as \val{MITC6FRT}. Midside-node placement and curved-element distortion still affect the solution.
 
 \clearpage
 \subsection{\val{MITC6FRT}: finite-rotation 6-node shell}
@@ -421,7 +409,7 @@ The element represents curved shell regions with triangular topology at higher o
 Both Abaqus \val{S6} and \val{S6R} are translated to this formulation by the current reader.
 
 \clearpage
-\subsection{\val{S8}: legacy 8-node quadrilateral shell}
+\subsection{\val{S8}: 8-node finite-rotation quadrilateral shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -434,12 +422,10 @@ Both Abaqus \val{S6} and \val{S6R} are translated to this formulation by the cur
 <id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
 \end{syntax}
 
-Native \val{S8} is the legacy eight-node quadratic quadrilateral shell. Four corner nodes and four midside nodes provide higher-order representation of curved geometry and smooth bending Fields than \val{S4} when the element is well shaped.
-
-The formulation remains available for older models and comparison studies. \val{MITC8FRT} provides the corresponding current finite-rotation formulation. Higher order does not remove sensitivity to midside-node placement, aspect ratio, and warping.
+\val{S8} is an accepted native input label for \val{MITC8FRT}. This spelling selects the same current finite-rotation eight-node quadrilateral implementation as \val{MITC8FRT}. Its quadratic interpolation helps resolve smooth curvature but remains sensitive to warping and midside-node positioning.
 
 \clearpage
-\subsection{\val{MITC8}: legacy 8-node MITC shell}
+\subsection{\val{MITC8}: 8-node finite-rotation MITC shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -452,11 +438,7 @@ The formulation remains available for older models and comparison studies. \val{
 <id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
 \end{syntax}
 
-\val{MITC8} combines the eight-node quadratic quadrilateral topology with MITC-style transverse-shear interpolation. It provides high-order thin-shell bending behaviour in the legacy linear shell family and serves as a reference formulation for comparison with lower-order shell results.
-
-Because the interpolation is quadratic, a regular \val{MITC8} mesh can reproduce smooth bending fields with relatively few elements. The cost per element is higher than for \val{MITC4}, and distorted midside geometry can reduce the expected advantage.
-
-\val{MITC8FRT} provides the corresponding finite-rotation formulation for nonlinear and general-purpose shell models. Native \val{MITC8} retains the legacy linear shell behaviour for comparison studies.
+\val{MITC8} is an accepted native input label for \val{MITC8FRT}. This spelling is an alias for \val{MITC8FRT}; it no longer selects a separate legacy linear MITC shell. The current implementation uses finite rotations and MITC shear treatment.
 
 \clearpage
 \subsection{\val{MITC8FRT}: finite-rotation 8-node MITC shell}
@@ -528,7 +510,7 @@ M_e=\operatorname{diag}(m,m,m,0,0,0),
 \]
 so a positive mass activates the three translational components at the connected node. Several \val{MASS} elements may reference the same node; each represents an independent concentrated contribution and the assembled mass is additive.
 
-The point element has zero geometric volume, but its density-scaled field integration interprets \(m\) as the complete concentrated mass measure. Consequently, a regular \val{MASS} element contributes to the global mass matrix, eigenfrequency and transient analyses, inertia relief, and element-targeted mass-proportional body or inertial loads. For example, a native \cmd{VLOAD} or supported Abaqus \cmd{DLOAD} with \val{GRAV} produces the concentrated force \(m\boldsymbol a\) when the selected element region contains the point element.
+The point element has zero geometric volume, but its density-scaled field integration interprets \(m\) as the complete concentrated mass measure. Consequently, a regular \val{MASS} element contributes to the global mass matrix, eigenfrequency and transient analyses, inertia relief, and element-targeted mass-proportional body or inertial loads. The supported Abaqus \cmd{DLOAD} with \val{GRAV} produces the concentrated force \(m\boldsymbol a\) when the selected element region contains the point element. Native \cmd{VLOAD} instead denotes force density and does not load this zero-volume point element.
 
 Part-local \val{MASS} elements and their \cmd{MASS} property assignments are copied to every Instance during model compilation. An assembly-level \cmd{MASS} assignment instead targets compiled point elements through an assembly ELSET.
 
@@ -629,7 +611,7 @@ No element is universally optimal. The following relationships summarize the pri
   \item well-shaped hexahedra align naturally with structured and swept geometries;
   \item \val{C3D5} provides transition topology between other solid families;
   \item reduced-integration solids introduce deformation modes and refinement sensitivity that solver convergence alone does not characterize;
-  \item the FRT shell family provides finite-rotation kinematics, while the non-FRT shell types retain legacy formulations;
+  \item all accepted shell labels select the current finite-rotation formulations; non-FRT native labels are compatibility aliases rather than separate linear elements;
   \item shells omit detailed three-dimensional through-thickness stress in exchange for a midsurface representation of thin structures;
   \item \val{MASS}, \val{ROTARYI}, and \val{SPRING1} provide concentrated diagonal point inertia or ground stiffness without continuum geometry or stress recovery;
   \item beams and trusses impose one-dimensional kinematic assumptions on the represented member;
