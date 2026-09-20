@@ -7,7 +7,7 @@ These settings can strongly affect robustness and computational cost, but they d
 
 \keywordpage{SOLVER}
 
-\cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases and for the supported Abaqus \cmd{STEP} procedures. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
+\cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases and the supported Abaqus \cmd{STEP} procedures. In Abaqus input, it is a FEMaster extension and must appear after the procedure keyword has created the active analysis; it is not an Abaqus-native solver-selection card. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
 
 A direct method factorizes the sparse equation matrix and then solves by substitutions. Its convergence does not depend on an iterative stopping process, while its factorization memory can become substantial for large three-dimensional models.
 
@@ -33,7 +33,7 @@ C&0
 \]
 which requires a linear solver that can handle indefinite matrices and is therefore restricted to supported direct configurations.
 
-The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
+The registration applies to linear static, nonlinear static, linear buckling, topology-static, linear transient, and linear harmonic analyses. The eigenfrequency loadcase does not currently implement this \cmd{SOLVER} setting. The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
 
 The default CPU/direct configuration avoids iterative convergence and backend-specific GPU requirements. Indirect or GPU configurations exchange this baseline for different memory, scaling, and hardware characteristics; their numerical behaviour still depends on the physical model and constraint system.
 
@@ -50,17 +50,13 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 ...
 *END
 \end{femasterdeck}
-\begin{noabaqus}
-FEMaster also accepts its own \cmd{SOLVER} extension inside an Abaqus \cmd{STEP}, \emph{after} the procedure card has created the active analysis:
-\begin{syntax}
+\begin{abaqusdeck}
 *STEP
 *STATIC
 *SOLVER, DEVICE=CPU, METHOD=INDIRECT
 ...
 *END STEP
-\end{syntax}
-This is a FEMaster extension to the supported Abaqus input subset, not a claim that every Abaqus solver-control keyword is understood.
-\end{noabaqus}
+\end{abaqusdeck}
 \end{dialectexamples}
 
 \keywordpage{CONSTRAINTMETHOD}
