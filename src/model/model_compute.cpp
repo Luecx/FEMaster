@@ -25,6 +25,7 @@
  */
 
 #include "../core/config.h"
+#include "../core/parallel.h"
 #include "element/element_structural.h"
 #include "element/element_thermal.h"
 #include "model.h"
@@ -143,32 +144,39 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
 #ifdef USE_MKL
     mkl_set_num_threads(1);
 #endif
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
     // Recover element-nodal values into non-overlapping compiled row ranges
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-        if (!el) continue;
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!el) return;
 
-        if (auto sel = el->as<StructuralElement>()) {
-            RowMatrix rst = sel->stress_strain_nodal_rst();
-            if (rst.rows() == 0) continue;
+                if (auto sel = el->as<StructuralElement>()) {
+                    RowMatrix rst = sel->stress_strain_nodal_rst();
+                    if (rst.rows() == 0) return;
 
-            logging::error(rst.rows() == sel->n_nodes(),
-                "Element ", sel->elem_id, " returned ", rst.rows(),
-                " nodal stress coordinates, expected ", sel->n_nodes());
-            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-            sel->compute_stress_strain(
-                &element_strain,
-                &element_stress,
-                displacement,
-                rst,
-                static_cast<int>(offset),
-                use_green_lagrange_nl
-            );
-            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
-        }
+                    logging::error(rst.rows() == sel->n_nodes(),
+                        "Element ", sel->elem_id, " returned ", rst.rows(),
+                        " nodal stress coordinates, expected ", sel->n_nodes());
+                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                    sel->compute_stress_strain(
+                        &element_strain,
+                        &element_stress,
+                        displacement,
+                        rst,
+                        static_cast<int>(offset),
+                        use_green_lagrange_nl
+                    );
+                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
+                }
+            }, Index(8));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts after element recovery
@@ -221,34 +229,41 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
 #ifdef USE_MKL
     mkl_set_num_threads(1);
 #endif
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
     // Evaluate both faces in each element's disjoint compiled row range
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-        if (!el) continue;
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!el) return;
 
-        if (auto sel = el->as<StructuralElement>()) {
-            RowMatrix base_rst = sel->stress_strain_nodal_rst();
-            if (base_rst.rows() == 0) continue;
+                if (auto sel = el->as<StructuralElement>()) {
+                    RowMatrix base_rst = sel->stress_strain_nodal_rst();
+                    if (base_rst.rows() == 0) return;
 
-            RowMatrix rst_bot = base_rst;
-            RowMatrix rst_top = base_rst;
+                    RowMatrix rst_bot = base_rst;
+                    RowMatrix rst_top = base_rst;
 
-            // Select the two natural thickness faces for shell formulations
-            if (sel->is_shell()) {
-                for (int i = 0; i < base_rst.rows(); ++i) {
-                    rst_bot(i, 2) = -1;
-                    rst_top(i, 2) =  1;
+                    // Select the two natural thickness faces for shell formulations
+                    if (sel->is_shell()) {
+                        for (int i = 0; i < base_rst.rows(); ++i) {
+                            rst_bot(i, 2) = -1;
+                            rst_top(i, 2) =  1;
+                        }
+                    }
+
+                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                    sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
+                    sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
+                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
                 }
-            }
-
-            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-            sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
-            sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
-            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
-        }
+            }, Index(8));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts after element recovery
@@ -492,17 +507,24 @@ Field Model::compute_section_forces(Field& displacement) {
 #ifdef USE_MKL
     mkl_set_num_threads(1);
 #endif
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
     // Recover section forces into each element's disjoint nodal row range
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-        if (!el) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-            sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
-        }
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!el) return;
+                if (auto sel = el->as<StructuralElement>()) {
+                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                    sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
+                }
+            }, Index(32));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts
@@ -542,17 +564,24 @@ Field Model::compute_shear_flow(Field& displacement) {
 #ifdef USE_MKL
     mkl_set_num_threads(1);
 #endif
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
     // Recover shear flow into each element's disjoint nodal row range
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-        if (!el) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-            sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
-        }
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!el) return;
+                if (auto sel = el->as<StructuralElement>()) {
+                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                    sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
+                }
+            }, Index(32));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts
