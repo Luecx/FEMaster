@@ -292,7 +292,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         }
 
         // Each master column defines an independent triangular solve
-parallel::for_index(master_columns, global_config.max_threads,
+        parallel::for_index(master_columns, global_config.max_threads,
             [&](int master, int /*worker*/) {
                 std::unordered_map<int, Precision> rhs{};
                 rhs.reserve(16);
