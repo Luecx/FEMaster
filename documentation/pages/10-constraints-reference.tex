@@ -151,7 +151,7 @@ LEFT, 1, 1.0, RIGHT, 1, -1.0
 
 \cmd{TIE} creates a permanent kinematic connection between slave geometry and master geometry located within a prescribed search distance. The slave may be a node set or a surface set. The master may be a surface set or a line set. FEMaster selects the appropriate supported tie relation from these region types.
 
-\key{DISTANCE} defines the geometric search tolerance used to associate slave locations with the master geometry. A distance below the interface separation leaves intended locations unmatched, whereas a distance extending to unrelated geometry admits additional candidates. \key{ADJUST=YES} permits the supported initial adjustment of slave geometry to the tie relation; the default is \val{NO}.
+\key{DISTANCE} defines the geometric search tolerance used to associate slave locations with the master geometry. A distance below the interface separation leaves intended locations unmatched, whereas a distance extending to unrelated geometry admits additional candidates. \key{ADJUST=YES} permits the supported initial adjustment of slave geometry to the tie relation; the default is \val{NO}. The adjustment is performed once when the tie definition is materialized, before automatic shell reference normals are generated. Subsequent constraint collection does not project the slave nodes again or mutate the reference geometry.
 
 A Tie represents a bonded or otherwise permanently connected interface. Once the relation has been established, opening or sliding that violates the selected compatibility equations is not permitted. It therefore represents idealized bonded interfaces, mesh transitions, or connections that do not separate. \cmd{CONTACT} instead represents interfaces that may open, close, or lose contact.
 
