@@ -150,15 +150,15 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \val{C3D15} & \val{C3D15} & 15-node quadratic wedge solid \\
 \val{C3D20} & \val{C3D20} & 20-node quadratic hexahedral solid \\
 \val{C3D20R} & \val{C3D20R} & 20-node reduced-integration quadratic hexahedral solid \\
-\val{S3} & -- & Legacy native 3-node shell \\
+\val{S3} & -- & 3-node finite-rotation triangular shell; native alias; maps to \val{MITC3FRT} \\
 \val{MITC3FRT} & \val{S3}, \val{S3R} & Current finite-rotation 3-node shell \\
-\val{S4} & -- & Legacy native 4-node shell \\
-\val{MITC4} & -- & Legacy native 4-node MITC shell \\
+\val{S4} & -- & 4-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC4FRT} \\
+\val{MITC4} & -- & 4-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC4FRT} \\
 \val{MITC4FRT} & \val{S4}, \val{S4R} & Current finite-rotation 4-node MITC shell \\
-\val{S6} & -- & Legacy native 6-node shell \\
+\val{S6} & -- & 6-node finite-rotation triangular shell; native alias; maps to \val{MITC6FRT} \\
 \val{MITC6FRT} & \val{S6}, \val{S6R} & Current finite-rotation 6-node shell \\
-\val{S8} & -- & Legacy native 8-node shell \\
-\val{MITC8} & -- & Legacy native 8-node MITC shell \\
+\val{S8} & -- & 8-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC8FRT} \\
+\val{MITC8} & -- & 8-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC8FRT} \\
 \val{MITC8FRT} & \val{S8}, \val{S8R} & Current finite-rotation 8-node MITC shell \\
 \val{QSPT} & -- & Native quadrilateral shear-panel element \\
 \val{B33} & \val{B33} & 2-node 3D beam \\
@@ -170,7 +170,7 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \end{longtable}
 \normalsize
 
-The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4} and \val{S4R} select FEMaster's \val{MITC4FRT}; they do not select the legacy native \val{S4}. Detailed topology figures, formulation notes, and element-selection guidance are given in the Elements chapter.
+The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}/\val{S4R} and native \val{S4}/\val{MITC4}/\val{MITC4FRT} all select the current four-node finite-rotation shell. The non-FRT input labels are retained for syntax compatibility but do not retain separate legacy linear formulations. Detailed topology figures and formulation notes are given in the Elements chapter.
 
 \section{Coverage notes}
 
