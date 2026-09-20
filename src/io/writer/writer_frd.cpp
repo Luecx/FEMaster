@@ -1006,7 +1006,7 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
     const ID num_threads = output_thread_count(positions.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
@@ -1073,7 +1073,7 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
     const ID num_threads = output_thread_count(compiled_count);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
@@ -1228,7 +1228,7 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     const ID num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
