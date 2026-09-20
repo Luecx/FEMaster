@@ -98,6 +98,71 @@ The axial reaction at the fixed node balances the applied 1000 N load to numeric
 \sigma=\frac{F}{A}=10\ \mathrm{MPa}.
 \]
 
+\section{Nonlinear axial response with tabulated J2 plasticity}
+
+This two-node bar illustrates the same \cmd{ELASTIC}/\cmd{PLASTIC} material definition in the native and supported Abaqus parsers. The initial yield force for the 100\,mm\(^2\) section is \(A\sigma_y=25\,000\) N. The prescribed 27\,000 N tensile force is above this initial threshold; the nonlinear solution therefore requires constitutive history rather than merely using the elastic stiffness. The table gives \emph{equivalent plastic strain}, not total strain. No mass density is required for this quasistatic case.
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE
+1,    0., 0., 0.
+2, 1000., 0., 0.
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*PLASTIC, TYPE=J2
+250., 0.
+300., 0.02
+*TRUSS SECTION, ELSET=BAR,
+ MATERIAL=STEEL
+100.
+*SUPPORT, SUPPORT_COLLECTOR=BC
+1, 0., 0., 0., NAN, NAN, NAN
+2, NAN, 0., 0., NAN, NAN, NAN
+*CLOAD, LOAD_COLLECTOR=TENSION
+2, 27000., 0., 0., 0., 0., 0.
+*LOADCASE, TYPE=NONLINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+TENSION
+*NONLINEAR, INCREMENTS=8,
+ MAXITER=40, TOL=1e-5
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*NODE
+1,    0., 0., 0.
+2, 1000., 0., 0.
+*ELEMENT, TYPE=T3D2, ELSET=BAR
+1, 1, 2
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*PLASTIC
+250., 0.
+300., 0.02
+*SOLID SECTION, ELSET=BAR,
+ MATERIAL=STEEL
+100.
+*STEP, NLGEOM=YES, INC=80
+*STATIC
+0.125, 1., 1e-5, 0.25
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*BOUNDARY
+1, 1, 3, 0.
+2, 2, 3, 0.
+*CLOAD
+2, 1, 27000.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+Because the Abaqus deck uses geometric nonlinearity, compare results using the same load, deformation, constitutive stress measure, and nonlinear kinematics when checking against another implementation.
+
 \section{Reusable Part and translated Instance}
 
 This example demonstrates the optional Part/Assembly hierarchy. The material is defined once at model level. The reusable rod topology and Section assignment are defined inside a Part. One Instance translates the complete Part by 500 mm in \(x\). Assembly-level node sets then identify the local endpoint IDs on that particular Instance.
