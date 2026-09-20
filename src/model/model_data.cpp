@@ -22,6 +22,7 @@
 #include "element/element.h"
 
 #include "../core/config.h"
+#include "../core/parallel.h"
 
 #include <vector>
 
@@ -364,10 +365,8 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
     Field nodal{name, FieldDomain::NODE, node_count, element_nodal.components};
     nodal.set_zero();
 
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
-    for (Index node = 0; node < node_count; ++node) {
+parallel::for_index(node_count, global_config.max_threads,
+        [&](Index node, int /*worker*/) {
         Precision weight_sum = Precision(0);
         const Index begin = node_offsets[static_cast<std::size_t>(node)];
         const Index end   = node_offsets[static_cast<std::size_t>(node + 1)];
@@ -383,12 +382,12 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
             }
         }
 
-        if (weight_sum == Precision(0)) continue;
+        if (weight_sum == Precision(0)) return;
 
         for (Index component = 0; component < element_nodal.components; ++component) {
             nodal(node, component) /= weight_sum;
         }
-    }
+        }, Index(256));
 
     return nodal;
 }
