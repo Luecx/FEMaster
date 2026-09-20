@@ -23,8 +23,7 @@
 #include <mutex>
 
 #include "config.h"
-
-#include <Eigen/Core>
+#include "types_eig.h"
 
 #ifdef USE_MKL
     #include <mkl_service.h>
