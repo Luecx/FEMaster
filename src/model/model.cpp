@@ -31,6 +31,7 @@
 #include "../bc/support_collector.h"
 #include "../bc/thermal_collector.h"
 #include "../core/config.h"
+#include "../core/parallel.h"
 
 #include <charconv>
 #include <exception>
@@ -83,39 +84,24 @@ ID parse_local_id(const std::string& source, const char* entity) {
  */
 void Model::step_begin() {
     const Index element_count = static_cast<Index>(_data->elements.size());
-    std::exception_ptr failure = nullptr;
 
-    // Initialize independent analysis-local element state in parallel. Each
-    // worker catches its own exception so no exception escapes the OpenMP region.
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        try {
-            auto& elem = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!elem) continue;
-
-            if (auto* structural = elem->as<StructuralElement>()) {
-                structural->step_begin();
-            }
-        } catch (...) {
-            // Preserve the first failure while allowing all workers to reach the
-            // implicit barrier before model-level cleanup is attempted.
-#ifdef _OPENMP
-            #pragma omp critical
-#endif
-            {
-                if (!failure) {
-                    failure = std::current_exception();
+    // Initialize independent element state using the shared exception-safe loop
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!element) {
+                    return;
                 }
-            }
-        }
-    }
 
-    // Release partially initialized state before propagating a worker failure
-    if (failure) {
+                if (auto* structural = element->as<StructuralElement>()) {
+                    structural->step_begin();
+                }
+            }, Index(64));
+    } catch (...) {
+        // Release caches initialized before the first element failure
         step_end();
-        std::rethrow_exception(failure);
+        throw;
     }
 }
 
