@@ -292,7 +292,7 @@ Field Model::compute_shell_resultants(Field& displacement) {
     const Index node_count    = _data->field_rows(FieldDomain::NODE);
     const Index element_count = static_cast<Index>(_data->elements.size());
 
-// Limit full-sized nodal accumulators to workers with useful element batches
+    // Limit full-sized nodal accumulators to workers with useful element batches
     const int thread_count = parallel::worker_count(element_count, global_config.max_threads, Index(64));
 
     // Allocate independent nodal accumulators because adjacent shell elements
@@ -345,7 +345,6 @@ Field Model::compute_shell_resultants(Field& displacement) {
 #endif
     Eigen::setNbThreads(global_config.max_threads);
 
-
     // Reduce worker-local contributions independently for every global node
     Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
     resultants.set_zero();
@@ -368,7 +367,7 @@ Field Model::compute_shell_resultants(Field& displacement) {
             for (Index component = 0; component < resultants.components; ++component) {
                 resultants(node, component) /= count;
             }
-        }, Index(256))
+        }, Index(256));
 
     // Validate the averaged result field before returning it
     resultants.check_finite("Shell resultants");
@@ -650,13 +649,11 @@ Field Model::compute_heat_flux(const Field& temperature) {
         throw;
     }
 
-    // Restore the configured linear-algebra thread counts before propagating a
-    // captured failure or entering the independent nodal projection.
+    // Restore linear-algebra threading before the independent nodal projection
 #ifdef USE_MKL
     mkl_set_num_threads(global_config.max_threads);
 #endif
     Eigen::setNbThreads(global_config.max_threads);
-
 
     // Average all participating element-local nodal vectors onto unique global
     // nodes. The projection itself is parallelized over independent target nodes.
