@@ -33,12 +33,11 @@
  */
 
 #include "../core/logging.h"
+#include "../core/parallel.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
 
 #include <algorithm>
-#include <atomic>
-#include <exception>
 #include <limits>
 #include <type_traits>
 
@@ -271,7 +270,9 @@ template<typename Lambda>
 SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>& elements,
                                            const SystemDofIds& indices,
                                            Lambda&& compute_local_matrix,
-                                           model::NodeData* nodal_forces = nullptr) {
+                                           model::NodeData* nodal_forces,
+                                           int num_threads,
+                                           std::size_t min_batch_size) {
     // Use the storage-index type selected by Eigen for direct access to the
     // compressed sparse matrix arrays.
     using StorageIndex = typename SparseMatrix::StorageIndex;
@@ -287,7 +288,6 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
     // Read the requested OpenMP worker count and determine the dimension of the
     // active global system.
-    const int num_threads = std::min(128, global_config.max_threads);
     const int global_size = indices.maxCoeff() + 1;
 
     auto restore_threading = []() {
@@ -332,115 +332,93 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     Timer timer;
     timer.start();
 
-    // Exceptions thrown inside an OpenMP worker cannot leave the parallel
-    // region directly. Capture the first failed element evaluation and rethrow
-    // it on the calling thread after all workers have left the region.
-    std::atomic_bool   assembly_failed{false};
-    std::exception_ptr assembly_exception = nullptr;
-
-    // Distribute element blocks statically among the configured workers. Each
-    // iteration writes only into storage owned by its current OpenMP thread.
-    #pragma omp parallel for schedule(static, 1024) num_threads(num_threads)
-    for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
-        const auto& element = elements[elem_idx];
-
-        // Null element pointers do not contribute to the global matrix.
-        if (!element) {
-            continue;
-        }
-
-        if (assembly_failed.load(std::memory_order_relaxed)) {
-            continue;
-        }
-
-        try {
-            // Select the triplet buffer belonging exclusively to the current
-            // OpenMP worker.
-            const int thread_id = omp_get_thread_num();
-            auto& local_triplets = thread_triplets[thread_id];
-
-            // Provide aligned fixed-size storage for the local matrix and the
-            // element's mapped global DOF identifiers.
-            constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-            alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
-            alignas(64) int       global_dofs[MAX_LOCAL_MATRIX_SIZE];
-
-            // Evaluate the current element matrix into the worker-local
-            // temporary storage.
-            model::NodeData* local_nodal_forces = nodal_forces
-                ? &thread_nodal_forces[static_cast<std::size_t>(thread_id)]
-                : nullptr;
-
-            auto local_matrix = compute_local_matrix_with_optional_forces(
-                compute_local_matrix,
-                element,
-                local_matrix_storage,
-                local_nodal_forces
-            );
-
-            // Infer the complete local algebraic dimension and the uniform
-            // number of DOFs associated with each node.
-            int num_nodes         = element->n_nodes();
-            int local_matrix_size = local_matrix.rows();
-            int dofs_per_node     = local_matrix_size / num_nodes;
-            int local_dof_count   = num_nodes * dofs_per_node;
-
-            // Resolve every local-to-global DOF mapping once per element.
-            // Reusing this compact array avoids repeated map lookups during the
-            // quadratic local-matrix traversal.
-            for (int node = 0; node < num_nodes; ++node) {
-                const ID node_id = element->nodes()[node];
-
-                for (int dof = 0; dof < dofs_per_node; ++dof) {
-                    global_dofs[node * dofs_per_node + dof] = indices(node_id, dof);
-                }
-            }
-
-            // Emit all active local matrix entries into the current worker's
-            // triplet batch.
-            for (int local_row = 0; local_row < local_dof_count; ++local_row) {
-                const int global_row = global_dofs[local_row];
-
-                // Skip the complete local row when its associated DOF is
-                // inactive.
-                if (global_row < 0) {
-                    continue;
+    // Assemble independent elements into their worker-local buffers. The helper
+    // captures worker exceptions and rethrows them on the calling thread.
+    try {
+        parallel::for_index(elements.size(), num_threads,
+            [&](std::size_t elem_idx, int thread_id) {
+                const auto& element = elements[elem_idx];
+                if (!element) {
+                    return;
                 }
 
-                for (int local_col = 0; local_col < local_dof_count; ++local_col) {
-                    const int global_col = global_dofs[local_col];
+                // Select the triplet buffer belonging exclusively to the current
+                // OpenMP worker.
+                auto& local_triplets = thread_triplets[thread_id];
 
-                    // Assemble coefficients only when both local indices map to
-                    // active global DOFs.
-                    if (global_col >= 0) {
-                        local_triplets.emplace_back(global_row, global_col, local_matrix(local_row, local_col));
+                // Provide aligned fixed-size storage for the local matrix and the
+                // element's mapped global DOF identifiers.
+                constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
+                alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
+                alignas(64) int       global_dofs[MAX_LOCAL_MATRIX_SIZE];
+
+                // Evaluate the current element matrix into the worker-local
+                // temporary storage.
+                model::NodeData* local_nodal_forces = nodal_forces
+                    ? &thread_nodal_forces[static_cast<std::size_t>(thread_id)]
+                    : nullptr;
+
+                auto local_matrix = compute_local_matrix_with_optional_forces(
+                    compute_local_matrix,
+                    element,
+                    local_matrix_storage,
+                    local_nodal_forces
+                );
+
+                // Infer the complete local algebraic dimension and the uniform
+                // number of DOFs associated with each node.
+                int num_nodes         = element->n_nodes();
+                int local_matrix_size = local_matrix.rows();
+                int dofs_per_node     = local_matrix_size / num_nodes;
+                int local_dof_count   = num_nodes * dofs_per_node;
+
+                // Resolve every local-to-global DOF mapping once per element.
+                // Reusing this compact array avoids repeated map lookups during the
+                // quadratic local-matrix traversal.
+                for (int node = 0; node < num_nodes; ++node) {
+                    const ID node_id = element->nodes()[node];
+
+                    for (int dof = 0; dof < dofs_per_node; ++dof) {
+                        global_dofs[node * dofs_per_node + dof] = indices(node_id, dof);
                     }
                 }
-            }
 
-            // Periodically insert large worker-local batches into the
-            // associated partial sparse matrix to bound temporary triplet
-            // memory.
-            if (local_triplets.size() > BATCH_SIZE) {
-                thread_matrices[thread_id].insertFromTriplets(local_triplets.begin(), local_triplets.end());
-                local_triplets.clear();
-            }
-        } catch (...) {
-            if (!assembly_failed.exchange(true, std::memory_order_relaxed)) {
-                #pragma omp critical(fem_assemble_exception)
-                {
-                    assembly_exception = std::current_exception();
+                // Emit all active local matrix entries into the current worker's
+                // triplet batch.
+                for (int local_row = 0; local_row < local_dof_count; ++local_row) {
+                    const int global_row = global_dofs[local_row];
+
+                    // Skip the complete local row when its associated DOF is
+                    // inactive.
+                    if (global_row < 0) {
+                        continue;
+                    }
+
+                    for (int local_col = 0; local_col < local_dof_count; ++local_col) {
+                        const int global_col = global_dofs[local_col];
+
+                        // Assemble coefficients only when both local indices map to
+                        // active global DOFs.
+                        if (global_col >= 0) {
+                            local_triplets.emplace_back(global_row, global_col, local_matrix(local_row, local_col));
+                        }
+                    }
                 }
-            }
-        }
+
+                // Periodically insert large worker-local batches into the
+                // associated partial sparse matrix to bound temporary triplet
+                // memory.
+                if (local_triplets.size() > BATCH_SIZE) {
+                    thread_matrices[thread_id].insertFromTriplets(local_triplets.begin(), local_triplets.end());
+                    local_triplets.clear();
+                }
+            }, min_batch_size);
+    } catch (...) {
+        restore_threading();
+        throw;
     }
 
     timer.stop();
-
-    if (assembly_exception) {
-        restore_threading();
-        std::rethrow_exception(assembly_exception);
-    }
 
     logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
     timer.start();
@@ -676,12 +654,19 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     // OpenMP support is unavailable, so assembly must remain serial.
     return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
 #else
-    // Use parallel assembly only when more than one worker is configured.
-    if (global_config.max_threads > 1) {
-        return assemble_matrix_multithreaded(elements, indices, compute_local_matrix, nodal_forces);
-    } else {
-        return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
+    // Avoid worker-local sparse matrices for small element batches and systems
+    constexpr std::size_t min_batch_size = 64;
+    const int num_threads = parallel::worker_count(
+        elements.size(), std::min(128, static_cast<int>(global_config.max_threads)), min_batch_size
+    );
+
+    if (num_threads > 1 && indices.maxCoeff() + 1 > 128) {
+        return assemble_matrix_multithreaded(
+            elements, indices, compute_local_matrix, nodal_forces, num_threads, min_batch_size
+        );
     }
+
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
 #endif
 }
 
