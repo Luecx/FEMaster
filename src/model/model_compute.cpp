@@ -134,51 +134,32 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
     element_strain.set_zero();
     element_weights.set_zero();
 
-    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
     // Recover element-nodal values into non-overlapping compiled row ranges
-    try {
-        parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!el) return;
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
 
-                if (auto sel = el->as<StructuralElement>()) {
-                    RowMatrix rst = sel->stress_strain_nodal_rst();
-                    if (rst.rows() == 0) return;
+            if (auto sel = el->as<StructuralElement>()) {
+                RowMatrix rst = sel->stress_strain_nodal_rst();
+                if (rst.rows() == 0) return;
 
-                    logging::error(rst.rows() == sel->n_nodes(),
-                        "Element ", sel->elem_id, " returned ", rst.rows(),
-                        " nodal stress coordinates, expected ", sel->n_nodes());
-                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                    sel->compute_stress_strain(
-                        &element_strain,
-                        &element_stress,
-                        displacement,
-                        rst,
-                        static_cast<int>(offset),
-                        use_green_lagrange_nl
-                    );
-                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
-                }
-            }, Index(8));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
+                logging::error(rst.rows() == sel->n_nodes(),
+                    "Element ", sel->elem_id, " returned ", rst.rows(),
+                    " nodal stress coordinates, expected ", sel->n_nodes());
+                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                sel->compute_stress_strain(
+                    &element_strain,
+                    &element_stress,
+                    displacement,
+                    rst,
+                    static_cast<int>(offset),
+                    use_green_lagrange_nl
+                );
+                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
+            }
+        }, Index(8));
 
-    // Restore the configured linear-algebra thread counts after element recovery
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
 
     // Average participating element values onto global nodes and validate them
     Field stress = _data->element_nodal_to_nodal(element_stress, element_weights, "STRESS");
@@ -219,53 +200,34 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     element_bot.set_zero();
     element_weights.set_zero();
 
-    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
     // Evaluate both faces in each element's disjoint compiled row range
-    try {
-        parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!el) return;
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
 
-                if (auto sel = el->as<StructuralElement>()) {
-                    RowMatrix base_rst = sel->stress_strain_nodal_rst();
-                    if (base_rst.rows() == 0) return;
+            if (auto sel = el->as<StructuralElement>()) {
+                RowMatrix base_rst = sel->stress_strain_nodal_rst();
+                if (base_rst.rows() == 0) return;
 
-                    RowMatrix rst_bot = base_rst;
-                    RowMatrix rst_top = base_rst;
+                RowMatrix rst_bot = base_rst;
+                RowMatrix rst_top = base_rst;
 
-                    // Select the two natural thickness faces for shell formulations
-                    if (sel->is_shell()) {
-                        for (int i = 0; i < base_rst.rows(); ++i) {
-                            rst_bot(i, 2) = -1;
-                            rst_top(i, 2) =  1;
-                        }
+                // Select the two natural thickness faces for shell formulations
+                if (sel->is_shell()) {
+                    for (int i = 0; i < base_rst.rows(); ++i) {
+                        rst_bot(i, 2) = -1;
+                        rst_top(i, 2) =  1;
                     }
-
-                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                    sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
-                    sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
-                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
                 }
-            }, Index(8));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
 
-    // Restore the configured linear-algebra thread counts after element recovery
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
+                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
+                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
+                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
+            }
+        }, Index(8));
+
 
     // Average face values onto global nodes and reject invalid numerical output
     Field stress_top = _data->element_nodal_to_nodal(element_top, element_weights, "STRESS_TOP");
@@ -309,41 +271,22 @@ Field Model::compute_shell_resultants(Field& displacement) {
         thread_counts.back().set_zero();
     }
 
-    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
 
     // Recover each element into the accumulator owned by its worker
-    try {
-        parallel::for_index(element_count, thread_count,
-            [&](Index elem_idx, int thread) {
-                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!el) return;
+    parallel::for_index(element_count, thread_count,
+        [&](Index elem_idx, int thread) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
 
-                if (auto sel = el->as<StructuralElement>()) {
-                    sel->compute_shell_section_forces(
-                        thread_resultants[static_cast<std::size_t>(thread)],
-                        thread_counts[static_cast<std::size_t>(thread)],
-                        displacement
-                    );
-                }
-            }, Index(64));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
+            if (auto sel = el->as<StructuralElement>()) {
+                sel->compute_shell_section_forces(
+                    thread_resultants[static_cast<std::size_t>(thread)],
+                    thread_counts[static_cast<std::size_t>(thread)],
+                    displacement
+                );
+            }
+        }, Index(64));
 
-    // Restore the configured linear-algebra thread counts after element recovery
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
 
     // Reduce worker-local contributions independently for every global node
     Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
@@ -475,36 +418,17 @@ Field Model::compute_section_forces(Field& displacement) {
     Field beam_forces{"BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
     beam_forces.set_zero();
 
-    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
     // Recover section forces into each element's disjoint nodal row range
-    try {
-        parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!el) return;
-                if (auto sel = el->as<StructuralElement>()) {
-                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                    sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
-                }
-            }, Index(32));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
+            if (auto sel = el->as<StructuralElement>()) {
+                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
+            }
+        }, Index(32));
 
-    // Restore the configured linear-algebra thread counts
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
     return beam_forces;
 }
 
@@ -532,36 +456,17 @@ Field Model::compute_shear_flow(Field& displacement) {
     Field shear_flow{"SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
     shear_flow.set_zero();
 
-    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
     // Recover shear flow into each element's disjoint nodal row range
-    try {
-        parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!el) return;
-                if (auto sel = el->as<StructuralElement>()) {
-                    const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                    sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
-                }
-            }, Index(32));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
+            if (auto sel = el->as<StructuralElement>()) {
+                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+                sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
+            }
+        }, Index(32));
 
-    // Restore the configured linear-algebra thread counts
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
     return shear_flow;
 }
 
@@ -619,41 +524,21 @@ Field Model::compute_heat_flux(const Field& temperature) {
     element_heat_flux.set_zero();
     element_weights.set_zero();
 
-    // Prevent nested Eigen/MKL threading inside the explicit element-parallel
-    // recovery loop.
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    mkl_set_num_threads(1);
-#endif
 
     // Recover each thermal element into its disjoint element-nodal field range
-    try {
-        parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-                if (!element) {
-                    return;
-                }
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) {
+                return;
+            }
 
-                if (auto* thermal = element->as<ThermalElement>()) {
-                    thermal->compute_heat_flux(element_heat_flux, temperature);
-                    element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
-                }
-            }, Index(8));
-    } catch (...) {
-        // Restore linear-algebra threading before propagating a recovery failure
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-        Eigen::setNbThreads(global_config.max_threads);
-        throw;
-    }
+            if (auto* thermal = element->as<ThermalElement>()) {
+                thermal->compute_heat_flux(element_heat_flux, temperature);
+                element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
+            }
+        }, Index(8));
 
-    // Restore linear-algebra threading before the independent nodal projection
-#ifdef USE_MKL
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-    Eigen::setNbThreads(global_config.max_threads);
 
     // Average all participating element-local nodal vectors onto unique global
     // nodes. The projection itself is parallelized over independent target nodes.
