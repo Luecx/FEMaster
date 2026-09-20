@@ -22,11 +22,48 @@
 #include <exception>
 #include <mutex>
 
+#include "config.h"
+
+#include <Eigen/Core>
+
+#ifdef USE_MKL
+    #include <mkl_service.h>
+#endif
+
 #ifdef _OPENMP
     #include <omp.h>
 #endif
 
 namespace fem::parallel {
+
+/**
+ * Restricts Eigen and MKL to one internal worker for an explicit loop and
+ * restores FEMaster's configured thread count on every exit, including throws.
+ * Instantiate on the calling thread, outside any OpenMP worker region.
+ */
+class ScopedLinearAlgebraThreads {
+public:
+    ScopedLinearAlgebraThreads() { limit(); }
+
+    ScopedLinearAlgebraThreads(const ScopedLinearAlgebraThreads&) = delete;
+    ScopedLinearAlgebraThreads& operator=(const ScopedLinearAlgebraThreads&) = delete;
+
+    ~ScopedLinearAlgebraThreads() {
+        Eigen::setNbThreads(global_config.max_threads);
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+    }
+
+    // The indexed helper restores the configured counts when it returns.
+    // Call this again if the caller has further explicit OpenMP work afterwards.
+    void limit() const {
+        Eigen::setNbThreads(1);
+#ifdef USE_MKL
+        mkl_set_num_threads(1);
+#endif
+    }
+};
 
 /**
  * Returns the useful worker count for an independent indexed loop.
@@ -85,6 +122,10 @@ void for_index(Index count, int max_threads, Function&& function, Index min_batc
     if (count <= 0) {
         return;
     }
+
+    // Applies to both the serial and OpenMP paths; RAII also restores the
+    // configured Eigen/MKL counts before propagating a callback exception.
+    const ScopedLinearAlgebraThreads threading;
 
 #ifdef _OPENMP
     const int threads = worker_count(count, max_threads, min_batch_size);
