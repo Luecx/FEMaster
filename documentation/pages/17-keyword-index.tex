@@ -37,6 +37,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \midrule
 \cmd{MATERIAL} & \checkmark & \checkmark & Materials \\
 \cmd{ELASTIC} & \checkmark & \checkmark & Materials \\
+\cmd{PLASTIC} & \checkmark & \checkmark & Materials; isotropic J2 plasticity \\
 \cmd{HYPERELASTIC} & \checkmark & \checkmark & Materials \\
 \cmd{DENSITY} & \checkmark & \checkmark & Materials \\
 \cmd{THERMALEXPANSION} & \checkmark & -- & Materials \\
@@ -97,7 +98,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{END STEP} & -- & \checkmark & Analysis Procedures \\
 
 \midrule
-\cmd{SOLVER} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{SOLVER} & \checkmark & \checkmark & Solver and Numerical Controls; in Abaqus \cmd{STEP} after the procedure \\
 \cmd{CONSTRAINTMETHOD} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{NONLINEAR} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{TIME} & \checkmark & -- & Solver and Numerical Controls \\
@@ -182,6 +183,8 @@ Likewise, identical names do not always imply identical data semantics. \cmd{DLO
 \cmd{EQUATION} and the point-element property pairs are shared by the native and Abaqus parsers. The supported concentrated-element subset consists of isotropic \val{MASS}, diagonal \val{ROTARYI}, and constant linear point-to-ground \val{SPRING1}. Off-diagonal rotary inertia, oriented point properties, \val{SPRING2}/\val{SPRINGA}, nonlinear springs, and frequency/field-dependent spring data are outside the current mapping. Native \cmd{POINTMASS} remains the legacy NSET-based representation when several diagonal point properties should be combined on the same target nodes.
 
 The optional native \cmd{MODEL} marker is documented as input-file framing rather than as a separate level in the model-definition hierarchy.
+
+The native \cmd{PLASTIC} material card is also registered in the supported Abaqus parser, with the same tabulated yield-stress/equivalent-plastic-strain rows. \cmd{SOLVER} is a FEMaster extension available in Abaqus \cmd{STEP} after its analysis procedure; the remaining native numerical-control keywords are not registered in the Abaqus parser.
 
 The four Abaqus output cards \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT} are listed because they are accepted input keywords. They do not currently configure FEMaster output selection.
 
