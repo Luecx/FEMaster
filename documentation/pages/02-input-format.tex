@@ -3,7 +3,7 @@
 
 FEMaster reads keyword-based input decks. Both the native FEMaster language and the supported Abaqus input format use the familiar structure in which a command starts with an asterisk, optional parameters follow after commas, and command-specific data are supplied on one or more following lines.
 
-The two syntaxes describe the same types of finite-element objects but do not always expose them in the same way. Native FEMaster input provides direct access to FEMaster concepts such as load and support collectors, explicit loadcases, generic Fields, and numerical solver controls. Abaqus input uses Abaqus-style Parts, Assemblies, Steps, boundary conditions, and procedure keywords. The remainder of this manual explains both forms together and shows their accepted syntax side by side.
+The two syntaxes describe the same types of finite-element objects but do not always expose them in the same way. Native FEMaster input provides direct access to FEMaster concepts such as load and support collectors, explicit loadcases, generic Fields, and numerical solver controls. Abaqus input uses Abaqus-style Parts, Assemblies, Steps, boundary conditions, and procedure keywords; the supported Abaqus parser additionally accepts the shared \cmd{PLASTIC} material keyword and FEMaster's \cmd{SOLVER} extension after a Step procedure. The remainder of this manual explains both forms together and shows their accepted syntax side by side.
 
 \section{Command lines}
 
@@ -56,7 +56,7 @@ Named resources are used throughout the rest of the deck. Node sets, element set
 
 \section{FEMaster and Abaqus examples in this manual}
 
-Each keyword reference shows native FEMaster input on the left and the corresponding supported Abaqus input on the right. When the syntax is identical, both columns intentionally show the same form. When the modelling concepts differ, the two examples show the respective accepted representation. If no equivalent is currently read from Abaqus input, the Abaqus column states that directly rather than showing syntax that FEMaster would reject.
+Each keyword reference shows native FEMaster input on the left and the corresponding supported Abaqus input on the right. When the syntax is identical, both columns intentionally show the same form. When the modelling concepts differ, the two examples show the respective accepted representation. If no equivalent is currently read from Abaqus input, the Abaqus column states that directly rather than showing syntax that FEMaster would reject. A shared keyword does not imply shared placement: for example, \cmd{SOLVER} belongs inside a native \cmd{LOADCASE} or inside an Abaqus \cmd{STEP} \emph{after} the analysis procedure card.
 
 The comparison shows how the same model operation is expressed in either accepted input style without exposing parser implementation details.
 
