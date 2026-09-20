@@ -297,11 +297,8 @@ Field Model::compute_shell_resultants(Field& displacement) {
     const Index node_count    = _data->field_rows(FieldDomain::NODE);
     const Index element_count = static_cast<Index>(_data->elements.size());
 
-#ifdef _OPENMP
-    const int thread_count = global_config.max_threads > 1 ? global_config.max_threads : 1;
-#else
-    const int thread_count = 1;
-#endif
+// Limit full-sized nodal accumulators to workers with useful element batches
+    const int thread_count = parallel::worker_count(element_count, global_config.max_threads, Index(64));
 
     // Allocate independent nodal accumulators because adjacent shell elements
     // may write resultants to the same global node.
@@ -323,18 +320,10 @@ Field Model::compute_shell_resultants(Field& displacement) {
     mkl_set_num_threads(1);
 #endif
 
-    std::exception_ptr failure = nullptr;
-
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
-    // Recover each element into the accumulator owned by its OpenMP worker
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        try {
-            int thread = 0;
-#ifdef _OPENMP
-            thread = omp_get_thread_num();
-#endif
+    // Recover each element into the accumulator owned by its worker
+    try {
+        parallel::for_index(element_count, thread_count,
+            [&](Index elem_idx, int thread) {
 
             auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
             if (!el) continue;
@@ -346,18 +335,14 @@ Field Model::compute_shell_resultants(Field& displacement) {
                     displacement
                 );
             }
-        } catch (...) {
-            // Keep C++ exceptions inside the OpenMP region and propagate the
-            // first failure after all workers reach the implicit barrier.
-#ifdef _OPENMP
-            #pragma omp critical
+            }, Index(64));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
 #endif
-            {
-                if (!failure) {
-                    failure = std::current_exception();
-                }
-            }
-        }
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts after element recovery
@@ -366,35 +351,30 @@ Field Model::compute_shell_resultants(Field& displacement) {
 #endif
     Eigen::setNbThreads(global_config.max_threads);
 
-    if (failure) {
-        std::rethrow_exception(failure);
-    }
 
     // Reduce worker-local contributions independently for every global node
     Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
     resultants.set_zero();
 
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
-    for (Index node = 0; node < node_count; ++node) {
-        Precision count = Precision(0);
+    parallel::for_index(node_count, global_config.max_threads,
+        [&](Index node, int /*worker*/) {
+            Precision count = Precision(0);
 
-        for (int thread = 0; thread < thread_count; ++thread) {
-            const auto index = static_cast<std::size_t>(thread);
-            count += thread_counts[index](node, 0);
+            for (int thread = 0; thread < thread_count; ++thread) {
+                const auto index = static_cast<std::size_t>(thread);
+                count += thread_counts[index](node, 0);
+
+                for (Index component = 0; component < resultants.components; ++component) {
+                    resultants(node, component) += thread_resultants[index](node, component);
+                }
+            }
+
+            if (count == Precision(0)) return;
 
             for (Index component = 0; component < resultants.components; ++component) {
-                resultants(node, component) += thread_resultants[index](node, component);
+                resultants(node, component) /= count;
             }
-        }
-
-        if (count == Precision(0)) continue;
-
-        for (Index component = 0; component < resultants.components; ++component) {
-            resultants(node, component) /= count;
-        }
-    }
+        }, Index(256))
 
     // Validate the averaged result field before returning it
     resultants.check_finite("Shell resultants");
