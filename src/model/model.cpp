@@ -34,7 +34,6 @@
 #include "../core/parallel.h"
 
 #include <charconv>
-#include <exception>
 #include <iterator>
 #include <string>
 #include <system_error>
