@@ -254,7 +254,7 @@ void write_dense_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format contiguous row ranges independently
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
@@ -306,7 +306,7 @@ void write_indexed_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format semantic identifiers and field rows independently
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
@@ -375,7 +375,7 @@ void write_element_location_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format each contiguous element range into its private output buffer
-parallel::for_index(num_threads, static_cast<int>(num_threads),
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
