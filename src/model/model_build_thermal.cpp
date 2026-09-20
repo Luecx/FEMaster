@@ -28,12 +28,16 @@
  * @date 18.09.2026
  */
 
+#include "../core/config.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_thermal.h"
 #include "model.h"
 
+#include <algorithm>
+#include <atomic>
+#include <exception>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,21 +58,80 @@ SystemDofIds Model::build_thermal_dof_index_matrix() {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
-    SystemDofs mask{_data->positions->rows, 1};
-    mask.fill(false);
+    const Index node_count    = _data->positions->rows;
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Activate one scalar temperature DOF at every node belonging to at least one
-    // thermally participating element.
-    for (const auto& element : _data->elements) {
-        if (element == nullptr || element->as<ThermalElement>() == nullptr) {
+    // Several neighboring thermal elements may activate the same node
+    // concurrently. Atomic flags make this idempotent write safe without one
+    // complete nodal mask per worker.
+    std::vector<std::atomic_bool> active_nodes(static_cast<std::size_t>(node_count));
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index node = 0; node < node_count; ++node) {
+        active_nodes[static_cast<std::size_t>(node)].store(
+            false,
+            std::memory_order_relaxed
+        );
+    }
+
+    std::atomic_bool   failed{false};
+    std::exception_ptr failure = nullptr;
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        if (failed.load(std::memory_order_relaxed)) {
             continue;
         }
 
-        for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
-            mask(element->nodes()[local_node], 0) = true;
+        try {
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (element == nullptr || element->as<ThermalElement>() == nullptr) {
+                continue;
+            }
+
+            for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
+                const ID node_id = element->nodes()[local_node];
+                logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+                    "Model: thermal element ", element->elem_id,
+                    " references node ", node_id, " outside the compiled node domain");
+
+                active_nodes[static_cast<std::size_t>(node_id)].store(
+                    true,
+                    std::memory_order_relaxed
+                );
+            }
+        } catch (...) {
+            failed.store(true, std::memory_order_relaxed);
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
+                }
+            }
         }
     }
 
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+
+    SystemDofs mask{node_count, 1};
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index node = 0; node < node_count; ++node) {
+        mask(node, 0) = active_nodes[static_cast<std::size_t>(node)].load(
+            std::memory_order_relaxed
+        );
+    }
+
+    // Contiguous global equation numbering remains a deterministic prefix-style
+    // operation after the parallel activation phase.
     return mattools::numerate_dofs(mask);
 }
 
@@ -97,18 +160,29 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
     logging::error(system_dof_ids.cols() == 1,
         "Model: thermal DOF map must contain exactly one component");
 
-    // Restrict the generic assembler to thermal elements. Its local-to-global
-    // mapping then naturally interprets each N x N local matrix as one scalar
-    // temperature DOF per element node.
-    std::vector<ElementPtr> thermal_elements;
-    thermal_elements.reserve(_data->elements.size());
+    // Select thermally participating elements in parallel. The indexed temporary
+    // vector avoids synchronized push_back operations; compaction is linear and
+    // cheap compared with element integration and sparse assembly.
+    const Index element_count = static_cast<Index>(_data->elements.size());
+    std::vector<ElementPtr> thermal_elements(static_cast<std::size_t>(element_count));
 
-    for (const auto& element : _data->elements) {
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 2048) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
         if (element != nullptr && element->as<ThermalElement>() != nullptr) {
-            thermal_elements.push_back(element);
+            thermal_elements[static_cast<std::size_t>(elem_idx)] = element;
         }
     }
 
+    thermal_elements.erase(
+        std::remove(thermal_elements.begin(), thermal_elements.end(), nullptr),
+        thermal_elements.end()
+    );
+
+    // The common assembler already parallelizes local conductivity evaluation,
+    // triplet generation and sparse k-way merging when OpenMP is enabled.
     return mattools::assemble_matrix(
         thermal_elements,
         system_dof_ids,
