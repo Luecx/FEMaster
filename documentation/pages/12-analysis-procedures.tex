@@ -62,7 +62,7 @@ Native \cmd{LOADCASE} begins an analysis definition. \key{TYPE} selects one of t
 
 Commands inside the loadcase select support and load collectors and configure the numerical procedure. Their validity depends on the analysis type: for example, \cmd{TIME} and \cmd{NEWMARK} belong to \val{LINEARTRANSIENT}, \cmd{FREQUENCIES} belongs to \val{LINEARHARMONIC}, and \cmd{NONLINEAR} belongs to \val{NONLINEARSTATIC}.
 
-A deck may contain several native loadcases, allowing the same structural model to be evaluated under different loads or with different procedures, for example a static preload followed by an eigenfrequency study in a separate run definition.
+A deck may contain several native loadcases, allowing the same structural model to be evaluated under different loads or with different procedures. This does not by itself transfer a converged nonlinear material/geometry state from one loadcase to another; do not interpret successive \cmd{LOADCASE} blocks as a general multistep restart or a nonlinear-preload-to-buckling workflow.
 
 Each loadcase selects the previously defined collectors that participate in that analysis. A load that exists in the model but is not selected through \cmd{LOADS} does not contribute to the native loadcase.
 
@@ -187,7 +187,7 @@ Native \cmd{END} closes the current \cmd{LOADCASE}. It is distinct from \cmd{END
 
 \key{NAME} is optional. \key{NLGEOM} enables geometric nonlinearity when present without a value or set to \val{YES}; \val{NO} and \val{OFF} disable it. \key{INC} specifies the maximum number of increments for nonlinear procedures and defaults to 100. \key{AMPLITUDE} selects the supported default Step amplitude behaviour \val{RAMP} or \val{STEP}. \key{PERTURBATION} marks a linear perturbation Step.
 
-Loads and boundary conditions written within the Step belong to that analysis. \cmd{END STEP} terminates the Step.
+Loads and boundary conditions written within the Step belong to that analysis. FEMaster's shared \cmd{SOLVER} extension is also accepted inside the Step, after its supported procedure card (for analysis types implementing this setting). \cmd{END STEP} terminates the Step.
 
 \begin{keywordparameters}
 \key{NAME} & optional & Descriptive Step name. \\
