@@ -319,7 +319,6 @@ Field Model::compute_shell_resultants(Field& displacement) {
     try {
         parallel::for_index(element_count, thread_count,
             [&](Index elem_idx, int thread) {
-
                 auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
                 if (!el) return;
 
