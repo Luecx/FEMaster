@@ -30,12 +30,7 @@
 #include "element/element_thermal.h"
 #include "model.h"
 
-#include <exception>
 #include <vector>
-
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
 
 namespace fem::model {
 
@@ -325,16 +320,16 @@ Field Model::compute_shell_resultants(Field& displacement) {
         parallel::for_index(element_count, thread_count,
             [&](Index elem_idx, int thread) {
 
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) continue;
+                auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!el) return;
 
-            if (auto sel = el->as<StructuralElement>()) {
-                sel->compute_shell_section_forces(
-                    thread_resultants[static_cast<std::size_t>(thread)],
-                    thread_counts[static_cast<std::size_t>(thread)],
-                    displacement
-                );
-            }
+                if (auto sel = el->as<StructuralElement>()) {
+                    sel->compute_shell_section_forces(
+                        thread_resultants[static_cast<std::size_t>(thread)],
+                        thread_counts[static_cast<std::size_t>(thread)],
+                        displacement
+                    );
+                }
             }, Index(64));
     } catch (...) {
         // Restore linear-algebra threading before propagating a recovery failure
@@ -633,41 +628,27 @@ Field Model::compute_heat_flux(const Field& temperature) {
     mkl_set_num_threads(1);
 #endif
 
-    // Element recovery may reject invalid geometry, material data or output
-    // layouts through logging::error(). C++ exceptions must not escape an OpenMP
-    // region, so retain the first failure and propagate it after the implicit
-    // parallel barrier.
-    std::exception_ptr failure = nullptr;
-
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
-#endif
-    // Concrete thermal formulations write only into their own compiled
-    // ELEMENT_NODAL ranges, so successful recovery requires no synchronization.
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        try {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!element) {
-                continue;
-            }
-
-            if (auto* thermal = element->as<ThermalElement>()) {
-                thermal->compute_heat_flux(element_heat_flux, temperature);
-                element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
-            }
-        } catch (...) {
-            // Match the established parallel result-recovery pattern: workers
-            // capture recoverable model errors locally and only synchronize when
-            // publishing the first exception.
-#ifdef _OPENMP
-            #pragma omp critical
-#endif
-            {
-                if (!failure) {
-                    failure = std::current_exception();
+    // Recover each thermal element into its disjoint element-nodal field range
+    try {
+        parallel::for_index(element_count, global_config.max_threads,
+            [&](Index elem_idx, int /*worker*/) {
+                const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+                if (!element) {
+                    return;
                 }
-            }
-        }
+
+                if (auto* thermal = element->as<ThermalElement>()) {
+                    thermal->compute_heat_flux(element_heat_flux, temperature);
+                    element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
+                }
+            }, Index(8));
+    } catch (...) {
+        // Restore linear-algebra threading before propagating a recovery failure
+#ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+#endif
+        Eigen::setNbThreads(global_config.max_threads);
+        throw;
     }
 
     // Restore the configured linear-algebra thread counts before propagating a
@@ -677,9 +658,6 @@ Field Model::compute_heat_flux(const Field& temperature) {
 #endif
     Eigen::setNbThreads(global_config.max_threads);
 
-    if (failure) {
-        std::rethrow_exception(failure);
-    }
 
     // Average all participating element-local nodal vectors onto unique global
     // nodes. The projection itself is parallelized over independent target nodes.
