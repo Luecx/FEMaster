@@ -39,6 +39,7 @@
 #include "writer_frd.h"
 
 #include "../../core/config.h"
+#include "../../core/parallel.h"
 #include "../../model/element/element.h"
 #include "../../model/element/element_structural.h"
 #include "../../model/model_data.h"
@@ -1005,25 +1006,23 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
     const ID num_threads = output_thread_count(positions.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index begin = positions.rows * thread       / num_threads;
-        const Index end   = positions.rows * (thread + 1) / num_threads;
+            const Index begin = positions.rows * thread       / num_threads;
+            const Index end   = positions.rows * (thread + 1) / num_threads;
 
-        for (Index row = begin; row < end; ++row) {
-            append_node_line(
-                buffer,
-                node_ids[static_cast<std::size_t>(row)],
-                positions(row, 0),
-                positions(row, 1),
-                positions(row, 2)
-            );
-        }
-    }
+            for (Index row = begin; row < end; ++row) {
+                append_node_line(
+                    buffer,
+                    node_ids[static_cast<std::size_t>(row)],
+                    positions(row, 0),
+                    positions(row, 1),
+                    positions(row, 2)
+                );
+            }
+        });
 
     // Commit node ranges in their original dense order
     write_thread_buffers(file_path, thread_buffers);
@@ -1074,73 +1073,71 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
     const ID num_threads = output_thread_count(compiled_count);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index begin = compiled_count * thread       / num_threads;
-        const Index end   = compiled_count * (thread + 1) / num_threads;
+            const Index begin = compiled_count * thread       / num_threads;
+            const Index end   = compiled_count * (thread + 1) / num_threads;
 
-        for (Index elem_row = begin; elem_row < end; ++elem_row) {
-            const auto& element =
-                model_data.elements[static_cast<std::size_t>(elem_row)];
+            for (Index elem_row = begin; elem_row < end; ++elem_row) {
+                const auto& element =
+                    model_data.elements[static_cast<std::size_t>(elem_row)];
 
-            if (!element) {
-                continue;
-            }
-
-            const int type = frd_element_type(*element);
-
-            if (type == 0) {
-                continue;
-            }
-
-            append_element_header_line(buffer, element->elem_id, type);
-
-            // Copy connectivity so FRD-specific high-order permutations remain local
-            std::vector<ID> connectivity;
-            connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
-
-            for (ID node_id : *element) {
-                connectivity.push_back(node_id);
-            }
-
-            if (type == 4 && connectivity.size() == 20) {
-                const std::vector<ID> internal = connectivity;
-
-                const int order[] = {
-                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                    10, 11, 16, 17, 18, 19, 12, 13, 14, 15
-                };
-
-                for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                    connectivity[i] = internal[order[i]];
+                if (!element) {
+                    continue;
                 }
-            }
 
-            if (type == 5 && connectivity.size() == 15) {
-                const std::vector<ID> internal = connectivity;
+                const int type = frd_element_type(*element);
 
-                const int order[] = {
-                    0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
-                    13, 14, 9, 10, 11
-                };
-
-                for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                    connectivity[i] = internal[order[i]];
+                if (type == 0) {
+                    continue;
                 }
-            }
 
-            append_element_connectivity(
-                buffer,
-                connectivity,
-                node_ids,
-                element->elem_id
-            );
-        }
-    }
+                append_element_header_line(buffer, element->elem_id, type);
+
+                // Copy connectivity so FRD-specific high-order permutations remain local
+                std::vector<ID> connectivity;
+                connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
+
+                for (ID node_id : *element) {
+                    connectivity.push_back(node_id);
+                }
+
+                if (type == 4 && connectivity.size() == 20) {
+                    const std::vector<ID> internal = connectivity;
+
+                    const int order[] = {
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                        10, 11, 16, 17, 18, 19, 12, 13, 14, 15
+                    };
+
+                    for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                        connectivity[i] = internal[order[i]];
+                    }
+                }
+
+                if (type == 5 && connectivity.size() == 15) {
+                    const std::vector<ID> internal = connectivity;
+
+                    const int order[] = {
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
+                        13, 14, 9, 10, 11
+                    };
+
+                    for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                        connectivity[i] = internal[order[i]];
+                    }
+                }
+
+                append_element_connectivity(
+                    buffer,
+                    connectivity,
+                    node_ids,
+                    element->elem_id
+                );
+            }
+        });
 
     // Commit complete element ranges in compiled order
     write_thread_buffers(file_path, thread_buffers);
@@ -1231,25 +1228,23 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     const ID num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index begin = field.rows * thread       / num_threads;
-        const Index end   = field.rows * (thread + 1) / num_threads;
+            const Index begin = field.rows * thread       / num_threads;
+            const Index end   = field.rows * (thread + 1) / num_threads;
 
-        for (Index row = begin; row < end; ++row) {
-            append_result_node_lines(
-                buffer,
-                node_ids[static_cast<std::size_t>(row)],
-                field,
-                row,
-                frd
-            );
-        }
-    }
+            for (Index row = begin; row < end; ++row) {
+                append_result_node_lines(
+                    buffer,
+                    node_ids[static_cast<std::size_t>(row)],
+                    field,
+                    row,
+                    frd
+                );
+            }
+        });
 
     // Preserve dense node order in the completed result block
     write_thread_buffers(file_path, thread_buffers);

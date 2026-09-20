@@ -14,14 +14,12 @@
 #include "null_space.h"
 
 #include "../../core/logging.h"
+#include "../../core/config.h"
+#include "../../core/parallel.h"
 #include "../../core/timer.h"
 
 #include <Eigen/OrderingMethods>
 #include <Eigen/SparseQR>
-
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -294,46 +292,44 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         }
 
         // Each master column defines an independent triangular solve
-#ifdef _OPENMP
-#pragma omp parallel for if (master_columns > 2)
-#endif
-        for (int master = 0; master < master_columns; ++master) {
-            std::unordered_map<int, Precision> rhs{};
-            rhs.reserve(16);
-            for (SparseMatrix::InnerIterator entry(R, reduced_rank + master); entry; ++entry) {
-                if (entry.row() < reduced_rank) {
-                    rhs[entry.row()] = -entry.value();
+        parallel::for_index(master_columns, global_config.max_threads,
+            [&](int master, int /*worker*/) {
+                std::unordered_map<int, Precision> rhs{};
+                rhs.reserve(16);
+                for (SparseMatrix::InnerIterator entry(R, reduced_rank + master); entry; ++entry) {
+                    if (entry.row() < reduced_rank) {
+                        rhs[entry.row()] = -entry.value();
+                    }
                 }
-            }
-            if (rhs.empty()) {
-                continue;
-            }
-
-            std::vector<Precision> values(static_cast<std::size_t>(reduced_rank), Precision(0));
-            for (int row = reduced_rank - 1; row >= 0; --row) {
-                Precision value = Precision(0);
-                const auto found = rhs.find(row);
-                if (found != rhs.end()) {
-                    value = found->second;
-                }
-                for (const auto& [column, coefficient] : upper_rows[static_cast<std::size_t>(row)]) {
-                    value -= coefficient * values[static_cast<std::size_t>(column)];
+                if (rhs.empty()) {
+                    return;
                 }
 
-                const Precision diagonal_value = diagonal[static_cast<std::size_t>(row)];
-                values[static_cast<std::size_t>(row)] =
-                    diagonal_value != Precision(0) ? value / diagonal_value : Precision(0);
-            }
+                std::vector<Precision> values(static_cast<std::size_t>(reduced_rank), Precision(0));
+                for (int row = reduced_rank - 1; row >= 0; --row) {
+                    Precision value = Precision(0);
+                    const auto found = rhs.find(row);
+                    if (found != rhs.end()) {
+                        value = found->second;
+                    }
+                    for (const auto& [column, coefficient] : upper_rows[static_cast<std::size_t>(row)]) {
+                        value -= coefficient * values[static_cast<std::size_t>(column)];
+                    }
 
-            auto& entries = x_columns[static_cast<std::size_t>(master)];
-            entries.reserve(16);
-            for (int row = 0; row < reduced_rank; ++row) {
-                const Precision value = values[static_cast<std::size_t>(row)];
-                if (value != Precision(0)) {
-                    entries.emplace_back(row, value);
+                    const Precision diagonal_value = diagonal[static_cast<std::size_t>(row)];
+                    values[static_cast<std::size_t>(row)] =
+                        diagonal_value != Precision(0) ? value / diagonal_value : Precision(0);
                 }
-            }
-        }
+
+                auto& entries = x_columns[static_cast<std::size_t>(master)];
+                entries.reserve(16);
+                for (int row = 0; row < reduced_rank; ++row) {
+                    const Precision value = values[static_cast<std::size_t>(row)];
+                    if (value != Precision(0)) {
+                        entries.emplace_back(row, value);
+                    }
+                }
+            });
     });
 
     // Map the QR partition back to full-system DOF indices

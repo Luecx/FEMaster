@@ -31,6 +31,7 @@
 #include "writer_res.h"
 
 #include "../../core/config.h"
+#include "../../core/parallel.h"
 #include "../../model/element/element.h"
 #include "../../model/model_data.h"
 
@@ -253,19 +254,17 @@ void write_dense_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format contiguous row ranges independently
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index begin = field.rows * thread       / num_threads;
-        const Index end   = field.rows * (thread + 1) / num_threads;
+            const Index begin = field.rows * thread       / num_threads;
+            const Index end   = field.rows * (thread + 1) / num_threads;
 
-        for (Index row = begin; row < end; ++row) {
-            append_field_values(buffer, field, row);
-        }
-    }
+            for (Index row = begin; row < end; ++row) {
+                append_field_values(buffer, field, row);
+            }
+        });
 
     // Preserve dense row order while committing the formatted text to disk
     write_thread_buffers(file_path, thread_buffers);
@@ -307,20 +306,18 @@ void write_indexed_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format semantic identifiers and field rows independently
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index begin = field.rows * thread       / num_threads;
-        const Index end   = field.rows * (thread + 1) / num_threads;
+            const Index begin = field.rows * thread       / num_threads;
+            const Index end   = field.rows * (thread + 1) / num_threads;
 
-        for (Index row = begin; row < end; ++row) {
-            append_string(buffer, ids[static_cast<std::size_t>(row)]);
-            append_field_values(buffer, field, row);
-        }
-    }
+            for (Index row = begin; row < end; ++row) {
+                append_string(buffer, ids[static_cast<std::size_t>(row)]);
+                append_field_values(buffer, field, row);
+            }
+        });
 
     // Preserve dense row order while committing the formatted text to disk
     write_thread_buffers(file_path, thread_buffers);
@@ -378,41 +375,39 @@ void write_element_location_field(std::ofstream& file_path,
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format each contiguous element range into its private output buffer
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-#endif
-    for (ID thread = 0; thread < num_threads; ++thread) {
-        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        const Index start_index = element_count * thread       / num_threads;
-        const Index end_index   = element_count * (thread + 1) / num_threads;
+            const Index start_index = element_count * thread       / num_threads;
+            const Index end_index   = element_count * (thread + 1) / num_threads;
 
-        for (Index elem_row = start_index; elem_row < end_index; ++elem_row) {
-            const auto& element =
-                model_data.elements[static_cast<std::size_t>(elem_row)];
+            for (Index elem_row = start_index; elem_row < end_index; ++elem_row) {
+                const auto& element =
+                    model_data.elements[static_cast<std::size_t>(elem_row)];
 
-            if (!element) {
-                continue;
+                if (!element) {
+                    continue;
+                }
+
+                const Index begin = static_cast<Index>(offsets(elem_row, 0));
+                const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
+
+                logging::error(begin <= end && end <= field.rows,
+                    "ResWriter: invalid ", offset_name, " span for element ", elem_row);
+
+                const std::string& elem_id =
+                    element_ids[static_cast<std::size_t>(elem_row)];
+
+                for (Index local = 0; local < end - begin; ++local) {
+                    const Index row = begin + local;
+
+                    append_string(buffer, elem_id);
+                    append_integer(buffer, local);
+                    append_field_values(buffer, field, row);
+                }
             }
-
-            const Index begin = static_cast<Index>(offsets(elem_row, 0));
-            const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
-
-            logging::error(begin <= end && end <= field.rows,
-                "ResWriter: invalid ", offset_name, " span for element ", elem_row);
-
-            const std::string& elem_id =
-                element_ids[static_cast<std::size_t>(elem_row)];
-
-            for (Index local = 0; local < end - begin; ++local) {
-                const Index row = begin + local;
-
-                append_string(buffer, elem_id);
-                append_integer(buffer, local);
-                append_field_values(buffer, field, row);
-            }
-        }
-    }
+        });
 
     // Preserve element-major ordering while committing the buffers to disk
     write_thread_buffers(file_path, thread_buffers);

@@ -33,12 +33,11 @@
  */
 
 #include "../core/logging.h"
+#include "../core/parallel.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
 
 #include <algorithm>
-#include <atomic>
-#include <exception>
 #include <limits>
 #include <type_traits>
 
@@ -121,15 +120,8 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
                                             const SystemDofIds& indices,
                                             Lambda&& compute_local_matrix,
                                             model::NodeData* nodal_forces = nullptr) {
-    // Restrict Eigen to one internal worker because the complete assembly is
-    // executed by the calling thread.
-    Eigen::setNbThreads(1);
-
-#ifdef USE_MKL
-    // Apply the same restriction to MKL so element-level kernels do not create
-    // additional worker threads.
-    mkl_set_num_threads(1);
-#endif
+    // The serial path must also restore linear-algebra threading on return or throw.
+    const parallel::ScopedLinearAlgebraThreads threading;
 
     // The highest active global DOF index determines the dimension of the
     // square assembled matrix. Active indices are assumed to be contiguous and
@@ -271,31 +263,20 @@ template<typename Lambda>
 SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>& elements,
                                            const SystemDofIds& indices,
                                            Lambda&& compute_local_matrix,
-                                           model::NodeData* nodal_forces = nullptr) {
+                                           model::NodeData* nodal_forces,
+                                           int num_threads,
+                                           std::size_t min_batch_size) {
     // Use the storage-index type selected by Eigen for direct access to the
     // compressed sparse matrix arrays.
     using StorageIndex = typename SparseMatrix::StorageIndex;
 
-    // Disable Eigen's internal parallelism because the outer assembly and final
-    // merge are parallelized explicitly with OpenMP.
-    Eigen::setNbThreads(1);
-#ifdef USE_MKL
-    // Prevent MKL routines called during local element evaluation from creating
-    // nested worker teams.
-    mkl_set_num_threads(1);
-#endif
+    // Keep library-level threading suppressed during local assembly and merge,
+    // including paths that throw before the final sparse matrix is returned.
+    const parallel::ScopedLinearAlgebraThreads threading;
 
     // Read the requested OpenMP worker count and determine the dimension of the
     // active global system.
-    const int num_threads = std::min(128, global_config.max_threads);
     const int global_size = indices.maxCoeff() + 1;
-
-    auto restore_threading = []() {
-        Eigen::setNbThreads(global_config.max_threads);
-#ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
-#endif
-    };
 
     // Give every worker an independent sparse matrix and triplet buffer. This
     // eliminates shared writes during local element assembly.
@@ -332,31 +313,17 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     Timer timer;
     timer.start();
 
-    // Exceptions thrown inside an OpenMP worker cannot leave the parallel
-    // region directly. Capture the first failed element evaluation and rethrow
-    // it on the calling thread after all workers have left the region.
-    std::atomic_bool   assembly_failed{false};
-    std::exception_ptr assembly_exception = nullptr;
+    // Assemble independent elements into their worker-local buffers. The helper
+    // captures worker exceptions and rethrows them on the calling thread.
+    parallel::for_index(elements.size(), num_threads,
+        [&](std::size_t elem_idx, int thread_id) {
+            const auto& element = elements[elem_idx];
+            if (!element) {
+                return;
+            }
 
-    // Distribute element blocks statically among the configured workers. Each
-    // iteration writes only into storage owned by its current OpenMP thread.
-    #pragma omp parallel for schedule(static, 1024) num_threads(num_threads)
-    for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
-        const auto& element = elements[elem_idx];
-
-        // Null element pointers do not contribute to the global matrix.
-        if (!element) {
-            continue;
-        }
-
-        if (assembly_failed.load(std::memory_order_relaxed)) {
-            continue;
-        }
-
-        try {
             // Select the triplet buffer belonging exclusively to the current
             // OpenMP worker.
-            const int thread_id = omp_get_thread_num();
             auto& local_triplets = thread_triplets[thread_id];
 
             // Provide aligned fixed-size storage for the local matrix and the
@@ -425,22 +392,12 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                 thread_matrices[thread_id].insertFromTriplets(local_triplets.begin(), local_triplets.end());
                 local_triplets.clear();
             }
-        } catch (...) {
-            if (!assembly_failed.exchange(true, std::memory_order_relaxed)) {
-                #pragma omp critical(fem_assemble_exception)
-                {
-                    assembly_exception = std::current_exception();
-                }
-            }
-        }
-    }
+        }, min_batch_size);
+    // for_index restores the configured counts when it finishes; the following
+    // reduction and sparse merge are also explicitly parallel.
+    threading.limit();
 
     timer.stop();
-
-    if (assembly_exception) {
-        restore_threading();
-        std::rethrow_exception(assembly_exception);
-    }
 
     logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
     timer.start();
@@ -637,10 +594,6 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     logging::info(true, "Time for k-way merge      : ", timer.elapsed(), " ms");
     logging::info(true, "Pattern nonzeros          : ", total_nonzeros);
 
-    // Restore the configured Eigen and MKL thread counts after explicit OpenMP
-    // assembly and merging have completed.
-    restore_threading();
-
     return global_matrix;
 }
 #endif
@@ -676,12 +629,19 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     // OpenMP support is unavailable, so assembly must remain serial.
     return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
 #else
-    // Use parallel assembly only when more than one worker is configured.
-    if (global_config.max_threads > 1) {
-        return assemble_matrix_multithreaded(elements, indices, compute_local_matrix, nodal_forces);
-    } else {
-        return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
+    // Avoid worker-local sparse matrices for small element batches and systems
+    constexpr std::size_t min_batch_size = 64;
+    const int num_threads = parallel::worker_count(
+        elements.size(), std::min(128, static_cast<int>(global_config.max_threads)), min_batch_size
+    );
+
+    if (num_threads > 1 && indices.maxCoeff() + 1 > 128) {
+        return assemble_matrix_multithreaded(
+            elements, indices, compute_local_matrix, nodal_forces, num_threads, min_batch_size
+        );
     }
+
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
 #endif
 }
 
