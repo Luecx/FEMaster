@@ -9,6 +9,8 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 \end{shellcmd}
 
+FEMR output adds an LZ4 build dependency. The current CMake configuration requires the LZ4 headers and library even if only \file{.res} and \file{.frd} output will be selected at runtime. Install the LZ4 development package (for example, \file{liblz4-dev} on Debian/Ubuntu), or supply \key{LZ4\_INCLUDE\_DIR} and \key{LZ4\_LIBRARY} to CMake if its package cannot be found.
+
 A release build provides optimized execution for analysis work. A debug build retains assertions and development diagnostics at substantially higher runtime cost for larger finite-element models.
 
 \section{CMake presets}
@@ -59,6 +61,7 @@ Apple Accelerate is available only on macOS. When enabled, supported symmetric C
 FEMaster model.inp
 FEMaster model.inp --output model.res
 FEMaster model.inp --ncpus 8
+FEMaster model.inp --format abaqus
 FEMaster model.inp --output-format res
 FEMaster model.inp --output-format frd femr
 \end{shellcmd}
@@ -69,8 +72,9 @@ FEMaster model.inp --output-format frd femr
 \midrule
 \endhead
 \file{input_file} & Path to the input deck. If no \file{.inp} suffix is supplied, it is added automatically. \\
-\key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
+\key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, \file{.femr}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
 \key{--ncpus N} & Number of threads allowed for parallel assembly and compute sections. \\
+\key{--format femaster|abaqus} & Select the native or supported Abaqus input parser; the default is \val{femaster}. This option is independent of the output formats. \\
 \key{--output-format} & Selects one or more result formats from \key{res}, \key{frd}, and \key{femr}. \\
 \bottomrule
 \end{longtable}
