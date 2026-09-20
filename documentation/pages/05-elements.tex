@@ -281,7 +281,7 @@ The native labels \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{
 \end{warningbox}
 
 \clearpage
-\subsection{\val{S3}: legacy 3-node triangular shell}
+\subsection{\val{S3}: 3-node finite-rotation triangular shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -317,7 +317,7 @@ Its triangular topology represents irregular shell boundaries, local mesh transi
 For imported Abaqus input, both \val{S3} and \val{S3R} are translated to this formulation. The Abaqus suffix therefore does not select a separate reduced-integration implementation inside FEMaster.
 
 \clearpage
-\subsection{\val{S4}: legacy 4-node quadrilateral shell}
+\subsection{\val{S4}: 4-node finite-rotation quadrilateral shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -333,7 +333,7 @@ For imported Abaqus input, both \val{S3} and \val{S3R} are translated to this fo
 \val{S4} is an accepted native input label for \val{MITC4FRT}. This spelling selects the same current finite-rotation MITC quadrilateral implementation as \val{MITC4FRT}. It does not select the removed low-order linear shell implementation.
 
 \clearpage
-\subsection{\val{MITC4}: legacy 4-node shell with tied shear interpolation}
+\subsection{\val{MITC4}: 4-node finite-rotation MITC shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -371,7 +371,7 @@ Tied shear interpolation addresses shear locking but does not eliminate geometri
 The supported Abaqus labels \val{S4} and \val{S4R} are both translated to \val{MITC4FRT}.
 
 \clearpage
-\subsection{\val{S6}: legacy 6-node triangular shell}
+\subsection{\val{S6}: 6-node finite-rotation triangular shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -407,7 +407,7 @@ The element represents curved shell regions with triangular topology at higher o
 Both Abaqus \val{S6} and \val{S6R} are translated to this formulation by the current reader.
 
 \clearpage
-\subsection{\val{S8}: legacy 8-node quadrilateral shell}
+\subsection{\val{S8}: 8-node finite-rotation quadrilateral shell (alias)}
 
 \begin{figure}[H]
     \centering
@@ -423,7 +423,7 @@ Both Abaqus \val{S6} and \val{S6R} are translated to this formulation by the cur
 \val{S8} is an accepted native input label for \val{MITC8FRT}. This spelling selects the same current finite-rotation eight-node quadrilateral implementation as \val{MITC8FRT}. Its quadratic interpolation helps resolve smooth curvature but remains sensitive to warping and midside-node positioning.
 
 \clearpage
-\subsection{\val{MITC8}: legacy 8-node MITC shell}
+\subsection{\val{MITC8}: 8-node finite-rotation MITC shell (alias)}
 
 \begin{figure}[H]
     \centering
