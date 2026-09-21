@@ -27,6 +27,7 @@
 
 #include "../../core/logging.h"
 
+#include <cmath>
 #include <vector>
 
 namespace fem::model {
@@ -490,6 +491,74 @@ void FRTShell<N>::assemble_drill_stabilization(
                         geometric_scale * second;
                 }
             }
+        }
+    }
+}
+
+/**
+ * Integrates equivalent nodal forces from a scalar midsurface temperature field.
+ *
+ * The prescribed temperature is constant through the section thickness. For
+ * isotropic thermal expansion the free generalized strain contains equal XX
+ * and YY membrane strains, but no initial curvature or transverse shear.
+ * Multiplying by the complete section tangent (including ABD coupling) yields
+ * generalized thermal membrane forces and possibly bending moments. The same
+ * reference MITC B matrix and integration weights as the linear stiffness map
+ * these resultants into consistent forces and moments at all six nodal DOFs.
+ *
+ * This is the linear/reference thermal RHS, not a constitutive update. It does
+ * not modify material state; nonlinear constitutive stress recovery and
+ * thermal-prestress geometric tangents require separate thermal state handling.
+ */
+template<Index N>
+void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+                   "FRTShell: thermal loading requires a scalar nodal temperature field");
+    logging::error(node_loads.domain == FieldDomain::NODE
+                   && node_loads.components >= dofs_per_node,
+                   "FRTShell: thermal loading requires six nodal load components");
+    logging::error(std::isfinite(ref_temp),
+                   "FRTShell: thermal reference temperature must be finite");
+
+    const auto material = this->get_material();
+    logging::error(material->has_thermal_expansion(),
+                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
+
+    VecN nodal_temperatures;
+    for (Index node = 0; node < num_nodes; ++node) {
+        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        const Precision temperature = node_temp(node_id, 0);
+        // Match the solid TLOAD convention for undefined nodal temperatures.
+        nodal_temperatures(node) = std::isfinite(temperature) ? temperature : ref_temp;
+    }
+
+    const Precision alpha = material->get_thermal_expansion();
+    const EvaluationData data = init_evaluation(
+        reference_state(), true, true, false, false, false
+    );
+    const auto& points = reference_data().ip_points;
+    Vec6N thermal_force = Vec6N::Zero();
+
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
+        const std::size_t id = static_cast<std::size_t>(ip);
+        const ReferencePoint& point = points[id];
+        const Precision temperature =
+            shape_function(point.r, point.s).dot(nodal_temperatures);
+        const Precision free_strain = alpha * (temperature - ref_temp);
+
+        Vec8 thermal_strain = Vec8::Zero();
+        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX)) = free_strain;
+        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonYY)) = free_strain;
+
+        thermal_force.noalias() += (point.w * point.detJ)
+            * data.ip_B[id].transpose()
+            * (data.ip_tangent[id] * thermal_strain);
+    }
+
+    for (Index node = 0; node < num_nodes; ++node) {
+        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        for (Index dof = 0; dof < dofs_per_node; ++dof) {
+            node_loads(node_id, dof) += thermal_force(dofs_per_node * node + dof);
         }
     }
 }
