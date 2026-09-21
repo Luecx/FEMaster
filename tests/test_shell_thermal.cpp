@@ -125,20 +125,20 @@ void check_uniform_thermal_load(
 } // namespace
 
 TEST(ShellThermal, S3Integrated) {
-    check_uniform_thermal_load<fem::model::FRTShellS3>(
+    check_uniform_thermal_load<fem::model::FRTShellS3, 3>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0), fem::Vec3(0, 1, 0)}, false
     );
 }
 
 TEST(ShellThermal, S4Integrated) {
-    check_uniform_thermal_load<fem::model::FRTShellS4>(
+    check_uniform_thermal_load<fem::model::FRTShellS4, 4>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0),
          fem::Vec3(1, 1, 0), fem::Vec3(0, 1, 0)}, false
     );
 }
 
 TEST(ShellThermal, S6Integrated) {
-    check_uniform_thermal_load<fem::model::FRTShellS6>(
+    check_uniform_thermal_load<fem::model::FRTShellS6, 6>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0), fem::Vec3(0, 1, 0),
          fem::Vec3(0.5, 0, 0), fem::Vec3(0.5, 0.5, 0),
          fem::Vec3(0, 0.5, 0)}, false
@@ -146,7 +146,7 @@ TEST(ShellThermal, S6Integrated) {
 }
 
 TEST(ShellThermal, S8Integrated) {
-    check_uniform_thermal_load<fem::model::FRTShellS8>(
+    check_uniform_thermal_load<fem::model::FRTShellS8, 8>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0),
          fem::Vec3(1, 1, 0), fem::Vec3(0, 1, 0),
          fem::Vec3(0.5, 0, 0), fem::Vec3(1, 0.5, 0),
@@ -155,7 +155,7 @@ TEST(ShellThermal, S8Integrated) {
 }
 
 TEST(ShellThermal, S4ABDWithMembraneBendingCoupling) {
-    check_uniform_thermal_load<fem::model::FRTShellS4>(
+    check_uniform_thermal_load<fem::model::FRTShellS4, 4>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0),
          fem::Vec3(1, 1, 0), fem::Vec3(0, 1, 0)}, true
     );
