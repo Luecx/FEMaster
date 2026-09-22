@@ -1,4 +1,4 @@
-name: Bump patch version
+name: Version — Auto Increment
 
 on:
   push:
