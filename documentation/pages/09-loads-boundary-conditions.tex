@@ -341,6 +341,31 @@ Thermal stress develops only to the extent that this free expansion is restraine
 
 The temperature Field must use \val{TYPE=NODE} and one component. The material used by the affected elements must define thermal expansion if a thermal strain contribution is expected.
 
+For structural FRT shells (\val{S3}, \val{S4}, \val{S6}, and \val{S8}), each
+nodal temperature describes the shell midsurface and is assumed constant through
+the thickness. The element interpolates the temperature in the shell plane and
+forms the initial generalized membrane strain
+\[
+\boldsymbol E_{\mathrm{th}} =
+\alpha(T-T_{\mathrm{ref}})
+\begin{bmatrix}1&1&0&0&0&0&0&0\end{bmatrix}^{T}.
+\]
+The complete shell-section tangent maps this initial strain to generalized
+thermal resultants, including thermal bending resultants if the section has
+membrane--bending coupling. Both \val{TYPE=INTEGRATED} and \val{TYPE=ABD}
+sections participate when their assigned material defines
+\cmd{THERMALEXPANSION}. An ABD section with a single expansion coefficient
+uses an equivalent homogeneous generalized initial-strain model; it cannot
+represent arbitrary ply-specific laminate thermal expansion. The shear-panel
+\val{QSPT} formulation has no membrane thermal expansion contribution.
+
+The current \cmd{TLOAD} structural formulation assembles equivalent nodal
+forces for linear/reference kinematics; it does not update the section's
+constitutive thermal strain, nonlinear thermal prestress tangent, or automatic
+stress/section-resultant recovery. In particular, mechanical stresses recovered
+from the displacement field alone must not be interpreted as thermally
+corrected stresses.
+
 The supported Abaqus input currently has no corresponding generic thermal-load import.
 
 \begin{keywordparameters}

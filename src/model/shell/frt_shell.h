@@ -599,6 +599,11 @@ struct FRTShell : ShellElement<N> {
         const Field& displacement
     ) override;
 
+    // Convert one scalar midsurface temperature per node into consistent
+    // six-DOF thermal equivalent nodal forces. Temperature is uniform through
+    // the thickness; the section tangent includes membrane/bending coupling.
+    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+
     // Basic geometric integration and mass interface.
     // These functions expose scalar geometric properties used outside the
     // nonlinear shell tangent path. They integrate over the curved reference
