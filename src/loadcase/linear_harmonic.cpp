@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -231,16 +232,18 @@ void LinearHarmonic::run() {
             auto displacement_real = mattools::expand_vec_to_mat(active_dof_idx_mat, u_real);
             auto displacement_imag = mattools::expand_vec_to_mat(active_dof_idx_mat, u_imag);
 
-            displacement_real.name = "DISPLACEMENT_REAL";
-            displacement_imag.name = "DISPLACEMENT_IMAG";
+            // Keep each excitation frequency as a separate result field.
+            const std::string suffix = "_" + std::to_string(i + 1);
+            displacement_real.name = "DISPLACEMENT_REAL" + suffix;
+            displacement_imag.name = "DISPLACEMENT_IMAG" + suffix;
 
             auto [stress_real, strain_real] = model->compute_stress_nodal(displacement_real, false);
             auto [stress_imag, strain_imag] = model->compute_stress_nodal(displacement_imag, false);
 
-            stress_real.name = "STRESS_REAL";
-            stress_imag.name = "STRESS_IMAG";
-            strain_real.name = "STRAIN_REAL";
-            strain_imag.name = "STRAIN_IMAG";
+            stress_real.name = "STRESS_REAL" + suffix;
+            stress_imag.name = "STRESS_IMAG" + suffix;
+            strain_real.name = "STRAIN_REAL" + suffix;
+            strain_imag.name = "STRAIN_IMAG" + suffix;
 
             writer->write_field(displacement_real, displacement_real.name, model->_data.get(), frequency);
             writer->write_field(displacement_imag, displacement_imag.name, model->_data.get(), frequency);

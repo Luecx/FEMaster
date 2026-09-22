@@ -274,6 +274,8 @@ Amplitude and phase can be reconstructed from
 \varphi=\operatorname{atan2}(q_\mathrm{imag},q_\mathrm{real}).
 \]
 Harmonic results distinguish the real part at a chosen phase, the complex amplitude magnitude, and signed components. These quantities are not interchangeable.
+Each excitation-frequency sample retains its own six real/imaginary displacement, stress, and strain Fields. An ascending, one-based sweep index is appended to the native Field names (for example, \val{DISPLACEMENT\_REAL\_1} and \val{DISPLACEMENT\_IMAG\_1}); the physical excitation frequency remains the result-frame value. This also keeps samples with repeated frequency values distinct in \file{.res} output.
+The node-wise magnitude of the complex displacement vector can be reconstructed from the first three translational components of the paired real and imaginary Fields. The console's response norm instead combines all active degrees of freedom of the full displacement vectors, including rotational degrees of freedom where present, and is not the maximum node-wise displacement amplitude.
 
 The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.
 
