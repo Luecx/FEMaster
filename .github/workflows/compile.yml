@@ -1,4 +1,4 @@
-name: Compile Checks
+name: Build — Cross-Platform
 
 on:
   workflow_dispatch:

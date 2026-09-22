@@ -1,4 +1,4 @@
-name: Output Comparison
+name: Test — Regression
 
 on:
   workflow_dispatch:

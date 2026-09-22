@@ -1,4 +1,4 @@
-name: Benchmarks
+name: Test — Performance
 
 on:
   workflow_dispatch:

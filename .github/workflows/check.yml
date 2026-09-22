@@ -1,4 +1,4 @@
-name: Result Checks
+name: Test — Numerical Accuracy
 
 on:
   workflow_dispatch:
