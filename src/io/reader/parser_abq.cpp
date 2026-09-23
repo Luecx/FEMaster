@@ -72,7 +72,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
     commands_abq::register_step(registry, *this);
-    commands_abq::register_cload(registry, *this);
+    commands::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
@@ -214,6 +214,12 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("BOUNDARY");
         assembly->execute_children("EQUATION");
+    }
+
+    // Execute named model-level concentrated loads after node transforms exist.
+    root.execute_children("CLOAD");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("CLOAD");
     }
 
     // ---------------------------------------------------------------------
