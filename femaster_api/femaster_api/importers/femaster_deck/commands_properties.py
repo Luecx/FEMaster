@@ -109,9 +109,11 @@ def cmd_density(parser, header: Header) -> None:
 
 def cmd_thermal_expansion(parser, header: Header) -> None:
     material = _active_material(parser)
+    if header.params.get("TYPE", "ISO").upper() not in {"ISO", "ISOTROPIC"}:
+        raise FEMasterInputError(f"*{header.keyword} supports only TYPE=ISO or TYPE=ISOTROPIC")
     data = [value for line in parser.consume_data_lines() for value in numbers(line)]
-    if not data:
-        raise FEMasterInputError("*THERMALEXPANSION requires one value")
+    if len(data) != 1:
+        raise FEMasterInputError(f"*{header.keyword} requires one value")
     parser.current_material = parser.model.materials.add(material.set_thermal_expansion(data[0]))
 
 
@@ -306,6 +308,7 @@ PROPERTY_COMMANDS = {
     "MATERIAL": cmd_material,
     "ELASTIC": cmd_elastic,
     "DENSITY": cmd_density,
+    "EXPANSION": cmd_thermal_expansion,
     "THERMALEXPANSION": cmd_thermal_expansion,
     "CONDUCTIVITY": cmd_ignored_property,
     "SPECIFICHEAT": cmd_ignored_property,

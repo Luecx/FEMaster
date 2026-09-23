@@ -9,7 +9,7 @@ Throughout this chapter, remember that a numerical zero is a real physical value
 
 \keywordpage{AMPLITUDE}
 
-\cmd{AMPLITUDE} defines a reusable scalar function that can scale a load as the analysis variable changes. In a transient analysis this variable is physical time. Native FEMaster supports \val{TYPE=LINEAR}, \val{STEP}, and \val{NEAREST} interpolation.
+\cmd{AMPLITUDE} defines a reusable scalar function that can scale a load as the analysis variable changes. In a transient analysis this variable is physical time. Both input readers accept up to four \((t,a)\) pairs per data line. \key{TYPE} selects \val{LINEAR}, \val{STEP}, or \val{NEAREST} interpolation; the default is \val{LINEAR}.
 
 For linear interpolation, a value between two samples \((t_i,a_i)\) and \((t_{i+1},a_{i+1})\) is obtained from
 \[
@@ -19,21 +19,20 @@ a(t)=a_i+\frac{t-t_i}{t_{i+1}-t_i}\left(a_{i+1}-a_i\right).
 
 An amplitude does not create a load by itself. It must be referenced by a supported load or boundary-condition keyword. This allows one time history to be reused by several load components.
 
-The supported Abaqus form is \cmd{AMPLITUDE, DEFINITION=TABULAR}. \key{TIME=STEPTIME} and \key{VALUE=RELATIVE} are accepted. Up to four time/value pairs may be written on one Abaqus data line.
+The supported Abaqus form is \cmd{AMPLITUDE, DEFINITION=TABULAR}. \key{TIME=STEPTIME} and \key{VALUE=RELATIVE} are accepted by both readers. These options use the same tabular amplitude representation as the FEMaster interpolation modes.
 
 In a transient analysis, amplitude sample times use the same time unit as \cmd{TIME}. A model expressed in seconds therefore interprets the amplitude abscissa in seconds.
 
 \begin{keywordparameters}
 \key{NAME} & required & Unique amplitude name. \\
-\key{TYPE} & native optional & \val{LINEAR}, \val{STEP}, or \val{NEAREST}; default \val{LINEAR}. \\
-\key{DEFINITION} & Abaqus optional & Supported value \val{TABULAR}. \\
-\key{TIME} & Abaqus optional & Supported value \val{STEPTIME}. \\
-\key{VALUE} & Abaqus optional & Supported value \val{RELATIVE}. \\
+\key{TYPE} & optional & \val{LINEAR}, \val{STEP}, or \val{NEAREST}; default \val{LINEAR}. \\
+\key{DEFINITION} & optional & Supported value \val{TABULAR}. \\
+\key{TIME} & optional & Supported value \val{STEPTIME}. \\
+\key{VALUE} & optional & Supported value \val{RELATIVE}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Native & One \val{time, value} pair per record. \\
-Abaqus & Up to four \val{time, value} pairs per physical line. \\
+Both readers & One to four \val{time, value} pairs per physical line. \\
 \end{keyworddata}
 
 \exampleheading
@@ -42,8 +41,7 @@ Abaqus & Up to four \val{time, value} pairs per physical line. \\
 \begin{femasterdeck}
 *AMPLITUDE, NAME=RAMP, TYPE=LINEAR
 0.0, 0.0
-0.1, 1.0
-1.0, 1.0
+0.1, 1.0, 1.0, 1.0
 \end{femasterdeck}
 \begin{abaqusdeck}
 *AMPLITUDE, NAME=RAMP,
@@ -354,7 +352,7 @@ The complete shell-section tangent maps this initial strain to generalized
 thermal resultants, including thermal bending resultants if the section has
 membrane--bending coupling. Both \val{TYPE=INTEGRATED} and \val{TYPE=ABD}
 sections participate when their assigned material defines
-\cmd{THERMALEXPANSION}. An ABD section with a single expansion coefficient
+\cmd{EXPANSION} (or its legacy alias \cmd{THERMALEXPANSION}). An ABD section with a single expansion coefficient
 uses an equivalent homogeneous generalized initial-strain model; it cannot
 represent arbitrary ply-specific laminate thermal expansion. The shear-panel
 \val{QSPT} formulation has no membrane thermal expansion contribution.

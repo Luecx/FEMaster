@@ -102,10 +102,10 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_coupling(registry, model());
     commands::register_loadcase_solver(registry, *this);
 
-    commands_abq::register_expansion(registry, model());
+    commands::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
     commands_abq::register_transform(registry, *this);
-    commands_abq::register_amplitude(registry, model());
+    commands::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
     commands_abq::register_step(registry, *this);
@@ -152,7 +152,11 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("HYPERELASTIC");
         material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
-        material->execute_children("EXPANSION");
+        // Both expansion spellings share one property; preserve deck order if both occur.
+        for (const auto* property : material->children()) {
+            const auto& name = property->command().name_;
+            if (name == "EXPANSION" || name == "THERMALEXPANSION") property->execute();
+        }
 
         material->leave();
     }

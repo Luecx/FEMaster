@@ -53,6 +53,6 @@ def _write_material(material) -> str:
         lines.append(keyword("DENSITY"))
         lines.append(csv((material.density,)))
     if material.thermal_expansion is not None:
-        lines.append(keyword("THERMALEXPANSION"))
+        lines.append(keyword("EXPANSION"))
         lines.append(csv((material.thermal_expansion,)))
     return block(lines)

@@ -19,7 +19,9 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
     blocks: list[str] = []
     for amplitude in loads.amplitudes():
         lines = [keyword("AMPLITUDE", NAME=amplitude.name, TYPE=amplitude.interpolation.value)]
-        lines.extend(csv(point) for point in amplitude.points)
+        for start in range(0, len(amplitude.points), 4):
+            points = amplitude.points[start:start + 4]
+            lines.append(csv(value for point in points for value in point))
         blocks.append(block(lines))
 
     for collector in load_collectors.all():
