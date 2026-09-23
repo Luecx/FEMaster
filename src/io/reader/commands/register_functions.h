@@ -39,7 +39,7 @@ namespace fem::io::reader::commands {
 void register_amplitude        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_assembly         (fem::io::dsl::Registry& registry);
 void register_beam_section     (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_cload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_cload            (fem::io::dsl::Registry& registry, Parser& parser);
 void register_connector        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_contact          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_coupling         (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -119,10 +119,9 @@ void register_solid_section(fem::io::dsl::Registry& registry, fem::model::Model&
 
 // Abaqus commands operating on parser-owned step and load state
 void register_boundary (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_cload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_dload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_dsload   (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_step     (fem::io::dsl::Registry& registry, ParserAbq& parser);
+void register_step     (fem::io::dsl::Registry& registry, Parser& parser);
 void register_transform(fem::io::dsl::Registry& registry, ParserAbq& parser);
 
 } // namespace fem::io::reader::commands_abq
