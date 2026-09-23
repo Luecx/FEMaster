@@ -272,3 +272,12 @@ TEST(Reader_CLoad, AbaqusStepUsesInlineCollectorAndSharedSyntax) {
     EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[0])->values_[0], 25.);
     EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[1])->values_[2], -5.);
 }
+
+TEST(Reader_CLoad, ShortVectorRowsCannotBeMistakenForAbaqusDofRows) {
+    TempCloadDeck deck("TMP_SHARED_CLOAD_BAD_VECTOR.inp",
+        "*NODE\n1, 0., 0., 0.\n"
+        "*CLOAD, LOAD_COLLECTOR=FORCES\n"
+        "1, 1.0, 100.\n");
+    io::reader::Parser parser;
+    EXPECT_THROW(parser.run(deck.file, "tests/TMP_SHARED_CLOAD_BAD_VECTOR"), std::exception);
+}
