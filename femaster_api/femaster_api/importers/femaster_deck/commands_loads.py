@@ -80,7 +80,23 @@ def cmd_cload(parser, header: Header) -> None:
         if not tokens:
             continue
         target = _node_target(parser, tokens[0])
-        collector = collector.add(NodalForce(target, _vector(tokens[1:], 6), orientation, amplitude))
+        values = tokens[1:]
+        if len(values) == 2:
+            try:
+                if not values[0] or any(c not in "+-0123456789" for c in values[0]):
+                    raise ValueError("invalid DOF")
+                dof = int(values[0])
+                if not 1 <= dof <= 6 or not values[1]:
+                    raise ValueError("invalid DOF or magnitude")
+                components = [0.0] * 6
+                components[dof - 1] = float(values[1])
+            except ValueError as exc:
+                raise FEMasterInputError("*CLOAD requires a DOF in 1..6 and a magnitude") from exc
+        elif 3 <= len(values) <= 6:
+            components = list(_vector(values, 6))
+        else:
+            raise FEMasterInputError("*CLOAD requires DOF,magnitude or at least Fx,Fy,Fz")
+        collector = collector.add(NodalForce(target, tuple(components), orientation, amplitude))
     parser.model.load_collectors.add(collector)
 
 
