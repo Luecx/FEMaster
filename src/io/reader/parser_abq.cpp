@@ -36,45 +36,8 @@ ParserAbq::ParserAbq() {
     configure_documentation_registry();
 }
 
-ParserAbqState& ParserAbq::abaqus_state() { return m_abq_state; }
-const ParserAbqState& ParserAbq::abaqus_state() const { return m_abq_state; }
-
-std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::string& amplitude) {
-    auto& data = *model()._data;
-    auto* loadcase = active_loadcase();
-    logging::error(loadcase != nullptr,
-        "Cannot resolve a load amplitude without an active load case");
-    const std::string procedure = loadcase->type_name();
-
-    if (!amplitude.empty()) {
-        logging::error(data.amplitudes.has(amplitude),
-            "Unknown Abaqus amplitude '", amplitude, "'");
-
-        if (procedure == "LINEARTRANSIENT" || procedure == "LINEARHARMONIC") {
-            return {Precision(1), amplitude};
-        }
-        if (procedure == "LINEARSTATIC" || procedure == "LINEARBUCKLING") {
-            return {data.amplitudes.get(amplitude)->evaluate(m_abq_state.step_period), std::string{}};
-        }
-        logging::error(procedure != "NONLINEARSTATIC",
-            "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
-    }
-
-    if (procedure == "LINEARTRANSIENT" && m_abq_state.step_amplitude == "RAMP") {
-        const std::string name = "__ABQ_STEP_DEFAULT_AMPLITUDE";
-        if (!data.amplitudes.has(name)) {
-            auto generated = std::make_shared<bc::Amplitude>(name, bc::Interpolation::Linear);
-            generated->add_sample(Precision(0), Precision(0));
-            generated->add_sample(m_abq_state.step_period, Precision(1));
-            model().add_amplitude(std::move(generated));
-        }
-        return {Precision(1), name};
-    }
-
-    logging::error(!(procedure == "NONLINEARSTATIC" && m_abq_state.step_amplitude == "STEP"),
-        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
-    return {Precision(1), std::string{}};
-}
+ParserAbqState& ParserAbq::abaqus_state() { return step_state(); }
+const ParserAbqState& ParserAbq::abaqus_state() const { return step_state(); }
 
 /**
  * Registers command definitions shared by the supported Abaqus subset.
@@ -136,7 +99,7 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
                              const std::string&                    input_path,
                              const std::string&                    output_path,
                              const io::writer::WriterFileFormats& writer_formats) {
-    m_abq_state = ParserAbqState{};
+    step_state() = ParserAbqState{};
 
     const auto& root = deck.root();
 
