@@ -45,10 +45,10 @@ TEST(Reader_Parser, RegistersInertialLoadFromNativeDeck) {
     {
         std::ofstream os(input_path);
         ASSERT_TRUE(os.is_open());
-        os << "*NODE\\n";
-        os << "1, 0.0, 0.0, 0.0\\n";
-        os << "*INERTIALOAD, LOAD_COLLECTOR=GRAVITY\\n";
-        os << "EALL, 0., 0., 0., 0., 0., 9.81, 0., 0., 0., 0., 0., 0.\\n";
+        os << "*NODE\n";
+        os << "1, 0.0, 0.0, 0.0\n";
+        os << "*INERTIALOAD, LOAD_COLLECTOR=GRAVITY\n";
+        os << "EALL, 0., 0., 0., 0., 0., 9.81, 0., 0., 0., 0., 0., 0.\n";
     }
 
     io::reader::Parser parser;
