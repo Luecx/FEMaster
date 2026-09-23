@@ -1,0 +1,122 @@
+/**
+ * @file test_cload_input.cpp
+ * @brief Regression coverage for shared CLOAD syntax and collector scoping.
+ */
+#include "../src/io/reader/commands/cload_common.h"
+#include "../src/io/reader/parser.h"
+#include "../src/io/reader/parser_abq.h"
+#include "../src/loadcase/linear_static.h"
+#include "../src/model/model.h"
+
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+#include <gtest/gtest.h>
+
+using namespace fem;
+
+namespace {
+std::array<std::string, 6> row(std::initializer_list<std::string> given) {
+    std::array<std::string, 6> values;
+    values.fill(io::reader::commands::cload_common::missing_token);
+    std::size_t index = 0;
+    for (const auto& value : given) values.at(index++) = value;
+    return values;
+}
+
+struct TemporaryDeck {
+    std::string file;
+    explicit TemporaryDeck(const std::string& filename, const std::string& deck)
+        : file("tests/" + filename) {
+        std::ofstream stream(file);
+        if (!stream) throw std::runtime_error("Cannot open temporary input deck");
+        stream << deck;
+    }
+    ~TemporaryDeck() { std::filesystem::remove(file); }
+};
+} // namespace
+
+TEST(CLoad_Input, DOFAndVectorRowsHaveUnambiguousLengths) {
+    const auto dof = io::reader::commands::cload_common::parse(row({"3", "-500."}));
+    EXPECT_DOUBLE_EQ(dof[2], -500.);
+    EXPECT_DOUBLE_EQ(dof[0], 0.);
+
+    const auto vec = io::reader::commands::cload_common::parse(row({"3", "-500.", "2."}));
+    EXPECT_DOUBLE_EQ(vec[0], 3.);
+    EXPECT_DOUBLE_EQ(vec[1], -500.);
+    EXPECT_DOUBLE_EQ(vec[2], 2.);
+
+    const auto moment = io::reader::commands::cload_common::parse(row({"6", "40."}));
+    EXPECT_DOUBLE_EQ(moment[5], 40.);
+    EXPECT_DOUBLE_EQ(moment[0], 0.);
+    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"7", "40."})), std::exception);
+    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"1.0", "40."})), std::exception);
+    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"100."})), std::exception);
+    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"1", "2", "3", "4", "5", "6", "7"})), std::exception);
+}
+
+TEST(CLoad_Input, NativeModelLevelBlockAcceptsMixedRowsAndNodeSets) {
+    TemporaryDeck input("TMP_CLOAD_NATIVE.inp",
+        "*NODE\n1, 0., 0., 0.\n2, 1., 0., 0.\n"
+        "*NSET, NAME=ENDS\n1, 2\n"
+        "*CLOAD, LOAD_COLLECTOR=FORCES\n"
+        "ENDS, 1, 100.\nENDS, 0., 5., -10.\nENDS, 6, 7.\n");
+    io::reader::Parser parser;
+    ASSERT_NO_THROW(parser.run(input.file, "tests/TMP_CLOAD_NATIVE"));
+    const auto collector = parser.model()._data->load_cols.get("FORCES");
+    ASSERT_NE(collector, nullptr);
+    ASSERT_EQ(collector->entries().size(), 3u);
+    for (const auto& load : collector->entries()) {
+        const auto concentrated = std::dynamic_pointer_cast<bc::CLoad>(load);
+        ASSERT_NE(concentrated, nullptr);
+        EXPECT_EQ(concentrated->region_->size(), 2u);
+    }
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[0])->values_[0], 100.);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[1])->values_[1], 5.);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[2])->values_[5], 7.);
+}
+
+TEST(CLoad_Input, BothReadersRejectUnnamedGlobalLoads) {
+    const std::string deck = "*NODE\n1, 0., 0., 0.\n*CLOAD\n1, 1, 100.\n";
+    TemporaryDeck native("TMP_CLOAD_NONAME_NATIVE.inp", deck);
+    TemporaryDeck abq("TMP_CLOAD_NONAME_ABQ.inp", deck);
+    io::reader::Parser native_parser;
+    io::reader::ParserAbq abq_parser;
+    EXPECT_THROW(native_parser.run(native.file, "tests/TMP_CLOAD_NONAME_NATIVE"), std::exception);
+    EXPECT_THROW(abq_parser.run(abq.file, "tests/TMP_CLOAD_NONAME_ABQ"), std::exception);
+}
+
+TEST(CLoad_Input, AbaqusReaderAcceptsNamedGlobalVectorAndDOFRows) {
+    TemporaryDeck input("TMP_CLOAD_ABQ.inp",
+        "*NODE\n1, 0., 0., 0.\n"
+        "*CLOAD, LOAD_COLLECTOR=GLOBAL\n"
+        "1, 1, 12.\n1, 1., 2., 3., 4., 5., 6.\n");
+    io::reader::ParserAbq parser;
+    ASSERT_NO_THROW(parser.run(input.file, "tests/TMP_CLOAD_ABQ"));
+    const auto collector = parser.model()._data->load_cols.get("GLOBAL");
+    ASSERT_NE(collector, nullptr);
+    ASSERT_EQ(collector->entries().size(), 2u);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[0])->values_[0], 12.);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[1])->values_[5], 6.);
+}
+
+TEST(CLoad_Input, InlineCollectorsAreAutomaticallySelectedWithoutDuplication) {
+    io::reader::Parser parser;
+    parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
+    parser.activate_cload_collector("", true);
+    auto* lc = dynamic_cast<loadcase::LinearStatic*>(parser.active_loadcase());
+    ASSERT_NE(lc, nullptr);
+    ASSERT_EQ(lc->loads.size(), 1u);
+    EXPECT_EQ(lc->loads.front(), "__INTERNAL_CLOAD_1");
+
+    parser.activate_cload_collector("", true);
+    EXPECT_EQ(lc->loads.size(), 1u);
+    parser.activate_cload_collector("OTHER", true);
+    parser.activate_cload_collector("OTHER", true);
+    ASSERT_EQ(lc->loads.size(), 2u);
+    EXPECT_EQ(lc->loads.back(), "OTHER");
+}
