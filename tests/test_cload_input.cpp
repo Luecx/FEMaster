@@ -5,12 +5,15 @@
 #include "../src/io/reader/commands/cload_common.h"
 #include "../src/io/reader/parser.h"
 #include "../src/io/reader/parser_abq.h"
+#include "../src/io/dsl/deck_parser.h"
+#include "../src/io/dsl/file.h"
 #include "../src/loadcase/linear_static.h"
 #include "../src/model/model.h"
 
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -56,7 +59,7 @@ TEST(CLoad_Input, DOFAndVectorRowsHaveUnambiguousLengths) {
     EXPECT_THROW(io::reader::commands::cload_common::parse(row({"7", "40."})), std::exception);
     EXPECT_THROW(io::reader::commands::cload_common::parse(row({"1.0", "40."})), std::exception);
     EXPECT_THROW(io::reader::commands::cload_common::parse(row({"100."})), std::exception);
-    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"1", "2", "3", "4", "5", "6", "7"})), std::exception);
+    EXPECT_THROW(io::reader::commands::cload_common::parse(row({"1", "2", "INVALID"})), std::exception);
 }
 
 TEST(CLoad_Input, NativeModelLevelBlockAcceptsMixedRowsAndNodeSets) {
@@ -119,4 +122,32 @@ TEST(CLoad_Input, InlineCollectorsAreAutomaticallySelectedWithoutDuplication) {
     parser.activate_cload_collector("OTHER", true);
     ASSERT_EQ(lc->loads.size(), 2u);
     EXPECT_EQ(lc->loads.back(), "OTHER");
+}
+
+TEST(CLoad_Input, BothReadersParseInlineMixedRowsUnderAnalysisScopes) {
+    TemporaryDeck native("TMP_CLOAD_SCOPE_NATIVE.inp",
+        "*LOADCASE, TYPE=LINEARSTATIC\n"
+        "*CLOAD\nTIP, 1, 100.\nTIP, 0., 0., -200.\n"
+        "*END\n");
+    TemporaryDeck abq("TMP_CLOAD_SCOPE_ABQ.inp",
+        "*STEP\n*STATIC\n"
+        "*CLOAD\nTIP, 1, 100.\nTIP, 0., 0., -200.\n"
+        "*END STEP\n");
+
+    io::reader::Parser native_parser;
+    io::reader::ParserAbq abq_parser;
+    io::dsl::File native_file(native.file);
+    io::dsl::File abq_file(abq.file);
+    ASSERT_NO_THROW({
+        const auto deck = io::dsl::DeckParser(native_parser.registry()).parse(native_file);
+        const auto cases = deck.root().children("LOADCASE");
+        ASSERT_EQ(cases.size(), 1u);
+        ASSERT_EQ(cases.front()->children("CLOAD").size(), 1u);
+    });
+    ASSERT_NO_THROW({
+        const auto deck = io::dsl::DeckParser(abq_parser.registry()).parse(abq_file);
+        const auto steps = deck.root().children("STEP");
+        ASSERT_EQ(steps.size(), 1u);
+        ASSERT_EQ(steps.front()->children("CLOAD").size(), 1u);
+    });
 }
