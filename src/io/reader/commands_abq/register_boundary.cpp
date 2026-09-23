@@ -21,7 +21,7 @@
 #include <memory>
 #include <string>
 
-#include "../parser_abq.h"
+#include "../parser.h"
 #include "../../../bc/dirichlet/support.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
@@ -30,7 +30,7 @@
 
 namespace fem::io::reader::commands_abq {
 
-void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
+void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "STEP"}));
         auto amplitude = std::make_shared<std::string>();
@@ -41,7 +41,7 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .key("AMPLITUDE").optional()
         );
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(!state.step_active || parser.active_loadcase(),
                 "BOUNDARY: inside STEP must appear after a supported procedure");
 
@@ -71,7 +71,7 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                                 && last_dof >= first_dof && last_dof <= 6,
                         "BOUNDARY: structural DOFs must be in [1,6]");
 
-                    if (parser.abaqus_state().step_active && magnitude != Precision(0)) {
+                    if (parser.step_state().step_active && magnitude != Precision(0)) {
                         const std::string procedure = parser.active_loadcase()->type_name();
                         logging::error(procedure == "LINEARSTATIC"
                                     || procedure == "NONLINEARSTATIC",
@@ -80,7 +80,7 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                             logging::error(procedure == "LINEARSTATIC",
                                 "BOUNDARY: nonzero AMPLITUDE is supported only for linear static procedures");
                             magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(
-                                parser.abaqus_state().step_period);
+                                parser.step_state().step_period);
                         }
                     }
 
@@ -89,7 +89,7 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
 
                     auto& model = parser.model();
-                    auto& state = parser.abaqus_state();
+                    auto& state = parser.step_state();
                     const auto add_node = [&](ID node_id) {
                         cos::CoordinateSystem::Ptr orientation = nullptr;
                         const auto transform = state.node_transforms.find(node_id);
