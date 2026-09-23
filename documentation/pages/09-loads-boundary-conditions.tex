@@ -134,26 +134,48 @@ TIP, 2, 3, 0.
 
 \keywordpage{CLOAD}
 
-\cmd{CLOAD} applies concentrated nodal force and moment components. Native FEMaster writes all six generalized load components in one row:
-\[
-(F_x,F_y,F_z,M_x,M_y,M_z).
-\]
-Missing components default to zero.
+\cmd{CLOAD} applies concentrated nodal forces and moments. Both FEMaster
+readers accept the same data-row layouts, distinguished by the number of values
+after the target:
 
-The target may be an individual node or a node set. When a node set is used, the specified vector is applied to \emph{every} node in the set. It is not divided by the number of nodes. A reference node with a structural/distributing \cmd{COUPLING} instead transfers one definite resultant force or moment to a surface.
+\begin{keyworddata}
+\val{target, dof, magnitude} & One-based structural DOF (1--6) and its load magnitude (Abaqus form). \\
+\val{target, Fx, Fy, Fz[, Mx, My, Mz]} & Native vector form with three required force components and up to three optional moments. \\
+\end{keyworddata}
 
-\key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading.
+The two forms may be mixed within one \cmd{CLOAD} block. In vector rows,
+omitted moment components and empty entries contribute zero. A vector row with
+fewer than three force components is invalid; this removes the ambiguity with
+the three-token Abaqus form. DOFs 1--3 denote forces, while DOFs 4--6 denote
+nodal moments. The six-vector form is a FEMaster extension when using the
+Abaqus-style reader and is not portable to an unmodified Abaqus solver.
 
-Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The supported input accepts real non-follower loading; imaginary and follower concentrated loads are not supported.
+A target may be a node or a node set. The complete specified load acts on
+\emph{every} node of a set, not as a resultant divided among its members.
+Repeated rows contribute additively, including multiple assignments to the
+same node and DOF.
 
-When a concentrated nodal load represents a physically distributed load, the idealization can create local stress singularities or mesh-dependent peaks. Surface loading and distributing couplings represent load introduction over a finite area.
+\key{LOAD_COLLECTOR} is mandatory for model- or assembly-level CLOAD
+definitions. Inside a native \cmd{LOADCASE} or Abaqus \cmd{STEP}, omitting it
+uses an automatically selected analysis-local collector, which is included
+in the active analysis without a separate \cmd{LOADS} entry. An explicitly
+named collector inside an analysis is also included automatically. Outside an
+analysis, an unnamed CLOAD is rejected rather than silently creating a global
+default collector. Model-level named CLOAD definitions in the Abaqus-style
+reader are a FEMaster extension.
+
+Native \key{ORIENTATION} defines the local load basis. Abaqus nodal
+\cmd{TRANSFORM} assignments provide each target node's load basis instead.
+\key{AMPLITUDE} applies the existing reader-specific analysis and step
+semantics. Non-follower real Abaqus loads are supported; \val{FOLLOWER}
+and \val{IMAGINARY} remain unsupported.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
-\key{ORIENTATION} & native optional & Named local load basis. \\
-\key{AMPLITUDE} & optional & Named amplitude where supported. \\
-\key{FOLLOWER} & Abaqus flag & Currently unsupported. \\
-\key{REAL}/\key{IMAGINARY} & Abaqus flags & Real loading is supported; imaginary loading is not. \\
+\key{LOAD_COLLECTOR} & Optional within LOADCASE/STEP, required at model/assembly level. \\
+\key{ORIENTATION} & Native optional named local load basis. \\
+\key{AMPLITUDE} & Optional named load amplitude where supported. \\
+\key{FOLLOWER} & Abaqus flag, unsupported. \\
+\key{REAL}/\key{IMAGINARY} & Abaqus flags; imaginary loading is unsupported. \\
 \end{keywordparameters}
 
 \exampleheading
@@ -161,12 +183,22 @@ When a concentrated nodal load represents a physically distributed load, the ide
 \begin{dialectexamples}
 \begin{femasterdeck}
 *CLOAD, LOAD_COLLECTOR=TIP_LOAD
-TIP, 1000., -250., 0., 0., 0., 0.
+TIP, 1000., -250., 0.
+TIP, 6, 50.
+*LOADCASE, TYPE=LINEARSTATIC, NAME=STATIC
+*LOADS
+TIP_LOAD
+*CLOAD
+TIP, 3, -100.
 \end{femasterdeck}
 \begin{abaqusdeck}
+*STEP
+*STATIC
 *CLOAD
 TIP, 1, 1000.
 TIP, 2, -250.
+TIP, 6, 50.
+*END STEP
 \end{abaqusdeck}
 \end{dialectexamples}
 
