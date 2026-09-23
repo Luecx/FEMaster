@@ -60,6 +60,12 @@ void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                                             "__ABQ_STEP_LOADS");
         });
 
+        // Other Abaqus load commands use the step's default active collector.
+        // A named CLOAD must not redirect subsequent DLOAD/DSLOAD entries.
+        command.on_exit([&parser, in_step](const dsl::Keys&) {
+            if (*in_step) parser.model()._data->load_cols.activate("__ABQ_STEP_LOADS");
+        });
+
         // Read one record at a time; format can change between rows.
         command.variant(dsl::Variant::make()
             .segment(dsl::Segment::make()
