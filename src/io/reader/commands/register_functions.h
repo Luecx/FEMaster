@@ -122,6 +122,6 @@ void register_boundary (fem::io::dsl::Registry& registry, Parser& parser);
 void register_dload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_dsload   (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_step     (fem::io::dsl::Registry& registry, Parser& parser);
-void register_transform(fem::io::dsl::Registry& registry, ParserAbq& parser);
+void register_transform(fem::io::dsl::Registry& registry, Parser& parser);
 
 } // namespace fem::io::reader::commands_abq
