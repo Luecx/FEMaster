@@ -32,6 +32,12 @@
 #include "../dsl/file.h"
 #include "../writer/writers.h"
 #include "commands/register_functions.h"
+#include "../../loadcase/linear_static.h"
+#include "../../loadcase/linear_buckling.h"
+#include "../../loadcase/linear_harmonic.h"
+#include "../../loadcase/linear_transient.h"
+#include "../../loadcase/nonlinear_static.h"
+#include <algorithm>
 
 #include <iostream>
 #include <memory>
@@ -402,6 +408,39 @@ loadcase::LoadCase* Parser::active_loadcase() {
 }
 
 /**
+ * Select a collector for a concentrated-load definition. Global definitions
+ * require an explicit name; inline loads are registered automatically with
+ * the active analysis, independent of whether the name was explicitly given.
+ */
+void Parser::activate_cload_collector(const std::string& requested, bool in_analysis,
+                                      const std::string& step_default) {
+    logging::error(!requested.empty() || in_analysis,
+        "CLOAD: LOAD_COLLECTOR is required outside LOADCASE/STEP");
+
+    std::string name = requested;
+    if (in_analysis) {
+        auto* lc = active_loadcase();
+        logging::error(lc != nullptr, "CLOAD: no active analysis for inline load");
+        if (name.empty()) {
+            name = step_default.empty() ? "__INTERNAL_CLOAD_" + std::to_string(lc->id) : step_default;
+        }
+
+        std::vector<std::string>* selected = nullptr;
+        if (auto* value = dynamic_cast<loadcase::LinearBuckling*>(lc)) selected = &value->loads;
+        else if (auto* value = dynamic_cast<loadcase::LinearStatic*>(lc)) selected = &value->loads;
+        else if (auto* value = dynamic_cast<loadcase::NonlinearStatic*>(lc)) selected = &value->loads;
+        else if (auto* value = dynamic_cast<loadcase::LinearHarmonic*>(lc)) selected = &value->loads;
+        else if (auto* value = dynamic_cast<loadcase::Transient*>(lc)) selected = &value->loads;
+        logging::error(selected != nullptr,
+            "CLOAD: concentrated loads are not supported by this analysis type");
+        if (std::find(selected->begin(), selected->end(), name) == selected->end()) {
+            selected->push_back(name);
+        }
+    }
+    model()._data->load_cols.activate(name);
+}
+
+/**
  * Rebuilds the persistent registry used for command-language documentation.
  */
 void Parser::configure_documentation_registry() {
@@ -469,7 +508,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_spring(registry, mdl);
 
     // Loads, constraints, features and model diagnostics
-    commands::register_cload(registry, mdl);
+    commands::register_cload(registry, *this);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
     commands::register_tload(registry, mdl);
