@@ -112,6 +112,10 @@ public:
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
 
+    // Select a named collector or an analysis-local collector for concentrated loads.
+    void activate_cload_collector(const std::string& requested, bool in_analysis,
+                                  const std::string& step_default = {});
+
 protected:
     // Dialect-specific grammar and explicit semantic processing order
     virtual void register_commands(io::dsl::Registry& registry);
