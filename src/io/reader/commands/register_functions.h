@@ -118,7 +118,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, fem::model::Model&
 void register_solid_section(fem::io::dsl::Registry& registry, fem::model::Model& model);
 
 // Abaqus commands operating on parser-owned step and load state
-void register_boundary (fem::io::dsl::Registry& registry, ParserAbq& parser);
+void register_boundary (fem::io::dsl::Registry& registry, Parser& parser);
 void register_dload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_dsload   (fem::io::dsl::Registry& registry, ParserAbq& parser);
 void register_step     (fem::io::dsl::Registry& registry, Parser& parser);
