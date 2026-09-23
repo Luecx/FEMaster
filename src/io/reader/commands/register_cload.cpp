@@ -8,7 +8,6 @@
  */
 #include "register_functions.h"
 #include "../parser.h"
-#include "../parser_abq.h"
 #include "../../dsl/registry.h"
 #include "../../dsl/invoke.h"
 #include "../../dsl/pattern_element.h"
@@ -184,11 +183,11 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                           const std::string& target, const std::array<std::string, 6>& components) {
                     auto& model = parser.model();
                     const Vec6 values = read_components(components) * *scale;
-                    const bool has_abaqus_transform = dynamic_cast<ParserAbq*>(&parser) != nullptr;
+                    const bool has_nodal_transform = !parser.step_state().node_transforms.empty();
 
                     const auto add_node = [&](ID node_id) {
                         auto basis = *orientation;
-                        if (!basis && has_abaqus_transform) {
+                        if (!basis && has_nodal_transform) {
                             const auto& transforms = parser.step_state().node_transforms;
                             const auto it = transforms.find(node_id);
                             if (it != transforms.end()) {
@@ -205,7 +204,7 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                     if (model._data->node_sets.has(target)) {
                         // Retain the native shared-region representation unless nodes
                         // have Abaqus-specific, potentially different local transforms.
-                        if (!has_abaqus_transform || *orientation) {
+                        if (!has_nodal_transform || *orientation) {
                             add_concentrated_load(model, model._data->node_sets.get(target),
                                                   values, *orientation, *amplitude);
                         } else {
