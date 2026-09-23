@@ -253,6 +253,13 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("EQUATION");
     }
 
+    // Model-level named CLOAD definitions are compiled before the analysis step.
+    // STEP-local unnamed CLOADs are registered later with their active loadcase.
+    root.execute_children("CLOAD");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("CLOAD");
+    }
+
     // ---------------------------------------------------------------------
     // Couplings
     // ---------------------------------------------------------------------
