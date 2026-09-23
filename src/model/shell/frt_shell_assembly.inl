@@ -499,12 +499,16 @@ void FRTShell<N>::assemble_drill_stabilization(
  * Integrates equivalent nodal forces from a scalar midsurface temperature field.
  *
  * The prescribed temperature is constant through the section thickness. For
- * isotropic thermal expansion the free generalized strain contains equal XX
- * and YY membrane strains, but no initial curvature or transverse shear.
- * Multiplying by the complete section tangent (including ABD coupling) yields
- * generalized thermal membrane forces and possibly bending moments. The same
- * reference MITC B matrix and integration weights as the linear stiffness map
- * these resultants into consistent forces and moments at all six nodal DOFs.
+ * isotropic thermal expansion the free generalized membrane strain is equal in
+ * both tangent directions. On a curved reference surface it also contains the
+ * change of the generalized curvature produced by uniform midsurface scaling:
+ * epsilon_th times X_,a dot D_,b. Without this term a uniformly heated cylinder
+ * can avoid artificial bending energy by opening its seam instead of expanding
+ * radially. The free transverse-shear strain remains zero. Multiplying by the
+ * complete section tangent (including ABD coupling) yields generalized thermal
+ * membrane forces and bending moments. The reference MITC B matrix and the
+ * linear-stiffness integration weights map these resultants into consistent
+ * forces and moments at all six nodal DOFs.
  *
  * This is the linear/reference thermal RHS, not a constitutive update. It does
  * not modify material state; nonlinear constitutive stress recovery and
@@ -549,6 +553,19 @@ void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisi
         Vec8 thermal_strain = Vec8::Zero();
         thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX)) = free_strain;
         thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonYY)) = free_strain;
+
+        // The shell curvature measure is x_,a dot d_,b. Under an infinitesimal
+        // uniform expansion x = (1 + epsilon_th) X with unchanged unit directors,
+        // its free change is epsilon_th X_,a dot D_,b. Use the same pointwise
+        // orthonormal reference basis and engineering mixed-curvature convention
+        // as compute_natural_strain() and transform_strain_to_local().
+        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX)) =
+            free_strain * point.X_ab.col(0).dot(point.D_ab.col(0));
+        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaYY)) =
+            free_strain * point.X_ab.col(1).dot(point.D_ab.col(1));
+        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXY)) =
+            free_strain * (point.X_ab.col(0).dot(point.D_ab.col(1))
+                         + point.X_ab.col(1).dot(point.D_ab.col(0)));
 
         thermal_force.noalias() += (point.w * point.detJ)
             * data.ip_B[id].transpose()
