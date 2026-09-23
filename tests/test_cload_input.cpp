@@ -138,16 +138,69 @@ TEST(CLoad_Input, BothReadersParseInlineMixedRowsUnderAnalysisScopes) {
     io::reader::ParserAbq abq_parser;
     io::dsl::File native_file(native.file);
     io::dsl::File abq_file(abq.file);
-    ASSERT_NO_THROW({
-        const auto deck = io::dsl::DeckParser(native_parser.registry()).parse(native_file);
-        const auto cases = deck.root().children("LOADCASE");
-        ASSERT_EQ(cases.size(), 1u);
-        ASSERT_EQ(cases.front()->children("CLOAD").size(), 1u);
-    });
-    ASSERT_NO_THROW({
-        const auto deck = io::dsl::DeckParser(abq_parser.registry()).parse(abq_file);
-        const auto steps = deck.root().children("STEP");
-        ASSERT_EQ(steps.size(), 1u);
-        ASSERT_EQ(steps.front()->children("CLOAD").size(), 1u);
-    });
+    const auto native_deck = io::dsl::DeckParser(native_parser.registry()).parse(native_file);
+    const auto cases = native_deck.root().children("LOADCASE");
+    ASSERT_EQ(cases.size(), 1u);
+    ASSERT_EQ(cases.front()->children("CLOAD").size(), 1u);
+
+    const auto abq_deck = io::dsl::DeckParser(abq_parser.registry()).parse(abq_file);
+    const auto steps = abq_deck.root().children("STEP");
+    ASSERT_EQ(steps.size(), 1u);
+    ASSERT_EQ(steps.front()->children("CLOAD").size(), 1u);
+}
+
+TEST(CLoad_Input, NativeInlineLoadIsMaterializedAndSelectedBeforeSolving) {
+    TemporaryDeck input("TMP_CLOAD_INLINE_NATIVE.inp",
+        "*LOADCASE, TYPE=LINEARSTATIC\n"
+        "*CLOAD\n1, 1, 25.\n1, 0., 0., -5.\n"
+        "*END\n");
+    io::reader::Parser parser;
+    parser.model().set_node(1, 0., 0., 0.);
+    parser.model().compile();
+
+    io::dsl::File file(input.file);
+    const auto deck = io::dsl::DeckParser(parser.registry()).parse(file);
+    const auto cases = deck.root().children("LOADCASE");
+    ASSERT_EQ(cases.size(), 1u);
+    cases.front()->enter();
+    cases.front()->execute_children("CLOAD"); // Do not execute the solver in this parser test.
+
+    auto* lc = dynamic_cast<loadcase::LinearStatic*>(parser.active_loadcase());
+    ASSERT_NE(lc, nullptr);
+    ASSERT_EQ(lc->loads.size(), 1u);
+    const auto collector = parser.model()._data->load_cols.get(lc->loads.front());
+    ASSERT_NE(collector, nullptr);
+    ASSERT_EQ(collector->entries().size(), 2u);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[0])->values_[0], 25.);
+    EXPECT_DOUBLE_EQ(std::dynamic_pointer_cast<bc::CLoad>(collector->entries()[1])->values_[2], -5.);
+}
+
+TEST(CLoad_Input, AbaqusInlineLoadPreservesDefaultStepCollector) {
+    TemporaryDeck input("TMP_CLOAD_INLINE_ABQ.inp",
+        "*STEP\n*STATIC\n"
+        "*CLOAD, LOAD_COLLECTOR=SPECIAL\n1, 1, 25.\n"
+        "*CLOAD\n1, 0., 0., -5.\n"
+        "*END STEP\n");
+    io::reader::ParserAbq parser;
+    parser.model().set_node(1, 0., 0., 0.);
+    parser.model().compile();
+
+    io::dsl::File file(input.file);
+    const auto deck = io::dsl::DeckParser(parser.registry()).parse(file);
+    const auto steps = deck.root().children("STEP");
+    ASSERT_EQ(steps.size(), 1u);
+    steps.front()->enter();
+    steps.front()->execute_children("STATIC");
+    steps.front()->execute_children("CLOAD"); // Do not execute END STEP / solver.
+
+    auto* lc = dynamic_cast<loadcase::LinearStatic*>(parser.active_loadcase());
+    ASSERT_NE(lc, nullptr);
+    ASSERT_EQ(lc->loads.size(), 2u);
+    const auto named = parser.model()._data->load_cols.get("SPECIAL");
+    const auto defaults = parser.model()._data->load_cols.get("__ABQ_STEP_LOADS");
+    ASSERT_NE(named, nullptr);
+    ASSERT_NE(defaults, nullptr);
+    EXPECT_EQ(named->entries().size(), 1u);
+    EXPECT_EQ(defaults->entries().size(), 1u);
+    EXPECT_EQ(parser.model()._data->load_cols.get(), defaults);
 }
