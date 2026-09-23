@@ -64,6 +64,8 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_equation(registry, model());
     commands::register_coupling(registry, model());
     commands::register_loadcase_solver(registry, *this);
+    commands::register_loadcase_loads(registry, *this);
+    commands::register_loadcase_supports(registry, *this);
 
     commands::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
