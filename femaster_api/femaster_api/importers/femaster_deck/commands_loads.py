@@ -30,12 +30,29 @@ def cmd_amplitude(parser, header: Header) -> None:
     name = header.params.get("NAME")
     if not name:
         raise FEMasterInputError("*AMPLITUDE requires NAME")
+    for key, allowed in (("DEFINITION", "TABULAR"), ("TIME", "STEPTIME"), ("VALUE", "RELATIVE")):
+        if header.params.get(key, allowed).upper() != allowed:
+            raise FEMasterInputError(f"*AMPLITUDE supports only {key}={allowed}")
     interpolation = AmplitudeInterpolation[header.params.get("TYPE", "LINEAR").upper()]
-    values = [value for line in parser.consume_data_lines() for value in numbers(line)]
-    if len(values) % 2 != 0:
-        raise FEMasterInputError("*AMPLITUDE requires time,value pairs")
-    points = tuple((values[index], values[index + 1]) for index in range(0, len(values), 2))
-    parser.model.loads.add_amplitude(Amplitude(name, points, interpolation))
+    points: list[tuple[float, float]] = []
+    for line in parser.consume_data_lines():
+        tokens = parse_csv(line)
+        while tokens and not tokens[-1]:
+            tokens.pop()
+        if not 2 <= len(tokens) <= 8 or len(tokens) % 2:
+            raise FEMasterInputError("*AMPLITUDE requires one to four time,value pairs per line")
+        added = False
+        for index in range(0, len(tokens), 2):
+            time, value = tokens[index:index + 2]
+            if not time and not value:
+                continue
+            if not time or not value:
+                raise FEMasterInputError("*AMPLITUDE has an incomplete time,value pair")
+            points.append((float(time), float(value)))
+            added = True
+        if not added:
+            raise FEMasterInputError("*AMPLITUDE data line contains no time,value pair")
+    parser.model.loads.add_amplitude(Amplitude(name, tuple(points), interpolation))
 
 
 def cmd_support(parser, header: Header) -> None:

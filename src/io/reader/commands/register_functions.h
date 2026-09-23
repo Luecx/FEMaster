@@ -47,6 +47,7 @@ void register_density          (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_dload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_elastic          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_element          (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_expansion        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_elset            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_end_assembly     (fem::io::dsl::Registry& registry);
 void register_end_instance     (fem::io::dsl::Registry& registry);
@@ -77,7 +78,6 @@ void register_solid_section    (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_spring           (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_support          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_surface          (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_thermal_expansion(fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tie              (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_truss_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -112,9 +112,7 @@ void register_loadcase_write_every      (fem::io::dsl::Registry& registry, Parse
 namespace fem::io::reader::commands_abq {
 
 // Abaqus syntax translations backed directly by the FEMaster model
-void register_amplitude    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_element      (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_expansion    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_orientation  (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_shell_section(fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_solid_section(fem::io::dsl::Registry& registry, fem::model::Model& model);

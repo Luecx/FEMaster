@@ -234,9 +234,9 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{THERMALEXPANSION}
+\keywordpage{EXPANSION}
 
-Native \cmd{THERMALEXPANSION} defines one constant isotropic coefficient of thermal expansion \(\alpha\). The coefficient describes the free thermal strain produced by a temperature change. In the isotropic case,
+\cmd{EXPANSION} defines one constant isotropic coefficient of thermal expansion \(\alpha\) in both FEMaster and Abaqus input. The coefficient describes the free thermal strain produced by a temperature change. In the isotropic case,
 \[
 \boldsymbol\varepsilon_{\mathrm{th}}
 =\alpha\,\Delta T
@@ -246,9 +246,13 @@ Defining \(\alpha\) alone does not load the structure; a temperature Field and r
 
 The coefficient has units of inverse temperature, for example K\(^{-1}\). Temperature differences in kelvin and degrees Celsius are numerically identical, so either scale may be used for \(\Delta T\) as long as the coefficient is consistent.
 
-The current native property is scalar and isotropic. Direction-dependent or tabulated temperature-dependent expansion is not described by this keyword.
+The supported property is scalar and isotropic. Direction-dependent or tabulated temperature-dependent expansion is not described by this keyword. \key{TYPE} is optional and accepts \val{ISO} or \val{ISOTROPIC}; the default is \val{ISO}.
 
 Thermal stress arises when free thermal expansion is restrained or when temperature varies spatially. A uniformly heated completely free body expands without developing stress in an ordinary thermoelastic model.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\end{keywordparameters}
 
 \begin{keyworddata}
 \val{alpha} & Constant isotropic coefficient of thermal expansion. \\
@@ -259,7 +263,7 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 \begin{dialectexamples}
 \begin{femasterdeck}
 *MATERIAL, NAME=ALUMINIUM
-*THERMALEXPANSION
+*EXPANSION, TYPE=ISO
 2.30e-5
 \end{femasterdeck}
 \begin{abaqusdeck}
@@ -269,11 +273,9 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{EXPANSION}
+\keywordpage{THERMALEXPANSION}
 
-\cmd{EXPANSION} is the supported Abaqus-input spelling for the same constant isotropic thermal-expansion property described above. \key{TYPE} is optional and accepts \val{ISO} or \val{ISOTROPIC}; the default is \val{ISO}.
-
-The single data value is the coefficient \(\alpha\). This separate keyword page reflects the accepted Abaqus spelling; for the supported constant isotropic case, native \cmd{THERMALEXPANSION} and Abaqus-style \cmd{EXPANSION} describe the same mechanical thermal strain law.
+\cmd{THERMALEXPANSION} is the legacy spelling of \cmd{EXPANSION}. Both FEMaster and Abaqus input readers accept it with exactly the same syntax and constant isotropic thermal-expansion behavior. Use \cmd{EXPANSION} for new decks.
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
@@ -293,7 +295,7 @@ The single data value is the coefficient \(\alpha\). This separate keyword page 
 \end{femasterdeck}
 \begin{abaqusdeck}
 *MATERIAL, NAME=ALUMINIUM
-*EXPANSION
+*THERMALEXPANSION, TYPE=ISOTROPIC
 2.30e-5
 \end{abaqusdeck}
 \end{dialectexamples}

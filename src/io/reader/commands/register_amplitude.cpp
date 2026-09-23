@@ -1,11 +1,11 @@
 /**
  * @file register_amplitude.cpp
- * @brief Registers the AMPLITUDE input command.
+ * @brief Registers shared tabular AMPLITUDE input for both readers.
  *
  * The root-level `AMPLITUDE` command creates named time-dependent scalar
- * functions from tabular `(time, value)` samples. The interpolation mode is
- * mapped to `bc::Interpolation` and the resulting `bc::Amplitude` is stored
- * in the model for later use by amplitude-aware loads and analyses.
+ * functions from up to four `(time, value)` pairs per data line. FEMaster's
+ * `TYPE` selects the interpolation mode; supported Abaqus `DEFINITION`, `TIME`
+ * and `VALUE` options describe the same tabular function.
  *
  * The active amplitude pointer is maintained by the reader and identifies the
  * object currently receiving tabular samples. Evaluation at a physical
@@ -23,7 +23,11 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
+#include <array>
+#include <cmath>
+#include <limits>
 #include <memory>
+#include <string>
 
 namespace fem::io::reader::commands {
 
@@ -33,8 +37,12 @@ namespace dsl = fem::io::dsl;
  * @brief Registers the root-level `AMPLITUDE` command.
  *
  * The command creates the named amplitude when its keyword line is entered.
- * Subsequent data lines append `(time, value)` samples to the active amplitude
- * maintained by the reader.
+ * Subsequent data lines append one to four `(time, value)` samples to the active
+ * amplitude. Both readers use the same grammar and `bc::Amplitude` state.
+ * Omitted pairs are ignored, while incomplete pairs are rejected.
+ *
+ * @param registry Stage-local DSL registry.
+ * @param model FEMaster model receiving the named amplitude.
  */
 void register_amplitude(dsl::Registry& registry, model::Model& model) {
     auto amplitude = std::make_shared<bc::Amplitude::Ptr>();
@@ -43,11 +51,14 @@ void register_amplitude(dsl::Registry& registry, model::Model& model) {
         // Restrict AMPLITUDE to the root scope
         command.allow_if(dsl::Condition::parent_is("ROOT"));
 
-        // Define the amplitude name and interpolation mode
+        // Accept FEMaster interpolation and supported Abaqus tabular options.
         command.keyword(
             dsl::KeywordSpec::make()
                 .key("NAME").required()
                 .key("TYPE").optional("LINEAR").allowed({"LINEAR", "STEP", "NEAREST"})
+                .key("DEFINITION").optional("TABULAR").allowed({"TABULAR"})
+                .key("TIME").optional("STEPTIME").allowed({"STEPTIME"})
+                .key("VALUE").optional("RELATIVE").allowed({"RELATIVE"})
         );
 
         // Create the amplitude before processing its tabular samples
@@ -70,21 +81,33 @@ void register_amplitude(dsl::Registry& registry, model::Model& model) {
             model.add_amplitude(*amplitude);
         });
 
-        // Read one (time, value) sample from every following data line
+        // Decode each physical line as up to four independent time/value pairs.
         command.variant(dsl::Variant::make()
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
-                    .one<fem::Precision>().name("TIME")
-                    .one<fem::Precision>().name("VALUE")
+                    .fixed<Precision, 8>().name("DATA").desc("Up to four time/value pairs")
+                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
+                        .on_empty(std::numeric_limits<Precision>::quiet_NaN())
                 )
-                .bind([amplitude](fem::Precision time, fem::Precision value) {
+                .bind([amplitude](const std::array<Precision, 8>& data) {
                     // Ensure that the keyword created an amplitude before data is consumed
                     logging::error(*amplitude != nullptr,
                         "AMPLITUDE: no active amplitude is available");
 
-                    // Append the tabular sample to the active amplitude
-                    (*amplitude)->add_sample(time, value);
+                    // Preserve pair order; absent pairs carry NaN in both positions.
+                    bool added = false;
+                    for (std::size_t i = 0; i < data.size(); i += 2) {
+                        const bool has_time  = !std::isnan(data[i]);
+                        const bool has_value = !std::isnan(data[i + 1]);
+                        if (!has_time && !has_value) continue;
+                        logging::error(has_time && has_value,
+                            "AMPLITUDE: incomplete time/value pair");
+                        (*amplitude)->add_sample(data[i], data[i + 1]);
+                        added = true;
+                    }
+                    logging::error(added,
+                        "AMPLITUDE: data line contains no time/value pair");
                 })
             )
         );

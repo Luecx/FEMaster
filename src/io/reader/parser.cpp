@@ -110,6 +110,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
         material->execute_children("THERMALEXPANSION");
+        material->execute_children("EXPANSION");
 
         material->leave();
     }
@@ -456,7 +457,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, mdl);
     commands::register_plastic(registry, mdl);
     commands::register_density(registry, mdl);
-    commands::register_thermal_expansion(registry, mdl);
+    commands::register_expansion(registry, mdl);
     commands::register_orientation(registry, mdl);
     commands::register_profile(registry, mdl);
     commands::register_solid_section(registry, mdl);
