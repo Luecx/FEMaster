@@ -32,6 +32,8 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 namespace fem {
 namespace model { struct Model; }
@@ -46,6 +48,18 @@ namespace io::reader {
  * Markdown, JSON and wrapping controls are accepted by the option contract but
  * are not yet applied by the current text renderer.
  */
+/** Shared STEP controls and nodal Abaqus transformations. */
+struct ParserAbqState {
+    std::unordered_map<ID, std::string> node_transforms;
+    bool step_seen = false;
+    bool step_active = false;
+    int max_increments = 100;
+    bool nlgeom = false;
+    bool perturbation = false;
+    Precision step_period = Precision(1);
+    std::string step_amplitude;
+};
+
 struct DocOptions {
     // Documentation operation and output representation
     enum class Action { List, Show, Tokens, Variants, Search, WhereToken, All };
@@ -90,6 +104,7 @@ class Parser {
     // Load case currently assembled by consecutive analysis commands
     loadcase::LoadCase::Ptr active_loadcase_;
     int                     next_loadcase_id_ = 1;
+    ParserAbqState          step_state_;
 
 public:
     // Construction
@@ -111,6 +126,9 @@ public:
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
+    ParserAbqState& step_state() { return step_state_; }
+    const ParserAbqState& step_state() const { return step_state_; }
+    std::pair<Precision, std::string> resolve_load_amplitude(const std::string& amplitude);
 
 protected:
     // Dialect-specific grammar and explicit semantic processing order
