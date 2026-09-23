@@ -289,10 +289,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
 
-    for (const auto* loadcase : root.children("LOADCASE")) {
-        loadcase->enter();
-        loadcase->execute_children();
-        loadcase->leave();
+    // Run native LOADCASE and Abaqus-style STEP blocks in their source order.
+    for (const auto* analysis : root.children()) {
+        if (analysis->command().name_ != "LOADCASE" && analysis->command().name_ != "STEP") continue;
+        analysis->enter();
+        analysis->execute_children();
+        analysis->leave();
     }
 
     close_writers();
@@ -508,7 +510,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_spring(registry, mdl);
 
     // Loads, constraints, features and model diagnostics
-    commands::register_cload(registry, mdl);
+    commands::register_cload(registry, *this);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
     commands::register_tload(registry, mdl);
@@ -527,6 +529,8 @@ void Parser::register_commands(io::dsl::Registry& registry) {
 
     // Load-case creation, solver settings and result requests
     commands::register_loadcase_begin(registry, *this);
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_boundary(registry, *this);
     commands::register_loadcase_supports(registry, *this);
     commands::register_loadcase_loads(registry, *this);
     commands::register_loadcase_solver(registry, *this);
