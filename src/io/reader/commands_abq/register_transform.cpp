@@ -23,7 +23,7 @@
 #include <memory>
 #include <string>
 
-#include "../parser_abq.h"
+#include "../parser.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../../core/logging.h"
@@ -35,7 +35,7 @@
 
 namespace fem::io::reader::commands_abq {
 
-void register_transform(fem::io::dsl::Registry& registry, ParserAbq& parser) {
+void register_transform(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("TRANSFORM", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
         command.doc("Assign a rectangular or cylindrical Abaqus transform to a compiled node set.");
@@ -62,7 +62,7 @@ void register_transform(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 )
                 .bind([&parser, nset, type](const std::array<fem::Precision, 6>& data) {
                     auto& model = parser.model();
-                    auto& state = parser.abaqus_state();
+                    auto& state = parser.step_state();
 
                     logging::error(model._data->node_sets.has(*nset),
                         "TRANSFORM: node set ", *nset, " is not defined");
