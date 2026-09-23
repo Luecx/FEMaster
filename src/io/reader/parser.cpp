@@ -24,6 +24,7 @@
  */
 
 #include "parser.h"
+#include "../../bc/amplitude.h"
 
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
@@ -69,6 +70,7 @@ void Parser::run(const std::string& input_path,
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
     next_loadcase_id_ = 1;
+    step_state_ = ParserAbqState{};
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -399,6 +401,43 @@ void Parser::end_loadcase() {
  */
 loadcase::LoadCase* Parser::active_loadcase() {
     return active_loadcase_.get();
+}
+
+std::pair<Precision, std::string> Parser::resolve_load_amplitude(const std::string& amplitude) {
+    auto& data = *model()._data;
+    auto* loadcase = active_loadcase();
+    logging::error(loadcase != nullptr,
+        "Cannot resolve a load amplitude without an active load case");
+    const std::string procedure = loadcase->type_name();
+
+    if (!amplitude.empty()) {
+        logging::error(data.amplitudes.has(amplitude),
+            "Unknown Abaqus amplitude '", amplitude, "'");
+
+        if (procedure == "LINEARTRANSIENT" || procedure == "LINEARHARMONIC") {
+            return {Precision(1), amplitude};
+        }
+        if (procedure == "LINEARSTATIC" || procedure == "LINEARBUCKLING") {
+            return {data.amplitudes.get(amplitude)->evaluate(step_state().step_period), std::string{}};
+        }
+        logging::error(procedure != "NONLINEARSTATIC",
+            "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
+    }
+
+    if (procedure == "LINEARTRANSIENT" && step_state().step_amplitude == "RAMP") {
+        const std::string name = "__ABQ_STEP_DEFAULT_AMPLITUDE";
+        if (!data.amplitudes.has(name)) {
+            auto generated = std::make_shared<bc::Amplitude>(name, bc::Interpolation::Linear);
+            generated->add_sample(Precision(0), Precision(0));
+            generated->add_sample(step_state().step_period, Precision(1));
+            model().add_amplitude(std::move(generated));
+        }
+        return {Precision(1), name};
+    }
+
+    logging::error(!(procedure == "NONLINEARSTATIC" && step_state().step_amplitude == "STEP"),
+        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
+    return {Precision(1), std::string{}};
 }
 
 /**
