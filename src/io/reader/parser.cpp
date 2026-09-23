@@ -231,7 +231,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("PLOAD");
     root.execute_children("TLOAD");
     root.execute_children("VLOAD");
-    root.execute_children("INERTIALLOAD");
+    root.execute_children("INERTIALOAD");
 
     root.execute_children("RBM");
     root.execute_children("CONNECTOR");
@@ -249,7 +249,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("PLOAD");
         assembly->execute_children("TLOAD");
         assembly->execute_children("VLOAD");
-        assembly->execute_children("INERTIALLOAD");
+        assembly->execute_children("INERTIALOAD");
 
         assembly->execute_children("RBM");
         assembly->execute_children("CONNECTOR");

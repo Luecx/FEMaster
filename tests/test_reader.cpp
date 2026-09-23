@@ -15,6 +15,7 @@
  */
 
 #include "../src/io/reader/parser.h"
+#include "../src/bc/neumann/load_inertial.h"
 #include "../src/material/orthotropic_elasticity.h"
 #include "../src/material/strain/shell_material_strain_linearized.h"
 #include "../src/material/stress/shell_material_stress_cauchy.h"
@@ -22,6 +23,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -31,6 +33,38 @@ using namespace fem;
 TEST(Reader_Parser, RegistersRbmCommand) {
     io::reader::Parser parser;
     EXPECT_NE(parser.registry().find("RBM"), nullptr);
+}
+
+TEST(Reader_Parser, RegistersInertialLoadFromNativeDeck) {
+    const std::string input_path = "tests/TMP_INERTIALOAD.INP";
+    const std::string output_path = "tests/TMP_INERTIALOAD.RES";
+
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+
+    {
+        std::ofstream os(input_path);
+        ASSERT_TRUE(os.is_open());
+        os << "*NODE\n";
+        os << "1, 0.0, 0.0, 0.0\n";
+        os << "*INERTIALOAD, LOAD_COLLECTOR=GRAVITY\n";
+        os << "EALL, 0., 0., 0., 0., 0., 9.81, 0., 0., 0., 0., 0., 0.\n";
+    }
+
+    io::reader::Parser parser;
+    ASSERT_NO_THROW(parser.run(input_path, output_path));
+
+    auto collector = parser.model()._data->load_cols.get("GRAVITY");
+    ASSERT_NE(collector, nullptr);
+    ASSERT_EQ(collector->entries().size(), 1u);
+
+    auto load = std::dynamic_pointer_cast<bc::InertialLoad>(collector->entries().front());
+    ASSERT_NE(load, nullptr);
+    EXPECT_EQ(load->region_, parser.model()._data->elem_sets.get("EALL"));
+    EXPECT_DOUBLE_EQ(load->center_acc_(2), 9.81);
+
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
 }
 
 TEST(Reader_Parser, ParsesRbmCommand) {
