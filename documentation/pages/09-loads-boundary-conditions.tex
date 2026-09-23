@@ -149,8 +149,8 @@ an Abaqus-style deck is a FEMaster extension and is not portable to Abaqus.
 Each row applies the specified force or moment to \emph{every} node of the
 target node set; it is not divided by the number of nodes. Repeated
 assignments contribute additively. An explicit \key{ORIENTATION} uses the
-named coordinate system. Without that keyword, the Abaqus reader honors
-any knot-specific \cmd{TRANSFORM} assignment.
+named coordinate system. Without that keyword, either reader honors
+an assigned nodal \cmd{TRANSFORM}.
 
 The location of the command determines the collector behavior. Outside
 \cmd{LOADCASE} or \cmd{STEP}, \key{LOAD_COLLECTOR} is mandatory; omitting it
@@ -158,7 +158,8 @@ is a parsing error. Within either analysis block, an unnamed \cmd{CLOAD}
 belongs directly to the active analysis via an implicit private collector,
 without an extra \cmd{LOADS} line. Explicitly named collectors used within
 an analysis are automatically selected as well. Global named collectors
-remain reusable by referring to them from \cmd{LOADS} in a native load case.
+remain reusable by referring to them from \cmd{LOADS} inside a LOADCASE
+or STEP (a FEMaster extension to Abaqus input).
 
 \cmd{STEP} and its supported Abaqus-style procedure cards are also accepted
 by the native reader. A STEP-local \cmd{CLOAD} follows the existing
