@@ -1,132 +1,219 @@
 /**
  * @file register_cload.cpp
- * @brief Registers the CLOAD input command.
+ * @brief Shared native/Abaqus concentrated load input, collector and STEP handling.
  *
- * Each `CLOAD` data row creates one `bc::CLoad` for a compiled node reference or
- * node set. The six generalized components are ordered as
- * `[Fx, Fy, Fz, Mx, My, Mz]`; missing or empty components default to zero.
- *
- * The command selects a named load collector and may resolve a coordinate system
- * and amplitude shared by all of its data rows. Instance-qualified scalar node
- * references are mapped into compiled assembly identifiers. Coordinate-system
- * transformation and amplitude evaluation remain the responsibility of
- * `bc::CLoad::apply()` during load assembly.
- *
- * @see bc::CLoad
- * @see model::Model::add_load
- * @see model::Model::compiled_node_id
- *
- * @author Finn Eggers
- * @date 19.08.2026
+ * The two physical row layouts are distinguished solely by their token count:
+ * TARGET,DOF,MAGNITUDE or TARGET,Fx,Fy,Fz[,Mx,My,Mz].
+ * One DSL segment normalizes each row independently, so rows may be mixed.
  */
-
 #include "register_functions.h"
+#include "../parser.h"
+#include "../parser_abq.h"
 #include "../../dsl/registry.h"
+#include "../../dsl/invoke.h"
+#include "../../dsl/pattern_element.h"
+#include "../../../bc/neumann/load_c.h"
+#include "../../../loadcase/linear_buckling.h"
+#include "../../../loadcase/linear_harmonic.h"
+#include "../../../loadcase/linear_static.h"
+#include "../../../loadcase/linear_transient.h"
+#include "../../../loadcase/nonlinear_static.h"
+#include "../../../model/model.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
+#include <stdexcept>
 #include <string>
-
-#include "../../../bc/neumann/load_c.h"
-#include "../../../model/model.h"
-#include "../../dsl/condition.h"
-#include "../../dsl/keyword.h"
+#include <utility>
+#include <vector>
 
 namespace fem::io::reader::commands {
-
 namespace dsl = fem::io::dsl;
+namespace {
+constexpr const char* omitted = "__CLOAD_OMITTED__";
+constexpr const char* empty = "__CLOAD_EMPTY__";
 
-/**
- * @brief Registers concentrated nodal force and moment assignments.
- *
- * Command entry resolves the optional coordinate system and amplitude once and
- * activates the requested load collector. Every subsequent data row resolves
- * its node target, creates one six-component `bc::CLoad` and transfers it to
- * that collector through `Model::add_load()`.
- *
- * @param registry Parser registry receiving the command definition.
- * @param model Compiled model providing node regions, shared definitions and
- *              load collectors.
- */
-void register_cload(dsl::Registry& registry, model::Model& model) {
+Precision numerical_value(const std::string& token) {
+    if (token == empty || token == omitted) {
+        throw std::runtime_error("CLOAD: a required numeric value is missing");
+    }
+    // Parse the entire lexeme: accepting just a numeric prefix would be unsafe
+    // for concentrated forces and moments.
+    std::size_t end = 0;
+    const Precision result = static_cast<Precision>(std::stod(token, &end));
+    if (end != token.size()) throw std::runtime_error("CLOAD: invalid number '" + token + "'");
+    return result;
+}
+
+Vec6 read_components(const std::array<std::string, 6>& components) {
+    std::size_t count = 0;
+    while (count < components.size() && components[count] != omitted) ++count;
+    for (std::size_t i = count; i < components.size(); ++i) {
+        if (components[i] != omitted)
+            throw std::runtime_error("CLOAD: a component follows an omitted value");
+    }
+
+    Vec6 result = Vec6::Zero();
+    if (count == 2) {
+        const std::string& dof_token = components[0];
+        if (!dsl::detail::is_int_token(dof_token))
+            throw std::runtime_error("CLOAD: DOF must be an integer in [1,6]");
+        const int dof = std::stoi(dof_token);
+        if (dof < 1 || dof > 6) throw std::runtime_error("CLOAD: DOF must be in [1,6]");
+        result[dof - 1] = numerical_value(components[1]);
+    } else if (count >= 3 && count <= 6) {
+        for (std::size_t i = 0; i < count; ++i)
+            result[static_cast<Index>(i)] = components[i] == empty
+                ? Precision(0) : numerical_value(components[i]);
+    } else {
+        throw std::runtime_error("CLOAD: expected DOF,magnitude or Fx,Fy,Fz[,Mx,My,Mz]");
+    }
+    return result;
+}
+
+std::vector<std::string>* active_loads(loadcase::LoadCase* base) {
+    if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) return &lc->loads;
+    if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) return &lc->loads;
+    if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) return &lc->loads;
+    if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) return &lc->loads;
+    if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) return &lc->loads;
+    return nullptr;
+}
+
+void add_concentrated_load(model::Model& model, model::NodeRegion::Ptr region, const Vec6& values,
+                           cos::CoordinateSystem::Ptr orientation, bc::Amplitude::Ptr amplitude) {
+    auto load = std::make_shared<bc::CLoad>();
+    load->region_ = std::move(region);
+    load->values_ = values;
+    load->orientation_ = std::move(orientation);
+    load->amplitude_ = std::move(amplitude);
+    model.add_load(std::move(load));
+}
+} // namespace
+
+void register_cload(dsl::Registry& registry, Parser& parser) {
     registry.command("CLOAD", [&](dsl::Command& command) {
-        // Concentrated loads operate on compiled assembly nodes at root scope
-        command.allow_if(dsl::Condition::parent_is("ROOT"));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STEP"}));
+        command.doc("Apply nodal loads as TARGET,DOF,MAGNITUDE or TARGET,Fx,Fy,Fz[,Mx,My,Mz]. "
+                    "LOAD_COLLECTOR is required outside a LOADCASE or STEP.");
 
-        // Expose the component order and optional modifiers through the registry documentation
-        command.doc(
-            "Create concentrated nodal loads ordered as Fx, Fy, Fz, Mx, My, Mz. "
-            "Optional orientation and amplitude references apply to every data row."
-        );
-
-        // Retain resolved command-wide modifiers across all data-row callbacks
         auto orientation = std::make_shared<cos::CoordinateSystem::Ptr>(nullptr);
-        auto amplitude   = std::make_shared<bc::Amplitude::Ptr        >(nullptr);
+        auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
+        auto scale = std::make_shared<Precision>(Precision(1));
+        auto in_step = std::make_shared<bool>(false);
 
-        // Define the target collector and optional load modifiers
         command.keyword(
             dsl::KeywordSpec::make()
-                .key("LOAD_COLLECTOR")
-                    .alternative("LOADCOLLECTOR")
-                    .alternative("NAME")
-                    .required()
-                    .doc("Collector receiving the concentrated loads")
-                .key("ORIENTATION").optional().doc("Coordinate system for the load components")
-                .key("AMPLITUDE"  ).optional().doc("Amplitude scaling the complete generalized load")
+                .key("LOAD_COLLECTOR").alternative("LOADCOLLECTOR").alternative("NAME").optional()
+                .key("ORIENTATION").optional()
+                .key("AMPLITUDE").optional()
+                .flag("REAL").flag("IMAGINARY").flag("FOLLOWER")
         );
+        command.on_enter([&parser, orientation, amplitude, scale, in_step](
+                             const dsl::ParentInfo& parent, const dsl::Keys& keys) {
+            auto& model = parser.model();
+            const bool in_loadcase = parent.command == "LOADCASE";
+            *in_step = parent.command == "STEP";
+            const bool in_analysis = in_loadcase || *in_step;
+            const std::string requested = keys.raw("LOAD_COLLECTOR");
+            logging::error(in_analysis || !requested.empty(),
+                "CLOAD: LOAD_COLLECTOR is required outside LOADCASE/STEP");
+            logging::error(!keys.has("FOLLOWER"), "CLOAD: FOLLOWER is unsupported");
+            logging::error(!keys.has("IMAGINARY"), "CLOAD: IMAGINARY is unsupported");
 
-        // Resolve shared references and select the collector for this command occurrence
-        command.on_enter([&model, orientation, amplitude](const dsl::Keys& keys) {
-            orientation->reset();
-            amplitude  ->reset();
-
-            const std::string orientation_name = keys.raw("ORIENTATION");
-            const std::string amplitude_name   = keys.raw("AMPLITUDE");
-
-            if (!orientation_name.empty()) {
-                logging::error(model._data->coordinate_systems.has(orientation_name),
-                    "CLOAD: coordinate system ", orientation_name, " does not exist");
-                *orientation = model._data->coordinate_systems.get(orientation_name);
+            if (*in_step) {
+                logging::error(parser.step_state().step_active && parser.active_loadcase() != nullptr,
+                    "CLOAD: an analysis procedure must precede loads inside STEP");
+                logging::error(parser.active_loadcase()->type_name() != "EIGENFREQ",
+                    "CLOAD: not supported inside a FREQUENCY step");
             }
 
+            orientation->reset();
+            amplitude->reset();
+            *scale = Precision(1);
+            const std::string basis = keys.raw("ORIENTATION");
+            if (!basis.empty()) {
+                logging::error(model._data->coordinate_systems.has(basis),
+                    "CLOAD: coordinate system ", basis, " does not exist");
+                *orientation = model._data->coordinate_systems.get(basis);
+            }
+
+            std::string amplitude_name = keys.raw("AMPLITUDE");
+            if (*in_step) {
+                const auto resolved = parser.resolve_load_amplitude(amplitude_name);
+                *scale = resolved.first;
+                amplitude_name = resolved.second;
+            }
             if (!amplitude_name.empty()) {
                 logging::error(model._data->amplitudes.has(amplitude_name),
                     "CLOAD: amplitude ", amplitude_name, " does not exist");
                 *amplitude = model._data->amplitudes.get(amplitude_name);
             }
 
-            model._data->load_cols.activate(keys.raw("LOAD_COLLECTOR"));
+            std::string collector = requested;
+            if (in_analysis) {
+                auto* lc = parser.active_loadcase();
+                logging::error(lc != nullptr, "CLOAD: no active loadcase");
+                auto* names = active_loads(lc);
+                logging::error(names != nullptr, "CLOAD: unsupported analysis type");
+                if (collector.empty()) {
+                    collector = *in_step ? "__ABQ_STEP_LOADS"
+                        : "__FEMASTER_INLINE_CLOAD_" + std::to_string(lc->id);
+                }
+                if (std::find(names->begin(), names->end(), collector) == names->end())
+                    names->push_back(collector);
+            }
+            model._data->load_cols.activate(collector);
         });
 
-        // Read one node target and six generalized load components per data row
+        command.on_exit([&parser, in_step](const dsl::Keys&) {
+            // Other STEP load commands rely on the default collector being active.
+            if (*in_step) parser.model()._data->load_cols.activate("__ABQ_STEP_LOADS");
+        });
+
         command.variant(dsl::Variant::make()
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
-                    .one<std::string>   ().name("TARGET").desc("Compiled node set or scalar node reference")
-                    .fixed<Precision, 6>().name("LOAD"  ).desc("Fx, Fy, Fz, Mx, My, Mz")
-                        .on_missing(Precision{0}).on_empty(Precision{0})
+                    .one<std::string>().name("TARGET")
+                    .fixed<std::string, 6>().name("VALUES")
+                        .on_missing(std::string{omitted}).on_empty(std::string{empty})
                 )
-                .bind([&model, orientation, amplitude](const std::string& target,
-                                                       const std::array<Precision, 6>& values) {
-                    // Reuse a named compiled node set or create a private single-node region
-                    model::NodeRegion::Ptr region = nullptr;
+                .bind([&parser, orientation, amplitude, scale](
+                          const std::string& target, const std::array<std::string, 6>& components) {
+                    auto& model = parser.model();
+                    const Vec6 values = read_components(components) * *scale;
+                    const bool has_abaqus_transform = dynamic_cast<ParserAbq*>(&parser) != nullptr;
+
+                    const auto add_node = [&](ID node_id) {
+                        auto basis = *orientation;
+                        if (!basis && has_abaqus_transform) {
+                            const auto& transforms = parser.step_state().node_transforms;
+                            const auto it = transforms.find(node_id);
+                            if (it != transforms.end()) {
+                                logging::error(model._data->coordinate_systems.has(it->second),
+                                    "CLOAD: coordinate system ", it->second, " does not exist");
+                                basis = model._data->coordinate_systems.get(it->second);
+                            }
+                        }
+                        auto region = std::make_shared<model::NodeRegion>("INTERNAL");
+                        region->add(node_id);
+                        add_concentrated_load(model, std::move(region), values, std::move(basis), *amplitude);
+                    };
+
                     if (model._data->node_sets.has(target)) {
-                        region = model._data->node_sets.get(target);
+                        // Retain the native shared-region representation unless nodes
+                        // have Abaqus-specific, potentially different local transforms.
+                        if (!has_abaqus_transform || *orientation) {
+                            add_concentrated_load(model, model._data->node_sets.get(target),
+                                                  values, *orientation, *amplitude);
+                        } else {
+                            for (const ID node : *model._data->node_sets.get(target)) add_node(node);
+                        }
                     } else {
-                        region = std::make_shared<model::NodeRegion>("INTERNAL");
-                        region->add(model.compiled_node_id(target));
+                        add_node(model.compiled_node_id(target));
                     }
-
-                    // Assemble the nominal load and retain its optional runtime modifiers
-                    auto load = std::make_shared<bc::CLoad>();
-                    load->region_      = std::move(region);
-                    load->orientation_ = *orientation;
-                    load->amplitude_   = *amplitude;
-                    load->values_ << values[0], values[1], values[2], values[3], values[4], values[5];
-
-                    // Transfer the completed load to the collector activated on command entry
-                    model.add_load(std::move(load));
                 })
             )
         );
