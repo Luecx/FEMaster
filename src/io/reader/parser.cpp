@@ -215,6 +215,10 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("TIE");
     }
 
+    // Resolve optional Abaqus-compatible nodal transforms before load definition.
+    root.execute_children("TRANSFORM");
+    for (const auto* assembly : root.children("ASSEMBLY")) assembly->execute_children("TRANSFORM");
+
     // Complete reference normals from the final initial geometry.
     model_->build_shell_element_normals();
 
@@ -227,6 +231,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Root-level collectors and constraints
     // ---------------------------------------------------------------------
     root.execute_children("SUPPORT");
+    root.execute_children("BOUNDARY");
 
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
@@ -245,6 +250,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("SUPPORT");
+        assembly->execute_children("BOUNDARY");
 
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
@@ -531,6 +537,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_loadcase_begin(registry, *this);
     commands_abq::register_step(registry, *this);
     commands_abq::register_boundary(registry, *this);
+    commands_abq::register_transform(registry, *this);
     commands::register_loadcase_supports(registry, *this);
     commands::register_loadcase_loads(registry, *this);
     commands::register_loadcase_solver(registry, *this);
