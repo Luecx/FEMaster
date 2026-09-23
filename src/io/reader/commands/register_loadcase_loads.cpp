@@ -18,6 +18,7 @@
 #include "register_functions.h"
 #include "../../dsl/registry.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <vector>
@@ -36,7 +37,7 @@ namespace fem::io::reader::commands {
 void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
     const auto append_tokens = [](const std::array<std::string, 16>& tokens, std::vector<std::string>& out) {
         for (const auto& token : tokens) {
-            if (!token.empty()) out.push_back(token);
+            if (!token.empty() && std::find(out.begin(), out.end(), token) == out.end()) out.push_back(token);
         }
     };
 
