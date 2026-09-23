@@ -30,6 +30,8 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <stdexcept>
+#include <initializer_list>
 
 #include <gtest/gtest.h>
 
