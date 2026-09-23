@@ -172,10 +172,10 @@ struct TempCloadDeck {
 
 TEST(Reader_CLoad, NativeAcceptsMixedAbaqusAndVectorRowsWithoutNewFiles) {
     TempCloadDeck deck("TMP_SHARED_CLOAD_NATIVE.inp",
-        "*NODE\\n1, 0., 0., 0.\\n2, 1., 0., 0.\\n"
-        "*NSET, NAME=ENDS\\n1, 2\\n"
-        "*CLOAD, LOAD_COLLECTOR=FORCES\\n"
-        "ENDS, 1, 100.\\nENDS, 0., 5., -10.\\nENDS, 6, 7.\\n");
+        "*NODE\n1, 0., 0., 0.\n2, 1., 0., 0.\n"
+        "*NSET, NAME=ENDS\n1, 2\n"
+        "*CLOAD, LOAD_COLLECTOR=FORCES\n"
+        "ENDS, 1, 100.\nENDS, 0., 5., -10.\nENDS, 6, 7.\n");
     io::reader::Parser parser;
     ASSERT_NO_THROW(parser.run(deck.file, "tests/TMP_SHARED_CLOAD_NATIVE"));
     const auto collector = parser.model()._data->load_cols.get("FORCES");
@@ -198,9 +198,9 @@ TEST(Reader_CLoad, NativeAcceptsMixedAbaqusAndVectorRowsWithoutNewFiles) {
 
 TEST(Reader_CLoad, AbaqusReaderUsesSameRegisteredCloadForNamedModelLoads) {
     TempCloadDeck deck("TMP_SHARED_CLOAD_ABQ.inp",
-        "*NODE\\n1, 0., 0., 0.\\n"
-        "*CLOAD, LOAD_COLLECTOR=FORCES\\n"
-        "1, 1, 12.\\n1, 1., 2., 3., 4., 5., 6.\\n");
+        "*NODE\n1, 0., 0., 0.\n"
+        "*CLOAD, LOAD_COLLECTOR=FORCES\n"
+        "1, 1, 12.\n1, 1., 2., 3., 4., 5., 6.\n");
     io::reader::ParserAbq parser;
     ASSERT_NO_THROW(parser.run(deck.file, "tests/TMP_SHARED_CLOAD_ABQ"));
     const auto collector = parser.model()._data->load_cols.get("FORCES");
@@ -212,7 +212,7 @@ TEST(Reader_CLoad, AbaqusReaderUsesSameRegisteredCloadForNamedModelLoads) {
 
 TEST(Reader_CLoad, UnnamedLoadsOutsideAnalysesAreRejectedByBothReaders) {
     TempCloadDeck deck("TMP_SHARED_CLOAD_UNNAMED.inp",
-        "*NODE\\n1, 0., 0., 0.\\n*CLOAD\\n1, 1, 12.\\n");
+        "*NODE\n1, 0., 0., 0.\n*CLOAD\n1, 1, 12.\n");
     io::reader::Parser native;
     io::reader::ParserAbq abq;
     EXPECT_THROW(native.run(deck.file, "tests/TMP_SHARED_CLOAD_UNNAMED_NATIVE"), std::exception);
@@ -223,8 +223,8 @@ TEST(Reader_CLoad, NativeLoadcaseAndStepInlineCollectors) {
     for (const bool use_step : {false, true}) {
         TempCloadDeck deck(use_step ? "TMP_SHARED_CLOAD_STEP.inp" : "TMP_SHARED_CLOAD_CASE.inp",
             use_step
-                ? "*STEP\\n*STATIC\\n*CLOAD\\n1, 1, 25.\\n1, 0., 0., -5.\\n*END STEP\\n"
-                : "*LOADCASE, TYPE=LINEARSTATIC\\n*CLOAD\\n1, 1, 25.\\n1, 0., 0., -5.\\n*END\\n");
+                ? "*STEP\n*STATIC\n*CLOAD\n1, 1, 25.\n1, 0., 0., -5.\n*END STEP\n"
+                : "*LOADCASE, TYPE=LINEARSTATIC\n*CLOAD\n1, 1, 25.\n1, 0., 0., -5.\n*END\n");
         io::reader::Parser parser;
         parser.model().set_node(1, 0., 0., 0.);
         parser.model().compile();
@@ -249,7 +249,7 @@ TEST(Reader_CLoad, NativeLoadcaseAndStepInlineCollectors) {
 
 TEST(Reader_CLoad, AbaqusStepUsesInlineCollectorAndSharedSyntax) {
     TempCloadDeck deck("TMP_SHARED_CLOAD_ABQ_STEP.inp",
-        "*STEP\\n*STATIC\\n*CLOAD\\n1, 1, 25.\\n1, 0., 0., -5.\\n*END STEP\\n");
+        "*STEP\n*STATIC\n*CLOAD\n1, 1, 25.\n1, 0., 0., -5.\n*END STEP\n");
     io::reader::ParserAbq parser;
     parser.model().set_node(1, 0., 0., 0.);
     parser.model().compile();
