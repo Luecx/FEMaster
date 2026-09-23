@@ -109,11 +109,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("HYPERELASTIC");
         material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
-        // Both expansion spellings share one property; preserve deck order if both occur.
-        for (const auto* property : material->children()) {
-            const auto& name = property->command().name_;
-            if (name == "EXPANSION" || name == "THERMALEXPANSION") property->execute();
-        }
+        material->execute_children("THERMALEXPANSION");
+        material->execute_children("EXPANSION");
 
         material->leave();
     }
