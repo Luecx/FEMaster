@@ -23,6 +23,7 @@ from .utils import FEMasterInputError, Header, falsey, normalize_loadcase_type, 
 
 LOADCASE_SUBCOMMANDS = {
     "LOADS",
+    "CLOAD",
     "SUPPORTS",
     "SOLVER",
     "CONSTRAINTMETHOD",
@@ -51,6 +52,7 @@ def cmd_loadcase(parser, header: Header) -> None:
     state = {
         "name": header.params.get("NAME") or lc_type,
         "loads": (),
+        "load_names": [],
         "supports": (),
         "solver": None,
         "constraint_method": ConstraintMethod.NULLSPACE,
@@ -74,30 +76,43 @@ def cmd_loadcase(parser, header: Header) -> None:
         "nonlinear": {},
     }
 
-    while True:
-        line = parser.stream.peek()
-        if line is None:
-            break
-        if not line.startswith("*"):
-            raise FEMasterInputError(f"unexpected data inside *LOADCASE: {line!r}")
-        next_header = parse_header(line)
-        if next_header.keyword.startswith("END"):
-            parser.stream.pop()
-            break
-        if next_header.keyword not in LOADCASE_SUBCOMMANDS:
-            if parser.next_header_is_top_level(LOADCASE_SUBCOMMANDS):
+    parser.current_loadcase_state = state
+    try:
+        while True:
+            line = parser.stream.peek()
+            if line is None:
                 break
-            raise FEMasterInputError(f"unsupported LOADCASE command '*{next_header.keyword}'")
-        sub = parse_header(parser.stream.pop() or "")
-        _parse_loadcase_subcommand(parser, lc_type, state, sub)
+            if not line.startswith("*"):
+                raise FEMasterInputError(f"unexpected data inside *LOADCASE: {line!r}")
+            next_header = parse_header(line)
+            if next_header.keyword.startswith("END"):
+                parser.stream.pop()
+                break
+            if next_header.keyword not in LOADCASE_SUBCOMMANDS:
+                if parser.next_header_is_top_level(LOADCASE_SUBCOMMANDS):
+                    break
+                raise FEMasterInputError(f"unsupported LOADCASE command '*{next_header.keyword}'")
+            sub = parse_header(parser.stream.pop() or "")
+            if sub.keyword == "CLOAD":
+                from .commands_loads import cmd_cload
+                cmd_cload(parser, sub)
+            else:
+                _parse_loadcase_subcommand(parser, lc_type, state, sub)
 
-    parser.model.steps.add(_make_step(lc_type, state))
+        # Resolve collector objects after all inline additions. LoadCollector is
+        # immutable, so resolving it earlier would retain an outdated snapshot.
+        state["loads"] = tuple(parser.model.load_collectors.get(name) for name in state["load_names"])
+        parser.model.steps.add(_make_step(lc_type, state))
+    finally:
+        parser.current_loadcase_state = None
 
 
 def _parse_loadcase_subcommand(parser, lc_type: str, state: dict, header: Header) -> None:
     keyword = header.keyword
     if keyword == "LOADS":
-        state["loads"] = tuple(parser.model.load_collectors.get(token) for token in _tokens(parser))
+        for name in _tokens(parser):
+            if name not in state["load_names"]:
+                state["load_names"].append(name)
     elif keyword == "SUPPORTS":
         state["supports"] = tuple(parser.model.support_collectors.get(token) for token in _tokens(parser))
     elif keyword == "SOLVER":
