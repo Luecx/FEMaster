@@ -324,22 +324,20 @@ void NonlinearStatic::run() {
             "Reduced residual contains NaN/Inf entries");
     };
 
-    // Retain the tangent evaluated at the converged state before material history
-    // is committed. Re-evaluating that state after commit can select elastic
-    // unloading rather than the tangent for continuing plastic loading.
-    SparseMatrix last_newton_full_tangent;
-    SparseMatrix committed_full_tangent;
-    bool has_committed_tangent = false;
+    // Last two accepted reduced solutions for the linear secant predictor.
+    // Attempted steps and line-search trials must never modify this history.
+    DynamicVector previous_accepted_q;
+    DynamicVector increment_start_q;
+    Precision previous_accepted_lambda = Precision(0);
+    Precision increment_start_lambda = Precision(0);
+    bool has_previous_accepted_state = false;
 
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
         current_evaluation_lambda = lambda;
-        assemble_state(
-            q, lambda, residual, tangent,
-            control == NonlinearControl::LoadControl ? &last_newton_full_tangent : nullptr
-        );
+        assemble_state(q, lambda, residual, tangent, nullptr);
     };
 
     auto evaluate_residual = [&](const DynamicVector& q,
@@ -423,42 +421,60 @@ void NonlinearStatic::run() {
                          Precision      target_lambda) {
         if (q.size() == 0) return;
 
-        DynamicVector accepted_residual;
-        SparseMatrix  accepted_tangent;
-        SparseMatrix  accepted_full_tangent;
+        // Estimate the next equilibrium displacement from the last two
+        // accepted load increments, without assembling or solving a tangent.
+        // A rejected increment never updates previous_accepted_q/lambda.
+        const bool can_extrapolate =
+            has_previous_accepted_state &&
+            previous_accepted_q.size() == q.size() &&
+            lambda > previous_accepted_lambda;
 
-        if (has_committed_tangent) {
-            // Preserve the loading-side tangent from the last converged Newton
-            // evaluation; re-evaluation at committed history may be elastic.
-            accepted_tangent = transformer->assemble_system_matrix(committed_full_tangent);
-        } else {
-            // The first increment has no previous converged state to reuse.
-            nonlinear_state.begin_contact_trial();
+        if (can_extrapolate && transformer->homogeneous()) {
+            const Precision scale =
+                (target_lambda - lambda) / (lambda - previous_accepted_lambda);
+            q += scale * (q - previous_accepted_q);
 
-            try {
-                assemble_state(
-                    q, lambda, accepted_residual,
-                    accepted_tangent, &accepted_full_tangent
-                );
-            } catch (...) {
-                nonlinear_state.rollback_contact_trial();
-                throw;
-            }
-
-            nonlinear_state.rollback_contact_trial();
+            // For homogeneous constraints T^T(f - K u_p) = T^T f.
+            // Keep the same residual normalization as the tangent predictor
+            // without the otherwise unnecessary stiffness assembly.
+            residual_reference_force =
+                std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>();
+            return;
         }
 
-        const SparseMatrix& predictor_full_tangent =
-            has_committed_tangent ? committed_full_tangent : accepted_full_tangent;
-        const DynamicVector predictor_rhs =
-            transformer->assemble_system_rhs(predictor_full_tangent, f_total);
+        // First increment: use the original tangent predictor. For prescribed
+        // displacements, K is also needed for the residual reference force
+        // T^T(f - K u_particular), even when the displacement is extrapolated.
+        DynamicVector accepted_residual;
+        SparseMatrix accepted_tangent;
+        SparseMatrix accepted_full_tangent;
 
+        nonlinear_state.begin_contact_trial();
+        try {
+            assemble_state(
+                q, lambda, accepted_residual,
+                accepted_tangent, &accepted_full_tangent
+            );
+        } catch (...) {
+            nonlinear_state.rollback_contact_trial();
+            throw;
+        }
+        nonlinear_state.rollback_contact_trial();
+
+        const DynamicVector predictor_rhs =
+            transformer->assemble_system_rhs(accepted_full_tangent, f_total);
         residual_reference_force =
             std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>();
 
+        if (can_extrapolate) {
+            const Precision scale =
+                (target_lambda - lambda) / (lambda - previous_accepted_lambda);
+            q += scale * (q - previous_accepted_q);
+            return;
+        }
+
         const DynamicVector dq_dlambda =
             linear_solve(accepted_tangent, predictor_rhs);
-
         q += (target_lambda - lambda) * dq_dlambda;
     };
 
@@ -586,6 +602,9 @@ void NonlinearStatic::run() {
     };
 
     auto begin_increment_trial = [&]() {
+        // Snapshot the accepted state before predictor/Newton may modify q_total.
+        increment_start_q = q_total;
+        increment_start_lambda = load_factor;
         increment_start_displacement =
             recover_total_displacement(q_total, load_factor);
         nonlinear_state.reset_material_state();
@@ -594,10 +613,11 @@ void NonlinearStatic::run() {
 
     auto commit_increment_trial = [&]() {
         if (control == NonlinearControl::LoadControl) {
-            // Only accepted increments may replace the predictor tangent;
-            // rejected attempts leave committed_full_tangent unchanged.
-            committed_full_tangent = std::move(last_newton_full_tangent);
-            has_committed_tangent = true;
+            // The new converged q_total is already stored by LoadControl; the
+            // beginning-of-increment snapshot becomes the previous accepted q.
+            previous_accepted_q = std::move(increment_start_q);
+            previous_accepted_lambda = increment_start_lambda;
+            has_previous_accepted_state = true;
         }
 
         nonlinear_state.commit_contact_trial();
