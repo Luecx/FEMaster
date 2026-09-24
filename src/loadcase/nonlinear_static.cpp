@@ -248,8 +248,15 @@ void NonlinearStatic::run() {
 
     Precision load_factor = Precision(0);
 
+    // Load control without contact has a symmetric tangent. Contact or arc
+    // length may require a general (potentially unsymmetric) system.
+    const auto matrix_type =
+        control == NonlinearControl::LoadControl && model->_data->contacts.empty()
+            ? solver::DirectSolverMatrixType::SPD
+            : solver::DirectSolverMatrixType::General;
+
     logging::info(true, "");
-    logging::info(true, "Solver: ", solver::get_solver_name(device, method));
+    logging::info(true, "Solver: ", solver::get_solver_name(device, method, matrix_type));
     logging::info(true, "Control: ",
         control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
@@ -407,7 +414,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -476,7 +483,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
