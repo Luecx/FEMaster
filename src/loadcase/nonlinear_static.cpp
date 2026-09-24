@@ -44,6 +44,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace fem {
 namespace loadcase {
@@ -323,12 +324,22 @@ void NonlinearStatic::run() {
             "Reduced residual contains NaN/Inf entries");
     };
 
+    // Retain the tangent evaluated at the converged state before material history
+    // is committed. Re-evaluating that state after commit can select elastic
+    // unloading rather than the tangent for continuing plastic loading.
+    SparseMatrix last_newton_full_tangent;
+    SparseMatrix committed_full_tangent;
+    bool has_committed_tangent = false;
+
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
         current_evaluation_lambda = lambda;
-        assemble_state(q, lambda, residual, tangent, nullptr);
+        assemble_state(
+            q, lambda, residual, tangent,
+            control == NonlinearControl::LoadControl ? &last_newton_full_tangent : nullptr
+        );
     };
 
     auto evaluate_residual = [&](const DynamicVector& q,
@@ -416,25 +427,31 @@ void NonlinearStatic::run() {
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        nonlinear_state.begin_contact_trial();
+        if (has_committed_tangent) {
+            // Preserve the loading-side tangent from the last converged Newton
+            // evaluation; re-evaluation at committed history may be elastic.
+            accepted_tangent = transformer->assemble_system_matrix(committed_full_tangent);
+        } else {
+            // The first increment has no previous converged state to reuse.
+            nonlinear_state.begin_contact_trial();
 
-        try {
-            assemble_state(
-                q,
-                lambda,
-                accepted_residual,
-                accepted_tangent,
-                &accepted_full_tangent
-            );
-        } catch (...) {
+            try {
+                assemble_state(
+                    q, lambda, accepted_residual,
+                    accepted_tangent, &accepted_full_tangent
+                );
+            } catch (...) {
+                nonlinear_state.rollback_contact_trial();
+                throw;
+            }
+
             nonlinear_state.rollback_contact_trial();
-            throw;
         }
 
-        nonlinear_state.rollback_contact_trial();
-
+        const SparseMatrix& predictor_full_tangent =
+            has_committed_tangent ? committed_full_tangent : accepted_full_tangent;
         const DynamicVector predictor_rhs =
-            transformer->assemble_system_rhs(accepted_full_tangent, f_total);
+            transformer->assemble_system_rhs(predictor_full_tangent, f_total);
 
         residual_reference_force =
             std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>();
@@ -576,6 +593,13 @@ void NonlinearStatic::run() {
     };
 
     auto commit_increment_trial = [&]() {
+        if (control == NonlinearControl::LoadControl) {
+            // Only accepted increments may replace the predictor tangent;
+            // rejected attempts leave committed_full_tangent unchanged.
+            committed_full_tangent = std::move(last_newton_full_tangent);
+            has_committed_tangent = true;
+        }
+
         nonlinear_state.commit_contact_trial();
         nonlinear_state.commit_material_state();
     };
