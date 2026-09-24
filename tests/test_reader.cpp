@@ -284,17 +284,18 @@ TEST(Reader_CLoad, ShortVectorRowsCannotBeMistakenForAbaqusDofRows) {
 
 
 TEST(Reader_CLoad, SequentialNativeLoadcasesAndStepKeepIndependentLoads) {
-    // A complete two-bar truss: this exercises solver execution and prevents
+    // A complete three-bar truss: this exercises solver execution and prevents
     // one loadcase from silently reusing the other's implicit load collector.
     TempCloadDeck deck("TMP_SHARED_CLOAD_TWO_CASES.inp",
         "*NODE\n1, 0., 0., 0.\n2, 1000., 0., 0.\n3, 500., 300., 0.\n"
-        "*ELEMENT, TYPE=T3, ELSET=TRUSS\n1, 1, 3\n2, 2, 3\n"
+        "*ELEMENT, TYPE=T3, ELSET=TRUSS\n1, 1, 3\n2, 2, 3\n3, 1, 2\n"
         "*NSET, NAME=LEFT\n1\n*NSET, NAME=RIGHT\n2\n*NSET, NAME=TOP\n3\n"
         "*MATERIAL, NAME=STEEL\n*ELASTIC, TYPE=ISOTROPIC\n210000., 0.3\n"
         "*TRUSSSECTION, ELSET=TRUSS, MATERIAL=STEEL\n100.\n"
         "*SUPPORT, SUPPORT_COLLECTOR=BC\n"
         "LEFT, 0., 0., 0., NAN, NAN, NAN\n"
         "RIGHT, NAN, 0., 0., NAN, NAN, NAN\n"
+        "TOP, NAN, NAN, 0., NAN, NAN, NAN\n"
         "*LOADCASE, TYPE=LINEARSTATIC\n*SUPPORTS\nBC\n"
         "*CLOAD\nTOP, 1, 100.\n*END\n"
         "*LOADCASE, TYPE=LINEARSTATIC\n*SUPPORTS\nBC\n"
