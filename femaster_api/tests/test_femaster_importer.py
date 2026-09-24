@@ -125,3 +125,73 @@ def test_writer_output_roundtrips_through_importer(tmp_path) -> None:
     assert len(imported.nodes) == 4
     assert len(imported.elements) == 1
     assert imported.elements[0].node_ids == (0, 1, 2, 3)
+
+
+def test_importer_cload_matches_cpp_trailing_comma_and_vector_dispatch() -> None:
+    model = load_model_from_inp(
+        """
+        *NODE
+        1, 0, 0, 0
+        *CLOAD, LOAD_COLLECTOR=FORCES
+        1, 1, 100.,
+        1, 2, -20.
+        1, 0., , 30.,
+        """.splitlines()
+    )
+
+    forces = model.load_collectors.get("FORCES").loads
+    assert [load.values for load in forces] == [
+        (100., 0., 0., 0., 0., 0.),
+        (0., -20., 0., 0., 0., 0.),
+        (0., 0., 30., 0., 0., 0.),
+    ]
+
+
+def test_importer_inline_cloads_are_attached_once_and_isolated_per_loadcase() -> None:
+    model = load_model_from_inp(
+        """
+        *NODE
+        1, 0, 0, 0
+        *CLOAD, LOAD_COLLECTOR=EXTERNAL
+        1, 1, 5.
+        *LOADCASE, TYPE=LINEARSTATIC, NAME=ONE
+        *LOADS
+        EXTERNAL
+        *CLOAD
+        1, 1, 10.
+        *CLOAD, LOAD_COLLECTOR=EXTERNAL
+        1, 2, 20.
+        *LOADS
+        EXTERNAL
+        *END
+        *LOADCASE, TYPE=LINEARSTATIC, NAME=TWO
+        *CLOAD
+        1, 3, 30.
+        *END
+        """.splitlines()
+    )
+
+    one, two = model.steps[0], model.steps[1]
+    assert isinstance(one, StaticStep)
+    assert isinstance(two, StaticStep)
+    assert len(one.loads) == 2
+    assert [load.values for load in one.loads[0].loads] == [
+        (5., 0., 0., 0., 0., 0.),
+        (0., 20., 0., 0., 0., 0.),
+    ]
+    assert [load.values for load in one.loads[1].loads] == [(10., 0., 0., 0., 0., 0.)]
+    assert len(two.loads) == 1
+    assert [load.values for load in two.loads[0].loads] == [(0., 0., 30., 0., 0., 0.)]
+    assert two.loads[0].name != one.loads[1].name
+
+
+def test_importer_unnamed_cload_outside_loadcase_is_rejected() -> None:
+    with pytest.raises(Exception, match="LOAD_COLLECTOR"):
+        load_model_from_inp(
+            """
+            *NODE
+            1, 0, 0, 0
+            *CLOAD
+            1, 1, 100.
+            """.splitlines()
+        )
