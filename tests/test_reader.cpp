@@ -283,7 +283,7 @@ TEST(Reader_CLoad, ShortVectorRowsCannotBeMistakenForAbaqusDofRows) {
 }
 
 
-TEST(Reader_CLoad, TwoNativeLoadcasesExecuteWithSeparateInlineLoads) {
+TEST(Reader_CLoad, SequentialNativeLoadcasesAndStepKeepIndependentLoads) {
     // A complete two-bar truss: this exercises solver execution and prevents
     // one loadcase from silently reusing the other's implicit load collector.
     TempCloadDeck deck("TMP_SHARED_CLOAD_TWO_CASES.inp",
@@ -298,7 +298,8 @@ TEST(Reader_CLoad, TwoNativeLoadcasesExecuteWithSeparateInlineLoads) {
         "*LOADCASE, TYPE=LINEARSTATIC\n*SUPPORTS\nBC\n"
         "*CLOAD\nTOP, 1, 100.\n*END\n"
         "*LOADCASE, TYPE=LINEARSTATIC\n*SUPPORTS\nBC\n"
-        "*CLOAD\nTOP, 1, 200.\n*END\n");
+        "*CLOAD\nTOP, 1, 200.\n*END\n"
+        "*STEP\n*STATIC\n*SUPPORTS\nBC\n*CLOAD\nTOP, 1, 300.\n*END STEP\n");
     io::reader::Parser parser;
     ASSERT_NO_THROW(parser.run(deck.file, "tests/TMP_SHARED_CLOAD_TWO_CASES"));
     const ID top = parser.model().compiled_node_id("3");
@@ -306,6 +307,8 @@ TEST(Reader_CLoad, TwoNativeLoadcasesExecuteWithSeparateInlineLoads) {
     const auto second = parser.model().build_load_matrix({"__FEMASTER_INLINE_CLOAD_2"});
     EXPECT_DOUBLE_EQ(first(top, 0), 100.);
     EXPECT_DOUBLE_EQ(second(top, 0), 200.);
+    const auto step_loads = parser.model().build_load_matrix({"__ABQ_STEP_LOADS"});
+    EXPECT_DOUBLE_EQ(step_loads(top, 0), 300.);
     EXPECT_DOUBLE_EQ(first(top, 1), 0.);
     EXPECT_DOUBLE_EQ(second(top, 1), 0.);
 }
