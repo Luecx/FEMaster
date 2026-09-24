@@ -72,11 +72,23 @@ def cmd_support(parser, header: Header) -> None:
 
 
 def cmd_cload(parser, header: Header) -> None:
-    collector = _load_collector(parser, header)
+    state = parser.current_loadcase_state
+    name = (header.params.get("LOAD_COLLECTOR") or header.params.get("LOADCOLLECTOR")
+            or header.params.get("NAME"))
+    if not name and state is None:
+        raise FEMasterInputError("*CLOAD requires LOAD_COLLECTOR outside *LOADCASE")
+    name = name or f"__FEMASTER_INLINE_CLOAD_{len(parser.model.steps) + 1}"
+    try:
+        collector = parser.model.load_collectors.get(name)
+    except KeyError:
+        collector = parser.model.load_collectors.add(LoadCollector(name))
     orientation = _orientation(parser, header)
     amplitude = _amplitude(parser, header)
     for line in parser.consume_data_lines():
         tokens = parse_csv(line)
+        # Match C++ tokenization: drop only trailing empty fields, not interior ones.
+        while tokens and tokens[-1] == "":
+            tokens.pop()
         if not tokens:
             continue
         target = _node_target(parser, tokens[0])
@@ -93,6 +105,8 @@ def cmd_cload(parser, header: Header) -> None:
             raise FEMasterInputError("*CLOAD requires DOF,magnitude or Fx,Fy,Fz[,Mx,My,Mz]")
         collector = collector.add(NodalForce(target, tuple(components), orientation, amplitude))
     parser.model.load_collectors.add(collector)
+    if state is not None and name not in state["load_names"]:
+        state["load_names"].append(name)
 
 
 def cmd_dload(parser, header: Header) -> None:
