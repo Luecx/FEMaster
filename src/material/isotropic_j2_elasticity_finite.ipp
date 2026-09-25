@@ -963,9 +963,10 @@ Mat6 tangent_finite(const FiniteResponse& base,
     logging::error(lu.isInvertible(),
         "J2: singular local Jacobian during consistent tangent evaluation");
 
-    // Do not symmetrize the result artificially. For associative J2 plasticity
-    // with isotropic elasticity, symmetry must emerge from the consistent
-    // derivative itself. Explicit symmetrization would only hide an error in the
-    // constitutive linearization.
+    // Do not symmetrize the result artificially. PLASTIC stores a Cauchy yield
+    // stress while this return map is written in Mandel/Kirchhoff stress. The
+    // required J conversion introduces genuine volumetric/deviatoric coupling,
+    // so the exact PK2/Green-Lagrange algorithmic tangent is not generally
+    // major-symmetric. The nonlinear global solve must preserve that derivative.
     return stress_E - local.stress_x * lu.solve(residual_E);
 }
