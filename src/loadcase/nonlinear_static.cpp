@@ -519,7 +519,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
