@@ -748,7 +748,6 @@ MapMatrix FRTShell<N>::stiffness_tangent(
         assemble_geometric_stiffness(data, Kgeo);
         tangent = Kmat + Kgeo;
         assemble_drill_stabilization(data, &tangent, &internal_force);
-        tangent = Precision(0.5) * (tangent + tangent.transpose());
     } else {
         assemble_drill_stabilization(data, nullptr, &internal_force);
     }
