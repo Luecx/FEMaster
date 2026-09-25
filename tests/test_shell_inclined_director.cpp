@@ -14,10 +14,6 @@ namespace {
 
 using Shell = fem::model::FRTShellS4;
 
-Shell make_shell() {
-    return Shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
-}
-
 Shell::ReferencePoint inclined_reference_point() {
     Shell::ReferencePoint point;
     point.invJ.setIdentity();
@@ -29,7 +25,7 @@ Shell::ReferencePoint inclined_reference_point() {
 } // namespace
 
 TEST(ShellInclinedDirector, PureMembraneStrainDoesNotBecomeTransverseShear) {
-    Shell shell = make_shell();
+    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
@@ -49,7 +45,7 @@ TEST(ShellInclinedDirector, PureMembraneStrainDoesNotBecomeTransverseShear) {
 }
 
 TEST(ShellInclinedDirector, RecoversOrthonormalEngineeringShear) {
-    Shell shell = make_shell();
+    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
@@ -67,7 +63,7 @@ TEST(ShellInclinedDirector, RecoversOrthonormalEngineeringShear) {
 }
 
 TEST(ShellInclinedDirector, AppliesSameDeskewingToBMatrix) {
-    Shell shell = make_shell();
+    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
