@@ -324,10 +324,10 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
         return MapMatrix(nullptr, 0, 0);
     }
 
-    // Material and geometric tangents are analytically symmetric; remove only
-    // floating-point asymmetry accumulated during quadrature and block assembly.
-    tangent = Precision(0.5) * (tangent + tangent.transpose());
-
+    // Preserve the constitutive tangent exactly. Most elastic/hyperelastic laws
+    // are major-symmetric, but finite J2 with a true/Cauchy hardening table uses
+    // a J-dependent conversion to Mandel/Kirchhoff yield stress and can therefore
+    // produce a genuinely nonsymmetric consistent tangent.
     MapMatrix mapped{buffer, D * N, D * N};
     mapped = tangent;
     return mapped;

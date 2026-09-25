@@ -432,19 +432,39 @@ DirectionalResponse directional_response(const FinitePoint& point,
     // -------------------------------------------------------------------------
     // Differentiate the scalar consistency equation.
     //
-    // The residual is scaled by (3 G + H),
+    // PLASTIC tabulates the true/Cauchy yield stress sigma_y(alpha), while q is
+    // the Mandel (equivalently Kirchhoff for this isotropic model) J2 stress.
+    // Therefore
     //
-    //     R_gamma = [q - sigma_y(alpha_n + dgamma)] / (3 G + H).
+    //     R_gamma = [q - J sigma_y(alpha)] / [3 G + J H],
     //
-    // Inside one active hardening segment H is constant, therefore
-    //
-    //     dR_gamma = [dq - H d(dgamma)] / (3 G + H).
+    // with J = sqrt(det(C)) and H = d sigma_y / d alpha. Inside one active
+    // piecewise-linear hardening segment H is constant. The total-volume
+    // derivative dJ must nevertheless be retained for the global consistent
+    // tangent.
     // -------------------------------------------------------------------------
-    const Precision alpha = alpha_old + x(5);
-    const Precision hardening = hardening_slope_at(yield_curve, alpha);
+    const Precision jacobian = std::sqrt(C.determinant());
+    Precision d_jacobian = Precision(0);
 
-    result.d_residual(5) = (dq - hardening * dgamma)
-                         / (Precision(3) * shear + hardening);
+    if (dC.squaredNorm() > Precision(0)) {
+        d_jacobian = Precision(0.5) * jacobian * (C.inverse() * dC).trace();
+    }
+
+    const Precision alpha = alpha_old + x(5);
+    const Precision yield_cauchy = yield_stress_at(yield_curve, alpha);
+    const Precision hardening_cauchy = hardening_slope_at(yield_curve, alpha);
+    const Precision yield_kirchhoff = jacobian * yield_cauchy;
+    const Precision hardening_kirchhoff = jacobian * hardening_cauchy;
+    const Precision denominator = Precision(3) * shear + hardening_kirchhoff;
+    const Precision numerator = point.q - yield_kirchhoff;
+
+    const Precision d_numerator =
+        dq - d_jacobian * yield_cauchy - hardening_kirchhoff * dgamma;
+    const Precision d_denominator = d_jacobian * hardening_cauchy;
+
+    result.d_residual(5) =
+        d_numerator / denominator
+        - numerator * d_denominator / (denominator * denominator);
 
     return result;
 }
@@ -542,7 +562,12 @@ LocalLinearization local_linearization(const FinitePoint& point,
  * six backward-Euler equations,
  *
  *     A - dgamma N = 0
- *     q - sigma_y(alpha_n + dgamma) = 0.
+ *     q_M - J sigma_y(alpha_n + dgamma) = 0.
+ *
+ * The hardening table stores true (Cauchy) uniaxial yield stress, matching the
+ * Abaqus/CalculiX input convention. The return map is written in Mandel stress;
+ * for the isochoric J2 plastic flow used here q_M equals the Kirchhoff equivalent
+ * stress, so the tabulated Cauchy radius is converted with tau_y = J sigma_y.
  *
  * Newton uses the exact analytical dR/dx supplied by local_linearization(). After
  * convergence the physical state is written directly back into the supplied state
@@ -636,19 +661,22 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
         result.C, result.Fp_old, result.x, shear, bulk
     );
 
-    const Precision yield_old = yield_stress_at(yield_curve, result.alpha_old);
-    const Precision f_trial   = result.point.q - yield_old;
+    const Precision jacobian = std::sqrt(result.C.determinant());
+    const Precision yield_old_cauchy =
+        yield_stress_at(yield_curve, result.alpha_old);
+    const Precision yield_old_kirchhoff = jacobian * yield_old_cauchy;
+    const Precision f_trial = result.point.q - yield_old_kirchhoff;
 
-    // The J2 surface depends only on the deviatoric Mandel stress. Scaling this
-    // comparison with K would make the apparent elastic domain grow without bound
-    // as nu approaches 0.5, although hydrostatic stiffness does not enter J2
-    // yielding. Use the same deviatoric scale as the consistency equation:
+    // q is a Mandel/Kirchhoff equivalent stress, whereas PLASTIC stores the
+    // uniaxial true (Cauchy) yield stress. Convert the tabulated radius with J
+    // before testing yield. The tolerance remains scaled only with deviatoric
+    // stress quantities and therefore stays well behaved near incompressibility:
     //
-    //     f_trial = q_trial - sigma_y
-    //     tol     = 1e-10 max(1, 3 G, sigma_y).
+    //     f_trial = q_trial - J sigma_y
+    //     tol     = 1e-10 max(1, 3 G, J sigma_y).
     const Precision yield_tolerance = stress_tolerance(
         Precision(3) * shear,
-        yield_old
+        yield_old_kirchhoff
     );
     result.plastic = f_trial > yield_tolerance;
 
@@ -675,8 +703,9 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
             //
             // Consistency residual:
             //
-            //     R_gamma = [q - sigma_y(alpha_n + dgamma)] / (3 G + H).
+            //     R_gamma = [q - J sigma_y(alpha_n + dgamma)] / (3 G + J H).
             //
+            // J is fixed during the local return map because total C is fixed.
             // The scalar equation is scaled only to balance the local system; its
             // zero is unchanged.
             // -----------------------------------------------------------------
@@ -692,9 +721,12 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
             residual(4) = flow_residual_tensor(0, 1);
 
             const Precision alpha = result.alpha_old + result.x(5);
-            const Precision hardening = hardening_slope_at(yield_curve, alpha);
-            residual(5) = (point.q - yield_stress_at(yield_curve, alpha))
-                        / (Precision(3) * shear + hardening);
+            const Precision yield_cauchy = yield_stress_at(yield_curve, alpha);
+            const Precision hardening_cauchy =
+                hardening_slope_at(yield_curve, alpha);
+            residual(5) =
+                (point.q - jacobian * yield_cauchy)
+                / (Precision(3) * shear + jacobian * hardening_cauchy);
 
             if (residual.cwiseAbs().maxCoeff() <= Precision(1e-10)) {
                 result.point = point;
@@ -756,13 +788,15 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
 
                     const Precision candidate_alpha =
                         result.alpha_old + candidate_x(5);
-                    const Precision candidate_hardening =
+                    const Precision candidate_yield_cauchy =
+                        yield_stress_at(yield_curve, candidate_alpha);
+                    const Precision candidate_hardening_cauchy =
                         hardening_slope_at(yield_curve, candidate_alpha);
 
                     candidate_residual(5) =
-                        (candidate_point.q
-                         - yield_stress_at(yield_curve, candidate_alpha))
-                        / (Precision(3) * shear + candidate_hardening);
+                        (candidate_point.q - jacobian * candidate_yield_cauchy)
+                        / (Precision(3) * shear
+                           + jacobian * candidate_hardening_cauchy);
 
                     if (candidate_residual.norm() < residual_norm) {
                         result.x = candidate_x;
@@ -929,9 +963,10 @@ Mat6 tangent_finite(const FiniteResponse& base,
     logging::error(lu.isInvertible(),
         "J2: singular local Jacobian during consistent tangent evaluation");
 
-    // Do not symmetrize the result artificially. For associative J2 plasticity
-    // with isotropic elasticity, symmetry must emerge from the consistent
-    // derivative itself. Explicit symmetrization would only hide an error in the
-    // constitutive linearization.
+    // Do not symmetrize the result artificially. PLASTIC stores a Cauchy yield
+    // stress while this return map is written in Mandel/Kirchhoff stress. The
+    // required J conversion introduces genuine volumetric/deviatoric coupling,
+    // so the exact PK2/Green-Lagrange algorithmic tangent is not generally
+    // major-symmetric. The nonlinear global solve must preserve that derivative.
     return stress_E - local.stress_x * lu.solve(residual_E);
 }

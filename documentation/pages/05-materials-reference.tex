@@ -124,18 +124,20 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 
 \cmd{PLASTIC} adds associative isotropic von Mises (\(J_2\)) elastoplasticity with tabulated isotropic hardening to the current material. The command is registered in \emph{both} the native FEMaster and supported Abaqus parsers. It requires an isotropic \cmd{ELASTIC} definition for the same material; orthotropic, generalized-isotropic, and hyperelastic definitions cannot be combined with the current \cmd{PLASTIC} implementation. The material keeps the Young's modulus and Poisson ratio defined by \cmd{ELASTIC}.
 
-Each data row gives the current uniaxial yield stress followed by the \emph{accumulated equivalent plastic strain}, not total strain. The first row must have zero equivalent plastic strain. Later strain values must increase strictly, while yield stresses must be positive and non-decreasing. FEMaster interpolates the yield stress linearly between rows and holds it constant beyond the last row (perfect plasticity after the supplied range). A single row describes a perfectly plastic material from initial yield.
+Each data row gives the current uniaxial \emph{true (Cauchy) yield stress} followed by the \emph{accumulated equivalent plastic strain}, not total strain. This is the same stress meaning used by Abaqus-style \cmd{PLASTIC} input. The first row must have zero equivalent plastic strain. Later strain values must increase strictly, while yield stresses must be positive and non-decreasing. FEMaster interpolates the yield stress linearly between rows and holds it constant beyond the last row (perfect plasticity after the supplied range). A single row describes a perfectly plastic material from initial yield.
 
 \key{TYPE} is optional and defaults to \val{J2}; accepted selectors are \val{J2}, \val{MISES}, \val{VONMISES}, and \val{VON\_MISES}. The material implementation provides small-strain and finite-strain constitutive responses for the supported axial, solid, and integrated-shell evaluation paths. A nonlinear analysis is required to evolve plastic history; a linear static analysis does not turn into an elastoplastic analysis merely because this keyword is present.
 
-When converting uniaxial test data to this table, subtract the elastic strain from the measured total strain before specifying the plastic-strain ordinate. Stress values and Young's modulus must use the same stress unit. For finite-strain applications, ensure that the stress and strain measures of the source test curve are appropriate to the chosen material calibration.
+For finite strain, the return map uses Mandel/Kirchhoff equivalent stress internally. Because J2 plastic flow is isochoric, the tabulated Cauchy yield radius is converted consistently as \(\tau_y=J\sigma_y\), where \(J=\det\mathbf F\). This conversion and its deformation derivative are included in the finite-strain algorithmic tangent.
+
+When converting uniaxial test data to this table, use true stress and subtract the elastic strain from the corresponding logarithmic total strain before specifying the plastic-strain ordinate. Stress values and Young's modulus must use the same stress unit.
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{J2} (default), \val{MISES}, \val{VONMISES}, or \val{VON\_MISES}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{yield stress, equivalent plastic strain} & One hardening point per row; the first plastic strain is zero and subsequent strains are strictly increasing. \\
+\val{true (Cauchy) yield stress, equivalent plastic strain} & One hardening point per row; the first plastic strain is zero and subsequent strains are strictly increasing. \\
 \end{keyworddata}
 
 \exampleheading

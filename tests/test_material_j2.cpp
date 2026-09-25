@@ -131,6 +131,41 @@ TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
     EXPECT_GT(trial_finite[6], Precision(0));
 }
 
+TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {
+    material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
+    j2.add_yield_point(Precision(250), Precision(0));
+
+    std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> trial(committed.size());
+    j2.initialize_state(committed.data());
+
+    // Add a moderate volumetric expansion and a small deviatoric perturbation.
+    // For the virgin finite-strain trial state this gives approximately
+    //
+    //     J       = 1.15369
+    //     q_M     = 269.47 MPa
+    //     J sigma = 288.42 MPa.
+    //
+    // The raw table value 250 MPa would incorrectly trigger yielding if it were
+    // compared directly with Mandel stress. As a true/Cauchy yield stress it must
+    // first be converted to the Kirchhoff/Mandel radius with J.
+    Vec6 strain_values = Vec6::Zero();
+    strain_values(0) = Precision(0.05078);
+    strain_values(1) = Precision(0.04961);
+    strain_values(2) = Precision(0.04961);
+
+    VolumeStressPK2 stress;
+    j2.evaluate(
+        VolumeStrainGreenLagrange(strain_values),
+        committed.data(),
+        trial.data(),
+        stress,
+        nullptr
+    );
+
+    EXPECT_NEAR(trial[6], Precision(0), Precision(1e-14));
+}
+
 TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
     material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
 
@@ -209,9 +244,10 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
     const Precision scale = std::max(Precision(1), tangent_fd.norm());
     EXPECT_LT((tangent - tangent_fd).norm() / scale, Precision(2e-4));
 
-    // Do not repair symmetry in production: the consistent analytic derivative
-    // should produce it naturally, up to floating-point round-off.
-    EXPECT_LT((tangent - tangent.transpose()).norm() / scale, Precision(1e-8));
+    // A true/Cauchy hardening table is converted to the internal
+    // Mandel/Kirchhoff yield radius with J. The resulting exact PK2/E tangent can
+    // be genuinely nonsymmetric, so finite-difference consistency rather than
+    // major symmetry is the constitutive contract.
 }
 
 TEST(Material_J2, PlasticCommandReplacesIsotropicElasticity) {

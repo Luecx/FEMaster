@@ -38,6 +38,17 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     logging::info(true, "This build does not support gpu-accelerated solving, falling back to cpu");
     return solve_direct_cpu(mat, rhs, matrix_type);
 #else
+#ifndef USE_CUDSS
+    // The legacy cuSolver sparse path is Cholesky-only. Symmetric-indefinite
+    // and general systems must therefore use the CPU backend when cuDSS is not
+    // available rather than being misclassified as SPD.
+    if (matrix_type != DirectSolverMatrixType::SPD) {
+        logging::info(true,
+            "Legacy cuSolver direct path supports only SPD/Cholesky; falling back to CPU");
+        return solve_direct_cpu(mat, rhs, matrix_type);
+    }
+#endif
+
     const auto N = mat.cols();
     const auto nrhs = rhs.cols();
     DynamicMatrix sol = DynamicMatrix::Zero(N, nrhs);
@@ -47,9 +58,11 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     Timer t {};
 
 #ifdef USE_CUDSS
-    logging::info(true, matrix_type == DirectSolverMatrixType::SPD
-                        ? "Using cuDSS direct solver (SPD)"
-                        : "Using cuDSS direct solver (general)");
+    const char* cudss_type_name =
+        matrix_type == DirectSolverMatrixType::SPD ? "SPD" :
+        matrix_type == DirectSolverMatrixType::Symmetric ? "symmetric" :
+        "general";
+    logging::info(true, "Using cuDSS direct solver (", cudss_type_name, ")");
 
     cuda::CudaArray<CudaPrecision> dense_rhs {static_cast<std::size_t>(rhs.size())};
     cuda::CudaArray<CudaPrecision> dense_sol {static_cast<std::size_t>(rhs.size())};
@@ -79,9 +92,11 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     CudaPrecision* rhs_values = dense_rhs;
     CudaPrecision* sol_values = dense_sol;
     const cudssMatrixType_t cudss_matrix_type =
-        (matrix_type == DirectSolverMatrixType::SPD) ? CUDSS_MTYPE_SPD : CUDSS_MTYPE_GENERAL;
+        matrix_type == DirectSolverMatrixType::SPD ? CUDSS_MTYPE_SPD :
+        matrix_type == DirectSolverMatrixType::Symmetric ? CUDSS_MTYPE_SYMMETRIC :
+        CUDSS_MTYPE_GENERAL;
     const cudssMatrixViewType_t cudss_matrix_view =
-        (matrix_type == DirectSolverMatrixType::SPD) ? CUDSS_MVIEW_UPPER : CUDSS_MVIEW_FULL;
+        matrix_type == DirectSolverMatrixType::General ? CUDSS_MVIEW_FULL : CUDSS_MVIEW_UPPER;
 
     t.start();
 
@@ -136,9 +151,6 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     runtime_check_cudss(cudssConfigDestroy(config), "cudssConfigDestroy");
     runtime_check_cudss(cudssDestroy(handle), "cudssDestroy");
 #else
-    logging::error(matrix_type == DirectSolverMatrixType::SPD,
-                   "GPU direct solve for non-SPD systems requires cuDSS; "
-                   "cuSolver sparse direct path only supports Cholesky/SPD here");
     logging::info(nrhs > 1,
                   "Legacy cuSolver solves multiple right-hand sides sequentially; "
                   "enable cuDSS for a native multi-RHS solve");

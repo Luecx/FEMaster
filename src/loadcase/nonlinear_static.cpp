@@ -30,6 +30,8 @@
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../material/isotropic_j2_elasticity.h"
+#include "../material/material.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
 #include "../io/writer/write_mtx.h"
@@ -44,6 +46,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace fem {
 namespace loadcase {
@@ -107,6 +110,17 @@ Precision calculate_relative_force_residual(
     return residual_force == Precision(0)
         ? Precision(0)
         : std::numeric_limits<Precision>::infinity();
+}
+
+bool has_nonsymmetric_finite_j2_tangent(const model::ModelData& data) {
+    for (const auto& [name, material_ptr] : data.materials) {
+        (void) name;
+        if (material_ptr && material_ptr->has_elasticity()
+            && material_ptr->elasticity()->as<material::IsotropicJ2Elasticity>() != nullptr) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -247,8 +261,24 @@ void NonlinearStatic::run() {
 
     Precision load_factor = Precision(0);
 
+    // Use a symmetric-indefinite capable direct solver only when the reduced
+    // Newton system is guaranteed symmetric. Geometrically nonlinear tangents
+    // are not assumed positive definite: compression and limit/buckling points
+    // can make an otherwise valid symmetric tangent indefinite. Arc length has
+    // an unsymmetric augmented system, contact may be unsymmetric, and finite J2
+    // with a true/Cauchy hardening table contains the deformation-dependent
+    // J sigma_y conversion whose exact consistent tangent is generally nonsymmetric.
+    const bool has_nonsymmetric_j2 =
+        has_nonsymmetric_finite_j2_tangent(*model->_data);
+    const auto matrix_type =
+        control == NonlinearControl::LoadControl
+        && model->_data->contacts.empty()
+        && !has_nonsymmetric_j2
+            ? solver::DirectSolverMatrixType::Symmetric
+            : solver::DirectSolverMatrixType::General;
+
     logging::info(true, "");
-    logging::info(true, "Solver: ", solver::get_solver_name(device, method));
+    logging::info(true, "Solver: ", solver::get_solver_name(device, method, matrix_type));
     logging::info(true, "Control: ",
         control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
@@ -323,6 +353,14 @@ void NonlinearStatic::run() {
             "Reduced residual contains NaN/Inf entries");
     };
 
+    // Last two accepted reduced solutions for the linear secant predictor.
+    // Attempted steps and line-search trials must never modify this history.
+    DynamicVector previous_accepted_q;
+    DynamicVector increment_start_q;
+    Precision previous_accepted_lambda = Precision(0);
+    Precision increment_start_lambda = Precision(0);
+    bool has_previous_accepted_state = false;
+
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
@@ -396,7 +434,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -412,36 +450,60 @@ void NonlinearStatic::run() {
                          Precision      target_lambda) {
         if (q.size() == 0) return;
 
+        // Estimate the next equilibrium displacement from the last two
+        // accepted load increments, without assembling or solving a tangent.
+        // A rejected increment never updates previous_accepted_q/lambda.
+        const bool can_extrapolate =
+            has_previous_accepted_state &&
+            previous_accepted_q.size() == q.size() &&
+            lambda > previous_accepted_lambda;
+
+        if (can_extrapolate && transformer->homogeneous()) {
+            const Precision scale =
+                (target_lambda - lambda) / (lambda - previous_accepted_lambda);
+            q += scale * (q - previous_accepted_q);
+
+            // For homogeneous constraints T^T(f - K u_p) = T^T f.
+            // Keep the same residual normalization as the tangent predictor
+            // without the otherwise unnecessary stiffness assembly.
+            residual_reference_force =
+                std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>();
+            return;
+        }
+
+        // First increment: use the original tangent predictor. For prescribed
+        // displacements, K is also needed for the residual reference force
+        // T^T(f - K u_particular), even when the displacement is extrapolated.
         DynamicVector accepted_residual;
-        SparseMatrix  accepted_tangent;
-        SparseMatrix  accepted_full_tangent;
+        SparseMatrix accepted_tangent;
+        SparseMatrix accepted_full_tangent;
 
         nonlinear_state.begin_contact_trial();
-
         try {
             assemble_state(
-                q,
-                lambda,
-                accepted_residual,
-                accepted_tangent,
-                &accepted_full_tangent
+                q, lambda, accepted_residual,
+                accepted_tangent, &accepted_full_tangent
             );
         } catch (...) {
             nonlinear_state.rollback_contact_trial();
             throw;
         }
-
         nonlinear_state.rollback_contact_trial();
 
         const DynamicVector predictor_rhs =
             transformer->assemble_system_rhs(accepted_full_tangent, f_total);
-
         residual_reference_force =
             std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>();
 
+        if (can_extrapolate) {
+            const Precision scale =
+                (target_lambda - lambda) / (lambda - previous_accepted_lambda);
+            q += scale * (q - previous_accepted_q);
+            return;
+        }
+
         const DynamicVector dq_dlambda =
             linear_solve(accepted_tangent, predictor_rhs);
-
         q += (target_lambda - lambda) * dq_dlambda;
     };
 
@@ -459,7 +521,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -569,6 +631,9 @@ void NonlinearStatic::run() {
     };
 
     auto begin_increment_trial = [&]() {
+        // Snapshot the accepted state before predictor/Newton may modify q_total.
+        increment_start_q = q_total;
+        increment_start_lambda = load_factor;
         increment_start_displacement =
             recover_total_displacement(q_total, load_factor);
         nonlinear_state.reset_material_state();
@@ -576,6 +641,14 @@ void NonlinearStatic::run() {
     };
 
     auto commit_increment_trial = [&]() {
+        if (control == NonlinearControl::LoadControl) {
+            // The new converged q_total is already stored by LoadControl; the
+            // beginning-of-increment snapshot becomes the previous accepted q.
+            previous_accepted_q = std::move(increment_start_q);
+            previous_accepted_lambda = increment_start_lambda;
+            has_previous_accepted_state = true;
+        }
+
         nonlinear_state.commit_contact_trial();
         nonlinear_state.commit_material_state();
     };

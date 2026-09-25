@@ -306,7 +306,6 @@ MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
     }
 
     mapped += hourglass;
-    mapped  = Precision(0.5) * (mapped + mapped.transpose());
     return mapped;
 }
 

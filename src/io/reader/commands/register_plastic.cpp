@@ -33,7 +33,7 @@ namespace fem::io::reader::commands {
  *
  * The command intentionally accepts only a preceding `IsotropicElasticity`.
  * This prevents arbitrary combinations of unrelated elastic and plastic laws.
- * Data follow the Abaqus-style order `yield stress, equivalent plastic strain`.
+ * Data follow the Abaqus-style order `true/Cauchy yield stress, equivalent plastic strain`.
  */
 void register_plastic(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("PLASTIC", [&](fem::io::dsl::Command& command) {
@@ -72,7 +72,7 @@ void register_plastic(fem::io::dsl::Registry& registry, model::Model& model) {
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("YIELD_STRESS").desc("Uniaxial yield stress")
+                    .one<fem::Precision>().name("YIELD_STRESS").desc("Uniaxial true (Cauchy) yield stress")
                     .one<fem::Precision>().name("PEEQ").desc("Equivalent plastic strain")
                 )
                 .bind([&model](fem::Precision yield_stress, fem::Precision peeq) {
