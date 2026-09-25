@@ -95,6 +95,35 @@ model::Field subtract_field(
     return result;
 }
 
+model::Field mask_support_reactions(
+    const model::Field& reactions,
+    const BooleanMatrix& support_mask
+) {
+    logging::error(reactions.domain == model::FieldDomain::NODE,
+        "NonlinearStatic: reactions must use NODE domain");
+    logging::error(reactions.rows == support_mask.rows()
+                   && reactions.components == support_mask.cols(),
+        "NonlinearStatic: reaction/support-mask shape mismatch");
+
+    model::Field masked{
+        "REACTION_FORCES",
+        model::FieldDomain::NODE,
+        reactions.rows,
+        reactions.components
+    };
+    masked.fill_nan();
+
+    for (Index i = 0; i < masked.rows; ++i) {
+        for (Index j = 0; j < masked.components; ++j) {
+            if (support_mask(i, j)) {
+                masked(i, j) = reactions(i, j);
+            }
+        }
+    }
+
+    return masked;
+}
+
 Precision calculate_relative_force_residual(
     const DynamicVector& reduced_residual,
     Precision            reference_force
@@ -203,6 +232,23 @@ void NonlinearStatic::run() {
 
     const Index n_active   = active_dof_idx_mat.maxCoeff() + 1;
     const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
+
+    BooleanMatrix support_mask(
+        active_dof_idx_mat.rows(),
+        active_dof_idx_mat.cols()
+    );
+    support_mask.setConstant(false);
+
+    for (const auto& eq : groups.supports) {
+        for (const auto& e : eq.entries) {
+            if (e.node_id >= 0
+                && e.node_id < support_mask.rows()
+                && e.dof < support_mask.cols()
+                && active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                support_mask(e.node_id, e.dof) = true;
+            }
+        }
+    }
 
     auto transformer = Timer::measure(
         [&]() {
@@ -608,6 +654,7 @@ void NonlinearStatic::run() {
             lambda
         );
 
+        nonlinear_state.reset_material_state();
         auto [increment_stress, increment_strain] =
             model->compute_stress_nodal(displacement, true);
         (void) increment_strain;
@@ -615,6 +662,40 @@ void NonlinearStatic::run() {
         writer->write_field(
             increment_stress,
             "STRESS_" + std::to_string(increment),
+            model->_data.get(),
+            lambda
+        );
+
+        model::NodeData increment_internal{
+            "INTERNAL_FORCES",
+            model::FieldDomain::NODE,
+            node_count,
+            6
+        };
+        increment_internal.set_zero();
+
+        nonlinear_state.reset_material_state();
+        model->build_internal_force_nonlinear(
+            active_dof_idx_mat,
+            increment_internal,
+            displacement
+        );
+
+        auto increment_external = global_load_total;
+        increment_external *= lambda;
+        auto increment_reaction_full = subtract_field(
+            increment_internal,
+            increment_external,
+            "REACTION_FORCES_RAW"
+        );
+        auto increment_reactions = mask_support_reactions(
+            increment_reaction_full,
+            support_mask
+        );
+
+        writer->write_field(
+            increment_reactions,
+            "REACTION_FORCES_" + std::to_string(increment),
             model->_data.get(),
             lambda
         );
@@ -842,38 +923,10 @@ void NonlinearStatic::run() {
         "REACTION_FORCES_RAW"
     );
 
-    BooleanMatrix support_mask(
-        active_dof_idx_mat.rows(),
-        active_dof_idx_mat.cols()
+    auto reaction_masked = mask_support_reactions(
+        reaction_full,
+        support_mask
     );
-    support_mask.setConstant(false);
-
-    for (const auto& eq : groups.supports) {
-        for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 &&
-                e.node_id < support_mask.rows() &&
-                e.dof < support_mask.cols() &&
-                active_dof_idx_mat(e.node_id, e.dof) != -1) {
-                support_mask(e.node_id, e.dof) = true;
-            }
-        }
-    }
-
-    model::Field reaction_masked{
-        "REACTION_FORCES",
-        model::FieldDomain::NODE,
-        reaction_full.rows,
-        reaction_full.components
-    };
-    reaction_masked.fill_nan();
-
-    for (Index i = 0; i < reaction_masked.rows; ++i) {
-        for (Index j = 0; j < reaction_masked.components; ++j) {
-            if (support_mask(i, j)) {
-                reaction_masked(i, j) = reaction_full(i, j);
-            }
-        }
-    }
 
     const Index final_frame = last_converged_increment > 0
         ? last_converged_increment + 1

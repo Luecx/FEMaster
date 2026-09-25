@@ -239,7 +239,7 @@ Typical Fields depend on analysis type:
 \midrule
 \endhead
 Linear static & Displacement, strain, stress, shell top/bottom stresses and resultants where applicable, external forces, reactions, section forces, and related recovered quantities. \\
-Nonlinear static & Accepted-increment displacement/stress/load-factor states plus final displacement, strain, stress, internal/external forces, and reactions. \\
+Nonlinear static & Accepted-increment displacement, stress, reaction-force, and load-factor states plus final displacement, strain, stress, internal/external forces, and reactions. \\
 Eigenfrequency & Mode shapes, eigenvalues, eigenfrequencies/frequencies, and participation-related quantities where available. \\
 Linear buckling & Buckling mode shapes and buckling factors. \\
 Linear transient & Displacement, velocity, and acceleration at written time frames. \\
@@ -348,7 +348,7 @@ Displacement / mode / buckling vector & \val{DISP} & Translational and supported
 Harmonic displacement, real / imaginary & \val{DISPREAL} / \val{DISPIMAG} & Separate components of the complex harmonic displacement. \\
 Velocity & \val{VELO} & Nodal velocity components. \\
 Acceleration & \val{ACCE} & Nodal acceleration components. \\
-Reaction force & \val{FORC} & Generalized reaction-force components. \\
+Reaction force & \val{FORC} & Generalized reaction-force components; nonlinear static writes them for every accepted increment and for the final result frame. \\
 Stress & \val{STRESS} & Nodal recovered stress components. \\
 Harmonic stress, real / imaginary & \val{STRREAL} / \val{STRIMAG} & Separate components of the complex harmonic stress. \\
 Strain & \val{TOSTRAIN} & Nodal recovered strain components. \\
