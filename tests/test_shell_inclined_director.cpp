@@ -78,3 +78,22 @@ TEST(ShellInclinedDirector, AppliesSameDeskewingToBMatrix) {
     EXPECT_NEAR(B(1, 4), 0.25, 1e-14);
     EXPECT_NEAR(B(7, 4), 0.0, 1e-14);
 }
+
+TEST(ShellInclinedDirector, DeskewPullbackPreservesVirtualWork) {
+    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    const auto point = inclined_reference_point();
+    const Shell::Mat8 transform = shell.director_deskew_transform(point);
+
+    Shell::Vec8 covariant_strain;
+    covariant_strain << 0.03, -0.02, 0.01, 0.04, -0.05, 0.02, 0.06, -0.07;
+
+    Shell::Vec8 local_resultants;
+    local_resultants << 3.0, -2.0, 1.5, 0.7, -0.8, 0.4, 5.0, -4.0;
+
+    const fem::Precision local_work =
+        local_resultants.dot(transform * covariant_strain);
+    const fem::Precision pulled_back_work =
+        (transform.transpose() * local_resultants).dot(covariant_strain);
+
+    EXPECT_NEAR(local_work, pulled_back_work, 1e-14);
+}
