@@ -150,6 +150,40 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     std::filesystem::remove(output_path);
 }
 
+TEST(Reader_Writer, WritesReactionForcesToFrd) {
+    const std::string output_path = "tests/TMP_WRITER_REACTIONS.FRD";
+    std::filesystem::remove(output_path);
+
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.compile();
+
+    model::Field reactions("REACTION_FORCES", model::FieldDomain::NODE, 1, 6);
+    reactions.set_zero();
+    reactions(0, 0) = Precision(123.0);
+    reactions(0, 3) = Precision(-4.5);
+
+    {
+        io::writer::FrdWriter writer(output_path);
+        writer.write_model_data(*model._data);
+        writer.add_loadcase(1, io::writer::WriterStepType::Static);
+        writer.write_field(
+            reactions,
+            "REACTION_FORCES_2",
+            model._data.get(),
+            Precision(0.5)
+        );
+    }
+
+    const std::string text = read_text(output_path);
+    EXPECT_NE(text.find(" -4  FORC"), std::string::npos);
+    EXPECT_NE(text.find(" -5  F1"), std::string::npos);
+    EXPECT_NE(text.find("1.23000E+02"), std::string::npos);
+    EXPECT_NE(text.find("-4.50000E+00"), std::string::npos);
+
+    std::filesystem::remove(output_path);
+}
+
 TEST(Reader_Writer, FemrStaticFramesFollowChangingFrameValues) {
     const std::string output_path = "tests/TMP_WRITER_STATIC_FRAMES.FEMR";
     std::filesystem::remove(output_path);

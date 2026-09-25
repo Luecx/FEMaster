@@ -29,6 +29,7 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../material/isotropic_j2_elasticity.h"
 #include "../material/material.h"
@@ -203,6 +204,23 @@ void NonlinearStatic::run() {
 
     const Index n_active   = active_dof_idx_mat.maxCoeff() + 1;
     const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
+
+    BooleanMatrix support_mask(
+        active_dof_idx_mat.rows(),
+        active_dof_idx_mat.cols()
+    );
+    support_mask.setConstant(false);
+
+    for (const auto& eq : groups.supports) {
+        for (const auto& e : eq.entries) {
+            if (e.node_id >= 0
+                && e.node_id < support_mask.rows()
+                && e.dof < support_mask.cols()
+                && active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                support_mask(e.node_id, e.dof) = true;
+            }
+        }
+    }
 
     auto transformer = Timer::measure(
         [&]() {
@@ -608,6 +626,7 @@ void NonlinearStatic::run() {
             lambda
         );
 
+        nonlinear_state.reset_material_state();
         auto [increment_stress, increment_strain] =
             model->compute_stress_nodal(displacement, true);
         (void) increment_strain;
@@ -615,6 +634,41 @@ void NonlinearStatic::run() {
         writer->write_field(
             increment_stress,
             "STRESS_" + std::to_string(increment),
+            model->_data.get(),
+            lambda
+        );
+
+        model::NodeData increment_internal{
+            "INTERNAL_FORCES",
+            model::FieldDomain::NODE,
+            node_count,
+            6
+        };
+        increment_internal.set_zero();
+
+        nonlinear_state.reset_material_state();
+        model->build_internal_force_nonlinear(
+            active_dof_idx_mat,
+            increment_internal,
+            displacement
+        );
+
+        auto increment_external = global_load_total;
+        increment_external *= lambda;
+        auto increment_reaction_full = subtract_field(
+            increment_internal,
+            increment_external,
+            "REACTION_FORCES_RAW"
+        );
+        auto increment_reactions = mattools::mask_field(
+            increment_reaction_full,
+            support_mask,
+            "REACTION_FORCES"
+        );
+
+        writer->write_field(
+            increment_reactions,
+            "REACTION_FORCES_" + std::to_string(increment),
             model->_data.get(),
             lambda
         );
@@ -842,38 +896,11 @@ void NonlinearStatic::run() {
         "REACTION_FORCES_RAW"
     );
 
-    BooleanMatrix support_mask(
-        active_dof_idx_mat.rows(),
-        active_dof_idx_mat.cols()
+    auto reaction_masked = mattools::mask_field(
+        reaction_full,
+        support_mask,
+        "REACTION_FORCES"
     );
-    support_mask.setConstant(false);
-
-    for (const auto& eq : groups.supports) {
-        for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 &&
-                e.node_id < support_mask.rows() &&
-                e.dof < support_mask.cols() &&
-                active_dof_idx_mat(e.node_id, e.dof) != -1) {
-                support_mask(e.node_id, e.dof) = true;
-            }
-        }
-    }
-
-    model::Field reaction_masked{
-        "REACTION_FORCES",
-        model::FieldDomain::NODE,
-        reaction_full.rows,
-        reaction_full.components
-    };
-    reaction_masked.fill_nan();
-
-    for (Index i = 0; i < reaction_masked.rows; ++i) {
-        for (Index j = 0; j < reaction_masked.components; ++j) {
-            if (support_mask(i, j)) {
-                reaction_masked(i, j) = reaction_full(i, j);
-            }
-        }
-    }
 
     const Index final_frame = last_converged_increment > 0
         ? last_converged_increment + 1
