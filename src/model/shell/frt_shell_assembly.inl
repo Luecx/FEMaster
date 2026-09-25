@@ -239,9 +239,33 @@ void FRTShell<N>::assemble_geometric_stiffness(
         const Precision weight = points[id].w * points[id].detJ;
         const Vec8 local_resultants = weight * data.ip_resultants[id];
 
-        // Apply the transpose of the pointwise natural-to-local strain map
-        // directly here because this pull-back is used only by geometric
-        // assembly and does not justify a separate one-call helper.
+        // Pull the orthonormal section resultants back through the inclined-
+        // director deskewing used by transform_strain_to_local(). If
+        //
+        //   gamma13 = (gamma1D - 2*d1*eps11 - d2*gamma12) / d3,
+        //   gamma23 = (gamma2D - d1*gamma12 - 2*d2*eps22) / d3,
+        //
+        // then work conjugacy requires applying the transpose of this map to
+        // the resultants before the remaining local-to-natural pullback.
+        const Vec3 director_local = points[id].basis.transpose() * points[id].D;
+        const Precision d1 = director_local(0);
+        const Precision d2 = director_local(1);
+        const Precision d3 = director_local(2);
+
+        logging::error(
+            std::abs(d3) > Precision(1e-12),
+            "FRTShell: reference director is tangent to the shell midsurface"
+        );
+
+        Vec8 deskewed_resultants = local_resultants;
+        deskewed_resultants(0) -= Precision(2) * d1 / d3 * local_resultants(6);
+        deskewed_resultants(1) -= Precision(2) * d2 / d3 * local_resultants(7);
+        deskewed_resultants(2) -= d2 / d3 * local_resultants(6)
+                                + d1 / d3 * local_resultants(7);
+        deskewed_resultants(6)  = local_resultants(6) / d3;
+        deskewed_resultants(7)  = local_resultants(7) / d3;
+
+        // Apply the transpose of the pointwise natural-to-local strain map.
         const Precision t00 = points[id].invJ(0, 0);
         const Precision t01 = points[id].invJ(0, 1);
         const Precision t10 = points[id].invJ(1, 0);
@@ -254,9 +278,9 @@ void FRTShell<N>::assemble_geometric_stiffness(
                     t00 * t11 + t01 * t10;
 
         Vec8 natural_resultants = Vec8::Zero();
-        natural_resultants.template segment<3>(0) = in_plane.transpose() * local_resultants.template segment<3>(0);
-        natural_resultants.template segment<3>(3) = in_plane.transpose() * local_resultants.template segment<3>(3);
-        natural_resultants.template segment<2>(6) = points[id].invJ.transpose() * local_resultants.template segment<2>(6);
+        natural_resultants.template segment<3>(0) = in_plane.transpose() * deskewed_resultants.template segment<3>(0);
+        natural_resultants.template segment<3>(3) = in_plane.transpose() * deskewed_resultants.template segment<3>(3);
+        natural_resultants.template segment<2>(6) = points[id].invJ.transpose() * deskewed_resultants.template segment<2>(6);
 
         Vec8 compatible_weights = Vec8::Zero();
         for (Vec8& tying_weight : data.geometric_tying_weights) {
