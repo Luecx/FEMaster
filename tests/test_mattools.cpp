@@ -1,4 +1,7 @@
+#include "../src/mattools/mask_field.h"
 #include "../src/mattools/numerate_dofs.h"
+
+#include <cmath>
 
 #include <gtest/gtest.h>
 
@@ -30,4 +33,30 @@ TEST(MattoolsNumerateDofs, PreservesDynamicColumnCount) {
     EXPECT_EQ(structural_ids(0, 0), 0);
     EXPECT_EQ(structural_ids(0, 5), 1);
     EXPECT_EQ(structural_ids(1, 2), 2);
+}
+
+
+TEST(MattoolsMaskField, KeepsSelectedEntriesAndMasksTheRest) {
+    model::Field field("INPUT", model::FieldDomain::NODE, 2, 3);
+    field(0, 0) = Precision(1);
+    field(0, 1) = Precision(2);
+    field(0, 2) = Precision(3);
+    field(1, 0) = Precision(4);
+    field(1, 1) = Precision(5);
+    field(1, 2) = Precision(6);
+
+    BooleanMatrix mask(2, 3);
+    mask << true, false, true,
+            false, true, false;
+
+    const auto masked = mattools::mask_field(field, mask, "MASKED");
+
+    EXPECT_EQ(masked.name, "MASKED");
+    EXPECT_EQ(masked.domain, model::FieldDomain::NODE);
+    EXPECT_EQ(masked(0, 0), Precision(1));
+    EXPECT_TRUE(std::isnan(masked(0, 1)));
+    EXPECT_EQ(masked(0, 2), Precision(3));
+    EXPECT_TRUE(std::isnan(masked(1, 0)));
+    EXPECT_EQ(masked(1, 1), Precision(5));
+    EXPECT_TRUE(std::isnan(masked(1, 2)));
 }

@@ -9,6 +9,7 @@
 #include "../constraints/types/rbm.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/element/element_structural.h"
 #include "../model/model.h"
@@ -249,18 +250,11 @@ void LinearStatic::run() {
         }
     }
 
-    model::Field reaction_masked{
-        "REACTION_FORCES",
-        model::FieldDomain::NODE,
-        global_react_mat.rows,
-        global_react_mat.components
-    };
-    reaction_masked.fill_nan();
-    for (Index i = 0; i < reaction_masked.rows; ++i) {
-        for (Index j = 0; j < reaction_masked.components; ++j) {
-            if (support_mask(i, j)) reaction_masked(i, j) = global_react_mat(i, j);
-        }
-    }
+    auto reaction_masked = mattools::mask_field(
+        global_react_mat,
+        support_mask,
+        "REACTION_FORCES"
+    );
 
     Timer::measure(
         [&]() {

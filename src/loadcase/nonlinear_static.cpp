@@ -29,6 +29,7 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../material/isotropic_j2_elasticity.h"
 #include "../material/material.h"
@@ -93,35 +94,6 @@ model::Field subtract_field(
     result.name = name;
     result -= rhs;
     return result;
-}
-
-model::Field mask_support_reactions(
-    const model::Field& reactions,
-    const BooleanMatrix& support_mask
-) {
-    logging::error(reactions.domain == model::FieldDomain::NODE,
-        "NonlinearStatic: reactions must use NODE domain");
-    logging::error(reactions.rows == support_mask.rows()
-                   && reactions.components == support_mask.cols(),
-        "NonlinearStatic: reaction/support-mask shape mismatch");
-
-    model::Field masked{
-        "REACTION_FORCES",
-        model::FieldDomain::NODE,
-        reactions.rows,
-        reactions.components
-    };
-    masked.fill_nan();
-
-    for (Index i = 0; i < masked.rows; ++i) {
-        for (Index j = 0; j < masked.components; ++j) {
-            if (support_mask(i, j)) {
-                masked(i, j) = reactions(i, j);
-            }
-        }
-    }
-
-    return masked;
 }
 
 Precision calculate_relative_force_residual(
@@ -688,9 +660,10 @@ void NonlinearStatic::run() {
             increment_external,
             "REACTION_FORCES_RAW"
         );
-        auto increment_reactions = mask_support_reactions(
+        auto increment_reactions = mattools::mask_field(
             increment_reaction_full,
-            support_mask
+            support_mask,
+            "REACTION_FORCES"
         );
 
         writer->write_field(
@@ -923,9 +896,10 @@ void NonlinearStatic::run() {
         "REACTION_FORCES_RAW"
     );
 
-    auto reaction_masked = mask_support_reactions(
+    auto reaction_masked = mattools::mask_field(
         reaction_full,
-        support_mask
+        support_mask,
+        "REACTION_FORCES"
     );
 
     const Index final_frame = last_converged_increment > 0

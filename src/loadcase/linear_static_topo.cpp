@@ -10,6 +10,7 @@
 #include "../constraints/types/rbm.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.h"
+#include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "tools/inertia_relief.h"
@@ -259,18 +260,11 @@ void LinearStaticTopo::run() {
         }
     }
 
-    model::Field reaction_masked{
-        "REACTION_FORCES",
-        model::FieldDomain::NODE,
-        global_react_mat.rows,
-        global_react_mat.components
-    };
-    reaction_masked.fill_nan();
-    for (Index i = 0; i < reaction_masked.rows; ++i) {
-        for (Index j = 0; j < reaction_masked.components; ++j) {
-            if (support_mask(i, j)) reaction_masked(i, j) = global_react_mat(i, j);
-        }
-    }
+    auto reaction_masked = mattools::mask_field(
+        global_react_mat,
+        support_mask,
+        "REACTION_FORCES"
+    );
 
     writer->add_loadcase(id, io::writer::WriterStepType::Static);
     writer->write_field(global_disp_mat, "DISPLACEMENT", model->_data.get());
