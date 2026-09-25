@@ -81,7 +81,9 @@ void VLoad::apply(model::ModelData& model_data, model::Field& rhs, Precision tim
         return std::pair<Vec3, bool>{vector, active};
     };
 
-    auto [body_force_local, active] = sanitize_vector(values_);
+    const auto sanitized = sanitize_vector(values_);
+    Vec3 body_force_local = sanitized.first;
+    const bool active = sanitized.second;
     if (!active) {
         return;
     }
