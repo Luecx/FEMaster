@@ -464,12 +464,50 @@ void FRTShell<N>::transform_strain_to_local(
     transform_in_plane_rows<N>(in_plane, 3, strain, B);
 
     // Transform the covariant transverse-shear vector and the same B rows
+    // from natural coordinates into the orthonormal midsurface tangent basis.
     const Vec2 shear_nat = strain.template segment<2>(6);
     strain.template segment<2>(6) = point.invJ * shear_nat;
 
     if (B) {
         const Mat2x6N shear_B = B->template block<2, num_dofs>(6, 0);
         B->template block<2, num_dofs>(6, 0) = point.invJ * shear_B;
+    }
+
+    // The shear measures above are still covariant with respect to the
+    // interpolated reference director D. If D is inclined relative to the
+    // midsurface normal, dot(x_,a, d) contains membrane-strain contributions
+    // and therefore is not yet the engineering shear in the orthonormal
+    // [e1,e2,e3] shell basis used by the section material law.
+    //
+    // With D = d1*e1 + d2*e2 + d3*e3 and E33 = 0,
+    //
+    //   gamma_aD = 2*d1*E11 + d2*gamma12 + d3*gamma13,
+    //   gamma_bD = d1*gamma12 + 2*d2*E22 + d3*gamma23.
+    //
+    // Solve these relations for gamma13/gamma23. The same constant
+    // reference-state transformation must be applied to the B rows.
+    const Vec3 director_local = point.basis.transpose() * point.D;
+    const Precision d1 = director_local(0);
+    const Precision d2 = director_local(1);
+    const Precision d3 = director_local(2);
+
+    logging::error(
+        std::abs(d3) > Precision(1e-12),
+        "FRTShell: reference director is tangent to the shell midsurface"
+    );
+
+    strain(6) = (strain(6) - Precision(2) * d1 * strain(0) - d2 * strain(2)) / d3;
+    strain(7) = (strain(7) - d1 * strain(2) - Precision(2) * d2 * strain(1)) / d3;
+
+    if (B) {
+        const auto row0 = B->row(0).eval();
+        const auto row1 = B->row(1).eval();
+        const auto row2 = B->row(2).eval();
+        const auto row6 = B->row(6).eval();
+        const auto row7 = B->row(7).eval();
+
+        B->row(6) = (row6 - Precision(2) * d1 * row0 - d2 * row2) / d3;
+        B->row(7) = (row7 - d1 * row2 - Precision(2) * d2 * row1) / d3;
     }
 }
 
