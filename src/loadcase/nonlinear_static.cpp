@@ -261,18 +261,20 @@ void NonlinearStatic::run() {
 
     Precision load_factor = Precision(0);
 
-    // Use the symmetric direct solver only when the reduced Newton system is
-    // guaranteed symmetric. Arc length has an unsymmetric augmented system,
-    // contact may be unsymmetric, and finite J2 with a true/Cauchy hardening
-    // table contains the deformation-dependent J sigma_y conversion whose exact
-    // consistent tangent is generally nonsymmetric.
+    // Use a symmetric-indefinite capable direct solver only when the reduced
+    // Newton system is guaranteed symmetric. Geometrically nonlinear tangents
+    // are not assumed positive definite: compression and limit/buckling points
+    // can make an otherwise valid symmetric tangent indefinite. Arc length has
+    // an unsymmetric augmented system, contact may be unsymmetric, and finite J2
+    // with a true/Cauchy hardening table contains the deformation-dependent
+    // J sigma_y conversion whose exact consistent tangent is generally nonsymmetric.
     const bool has_nonsymmetric_j2 =
         has_nonsymmetric_finite_j2_tangent(*model->_data);
     const auto matrix_type =
         control == NonlinearControl::LoadControl
         && model->_data->contacts.empty()
         && !has_nonsymmetric_j2
-            ? solver::DirectSolverMatrixType::SPD
+            ? solver::DirectSolverMatrixType::Symmetric
             : solver::DirectSolverMatrixType::General;
 
     logging::info(true, "");

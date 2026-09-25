@@ -18,11 +18,16 @@ DynamicMatrix solve_direct(SolverDevice device,
     device = CPU;
 #endif
 
+    const char* matrix_type_name =
+        matrix_type == DirectSolverMatrixType::SPD ? "SPD" :
+        matrix_type == DirectSolverMatrixType::Symmetric ? "symmetric" :
+        "general";
+
     logging::info(true, "");
     logging::info(true, "Solving system with N=", mat.cols(), " nnz=", mat.nonZeros(),
                   " nrhs=", rhs.cols(),
                   " using ", get_solver_name(device, DIRECT, matrix_type),
-                  matrix_type == DirectSolverMatrixType::SPD ? " (SPD)" : " (general)");
+                  " (", matrix_type_name, ")");
 
     logging::up();
     DynamicMatrix sol = (device == GPU)

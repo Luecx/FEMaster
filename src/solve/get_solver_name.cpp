@@ -17,9 +17,20 @@ std::string get_solver_name(SolverDevice device,
 
     if (device == GPU) {
 #ifdef USE_CUDSS
-        return "GPU DIRECT cuDSS";
+        if (matrix_type == DirectSolverMatrixType::SPD) {
+            return "GPU DIRECT cuDSS Cholesky";
+        }
+        if (matrix_type == DirectSolverMatrixType::Symmetric) {
+            return "GPU DIRECT cuDSS LDLT";
+        }
+        return "GPU DIRECT cuDSS LU";
 #else
-        return "GPU DIRECT cuSolver Cholesky";
+        if (matrix_type == DirectSolverMatrixType::SPD) {
+            return "GPU DIRECT cuSolver Cholesky";
+        }
+        // The legacy GPU direct path cannot factor symmetric-indefinite or
+        // general matrices; solve_direct_gpu falls back to the CPU backend.
+        device = CPU;
 #endif
     }
 

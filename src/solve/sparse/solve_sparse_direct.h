@@ -7,6 +7,7 @@ namespace fem::solver {
 
 enum class DirectSolverMatrixType {
     SPD,
+    Symmetric,
     General
 };
 
