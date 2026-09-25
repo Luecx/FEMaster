@@ -37,11 +37,11 @@ namespace fem::material {
 /**
  * @brief Isotropic J2 plasticity with tabulated isotropic hardening.
  *
- * Yield points are supplied as `(yield stress, equivalent plastic strain)` pairs.
- * The first point defines initial yield at zero plastic strain. Intermediate
- * values are linearly interpolated. Beyond the final point the final yield
- * stress is continued, so the material becomes perfectly plastic after the
- * tabulated range.
+ * Yield points are supplied as `(true/Cauchy yield stress, equivalent plastic
+ * strain)` pairs, matching Abaqus-style PLASTIC input semantics. The first point
+ * defines initial yield at zero plastic strain. Intermediate values are linearly
+ * interpolated. Beyond the final point the final yield stress is continued, so
+ * the material becomes perfectly plastic after the tabulated range.
  *
  * The small-strain model uses the classical associative radial return. The
  * finite-strain model uses the multiplicative split
@@ -63,9 +63,11 @@ struct IsotropicJ2Elasticity : Elasticity {
     /**
      * @brief One point of the piecewise-linear isotropic hardening law.
      *
-     * `equivalent_plastic_strain` is the accumulated scalar J2 history variable
-     * and `yield_stress` is the corresponding current radius of the yield
-     * surface. Points are stored in strictly increasing plastic-strain order.
+     * `equivalent_plastic_strain` is the accumulated scalar J2 history variable.
+     * `yield_stress` is the corresponding uniaxial true/Cauchy yield stress.
+     * Finite-strain return maps convert this tabulated Cauchy radius to the
+     * internal Kirchhoff/Mandel stress measure using the current Jacobian J.
+     * Points are stored in strictly increasing plastic-strain order.
      */
     struct YieldPoint {
         Precision yield_stress;
@@ -82,9 +84,10 @@ struct IsotropicJ2Elasticity : Elasticity {
     [[nodiscard]] Precision shear_modulus() const;
     [[nodiscard]] Precision bulk_modulus() const;
 
-    // Piecewise-linear isotropic hardening definition. The first point must be
-    // located at zero equivalent plastic strain; subsequent points must increase
-    // monotonically in both plastic strain and yield stress.
+    // Piecewise-linear isotropic hardening definition in true/Cauchy stress.
+    // The first point must be located at zero equivalent plastic strain;
+    // subsequent points must increase monotonically in both plastic strain and
+    // yield stress.
     void add_yield_point(Precision yield_stress, Precision equivalent_plastic_strain);
     [[nodiscard]] const std::vector<YieldPoint>& get_yield_points() const;
 
