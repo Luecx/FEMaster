@@ -113,10 +113,10 @@ Precision calculate_relative_force_residual(
 }
 
 bool has_nonsymmetric_finite_j2_tangent(const model::ModelData& data) {
-    for (const auto& [name, material] : data.materials) {
+    for (const auto& [name, material_ptr] : data.materials) {
         (void) name;
-        if (material && material->has_elasticity()
-            && material->elasticity()->as<material::IsotropicJ2Elasticity>() != nullptr) {
+        if (material_ptr && material_ptr->has_elasticity()
+            && material_ptr->elasticity()->as<material::IsotropicJ2Elasticity>() != nullptr) {
             return true;
         }
     }
