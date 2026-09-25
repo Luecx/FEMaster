@@ -30,6 +30,8 @@
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../material/isotropic_j2_elasticity.h"
+#include "../material/material.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
 #include "../io/writer/write_mtx.h"
@@ -108,6 +110,17 @@ Precision calculate_relative_force_residual(
     return residual_force == Precision(0)
         ? Precision(0)
         : std::numeric_limits<Precision>::infinity();
+}
+
+bool has_nonsymmetric_finite_j2_tangent(const model::ModelData& data) {
+    for (const auto& [name, material] : data.materials) {
+        (void) name;
+        if (material && material->has_elasticity()
+            && material->elasticity()->as<material::IsotropicJ2Elasticity>() != nullptr) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -248,8 +261,22 @@ void NonlinearStatic::run() {
 
     Precision load_factor = Precision(0);
 
+    // Use the symmetric direct solver only when the reduced Newton system is
+    // guaranteed symmetric. Arc length has an unsymmetric augmented system,
+    // contact may be unsymmetric, and finite J2 with a true/Cauchy hardening
+    // table contains the deformation-dependent J sigma_y conversion whose exact
+    // consistent tangent is generally nonsymmetric.
+    const bool has_nonsymmetric_j2 =
+        has_nonsymmetric_finite_j2_tangent(*model->_data);
+    const auto matrix_type =
+        control == NonlinearControl::LoadControl
+        && model->_data->contacts.empty()
+        && !has_nonsymmetric_j2
+            ? solver::DirectSolverMatrixType::SPD
+            : solver::DirectSolverMatrixType::General;
+
     logging::info(true, "");
-    logging::info(true, "Solver: ", solver::get_solver_name(device, method));
+    logging::info(true, "Solver: ", solver::get_solver_name(device, method, matrix_type));
     logging::info(true, "Control: ",
         control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
@@ -405,7 +432,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
