@@ -76,7 +76,9 @@ void DLoad::apply(model::ModelData& model_data, model::Field& rhs, Precision tim
         return std::pair<Vec3, bool>{vector, active};
     };
 
-    auto [traction_local, active] = sanitize_vector(values_);
+    const auto sanitized = sanitize_vector(values_);
+    Vec3 traction_local = sanitized.first;
+    const bool active = sanitized.second;
     if (!active) {
         return;
     }
