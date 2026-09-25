@@ -432,6 +432,42 @@ void FRTShell<N>::compute_natural_strain(
 }
 
 /**
+ * Builds the constant reference-state map from the covariant shear measures
+ * associated with the interpolated director to engineering strains in the
+ * orthonormal shell basis.
+ *
+ * Membrane and curvature components are unchanged. Only the transverse-shear
+ * rows contain coupling terms caused by tangential reference-director
+ * components.
+ *
+ * @param point Pointwise curved-reference geometry.
+ * @return Eight-by-eight deskew transformation.
+ */
+template<Index N>
+typename FRTShell<N>::Mat8 FRTShell<N>::director_deskew_transform(
+    const ReferencePoint& point
+) const {
+    const Vec3 director_local = point.basis.transpose() * point.D;
+    const Precision d1 = director_local(0);
+    const Precision d2 = director_local(1);
+    const Precision d3 = director_local(2);
+
+    logging::error(
+        std::abs(d3) > Precision(1e-12),
+        "FRTShell: reference director is tangent to the shell midsurface"
+    );
+
+    Mat8 transform = Mat8::Identity();
+    transform(6, 0) = -Precision(2) * d1 / d3;
+    transform(6, 2) = -d2 / d3;
+    transform(6, 6) = Precision(1) / d3;
+    transform(7, 1) = -Precision(2) * d2 / d3;
+    transform(7, 2) = -d1 / d3;
+    transform(7, 7) = Precision(1) / d3;
+    return transform;
+}
+
+/**
  * Transforms generalized natural strain components into the pointwise local
  * orthonormal reference basis.
  *
@@ -474,40 +510,13 @@ void FRTShell<N>::transform_strain_to_local(
     }
 
     // The shear measures above are still covariant with respect to the
-    // interpolated reference director D. If D is inclined relative to the
-    // midsurface normal, dot(x_,a, d) contains membrane-strain contributions
-    // and therefore is not yet the engineering shear in the orthonormal
-    // [e1,e2,e3] shell basis used by the section material law.
-    //
-    // With D = d1*e1 + d2*e2 + d3*e3 and E33 = 0,
-    //
-    //   gamma_aD = 2*d1*E11 + d2*gamma12 + d3*gamma13,
-    //   gamma_bD = d1*gamma12 + 2*d2*E22 + d3*gamma23.
-    //
-    // Solve these relations for gamma13/gamma23. The same constant
-    // reference-state transformation must be applied to the B rows.
-    const Vec3 director_local = point.basis.transpose() * point.D;
-    const Precision d1 = director_local(0);
-    const Precision d2 = director_local(1);
-    const Precision d3 = director_local(2);
-
-    logging::error(
-        std::abs(d3) > Precision(1e-12),
-        "FRTShell: reference director is tangent to the shell midsurface"
-    );
-
-    strain(6) = (strain(6) - Precision(2) * d1 * strain(0) - d2 * strain(2)) / d3;
-    strain(7) = (strain(7) - d1 * strain(2) - Precision(2) * d2 * strain(1)) / d3;
+    // interpolated reference director D. Apply the constant deskew map that
+    // converts them into engineering shear in the orthonormal shell basis.
+    const Mat8 deskew = director_deskew_transform(point);
+    strain = deskew * strain;
 
     if (B) {
-        const auto row0 = B->row(0).eval();
-        const auto row1 = B->row(1).eval();
-        const auto row2 = B->row(2).eval();
-        const auto row6 = B->row(6).eval();
-        const auto row7 = B->row(7).eval();
-
-        B->row(6) = (row6 - Precision(2) * d1 * row0 - d2 * row2) / d3;
-        B->row(7) = (row7 - d1 * row2 - Precision(2) * d2 * row1) / d3;
+        *B = deskew * (*B);
     }
 }
 
