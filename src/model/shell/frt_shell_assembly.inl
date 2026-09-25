@@ -239,31 +239,11 @@ void FRTShell<N>::assemble_geometric_stiffness(
         const Precision weight = points[id].w * points[id].detJ;
         const Vec8 local_resultants = weight * data.ip_resultants[id];
 
-        // Pull the orthonormal section resultants back through the inclined-
-        // director deskewing used by transform_strain_to_local(). If
-        //
-        //   gamma13 = (gamma1D - 2*d1*eps11 - d2*gamma12) / d3,
-        //   gamma23 = (gamma2D - d1*gamma12 - 2*d2*eps22) / d3,
-        //
-        // then work conjugacy requires applying the transpose of this map to
-        // the resultants before the remaining local-to-natural pullback.
-        const Vec3 director_local = points[id].basis.transpose() * points[id].D;
-        const Precision d1 = director_local(0);
-        const Precision d2 = director_local(1);
-        const Precision d3 = director_local(2);
-
-        logging::error(
-            std::abs(d3) > Precision(1e-12),
-            "FRTShell: reference director is tangent to the shell midsurface"
-        );
-
-        Vec8 deskewed_resultants = local_resultants;
-        deskewed_resultants(0) -= Precision(2) * d1 / d3 * local_resultants(6);
-        deskewed_resultants(1) -= Precision(2) * d2 / d3 * local_resultants(7);
-        deskewed_resultants(2) -= d2 / d3 * local_resultants(6)
-                                + d1 / d3 * local_resultants(7);
-        deskewed_resultants(6)  = local_resultants(6) / d3;
-        deskewed_resultants(7)  = local_resultants(7) / d3;
+        // Pull section resultants back through the exact transpose of the
+        // inclined-director deskew map used for strains and B rows. This keeps
+        // the geometric tangent work-conjugate with the internal force.
+        const Vec8 deskewed_resultants =
+            director_deskew_transform(points[id]).transpose() * local_resultants;
 
         // Apply the transpose of the pointwise natural-to-local strain map.
         const Precision t00 = points[id].invJ(0, 0);
