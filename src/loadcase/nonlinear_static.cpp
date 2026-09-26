@@ -34,6 +34,7 @@
 #include "../material/isotropic_j2_elasticity.h"
 #include "../material/material.h"
 #include "../model/model.h"
+#include "../model/solid/c3d8r.h"
 #include "../solve/get_solver_name.h"
 #include "../io/writer/write_mtx.h"
 #include "tools/arc_length_control.h"
@@ -48,6 +49,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace fem {
 namespace loadcase {
@@ -309,6 +311,13 @@ void NonlinearStatic::run() {
     Precision     residual_reference_force = Precision(0);
     Precision     current_evaluation_lambda = Precision(0);
     DynamicVector increment_start_displacement = u_total;
+
+    // Temporary C3D8R validation diagnostics: integrate internal generalized
+    // work only over accepted equilibrium states. This is a path-work measure,
+    // not a constitutive stored-energy query.
+    Precision diagnostic_internal_work = Precision(0);
+    DynamicVector diagnostic_previous_displacement = u_total;
+    DynamicVector diagnostic_previous_internal = DynamicVector::Zero(n_active);
 
     auto assemble_state = [&](const DynamicVector& q,
                               Precision            lambda,
@@ -653,6 +662,16 @@ void NonlinearStatic::run() {
             displacement
         );
 
+        const DynamicVector increment_internal_vector =
+            mattools::reduce_mat_to_vec(active_dof_idx_mat, increment_internal);
+        const DynamicVector accepted_du =
+            u_total - diagnostic_previous_displacement;
+
+        diagnostic_internal_work += Precision(0.5)
+            * (diagnostic_previous_internal + increment_internal_vector).dot(accepted_du);
+        diagnostic_previous_displacement = u_total;
+        diagnostic_previous_internal = increment_internal_vector;
+
         auto increment_external = global_load_total;
         increment_external *= lambda;
         auto increment_reaction_full = subtract_field(
@@ -901,6 +920,287 @@ void NonlinearStatic::run() {
         support_mask,
         "REACTION_FORCES"
     );
+
+    // -------------------------------------------------------------------------
+    // TEMPORARY C3D8R VALIDATION DIAGNOSTICS
+    // Remove this complete block together with C3D8R::Diagnostics after the
+    // hourglass formulation has been validated.
+    // -------------------------------------------------------------------------
+    {
+        std::vector<model::C3D8R::Diagnostics> diagnostics;
+        diagnostics.reserve(model->_data->elements.size());
+
+        for (const auto& element : model->_data->elements) {
+            if (!element) continue;
+            auto* c3d8r = element->as<model::C3D8R>();
+            if (!c3d8r) continue;
+            diagnostics.push_back(c3d8r->diagnostics(displacement));
+        }
+
+        if (!diagnostics.empty()) {
+            std::vector<Precision> all_j;
+            std::vector<Precision> all_abs_theta;
+            all_j.reserve(diagnostics.size() * 8);
+            all_abs_theta.reserve(diagnostics.size() * 8);
+
+            Precision total_dev_energy = Precision(0);
+            Precision total_vol_energy = Precision(0);
+            Precision total_reference_volume = Precision(0);
+            Index count_j_lt_005 = 0;
+            Index count_j_lt_010 = 0;
+            Index count_j_lt_020 = 0;
+            Index count_j_lt_050 = 0;
+
+            for (const auto& d : diagnostics) {
+                total_dev_energy += d.dev_energy;
+                total_vol_energy += d.vol_energy;
+                total_reference_volume += d.reference_volume;
+
+                for (Index q = 0; q < 8; ++q) {
+                    const Precision J = d.j[static_cast<std::size_t>(q)];
+                    all_j.push_back(J);
+                    all_abs_theta.push_back(
+                        std::abs(d.theta[static_cast<std::size_t>(q)]));
+
+                    if (J < Precision(0.05)) ++count_j_lt_005;
+                    if (J < Precision(0.10)) ++count_j_lt_010;
+                    if (J < Precision(0.20)) ++count_j_lt_020;
+                    if (J < Precision(0.50)) ++count_j_lt_050;
+                }
+            }
+
+            std::sort(all_j.begin(), all_j.end());
+            std::sort(all_abs_theta.begin(), all_abs_theta.end());
+
+            auto quantile = [](const std::vector<Precision>& values, Precision p) {
+                if (values.empty()) return Precision(0);
+                const Precision x = p * Precision(values.size() - 1);
+                const auto lo = static_cast<std::size_t>(std::floor(x));
+                const auto hi = static_cast<std::size_t>(std::ceil(x));
+                const Precision t = x - Precision(lo);
+                return (Precision(1) - t) * values[lo] + t * values[hi];
+            };
+
+            const Precision total_hg_energy = total_dev_energy + total_vol_energy;
+            const Precision hg_work_ratio =
+                std::abs(diagnostic_internal_work) > Precision(0)
+                ? total_hg_energy / std::abs(diagnostic_internal_work)
+                : std::numeric_limits<Precision>::quiet_NaN();
+
+            const DynamicVector final_internal_vector =
+                mattools::reduce_mat_to_vec(active_dof_idx_mat, final_internal);
+            const DynamicVector final_external_vector =
+                mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_final);
+            const DynamicVector final_full_residual =
+                final_external_vector - final_internal_vector;
+            DynamicVector final_reduced_residual;
+            transformer->project_vector(final_full_residual, final_reduced_residual);
+
+            logging::info(true, "");
+            logging::info(true, "===============================================================================================");
+            logging::info(true, "TEMPORARY C3D8R FINAL DIAGNOSTICS");
+            logging::info(true, "===============================================================================================");
+            logging::info(true, std::scientific, std::setprecision(9));
+            logging::info(true, "elements                         : ", diagnostics.size());
+            logging::info(true, "full-point samples               : ", all_j.size());
+            logging::info(true, "reference volume                 : ", total_reference_volume);
+            logging::info(true, "accepted-path internal work      : ", diagnostic_internal_work);
+            logging::info(true, "hourglass energy dev             : ", total_dev_energy);
+            logging::info(true, "hourglass energy logJ            : ", total_vol_energy);
+            logging::info(true, "hourglass energy total           : ", total_hg_energy);
+            logging::info(true, "HG energy / |path internal work| : ", hg_work_ratio);
+            logging::info(true, "final reduced residual inf-norm  : ",
+                final_reduced_residual.size() > 0
+                    ? final_reduced_residual.lpNorm<Eigen::Infinity>()
+                    : Precision(0));
+
+            logging::info(true, "");
+            logging::info(true, "J distribution over all 2x2x2 samples");
+            logging::info(true, "  min    : ", all_j.front());
+            logging::info(true, "  p01    : ", quantile(all_j, Precision(0.01)));
+            logging::info(true, "  p05    : ", quantile(all_j, Precision(0.05)));
+            logging::info(true, "  p10    : ", quantile(all_j, Precision(0.10)));
+            logging::info(true, "  median : ", quantile(all_j, Precision(0.50)));
+            logging::info(true, "  p90    : ", quantile(all_j, Precision(0.90)));
+            logging::info(true, "  p95    : ", quantile(all_j, Precision(0.95)));
+            logging::info(true, "  p99    : ", quantile(all_j, Precision(0.99)));
+            logging::info(true, "  max    : ", all_j.back());
+            logging::info(true, "  J < 0.05: ", count_j_lt_005);
+            logging::info(true, "  J < 0.10: ", count_j_lt_010);
+            logging::info(true, "  J < 0.20: ", count_j_lt_020);
+            logging::info(true, "  J < 0.50: ", count_j_lt_050);
+
+            logging::info(true, "");
+            logging::info(true, "|log(Jq/Jc)| distribution");
+            logging::info(true, "  p50 : ", quantile(all_abs_theta, Precision(0.50)));
+            logging::info(true, "  p90 : ", quantile(all_abs_theta, Precision(0.90)));
+            logging::info(true, "  p95 : ", quantile(all_abs_theta, Precision(0.95)));
+            logging::info(true, "  p99 : ", quantile(all_abs_theta, Precision(0.99)));
+            logging::info(true, "  max : ", all_abs_theta.back());
+
+            logging::info(true, "");
+            logging::info(true, "Final masked reaction summary by DOF");
+            for (Index dof = 0; dof < reaction_masked.components; ++dof) {
+                Precision sum = Precision(0);
+                Precision positive = Precision(0);
+                Precision negative = Precision(0);
+                Precision absolute = Precision(0);
+                Precision max_abs = Precision(0);
+                Index max_node = -1;
+
+                for (Index node = 0; node < reaction_masked.rows; ++node) {
+                    const Precision value = reaction_masked(node, dof);
+                    sum += value;
+                    absolute += std::abs(value);
+                    if (value > Precision(0)) positive += value;
+                    if (value < Precision(0)) negative += value;
+                    if (std::abs(value) > max_abs) {
+                        max_abs = std::abs(value);
+                        max_node = node;
+                    }
+                }
+
+                logging::info(true,
+                    "  dof ", dof,
+                    ": sum=", sum,
+                    " pos=", positive,
+                    " neg=", negative,
+                    " abs=", absolute,
+                    " maxabs=", max_abs,
+                    " node=", max_node
+                );
+            }
+
+            auto by_min_j = diagnostics;
+            std::sort(by_min_j.begin(), by_min_j.end(),
+                [](const auto& a, const auto& b) { return a.min_j < b.min_j; });
+
+            logging::info(true, "");
+            logging::info(true, "20 lowest-J elements");
+            logging::info(true,
+                " elem        minJ       centerJ       meanJ       maxJ       max|th|"
+                "        Udev        UlogJ       Uhg      smin      smid      smax");
+            const std::size_t n_worst = std::min<std::size_t>(20, by_min_j.size());
+            for (std::size_t i = 0; i < n_worst; ++i) {
+                const auto& d = by_min_j[i];
+                logging::info(true,
+                    std::setw(5), d.element_id, " ",
+                    std::setw(11), d.min_j, " ",
+                    std::setw(11), d.center_j, " ",
+                    std::setw(11), d.mean_j, " ",
+                    std::setw(11), d.max_j, " ",
+                    std::setw(11), d.max_abs_theta, " ",
+                    std::setw(11), d.dev_energy, " ",
+                    std::setw(11), d.vol_energy, " ",
+                    std::setw(11), d.total_energy, " ",
+                    std::setw(9), d.min_singular_value, " ",
+                    std::setw(9), d.mid_singular_value, " ",
+                    std::setw(9), d.max_singular_value
+                );
+
+                logging::info(true,
+                    "       worst gp=", d.min_j_point,
+                    " rst=(", d.min_j_r, ",", d.min_j_s, ",", d.min_j_t, ")",
+                    " J=[",
+                    d.j[0], ",", d.j[1], ",", d.j[2], ",", d.j[3], ",",
+                    d.j[4], ",", d.j[5], ",", d.j[6], ",", d.j[7], "]"
+                );
+                logging::info(true,
+                    "       theta=[",
+                    d.theta[0], ",", d.theta[1], ",", d.theta[2], ",", d.theta[3], ",",
+                    d.theta[4], ",", d.theta[5], ",", d.theta[6], ",", d.theta[7], "]"
+                );
+            }
+
+            auto by_energy = diagnostics;
+            std::sort(by_energy.begin(), by_energy.end(),
+                [](const auto& a, const auto& b) { return a.total_energy > b.total_energy; });
+
+            logging::info(true, "");
+            logging::info(true, "20 highest hourglass-energy elements");
+            logging::info(true,
+                " elem          Uhg         Udev        UlogJ        minJ      max|th|"
+                "       |fhg|    max|fhg|       kmin       kmax  eig(-/0/+)");
+            const std::size_t n_energy = std::min<std::size_t>(20, by_energy.size());
+            for (std::size_t i = 0; i < n_energy; ++i) {
+                const auto& d = by_energy[i];
+                logging::info(true,
+                    std::setw(5), d.element_id, " ",
+                    std::setw(12), d.total_energy, " ",
+                    std::setw(12), d.dev_energy, " ",
+                    std::setw(12), d.vol_energy, " ",
+                    std::setw(11), d.min_j, " ",
+                    std::setw(11), d.max_abs_theta, " ",
+                    std::setw(11), d.hourglass_force_norm, " ",
+                    std::setw(11), d.hourglass_force_max, " ",
+                    std::setw(11), d.tangent_min_eigenvalue, " ",
+                    std::setw(11), d.tangent_max_eigenvalue, "  ",
+                    d.tangent_negative_eigenvalues, "/",
+                    d.tangent_zero_eigenvalues, "/",
+                    d.tangent_positive_eigenvalues
+                );
+            }
+
+            std::sort(diagnostics.begin(), diagnostics.end(),
+                [](const auto& a, const auto& b) { return a.element_id < b.element_id; });
+
+            logging::info(true, "");
+            logging::info(true, "Complete C3D8R element diagnostics");
+            logging::info(true,
+                " elem        V0      centerJ       minJ       meanJ       maxJ"
+                "      th_min      th_max     max|th|        Udev       UlogJ"
+                "         Uhg       |fhg|    max|fhg|       kmin       kmax  eig(-/0/+)");
+            for (const auto& d : diagnostics) {
+                logging::info(true,
+                    std::setw(5), d.element_id, " ",
+                    std::setw(10), d.reference_volume, " ",
+                    std::setw(11), d.center_j, " ",
+                    std::setw(11), d.min_j, " ",
+                    std::setw(11), d.mean_j, " ",
+                    std::setw(11), d.max_j, " ",
+                    std::setw(11), d.min_theta, " ",
+                    std::setw(11), d.max_theta, " ",
+                    std::setw(11), d.max_abs_theta, " ",
+                    std::setw(11), d.dev_energy, " ",
+                    std::setw(11), d.vol_energy, " ",
+                    std::setw(11), d.total_energy, " ",
+                    std::setw(11), d.hourglass_force_norm, " ",
+                    std::setw(11), d.hourglass_force_max, " ",
+                    std::setw(11), d.tangent_min_eigenvalue, " ",
+                    std::setw(11), d.tangent_max_eigenvalue, "  ",
+                    d.tangent_negative_eigenvalues, "/",
+                    d.tangent_zero_eigenvalues, "/",
+                    d.tangent_positive_eigenvalues
+                );
+
+                logging::info(true,
+                    "       J=[",
+                    d.j[0], ",", d.j[1], ",", d.j[2], ",", d.j[3], ",",
+                    d.j[4], ",", d.j[5], ",", d.j[6], ",", d.j[7], "]",
+                    " theta=[",
+                    d.theta[0], ",", d.theta[1], ",", d.theta[2], ",", d.theta[3], ",",
+                    d.theta[4], ",", d.theta[5], ",", d.theta[6], ",", d.theta[7], "]"
+                );
+                logging::info(true,
+                    "       Udev_gp=[",
+                    d.dev_energy_point[0], ",", d.dev_energy_point[1], ",",
+                    d.dev_energy_point[2], ",", d.dev_energy_point[3], ",",
+                    d.dev_energy_point[4], ",", d.dev_energy_point[5], ",",
+                    d.dev_energy_point[6], ",", d.dev_energy_point[7], "]",
+                    " UlogJ_gp=[",
+                    d.vol_energy_point[0], ",", d.vol_energy_point[1], ",",
+                    d.vol_energy_point[2], ",", d.vol_energy_point[3], ",",
+                    d.vol_energy_point[4], ",", d.vol_energy_point[5], ",",
+                    d.vol_energy_point[6], ",", d.vol_energy_point[7], "]"
+                );
+            }
+
+            logging::info(true, "===============================================================================================");
+            logging::info(true, "END TEMPORARY C3D8R FINAL DIAGNOSTICS");
+            logging::info(true, "===============================================================================================");
+            logging::info(true, "");
+        }
+    }
 
     const Index final_frame = last_converged_increment > 0
         ? last_converged_increment + 1
