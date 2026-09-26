@@ -30,6 +30,7 @@ public:
     struct Diagnostics {
         ID element_id = -1;
 
+        Precision reference_volume = Precision(0);
         Precision center_j = Precision(0);
         Precision min_j    = Precision(0);
         Precision max_j    = Precision(0);
@@ -56,7 +57,9 @@ public:
         Precision hourglass_force_max  = Precision(0);
         Precision tangent_min_eigenvalue = Precision(0);
         Precision tangent_max_eigenvalue = Precision(0);
-        Index     tangent_negative_eigenvalues = 0;
+        Index tangent_negative_eigenvalues = 0;
+        Index tangent_zero_eigenvalues     = 0;
+        Index tangent_positive_eigenvalues = 0;
 
         std::array<Precision, 8> j {};
         std::array<Precision, 8> theta {};
