@@ -239,12 +239,6 @@ void FRTShell<N>::assemble_geometric_stiffness(
         const Precision weight = points[id].w * points[id].detJ;
         const Vec8 local_resultants = weight * data.ip_resultants[id];
 
-        // Pull section resultants back through the exact transpose of the
-        // inclined-director deskew map used for strains and B rows. This keeps
-        // the geometric tangent work-conjugate with the internal force.
-        const Vec8 deskewed_resultants =
-            director_deskew_transform(points[id]).transpose() * local_resultants;
-
         // Apply the transpose of the pointwise natural-to-local strain map.
         const Precision t00 = points[id].invJ(0, 0);
         const Precision t01 = points[id].invJ(0, 1);
@@ -258,9 +252,9 @@ void FRTShell<N>::assemble_geometric_stiffness(
                     t00 * t11 + t01 * t10;
 
         Vec8 natural_resultants = Vec8::Zero();
-        natural_resultants.template segment<3>(0) = in_plane.transpose() * deskewed_resultants.template segment<3>(0);
-        natural_resultants.template segment<3>(3) = in_plane.transpose() * deskewed_resultants.template segment<3>(3);
-        natural_resultants.template segment<2>(6) = points[id].invJ.transpose() * deskewed_resultants.template segment<2>(6);
+        natural_resultants.template segment<3>(0) = in_plane.transpose() * local_resultants.template segment<3>(0);
+        natural_resultants.template segment<3>(3) = in_plane.transpose() * local_resultants.template segment<3>(3);
+        natural_resultants.template segment<2>(6) = points[id].invJ.transpose() * local_resultants.template segment<2>(6);
 
         Vec8 compatible_weights = Vec8::Zero();
         for (Vec8& tying_weight : data.geometric_tying_weights) {
@@ -275,15 +269,29 @@ void FRTShell<N>::assemble_geometric_stiffness(
             data.geometric_tying_weights
         );
 
+        // The forward path deskews compatible strains independently at every
+        // sampling point before MITC interpolation. Apply the exact transposed
+        // pointwise maps here after the MITC pull-back so the raw compatible
+        // strain Hessians receive work-conjugate weights.
+        compatible_weights =
+            director_deskew_natural_transform(points[id]).transpose()
+            * compatible_weights;
+
         // Add the compatible integration-point Hessian contribution
         add_weighted_natural_hessian(data, points[id], compatible_weights, Kgeo);
 
         // Add all compatible tying-point Hessian contributions
         for (Index tying_id = 0; tying_id < static_cast<Index>(tying.size()); ++tying_id) {
+            const std::size_t tying_index = static_cast<std::size_t>(tying_id);
+            Vec8& tying_weight = data.geometric_tying_weights[tying_index];
+            tying_weight =
+                director_deskew_natural_transform(tying[tying_index]).transpose()
+                * tying_weight;
+
             add_weighted_natural_hessian(
                 data,
-                tying[static_cast<std::size_t>(tying_id)],
-                data.geometric_tying_weights[static_cast<std::size_t>(tying_id)],
+                tying[tying_index],
+                tying_weight,
                 Kgeo
             );
         }
