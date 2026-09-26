@@ -432,19 +432,25 @@ void FRTShell<N>::compute_natural_strain(
 }
 
 /**
- * Builds the constant reference-state map from the covariant shear measures
- * associated with the interpolated director to engineering strains in the
- * orthonormal shell basis.
+ * Builds the reference-state map that removes tangential director components
+ * from compatible transverse shear before MITC interpolation.
+ *
+ * The raw compatible shear measures are covariant with respect to the
+ * interpolated reference director D. They are first interpreted in the local
+ * orthonormal tangent basis, deskewed there, and mapped back to natural
+ * covariant components. Keeping the result in natural coordinates lets every
+ * topology interpolate the physical transverse-shear field with its existing
+ * MITC operator.
  *
  * Membrane and curvature components are unchanged. Only the transverse-shear
  * rows contain coupling terms caused by tangential reference-director
  * components.
  *
  * @param point Pointwise curved-reference geometry.
- * @return Eight-by-eight deskew transformation.
+ * @return Eight-by-eight natural-coordinate deskew transformation.
  */
 template<Index N>
-typename FRTShell<N>::Mat8 FRTShell<N>::director_deskew_transform(
+typename FRTShell<N>::Mat8 FRTShell<N>::director_deskew_natural_transform(
     const ReferencePoint& point
 ) const {
     const Vec3 director_local = point.basis.transpose() * point.D;
@@ -457,13 +463,26 @@ typename FRTShell<N>::Mat8 FRTShell<N>::director_deskew_transform(
         "FRTShell: reference director is tangent to the shell midsurface"
     );
 
+    const Precision t00 = point.invJ(0, 0);
+    const Precision t01 = point.invJ(0, 1);
+    const Precision t10 = point.invJ(1, 0);
+    const Precision t11 = point.invJ(1, 1);
+
+    StaticMatrix<3, 3> in_plane;
+    in_plane << t00 * t00,               t01 * t01,               t00 * t01,
+                t10 * t10,               t11 * t11,               t10 * t11,
+                Precision(2) * t00 * t10, Precision(2) * t01 * t11,
+                t00 * t11 + t01 * t10;
+
+    StaticMatrix<2, 3> coupling;
+    coupling << Precision(2) * d1, Precision(0), d2,
+                Precision(0), Precision(2) * d2, d1;
+
     Mat8 transform = Mat8::Identity();
-    transform(6, 0) = -Precision(2) * d1 / d3;
-    transform(6, 2) = -d2 / d3;
-    transform(6, 6) = Precision(1) / d3;
-    transform(7, 1) = -Precision(2) * d2 / d3;
-    transform(7, 2) = -d1 / d3;
-    transform(7, 7) = Precision(1) / d3;
+    transform.template block<2, 3>(6, 0) =
+        -(point.J * coupling * in_plane) / d3;
+    transform.template block<2, 2>(6, 6) =
+        Mat2::Identity() / d3;
     return transform;
 }
 
@@ -509,15 +528,6 @@ void FRTShell<N>::transform_strain_to_local(
         B->template block<2, num_dofs>(6, 0) = point.invJ * shear_B;
     }
 
-    // The shear measures above are still covariant with respect to the
-    // interpolated reference director D. Apply the constant deskew map that
-    // converts them into engineering shear in the orthonormal shell basis.
-    const Mat8 deskew = director_deskew_transform(point);
-    strain = deskew * strain;
-
-    if (B) {
-        *B = deskew * (*B);
-    }
 }
 
 /**
@@ -703,6 +713,18 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 data.tying_strain_nat[id],
                 with_B ? &data.tying_B_nat[id] : nullptr
             );
+
+            // MITC must interpolate the physical shear field, not the raw
+            // covariant x_,alpha . D measures. Deskew every compatible tying
+            // value in its own reference basis before any cross-point
+            // interpolation is performed.
+            const Mat8 deskew =
+                director_deskew_natural_transform(ref.tying_points[id]);
+            data.tying_strain_nat[id] = deskew * data.tying_strain_nat[id];
+
+            if (with_B) {
+                data.tying_B_nat[id] = deskew * data.tying_B_nat[id];
+            }
         }
 
         // Reconstruct the complete MITC generalized strain/B field at every
