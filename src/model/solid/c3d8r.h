@@ -3,9 +3,10 @@
  * @brief Declares the reduced-integration C3D8 solid with finite-strain hourglass stabilization.
  *
  * The continuum response is evaluated at the element center. Hourglass control
- * penalizes the non-constant deviatoric Green-Lagrange strain field resolved by
- * a full 2x2x2 geometry sampling. The formulation is objective, uses only the
- * generic material tangent interface and requires no empirical hourglass factor.
+ * penalizes the non-constant deviatoric Green-Lagrange strain field and the
+ * non-uniform volume ratio resolved by a full 2x2x2 geometry sampling. The
+ * formulation is objective, uses only the generic material tangent interface
+ * and requires no empirical hourglass factor.
  *
  * @author Finn Eggers
  * @date 26.09.2026
