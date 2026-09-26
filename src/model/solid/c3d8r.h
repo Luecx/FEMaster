@@ -27,6 +27,43 @@ public:
     using Matrix24 = StaticMatrix<ndof, ndof>;
     using Vector24 = StaticVector<ndof>;
 
+    struct Diagnostics {
+        ID element_id = -1;
+
+        Precision center_j = Precision(0);
+        Precision min_j    = Precision(0);
+        Precision max_j    = Precision(0);
+        Precision mean_j   = Precision(0);
+
+        Index min_j_point = 0;
+        Precision min_j_r = Precision(0);
+        Precision min_j_s = Precision(0);
+        Precision min_j_t = Precision(0);
+
+        Precision min_singular_value = Precision(0);
+        Precision mid_singular_value = Precision(0);
+        Precision max_singular_value = Precision(0);
+
+        Precision min_theta     = Precision(0);
+        Precision max_theta     = Precision(0);
+        Precision max_abs_theta = Precision(0);
+
+        Precision dev_energy = Precision(0);
+        Precision vol_energy = Precision(0);
+        Precision total_energy = Precision(0);
+
+        Precision hourglass_force_norm = Precision(0);
+        Precision hourglass_force_max  = Precision(0);
+        Precision tangent_min_eigenvalue = Precision(0);
+        Precision tangent_max_eigenvalue = Precision(0);
+        Index     tangent_negative_eigenvalues = 0;
+
+        std::array<Precision, 8> j {};
+        std::array<Precision, 8> theta {};
+        std::array<Precision, 8> dev_energy_point {};
+        std::array<Precision, 8> vol_energy_point {};
+    };
+
     C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8R() override = default;
 
@@ -42,6 +79,8 @@ public:
         NodeData&    nodal_forces,
         const Field& displacement
     ) override;
+
+    Diagnostics diagnostics(const Field& displacement);
 
 protected:
     const RowMatrix& extrapolation_matrix() override {
