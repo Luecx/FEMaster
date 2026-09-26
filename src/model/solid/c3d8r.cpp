@@ -4,8 +4,9 @@
  *
  * The physical material response remains a one-point C3D8R evaluation. The
  * stabilization samples only kinematics at the ordinary 2x2x2 C3D8 points and
- * penalizes the non-constant deviatoric Green-Lagrange strain relative to the
- * element center. No additional material states are created.
+ * penalizes both non-constant deviatoric Green-Lagrange strain and non-uniform
+ * volume change relative to the element center. No additional material states
+ * are created.
  *
  * @author Finn Eggers
  * @date 26.09.2026
@@ -16,6 +17,39 @@
 #include <cmath>
 
 namespace fem::model {
+
+namespace {
+
+/**
+ * Extracts one basis-invariant deviatoric stiffness scale from the generic
+ * engineering-Voigt tangent. The five vectors form an orthonormal basis of the
+ * symmetric deviatoric tensor space. Each isotropic basis energy equals 2G, so
+ *
+ *     mu_eff = (1/10) sum_i e_i^T C_dev e_i
+ *
+ * recovers exactly the shear modulus G without inspecting the material model.
+ */
+Precision effective_deviatoric_modulus(const Mat6& tangent) {
+    const Precision inv_sqrt_2 = Precision(1) / std::sqrt(Precision(2));
+    const Precision inv_sqrt_6 = Precision(1) / std::sqrt(Precision(6));
+    const Precision sqrt_2     = std::sqrt(Precision(2));
+
+    std::array<Vec6, 5> basis;
+    basis[0] <<  inv_sqrt_2, -inv_sqrt_2, Precision(0), Precision(0), Precision(0), Precision(0);
+    basis[1] <<  inv_sqrt_6,  inv_sqrt_6, -Precision(2) * inv_sqrt_6, Precision(0), Precision(0), Precision(0);
+    basis[2] <<  Precision(0), Precision(0), Precision(0), sqrt_2, Precision(0), Precision(0);
+    basis[3] <<  Precision(0), Precision(0), Precision(0), Precision(0), sqrt_2, Precision(0);
+    basis[4] <<  Precision(0), Precision(0), Precision(0), Precision(0), Precision(0), sqrt_2;
+
+    Precision sum = Precision(0);
+    for (const auto& direction : basis) {
+        sum += direction.dot(tangent * direction);
+    }
+
+    return sum / Precision(10);
+}
+
+} // namespace
 
 C3D8R::C3D8R(ID elem_id, const std::array<ID, N>& node_ids)
     : C3D8(elem_id, node_ids) {}
@@ -80,15 +114,26 @@ Mat6 C3D8R::deviatoric_reference_tangent() {
  *     A_q = B_q - B_0,
  *
  * so every affine displacement field remains exactly unstabilized. The linear
- * hourglass operator is
+ * hourglass operator combines the deviatoric missing-strain term with the
+ * linearization of the non-uniform logarithmic volume ratio:
  *
- *     K_hg = sum_q A_q^T C_dev A_q dV0.
+ *     K_hg = sum_q [A_q^T C_dev A_q
+ *                  + mu_eff a_q a_q^T] dV0,
  *
- * This is the zero-deformation tangent of finite_hourglass().
+ * where a_q = A_q^T [1,1,1,0,0,0]^T. This is the zero-deformation tangent of
+ * finite_hourglass().
  */
 C3D8R::Matrix24 C3D8R::linear_hourglass_stiffness() {
     const auto reference_coords = node_coords_reference();
     const Mat6 material_tangent = deviatoric_reference_tangent();
+    const Precision shear_scale = effective_deviatoric_modulus(material_tangent);
+
+    logging::error(std::isfinite(shear_scale) && shear_scale > Precision(0),
+        "C3D8R: invalid deviatoric stiffness scale in element ", elem_id,
+        "\nscale: ", shear_scale);
+
+    Vec6 volume_direction = Vec6::Zero();
+    volume_direction.head<3>().setOnes();
 
     Precision center_det = Precision(0);
     const auto center_gradient = shape_derivatives_reference(
@@ -119,8 +164,12 @@ C3D8R::Matrix24 C3D8R::linear_hourglass_stiffness() {
             "C3D8R: invalid reference determinant in element ", elem_id,
             "\ndet(J0): ", det0);
 
+        const Precision measure = det0 * point.w;
+        const Vector24 volume_mode = A.transpose() * volume_direction;
+
         stiffness.noalias() +=
-            A.transpose() * material_tangent * A * (det0 * point.w);
+            (A.transpose() * material_tangent * A
+             + shear_scale * volume_mode * volume_mode.transpose()) * measure;
     }
 
     stiffness = Precision(0.5) * (stiffness + stiffness.transpose());
@@ -139,16 +188,20 @@ C3D8R::Matrix24 C3D8R::linear_hourglass_stiffness() {
  * For each sample,
  *
  *     E_hg,q = E_q - E_0,
- *     S_hg,q = C_dev E_hg,q,
+ *     theta_q = log(J_q / J_0),
  *
  * and the stabilization energy is
  *
- *     Psi_hg = 1/2 sum_q E_hg,q^T C_dev E_hg,q dV0.
+ *     Psi_hg = 1/2 sum_q [E_hg,q^T C_dev E_hg,q
+ *                         + mu_eff theta_q^2] dV0.
  *
- * Green-Lagrange strain makes the stabilization objective under arbitrary rigid
- * rotation. Its exact first variation gives
+ * The first term controls non-constant deviatoric strain. The logarithmic
+ * volume-ratio term is exactly zero for every homogeneous deformation but tends
+ * to infinity as a local sample collapses while the center remains regular.
+ * Its scale mu_eff is derived from C_dev and equals G for isotropic materials.
  *
- *     f_hg = sum_q (B_q - B_0)^T S_hg,q dV0.
+ * Green-Lagrange strain and J make the stabilization objective under arbitrary
+ * rigid rotation.
  *
  * When requested, the tangent contains both the material term and the exact
  * Total-Lagrangian geometric terms generated by the q and center strain
@@ -162,12 +215,19 @@ void C3D8R::finite_hourglass(const Field& displacement,
     const auto local_displacement = this->nodal_data<D>(displacement);
     const auto current_coords     = reference_coords + local_displacement;
     const Mat6 material_tangent   = deviatoric_reference_tangent();
+    const Precision shear_scale   = effective_deviatoric_modulus(material_tangent);
+
+    logging::error(std::isfinite(shear_scale) && shear_scale > Precision(0),
+        "C3D8R: invalid deviatoric stiffness scale in element ", elem_id,
+        "\nscale: ", shear_scale);
 
     Precision center_det0 = Precision(0);
     const auto center_gradient = shape_derivatives_reference(
         reference_coords, Precision(0), Precision(0), Precision(0), center_det0);
     const Mat3 center_F = deformation_gradient(
         reference_coords, current_coords, Precision(0), Precision(0), Precision(0));
+    const Precision center_J = center_F.determinant();
+    const Mat3 center_F_inv_T = center_F.inverse().transpose();
     const Vec6 center_strain =
         VolumeStrainGreenLagrange::from_deformation_gradient(center_F).voigt();
     const StaticMatrix<6, ndof> center_B =
@@ -210,16 +270,39 @@ void C3D8R::finite_hourglass(const Field& displacement,
 
         const Vec6 hourglass_strain = strain - center_strain;
         const Vec6 hourglass_stress = material_tangent * hourglass_strain;
+        const Precision theta = std::log(J / center_J);
         const Precision measure = det0 * point.w;
 
-        local_force.noalias() += A.transpose() * hourglass_stress * measure;
+        const Mat3 F_inv_T = F.inverse().transpose();
+        Vector24 volume_gradient = Vector24::Zero();
+
+        std::array<Vec3, N> current_volume_gradients;
+        std::array<Vec3, N> center_volume_gradients;
+
+        for (Index a = 0; a < N; ++a) {
+            const Vec3 dNa_q = gradient.row(a).transpose();
+            const Vec3 dNa_0 = center_gradient.row(a).transpose();
+
+            current_volume_gradients[a] = F_inv_T * dNa_q;
+            center_volume_gradients[a]  = center_F_inv_T * dNa_0;
+
+            for (Dim d = 0; d < D; ++d) {
+                volume_gradient(D * a + d) =
+                    current_volume_gradients[a](d) - center_volume_gradients[a](d);
+            }
+        }
+
+        local_force.noalias() +=
+            (A.transpose() * hourglass_stress
+             + shear_scale * theta * volume_gradient) * measure;
 
         if (tangent == nullptr) {
             continue;
         }
 
         tangent->noalias() +=
-            A.transpose() * material_tangent * A * measure;
+            (A.transpose() * material_tangent * A
+             + shear_scale * volume_gradient * volume_gradient.transpose()) * measure;
 
         const Mat3 S = VolumeStressPK2(hourglass_stress).tensor();
 
@@ -238,6 +321,13 @@ void C3D8R::finite_hourglass(const Field& displacement,
                 for (Dim d = 0; d < D; ++d) {
                     (*tangent)(D * a + d, D * b + d) += coefficient;
                 }
+
+                const Mat3 volume_hessian =
+                    -current_volume_gradients[b] * current_volume_gradients[a].transpose()
+                    +center_volume_gradients[b] * center_volume_gradients[a].transpose();
+
+                tangent->block<3, 3>(D * a, D * b).noalias() +=
+                    shear_scale * theta * volume_hessian * measure;
             }
         }
     }
