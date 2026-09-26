@@ -14,7 +14,12 @@
 
 #include "c3d8r.h"
 
+#include <Eigen/Eigenvalues>
+#include <Eigen/SVD>
+
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace fem::model {
 
@@ -340,6 +345,129 @@ void C3D8R::finite_hourglass(const Field& displacement,
         logging::error(tangent->allFinite(),
             "C3D8R: invalid finite hourglass tangent in element ", elem_id);
     }
+}
+
+C3D8R::Diagnostics C3D8R::diagnostics(const Field& displacement) {
+    Diagnostics result;
+    result.element_id = elem_id;
+
+    const auto reference_coords   = node_coords_reference();
+    const auto local_displacement = this->nodal_data<D>(displacement);
+    const auto current_coords     = reference_coords + local_displacement;
+    const Mat6 material_tangent   = deviatoric_reference_tangent();
+    const Precision shear_scale   = effective_deviatoric_modulus(material_tangent);
+
+    Precision center_det0 = Precision(0);
+    const auto center_gradient = shape_derivatives_reference(
+        reference_coords, Precision(0), Precision(0), Precision(0), center_det0);
+    const Mat3 center_F = deformation_gradient(
+        reference_coords, current_coords, Precision(0), Precision(0), Precision(0));
+    result.center_j = center_F.determinant();
+
+    const Vec6 center_strain =
+        VolumeStrainGreenLagrange::from_deformation_gradient(center_F).voigt();
+
+    static const math::quadrature::Quadrature full_quadrature{
+        math::quadrature::DOMAIN_ISO_HEX,
+        math::quadrature::ORDER_QUADRATIC
+    };
+
+    result.min_j = std::numeric_limits<Precision>::infinity();
+    result.max_j = -std::numeric_limits<Precision>::infinity();
+    result.min_theta = std::numeric_limits<Precision>::infinity();
+    result.max_theta = -std::numeric_limits<Precision>::infinity();
+
+    Precision weighted_j = Precision(0);
+    Mat3 worst_F = Mat3::Identity();
+
+    for (Index q = 0; q < full_quadrature.count(); ++q) {
+        const auto point = full_quadrature.get_point(q);
+
+        Precision det0 = Precision(0);
+        const auto gradient = shape_derivatives_reference(
+            reference_coords, point.r, point.s, point.t, det0);
+        const Mat3 F = deformation_gradient(
+            reference_coords, current_coords, point.r, point.s, point.t);
+        const Precision J = F.determinant();
+        const Precision theta = std::log(J / result.center_j);
+        const Vec6 strain =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F).voigt();
+        const Vec6 hourglass_strain = strain - center_strain;
+        const Precision measure = det0 * point.w;
+
+        const Precision dev_energy =
+            Precision(0.5) * hourglass_strain.dot(material_tangent * hourglass_strain) * measure;
+        const Precision vol_energy =
+            Precision(0.5) * shear_scale * theta * theta * measure;
+
+        result.j[static_cast<std::size_t>(q)] = J;
+        result.theta[static_cast<std::size_t>(q)] = theta;
+        result.dev_energy_point[static_cast<std::size_t>(q)] = dev_energy;
+        result.vol_energy_point[static_cast<std::size_t>(q)] = vol_energy;
+
+        result.reference_volume += measure;
+        weighted_j += J * measure;
+        result.dev_energy += dev_energy;
+        result.vol_energy += vol_energy;
+
+        if (J < result.min_j) {
+            result.min_j = J;
+            result.min_j_point = q;
+            result.min_j_r = point.r;
+            result.min_j_s = point.s;
+            result.min_j_t = point.t;
+            worst_F = F;
+        }
+
+        result.max_j = std::max(result.max_j, J);
+        result.min_theta = std::min(result.min_theta, theta);
+        result.max_theta = std::max(result.max_theta, theta);
+        result.max_abs_theta = std::max(result.max_abs_theta, std::abs(theta));
+    }
+
+    result.mean_j = weighted_j / result.reference_volume;
+    result.total_energy = result.dev_energy + result.vol_energy;
+
+    Eigen::JacobiSVD<Mat3> svd(worst_F);
+    auto singular_values = svd.singularValues();
+    std::array<Precision, 3> singular{
+        singular_values(0), singular_values(1), singular_values(2)
+    };
+    std::sort(singular.begin(), singular.end());
+    result.min_singular_value = singular[0];
+    result.mid_singular_value = singular[1];
+    result.max_singular_value = singular[2];
+
+    Vector24 hourglass_force;
+    Matrix24 hourglass_tangent;
+    finite_hourglass(displacement, hourglass_force, &hourglass_tangent);
+
+    result.hourglass_force_norm = hourglass_force.norm();
+    result.hourglass_force_max  = hourglass_force.cwiseAbs().maxCoeff();
+
+    Eigen::SelfAdjointEigenSolver<Matrix24> eigen_solver(hourglass_tangent);
+    logging::error(eigen_solver.info() == Eigen::Success,
+        "C3D8R: hourglass diagnostic eigensolve failed in element ", elem_id);
+
+    const auto eigenvalues = eigen_solver.eigenvalues();
+    result.tangent_min_eigenvalue = eigenvalues.minCoeff();
+    result.tangent_max_eigenvalue = eigenvalues.maxCoeff();
+
+    const Precision eigen_scale = std::max(
+        Precision(1), eigenvalues.cwiseAbs().maxCoeff());
+    const Precision eigen_tolerance = Precision(1e-10) * eigen_scale;
+
+    for (Index i = 0; i < ndof; ++i) {
+        if (eigenvalues(i) < -eigen_tolerance) {
+            ++result.tangent_negative_eigenvalues;
+        } else if (std::abs(eigenvalues(i)) <= eigen_tolerance) {
+            ++result.tangent_zero_eigenvalues;
+        } else {
+            ++result.tangent_positive_eigenvalues;
+        }
+    }
+
+    return result;
 }
 
 void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force) {
