@@ -34,7 +34,7 @@
 #include <memory>
 #include <string>
 
-#include "../parser_abq.h"
+#include "../parser.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../../core/logging.h"
@@ -59,7 +59,7 @@ namespace fem::io::reader::commands_abq {
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser owning the active step and load-case state.
  */
-void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
+void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
     // ---------------------------------------------------------------------
     // STEP block
     // ---------------------------------------------------------------------
@@ -79,7 +79,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(!state.step_seen,
                 "The FEMaster Abaqus reader supports at most one analysis STEP");
             logging::error(!state.step_active && !parser.active_loadcase(),
@@ -104,7 +104,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         });
 
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
-            logging::error(!parser.abaqus_state().step_active,
+            logging::error(!parser.step_state().step_active,
                 "Abaqus STEP is missing *END STEP");
         });
 
@@ -125,7 +125,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(state.step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
@@ -185,7 +185,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         ? std::min(initial, Precision(1e-5) * period) : data[2];
                     const bool maximum_omitted = std::isnan(data[3]) || data[3] == Precision(0);
 
-                    parser.abaqus_state().step_period = period;
+                    parser.step_state().step_period = period;
                     loadcase->initial_increment = initial / period;
                     loadcase->minimum_increment = minimum / period;
                     loadcase->maximum_increment = maximum_omitted
@@ -209,7 +209,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
                 .bind([&parser](const std::array<Precision, 4>& data) {
-                    if (parser.abaqus_state().perturbation) {
+                    if (parser.step_state().perturbation) {
                         for (const Precision value : data) {
                             logging::error(std::isnan(value),
                                 "STATIC in a PERTURBATION step does not accept general-step increment data");
@@ -226,7 +226,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     const Precision maximum = std::isnan(data[3]) || data[3] == Precision(0)
                         ? period : data[3];
 
-                    parser.abaqus_state().step_period = period;
+                    parser.step_state().step_period = period;
                     if (auto* loadcase = dynamic_cast<loadcase::NonlinearStatic*>(parser.active_loadcase())) {
                         loadcase->initial_increment = initial / period;
                         loadcase->minimum_increment = minimum / period;
@@ -251,7 +251,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
-            logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
+            logging::error(parser.step_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
             auto loadcase = std::make_unique<loadcase::LinearEigenfrequency>();
@@ -292,7 +292,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
-            logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
+            logging::error(parser.step_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
             auto loadcase = std::make_unique<loadcase::LinearBuckling>();
@@ -333,7 +333,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(state.step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
             logging::error(keys.has("DIRECT"),
@@ -367,7 +367,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     loadcase->dt      = data[0];
                     loadcase->t_start = Precision(0);
                     loadcase->t_end   = data[1];
-                    parser.abaqus_state().step_period = data[1];
+                    parser.step_state().step_period = data[1];
                 })
             )
         );
@@ -392,7 +392,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser, frequency_scale](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(state.step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
             logging::error(keys.has("DIRECT"),
@@ -502,7 +502,7 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.doc("Execute and finish the active Abaqus analysis step.");
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
-            auto& state = parser.abaqus_state();
+            auto& state = parser.step_state();
             logging::error(state.step_active && parser.active_loadcase() != nullptr,
                 "END STEP requires one active supported procedure");
 

@@ -22,6 +22,7 @@ class DeckParser:
     element_by_deck_id: dict[int, object] = field(default_factory=dict)
     surface_by_deck_id: dict[int, object] = field(default_factory=dict)
     current_material: object | None = None
+    current_loadcase_state: dict | None = None
 
     def __post_init__(self) -> None:
         from .commands_analysis import ANALYSIS_COMMANDS

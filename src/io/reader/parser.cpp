@@ -24,6 +24,7 @@
  */
 
 #include "parser.h"
+#include "../../bc/amplitude.h"
 
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
@@ -69,6 +70,7 @@ void Parser::run(const std::string& input_path,
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
     next_loadcase_id_ = 1;
+    step_state_ = ParserAbqState{};
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -213,6 +215,10 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("TIE");
     }
 
+    // Resolve optional Abaqus-compatible nodal transforms before load definition.
+    root.execute_children("TRANSFORM");
+    for (const auto* assembly : root.children("ASSEMBLY")) assembly->execute_children("TRANSFORM");
+
     // Complete reference normals from the final initial geometry.
     model_->build_shell_element_normals();
 
@@ -225,6 +231,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Root-level collectors and constraints
     // ---------------------------------------------------------------------
     root.execute_children("SUPPORT");
+    root.execute_children("BOUNDARY");
 
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
@@ -243,6 +250,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("SUPPORT");
+        assembly->execute_children("BOUNDARY");
 
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
@@ -287,10 +295,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
 
-    for (const auto* loadcase : root.children("LOADCASE")) {
-        loadcase->enter();
-        loadcase->execute_children();
-        loadcase->leave();
+    // Run native LOADCASE and Abaqus-style STEP blocks in their source order.
+    for (const auto* analysis : root.children()) {
+        if (analysis->command().name_ != "LOADCASE" && analysis->command().name_ != "STEP") continue;
+        analysis->enter();
+        analysis->execute_children();
+        analysis->leave();
     }
 
     close_writers();
@@ -401,6 +411,43 @@ loadcase::LoadCase* Parser::active_loadcase() {
     return active_loadcase_.get();
 }
 
+std::pair<Precision, std::string> Parser::resolve_load_amplitude(const std::string& amplitude) {
+    auto& data = *model()._data;
+    auto* loadcase = active_loadcase();
+    logging::error(loadcase != nullptr,
+        "Cannot resolve a load amplitude without an active load case");
+    const std::string procedure = loadcase->type_name();
+
+    if (!amplitude.empty()) {
+        logging::error(data.amplitudes.has(amplitude),
+            "Unknown Abaqus amplitude '", amplitude, "'");
+
+        if (procedure == "LINEARTRANSIENT" || procedure == "LINEARHARMONIC") {
+            return {Precision(1), amplitude};
+        }
+        if (procedure == "LINEARSTATIC" || procedure == "LINEARBUCKLING") {
+            return {data.amplitudes.get(amplitude)->evaluate(step_state().step_period), std::string{}};
+        }
+        logging::error(procedure != "NONLINEARSTATIC",
+            "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
+    }
+
+    if (procedure == "LINEARTRANSIENT" && step_state().step_amplitude == "RAMP") {
+        const std::string name = "__ABQ_STEP_DEFAULT_AMPLITUDE";
+        if (!data.amplitudes.has(name)) {
+            auto generated = std::make_shared<bc::Amplitude>(name, bc::Interpolation::Linear);
+            generated->add_sample(Precision(0), Precision(0));
+            generated->add_sample(step_state().step_period, Precision(1));
+            model().add_amplitude(std::move(generated));
+        }
+        return {Precision(1), name};
+    }
+
+    logging::error(!(procedure == "NONLINEARSTATIC" && step_state().step_amplitude == "STEP"),
+        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
+    return {Precision(1), std::string{}};
+}
+
 /**
  * Rebuilds the persistent registry used for command-language documentation.
  */
@@ -469,7 +516,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_spring(registry, mdl);
 
     // Loads, constraints, features and model diagnostics
-    commands::register_cload(registry, mdl);
+    commands::register_cload(registry, *this);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
     commands::register_tload(registry, mdl);
@@ -488,6 +535,9 @@ void Parser::register_commands(io::dsl::Registry& registry) {
 
     // Load-case creation, solver settings and result requests
     commands::register_loadcase_begin(registry, *this);
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_boundary(registry, *this);
+    commands_abq::register_transform(registry, *this);
     commands::register_loadcase_supports(registry, *this);
     commands::register_loadcase_loads(registry, *this);
     commands::register_loadcase_solver(registry, *this);

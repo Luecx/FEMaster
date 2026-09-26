@@ -43,7 +43,7 @@ void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser
     };
 
     registry.command("SUPPORTS", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STEP"}));
         command.doc("Assign support collectors to the active loadcase.");
 
         command.variant(fem::io::dsl::Variant::make()
