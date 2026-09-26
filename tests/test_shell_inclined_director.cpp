@@ -9,17 +9,23 @@
 
 #include <array>
 #include <cmath>
+#include <vector>
 
 namespace {
 
 using Shell = fem::model::FRTShellS4;
 
-Shell::ReferencePoint inclined_reference_point() {
+Shell::ReferencePoint reference_point(const fem::Vec3& director) {
     Shell::ReferencePoint point;
+    point.J.setIdentity();
     point.invJ.setIdentity();
     point.basis.setIdentity();
-    point.D = fem::Vec3(0.0, 1.0, 2.0).normalized();
+    point.D = director;
     return point;
+}
+
+Shell::ReferencePoint inclined_reference_point() {
+    return reference_point(fem::Vec3(0.0, 1.0, 2.0).normalized());
 }
 
 } // namespace
@@ -37,6 +43,7 @@ TEST(ShellInclinedDirector, PureMembraneStrainDoesNotBecomeTransverseShear) {
     strain(1) = epsilon_yy;
     strain(7) = 2.0 * d2 * epsilon_yy;
 
+    strain = shell.director_deskew_natural_transform(point) * strain;
     shell.transform_strain_to_local(point, strain);
 
     EXPECT_NEAR(strain(1), epsilon_yy, 1e-14);
@@ -57,6 +64,7 @@ TEST(ShellInclinedDirector, RecoversOrthonormalEngineeringShear) {
     strain(1) = epsilon_yy;
     strain(7) = 2.0 * d2 * epsilon_yy + d3 * gamma_23;
 
+    strain = shell.director_deskew_natural_transform(point) * strain;
     shell.transform_strain_to_local(point, strain);
 
     EXPECT_NEAR(strain(7), gamma_23, 1e-14);
@@ -73,27 +81,65 @@ TEST(ShellInclinedDirector, AppliesSameDeskewingToBMatrix) {
     B(1, 4) = 0.25;
     B(7, 4) = 2.0 * d2 * B(1, 4);
 
+    const Shell::Mat8 deskew = shell.director_deskew_natural_transform(point);
+    strain = deskew * strain;
+    B = deskew * B;
     shell.transform_strain_to_local(point, strain, &B);
 
     EXPECT_NEAR(B(1, 4), 0.25, 1e-14);
     EXPECT_NEAR(B(7, 4), 0.0, 1e-14);
 }
 
+TEST(ShellInclinedDirector, VaryingDirectorsAreDeskewedBeforeMitcInterpolation) {
+    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+
+    const auto left  = reference_point(fem::Vec3(0.0,  0.6, 0.8));
+    const auto right = reference_point(fem::Vec3(0.0, -0.8, 0.6));
+    auto target      = reference_point(fem::Vec3(0.0,  0.0, 1.0));
+    target.r = 0.0;
+    target.s = 0.0;
+
+    const fem::Precision epsilon_yy = 0.1;
+    std::vector<Shell::Vec8> tying(4, Shell::Vec8::Zero());
+
+    for (const auto& sample : {std::pair<std::size_t, Shell::ReferencePoint>{2, left},
+                               std::pair<std::size_t, Shell::ReferencePoint>{3, right}}) {
+        Shell::Vec8 compatible = Shell::Vec8::Zero();
+        compatible(1) = epsilon_yy;
+        compatible(7) = 2.0 * sample.second.D(1) * epsilon_yy;
+        tying[sample.first] =
+            shell.director_deskew_natural_transform(sample.second) * compatible;
+    }
+
+    Shell::EvaluationData data;
+    data.tying_strain_nat = Shell::Span<Shell::Vec8>(tying);
+
+    Shell::Vec8 strain = Shell::Vec8::Zero();
+    strain(1) = epsilon_yy;
+
+    shell.apply_mitc_natural(data, target, strain, nullptr);
+    shell.transform_strain_to_local(target, strain);
+
+    EXPECT_NEAR(strain(6), 0.0, 1e-14);
+    EXPECT_NEAR(strain(7), 0.0, 1e-14);
+}
+
 TEST(ShellInclinedDirector, DeskewPullbackPreservesVirtualWork) {
     Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
-    const Shell::Mat8 transform = shell.director_deskew_transform(point);
+    const Shell::Mat8 transform =
+        shell.director_deskew_natural_transform(point);
 
-    Shell::Vec8 covariant_strain;
-    covariant_strain << 0.03, -0.02, 0.01, 0.04, -0.05, 0.02, 0.06, -0.07;
+    Shell::Vec8 compatible_strain;
+    compatible_strain << 0.03, -0.02, 0.01, 0.04, -0.05, 0.02, 0.06, -0.07;
 
-    Shell::Vec8 local_resultants;
-    local_resultants << 3.0, -2.0, 1.5, 0.7, -0.8, 0.4, 5.0, -4.0;
+    Shell::Vec8 deskewed_resultants;
+    deskewed_resultants << 3.0, -2.0, 1.5, 0.7, -0.8, 0.4, 5.0, -4.0;
 
-    const fem::Precision local_work =
-        local_resultants.dot(transform * covariant_strain);
-    const fem::Precision pulled_back_work =
-        (transform.transpose() * local_resultants).dot(covariant_strain);
+    const fem::Precision deskewed_work =
+        deskewed_resultants.dot(transform * compatible_strain);
+    const fem::Precision compatible_work =
+        (transform.transpose() * deskewed_resultants).dot(compatible_strain);
 
-    EXPECT_NEAR(local_work, pulled_back_work, 1e-14);
+    EXPECT_NEAR(deskewed_work, compatible_work, 1e-14);
 }
