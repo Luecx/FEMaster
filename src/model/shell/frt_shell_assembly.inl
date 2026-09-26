@@ -239,9 +239,7 @@ void FRTShell<N>::assemble_geometric_stiffness(
         const Precision weight = points[id].w * points[id].detJ;
         const Vec8 local_resultants = weight * data.ip_resultants[id];
 
-        // Apply the transpose of the pointwise natural-to-local strain map
-        // directly here because this pull-back is used only by geometric
-        // assembly and does not justify a separate one-call helper.
+        // Apply the transpose of the pointwise natural-to-local strain map.
         const Precision t00 = points[id].invJ(0, 0);
         const Precision t01 = points[id].invJ(0, 1);
         const Precision t10 = points[id].invJ(1, 0);
@@ -271,15 +269,29 @@ void FRTShell<N>::assemble_geometric_stiffness(
             data.geometric_tying_weights
         );
 
+        // The forward path deskews compatible strains independently at every
+        // sampling point before MITC interpolation. Apply the exact transposed
+        // pointwise maps here after the MITC pull-back so the raw compatible
+        // strain Hessians receive work-conjugate weights.
+        compatible_weights =
+            director_deskew_natural_transform(points[id]).transpose()
+            * compatible_weights;
+
         // Add the compatible integration-point Hessian contribution
         add_weighted_natural_hessian(data, points[id], compatible_weights, Kgeo);
 
         // Add all compatible tying-point Hessian contributions
         for (Index tying_id = 0; tying_id < static_cast<Index>(tying.size()); ++tying_id) {
+            const std::size_t tying_index = static_cast<std::size_t>(tying_id);
+            Vec8& tying_weight = data.geometric_tying_weights[tying_index];
+            tying_weight =
+                director_deskew_natural_transform(tying[tying_index]).transpose()
+                * tying_weight;
+
             add_weighted_natural_hessian(
                 data,
-                tying[static_cast<std::size_t>(tying_id)],
-                data.geometric_tying_weights[static_cast<std::size_t>(tying_id)],
+                tying[tying_index],
+                tying_weight,
                 Kgeo
             );
         }

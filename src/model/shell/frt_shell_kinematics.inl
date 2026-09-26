@@ -432,6 +432,61 @@ void FRTShell<N>::compute_natural_strain(
 }
 
 /**
+ * Builds the reference-state map that removes tangential director components
+ * from compatible transverse shear before MITC interpolation.
+ *
+ * The raw compatible shear measures are covariant with respect to the
+ * interpolated reference director D. They are first interpreted in the local
+ * orthonormal tangent basis, deskewed there, and mapped back to natural
+ * covariant components. Keeping the result in natural coordinates lets every
+ * topology interpolate the physical transverse-shear field with its existing
+ * MITC operator.
+ *
+ * Membrane and curvature components are unchanged. Only the transverse-shear
+ * rows contain coupling terms caused by tangential reference-director
+ * components.
+ *
+ * @param point Pointwise curved-reference geometry.
+ * @return Eight-by-eight natural-coordinate deskew transformation.
+ */
+template<Index N>
+typename FRTShell<N>::Mat8 FRTShell<N>::director_deskew_natural_transform(
+    const ReferencePoint& point
+) const {
+    const Vec3 director_local = point.basis.transpose() * point.D;
+    const Precision d1 = director_local(0);
+    const Precision d2 = director_local(1);
+    const Precision d3 = director_local(2);
+
+    logging::error(
+        std::abs(d3) > Precision(1e-12),
+        "FRTShell: reference director is tangent to the shell midsurface"
+    );
+
+    const Precision t00 = point.invJ(0, 0);
+    const Precision t01 = point.invJ(0, 1);
+    const Precision t10 = point.invJ(1, 0);
+    const Precision t11 = point.invJ(1, 1);
+
+    StaticMatrix<3, 3> in_plane;
+    in_plane << t00 * t00,               t01 * t01,               t00 * t01,
+                t10 * t10,               t11 * t11,               t10 * t11,
+                Precision(2) * t00 * t10, Precision(2) * t01 * t11,
+                t00 * t11 + t01 * t10;
+
+    StaticMatrix<2, 3> coupling;
+    coupling << Precision(2) * d1, Precision(0), d2,
+                Precision(0), Precision(2) * d2, d1;
+
+    Mat8 transform = Mat8::Identity();
+    transform.template block<2, 3>(6, 0) =
+        -(point.J * coupling * in_plane) / d3;
+    transform.template block<2, 2>(6, 6) =
+        Mat2::Identity() / d3;
+    return transform;
+}
+
+/**
  * Transforms generalized natural strain components into the pointwise local
  * orthonormal reference basis.
  *
@@ -464,6 +519,7 @@ void FRTShell<N>::transform_strain_to_local(
     transform_in_plane_rows<N>(in_plane, 3, strain, B);
 
     // Transform the covariant transverse-shear vector and the same B rows
+    // from natural coordinates into the orthonormal midsurface tangent basis.
     const Vec2 shear_nat = strain.template segment<2>(6);
     strain.template segment<2>(6) = point.invJ * shear_nat;
 
@@ -471,6 +527,7 @@ void FRTShell<N>::transform_strain_to_local(
         const Mat2x6N shear_B = B->template block<2, num_dofs>(6, 0);
         B->template block<2, num_dofs>(6, 0) = point.invJ * shear_B;
     }
+
 }
 
 /**
@@ -656,6 +713,18 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 data.tying_strain_nat[id],
                 with_B ? &data.tying_B_nat[id] : nullptr
             );
+
+            // MITC must interpolate the physical shear field, not the raw
+            // covariant x_,alpha . D measures. Deskew every compatible tying
+            // value in its own reference basis before any cross-point
+            // interpolation is performed.
+            const Mat8 deskew =
+                director_deskew_natural_transform(ref.tying_points[id]);
+            data.tying_strain_nat[id] = deskew * data.tying_strain_nat[id];
+
+            if (with_B) {
+                data.tying_B_nat[id] = deskew * data.tying_B_nat[id];
+            }
         }
 
         // Reconstruct the complete MITC generalized strain/B field at every
