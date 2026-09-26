@@ -187,8 +187,8 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     const HourglassBasis basis = hourglass_basis();
     const Mat6 material_tangent = deviatoric_reference_tangent();
 
-    Matrix24 full_stiffness    = Matrix24::Zero();
-    Matrix24 reduced_stiffness = Matrix24::Zero();
+    Matrix12 full_modal_stiffness    = Matrix12::Zero();
+    Matrix12 reduced_modal_stiffness = Matrix12::Zero();
 
     static const math::quadrature::Quadrature full_quadrature{
         math::quadrature::DOMAIN_ISO_HEX,
@@ -202,13 +202,14 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
         const auto gradient = shape_derivatives_reference(
             reference_coords, point.r, point.s, point.t, det0);
         const StaticMatrix<6, ndof> B = strain_displacement(gradient);
+        const StaticMatrix<6, n_hourglass_dof> Bh = B * basis;
 
         logging::error(std::isfinite(det0) && det0 > Precision(0),
             "C3D8R: invalid full-integration reference determinant in element ", elem_id,
             "\ndet(J0): ", det0);
 
-        full_stiffness.noalias() +=
-            B.transpose() * material_tangent * B * (det0 * point.w);
+        full_modal_stiffness.noalias() +=
+            Bh.transpose() * material_tangent * Bh * (det0 * point.w);
     }
 
     const auto& reduced_quadrature = integration_scheme_stiffness();
@@ -219,28 +220,26 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
         const auto gradient = shape_derivatives_reference(
             reference_coords, point.r, point.s, point.t, det0);
         const StaticMatrix<6, ndof> B = strain_displacement(gradient);
+        const StaticMatrix<6, n_hourglass_dof> Bh = B * basis;
 
         logging::error(std::isfinite(det0) && det0 > Precision(0),
             "C3D8R: invalid reduced-integration reference determinant in element ", elem_id,
             "\ndet(J0): ", det0);
 
-        reduced_stiffness.noalias() +=
-            B.transpose() * material_tangent * B * (det0 * point.w);
+        reduced_modal_stiffness.noalias() +=
+            Bh.transpose() * material_tangent * Bh * (det0 * point.w);
     }
 
-    const Matrix24 missing_stiffness =
-        Precision(0.5) * ((full_stiffness - reduced_stiffness)
-                        + (full_stiffness - reduced_stiffness).transpose());
-
-    const Matrix12 gram = basis.transpose() * basis;
-    const Matrix12 gram_inverse = gram.inverse();
-
-    logging::error(gram_inverse.allFinite(),
-        "C3D8R: singular hourglass basis in element ", elem_id);
-
-    Matrix12 modal_stiffness = basis.transpose() * missing_stiffness * basis;
+    Matrix12 modal_stiffness = full_modal_stiffness - reduced_modal_stiffness;
     modal_stiffness = Precision(0.5) * (modal_stiffness + modal_stiffness.transpose());
 
+    const Matrix12 gram = basis.transpose() * basis;
+    const auto gram_lu = gram.fullPivLu();
+
+    logging::error(gram_lu.isInvertible(),
+        "C3D8R: singular hourglass basis in element ", elem_id);
+
+    const Matrix12 gram_inverse = gram_lu.inverse();
     Matrix24 stiffness =
         basis * gram_inverse * modal_stiffness * gram_inverse * basis.transpose();
     stiffness = Precision(0.5) * (stiffness + stiffness.transpose());
