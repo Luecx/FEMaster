@@ -489,7 +489,7 @@ struct FRTShell : ShellElement<N> {
         Vec8&                 strain_nat,
         Mat8x6N*              B_nat = nullptr
     ) const;
-    Mat8 director_deskew_transform(const ReferencePoint& point) const;
+    Mat8 director_deskew_natural_transform(const ReferencePoint& point) const;
     void transform_strain_to_local(
         const ReferencePoint& point,
         Vec8&                 strain,
