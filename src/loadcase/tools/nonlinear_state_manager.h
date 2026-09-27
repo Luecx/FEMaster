@@ -61,6 +61,12 @@ public:
     void reset_material_state();
     void commit_material_state();
 
+    // Element-local nonlinear history used by formulations with condensed
+    // internal variables.
+    void begin_element_trial();
+    void commit_element_trial();
+    void rollback_element_trial();
+
     // Nested contact multiplier/evaluation transactions
     void begin_contact_trial();
     void commit_contact_trial();
