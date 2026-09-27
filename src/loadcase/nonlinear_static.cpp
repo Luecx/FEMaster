@@ -691,6 +691,7 @@ void NonlinearStatic::run() {
         increment_start_displacement =
             recover_total_displacement(q_total, load_factor);
         nonlinear_state.reset_material_state();
+        nonlinear_state.begin_element_trial();
         nonlinear_state.begin_contact_trial();
     };
 
@@ -704,11 +705,13 @@ void NonlinearStatic::run() {
         }
 
         nonlinear_state.commit_contact_trial();
+        nonlinear_state.commit_element_trial();
         nonlinear_state.commit_material_state();
     };
 
     auto rollback_increment_trial = [&]() {
         nonlinear_state.rollback_contact_trial();
+        nonlinear_state.rollback_element_trial();
         nonlinear_state.reset_material_state();
     };
 
