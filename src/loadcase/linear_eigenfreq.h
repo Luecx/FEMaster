@@ -30,7 +30,17 @@ namespace loadcase {
  * implementing a run function for solving the eigenvalue problem.
  */
 struct LinearEigenfrequency : public LoadCase {
-    // Modal defaults reproduce the fields currently emitted by this procedure.
+    //-------------------------------------------------------------------------
+    // Data Members
+    //-------------------------------------------------------------------------
+    std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
+    int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
+
+    // Solver selection
+    solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
+    solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
+
+    // Construction and default result requests
     LinearEigenfrequency() {
         using io::writer::OutputField;
         output.set_defaults({
@@ -41,15 +51,6 @@ struct LinearEigenfrequency : public LoadCase {
             OutputField::FREQUENCIES
         });
     }
-    //-------------------------------------------------------------------------
-    // Data Members
-    //-------------------------------------------------------------------------
-    std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
-    int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
-
-    // Solver selection
-    solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
-    solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
 
 public:
     // Analysis identity and execution
