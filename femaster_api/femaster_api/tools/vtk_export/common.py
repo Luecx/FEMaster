@@ -141,6 +141,7 @@ def cell_type(vtk, element: Element) -> int:
         ElementTopology.PYRAMID5: vtk.VTK_PYRAMID,
         ElementTopology.WEDGE6: vtk.VTK_WEDGE,
         ElementTopology.HEX8: vtk.VTK_HEXAHEDRON,
+        ElementTopology.HEX8I: vtk.VTK_HEXAHEDRON,
         ElementTopology.TRI6: vtk.VTK_QUADRATIC_TRIANGLE,
         ElementTopology.QUAD8: vtk.VTK_QUADRATIC_QUAD,
         ElementTopology.MITC8: vtk.VTK_QUADRATIC_QUAD,
