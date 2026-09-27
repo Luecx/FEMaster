@@ -97,6 +97,13 @@ struct StructuralElement : ElementInterface {
     virtual void step_begin() {}
     virtual void step_end()   {}
 
+    // Optional element-local nonlinear history. Formulations with internal
+    // variables that are not material-point state (for example incompatible
+    // modes) use the same accepted-increment transaction as constitutive history.
+    virtual void nonlinear_begin_increment() {}
+    virtual void nonlinear_commit_increment() {}
+    virtual void nonlinear_rollback_increment() {}
+
     // Field functors for volume/surface integrations (aliased to central types)
     using ScalarField = ::fem::ScalarField;
     using VecField    = ::fem::VecField;
