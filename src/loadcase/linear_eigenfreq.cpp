@@ -179,7 +179,7 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
  * semantic alias handled by OutputRequestHandler, so the eigensolver does not
  * need a separate mode-shape storage convention.
  */
-static void write_results(const std::vector<ModalMode>& modes,
+static void write_results(std::vector<ModalMode>& modes,
                           io::writer::OutputRequestHandler& output,
                           io::writer::ResultWriters* writer,
                           int loadcase_id,
@@ -219,7 +219,7 @@ static void write_results(const std::vector<ModalMode>& modes,
             modes[index].freq,
             "_" + std::to_string(i + 1)
         );
-        output.provide(OutputField::DISPLACEMENT,        const_cast<model::Field&>(modes[index].mode_mat));
+        output.provide(OutputField::DISPLACEMENT,        modes[index].mode_mat);
         output.provide(OutputField::PARTICIPATION,       participation);
         output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
         output.write_frame(*writer, mdl->_data.get());
