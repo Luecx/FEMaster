@@ -118,6 +118,8 @@ void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
         "Request nodal result fields using CalculiX NODE FILE syntax.");
     register_field_list(registry, parser, "ELFILE",
         "Request element-derived result fields using CalculiX EL FILE syntax.");
+    register_field_list(registry, parser, "ELOUTPUT",
+        "Request element-derived result fields using CalculiX EL OUTPUT syntax.");
 }
 
 } // namespace fem::io::reader::commands
