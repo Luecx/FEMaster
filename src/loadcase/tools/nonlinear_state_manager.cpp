@@ -112,6 +112,33 @@ void NonlinearStateManager::commit_material_state() {
     name_material_states();
 }
 
+void NonlinearStateManager::begin_element_trial() {
+    for (const auto& element : model_._data->elements) {
+        if (!element) continue;
+        if (auto* structural = element->as<model::StructuralElement>()) {
+            structural->nonlinear_begin_increment();
+        }
+    }
+}
+
+void NonlinearStateManager::commit_element_trial() {
+    for (const auto& element : model_._data->elements) {
+        if (!element) continue;
+        if (auto* structural = element->as<model::StructuralElement>()) {
+            structural->nonlinear_commit_increment();
+        }
+    }
+}
+
+void NonlinearStateManager::rollback_element_trial() {
+    for (const auto& element : model_._data->elements) {
+        if (!element) continue;
+        if (auto* structural = element->as<model::StructuralElement>()) {
+            structural->nonlinear_rollback_increment();
+        }
+    }
+}
+
 /**
  * Opens one nested transactional contact trial.
  *
