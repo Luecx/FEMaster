@@ -9,8 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <stdexcept>
+#include <utility>
 
 namespace fem::model {
 
@@ -19,12 +18,6 @@ namespace {
 constexpr Precision local_tolerance = Precision(1e-10);
 constexpr Index local_max_iterations = 30;
 constexpr Index local_max_line_search = 12;
-
-template<int Rows, int Cols>
-bool finite_matrix(const Eigen::Matrix<Precision, Rows, Cols>& matrix) {
-    return matrix.allFinite();
-}
-
 } // namespace
 
 C3D8I::C3D8I(ID elem_id, const std::array<ID, N>& node_ids)
