@@ -515,6 +515,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_loadcase_initialvelocity(registry, *this);
     commands::register_loadcase_inertiarelief(registry, *this);
     commands::register_loadcase_rebalance(registry, *this);
+    commands::register_output(registry, *this);
 }
 
 } // namespace fem::io::reader
