@@ -556,6 +556,20 @@ SolidElement<N>::stiffness(Precision* buffer) {
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
+    return stiffness_geom(buffer, displacement, nullptr);
+}
+
+template<Index N>
+MapMatrix
+SolidElement<N>::stiffness_geom(Precision* buffer,
+                                const Field& displacement,
+                                const Field* thermal_free_strain) {
+    if (thermal_free_strain) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+                       && thermal_free_strain->components == 1,
+                       "SolidElement: thermal free strain must be scalar ELEMENT_IP data");
+    }
+
     const StaticMatrix<N, D> reference_coords  = this->node_coords_reference();
     const StaticMatrix<N, D> local_displacement = this->nodal_data<D>(displacement);
     const StaticMatrix<D, N> local_disp_mat(local_displacement.transpose());
@@ -575,9 +589,17 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
 
         // Reconstruct the small-strain prestress directly from the supplied
         // displacement state. This auxiliary evaluation must remain state-neutral.
-        const Vec6 strain_values = B * local_displacement_vec;
+        Vec6 strain_values = B * local_displacement_vec;
+        const Index local_ip = ip++;
+        if (thermal_free_strain) {
+            const Precision free_strain =
+                (*thermal_free_strain)(this->ip_index(local_ip), 0);
+            strain_values(0) -= free_strain;
+            strain_values(1) -= free_strain;
+            strain_values(2) -= free_strain;
+        }
         const VolumeStrainLinearized strain(strain_values);
-        const Index      state_row = this->mp_index(ip++);
+        const Index      state_row = this->mp_index(local_ip);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
         VolumeStressCauchy stress;
         Mat6               material_tangent;
