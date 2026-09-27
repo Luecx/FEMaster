@@ -232,25 +232,18 @@ void LinearHarmonic::run() {
             auto displacement_real = mattools::expand_vec_to_mat(active_dof_idx_mat, u_real);
             auto displacement_imag = mattools::expand_vec_to_mat(active_dof_idx_mat, u_imag);
 
-            // Keep each excitation frequency as a separate result field.
-            const std::string suffix = "_" + std::to_string(i + 1);
-            displacement_real.name = "DISPLACEMENT_REAL" + suffix;
-            displacement_imag.name = "DISPLACEMENT_IMAG" + suffix;
+            // Harmonic displacement is solved directly as real and imaginary
+            // components. Stress/strain components are recovered lazily from
+            // the corresponding displacement component only when requested.
+            model::Field thermal_free_strain;
 
-            auto [stress_real, strain_real] = model->compute_stress_nodal(displacement_real, false);
-            auto [stress_imag, strain_imag] = model->compute_stress_nodal(displacement_imag, false);
-
-            stress_real.name = "STRESS_REAL" + suffix;
-            stress_imag.name = "STRESS_IMAG" + suffix;
-            strain_real.name = "STRAIN_REAL" + suffix;
-            strain_imag.name = "STRAIN_IMAG" + suffix;
-
-            writer->write_field(displacement_real, displacement_real.name, model->_data.get(), frequency);
-            writer->write_field(displacement_imag, displacement_imag.name, model->_data.get(), frequency);
-            writer->write_field(stress_real, stress_real.name, model->_data.get(), frequency);
-            writer->write_field(stress_imag, stress_imag.name, model->_data.get(), frequency);
-            writer->write_field(strain_real, strain_real.name, model->_data.get(), frequency);
-            writer->write_field(strain_imag, strain_imag.name, model->_data.get(), frequency);
+            using io::writer::OutputField;
+            output.begin_frame(frequency, "_" + std::to_string(i + 1));
+            output.provide(OutputField::DISPLACEMENT_REAL,    displacement_real);
+            output.provide(OutputField::DISPLACEMENT_IMAG,    displacement_imag);
+            output.provide(OutputField::EXTERNAL_FORCES,      const_cast<model::Field&>(global_load_mat));
+            output.provide(OutputField::THERMAL_FREE_STRAIN,  thermal_free_strain);
+            output.write_frame(*writer, model->_data.get());
         });
 
         logging::info(true,
