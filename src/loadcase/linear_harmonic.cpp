@@ -202,7 +202,7 @@ void LinearHarmonic::run() {
             // Abaqus-style amplitudes use frequency as STEP TIME in a frequency
             // domain procedure. Rebuild only the load vector for each frequency;
             // K, M, C and the constraint transformation remain unchanged.
-            const model::Field global_load_mat = model->build_load_matrix(loads, frequency);
+            model::Field global_load_mat = model->build_load_matrix(loads, frequency);
             const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
             const DynamicVector fr = transformer->assemble_system_rhs(K, f);
 
@@ -241,7 +241,7 @@ void LinearHarmonic::run() {
             output.begin_frame(frequency, "_" + std::to_string(i + 1));
             output.provide(OutputField::DISPLACEMENT_REAL,    displacement_real);
             output.provide(OutputField::DISPLACEMENT_IMAG,    displacement_imag);
-            output.provide(OutputField::EXTERNAL_FORCES,      const_cast<model::Field&>(global_load_mat));
+            output.provide(OutputField::EXTERNAL_FORCES,      global_load_mat);
             output.provide(OutputField::THERMAL_FREE_STRAIN,  thermal_free_strain);
             output.write_frame(*writer, model->_data.get());
         });
