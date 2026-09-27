@@ -178,7 +178,7 @@ One-point integration also introduces zero-energy hourglass deformation modes. F
 \gamma_3=r\,s,\qquad
 \gamma_4=r\,s\,t.
 \]
-These modes are projected so that affine displacement fields are not penalized. The stabilization scale is based on the element reference volume, the reference geometry gradients, and an effective shear stiffness derived from the constitutive tangent.
+These modes are projected so that affine displacement fields are not penalized. The stabilization scale is based on the element reference volume, the reference geometry gradients, and an effective shear stiffness derived from the constitutive tangent. The default dimensionless hourglass coefficient is \(\alpha=0.005\).
 
 Newton convergence alone does not characterize \val{C3D8R}; the deformation pattern and stabilization sensitivity are independent numerical properties. A coarse or badly distorted mesh can converge while exhibiting nonphysical hourglass deformation. Comparison with \val{C3D8} and mesh refinement expose response components associated with hourglass-sensitive deformation.
 
