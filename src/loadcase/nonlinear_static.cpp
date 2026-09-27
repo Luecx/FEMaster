@@ -179,6 +179,19 @@ void NonlinearStatic::run() {
 
     tools::NonlinearStateManager nonlinear_state(*model);
 
+    // Derived nonlinear output recovery must restart from the committed
+    // constitutive history before each independent post-processing operation.
+    // The handler owns the recovery order; the step only supplies this state
+    // preparation hook.
+    output.set_before_compute([&nonlinear_state]() {
+        nonlinear_state.reset_material_state();
+    });
+
+    // Nonlinear thermal loading is not currently supported. Still expose the
+    // common dependency as an empty field so structural derived fields use the
+    // same dependency graph as every other structural step.
+    model::Field thermal_free_strain;
+
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -619,25 +632,9 @@ void NonlinearStatic::run() {
 
         update_positions();
 
-        writer->write_field(
-            displacement,
-            "DISPLACEMENT_" + std::to_string(increment),
-            model->_data.get(),
-            lambda
-        );
-
-        nonlinear_state.reset_material_state();
-        auto [increment_stress, increment_strain] =
-            model->compute_stress_nodal(displacement, true);
-        (void) increment_strain;
-
-        writer->write_field(
-            increment_stress,
-            "STRESS_" + std::to_string(increment),
-            model->_data.get(),
-            lambda
-        );
-
+        // Internal/external/reaction forces are primary equilibrium fields.
+        // Stress, strain and any other constitutive result are intentionally
+        // absent here and are recovered by the output handler only if requested.
         model::NodeData increment_internal{
             "INTERNAL_FORCES",
             model::FieldDomain::NODE,
@@ -655,6 +652,7 @@ void NonlinearStatic::run() {
 
         auto increment_external = global_load_total;
         increment_external *= lambda;
+
         auto increment_reaction_full = subtract_field(
             increment_internal,
             increment_external,
@@ -666,22 +664,24 @@ void NonlinearStatic::run() {
             "REACTION_FORCES"
         );
 
-        writer->write_field(
-            increment_reactions,
-            "REACTION_FORCES_" + std::to_string(increment),
-            model->_data.get(),
-            lambda
-        );
-
         model::Field lambda_field{
-            "LAMBDA_" + std::to_string(increment),
+            "LAMBDA",
             model::FieldDomain::UNKNOWN,
             1,
             1
         };
         lambda_field(0) = lambda;
 
-        writer->write_field(lambda_field, lambda_field.name, nullptr);
+        using io::writer::OutputField;
+
+        output.begin_frame(lambda, "_" + std::to_string(increment));
+        output.provide(OutputField::DISPLACEMENT,        displacement);
+        output.provide(OutputField::EXTERNAL_FORCES,     increment_external);
+        output.provide(OutputField::INTERNAL_FORCES,     increment_internal);
+        output.provide(OutputField::REACTION_FORCES,     increment_reactions);
+        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+        output.provide(OutputField::LAMBDA,              lambda_field);
+        output.write_frame(*writer, model->_data.get());
     };
 
     auto begin_increment_trial = [&]() {
@@ -845,18 +845,6 @@ void NonlinearStatic::run() {
 
     update_positions();
 
-    nonlinear_state.reset_material_state();
-    auto [final_stress, final_strain] = Timer::measure(
-        [&]() { return model->compute_stress_nodal(displacement, true); },
-        "computing final nonlinear nodal stress/strain"
-    );
-
-    nonlinear_state.reset_material_state();
-    auto [final_stress_top, final_stress_bot] = Timer::measure(
-        [&]() { return model->compute_stress_top_bot(displacement, true); },
-        "computing final nonlinear top/bottom stress"
-    );
-
     model::NodeData final_internal{
         "INTERNAL_FORCES",
         model::FieldDomain::NODE,
@@ -906,16 +894,18 @@ void NonlinearStatic::run() {
         ? last_converged_increment + 1
         : 1;
 
-    const std::string suffix = "_" + std::to_string(final_frame);
+    using io::writer::OutputField;
 
-    writer->write_field(displacement     , "DISPLACEMENT"    + suffix, model->_data.get(), load_factor);
-    writer->write_field(final_strain     , "STRAIN"          + suffix, model->_data.get(), load_factor);
-    writer->write_field(final_stress     , "STRESS"          + suffix, model->_data.get(), load_factor);
-    writer->write_field(final_stress_top , "STRESS_TOP"      + suffix, model->_data.get(), load_factor);
-    writer->write_field(final_stress_bot , "STRESS_BOT"      + suffix, model->_data.get(), load_factor);
-    writer->write_field(global_load_final, "EXTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
-    writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
-    writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get(), load_factor);
+    // The final state is another regular result frame. Supplying the same basis
+    // fields as accepted increments keeps all requested constitutive recovery
+    // in one dependency-driven path.
+    output.begin_frame(load_factor, "_" + std::to_string(final_frame));
+    output.provide(OutputField::DISPLACEMENT,        displacement);
+    output.provide(OutputField::EXTERNAL_FORCES,     global_load_final);
+    output.provide(OutputField::INTERNAL_FORCES,     final_internal);
+    output.provide(OutputField::REACTION_FORCES,     reaction_masked);
+    output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+    output.write_frame(*writer, model->_data.get());
 
     *model->_data->positions = original_positions;
     model->step_end();
