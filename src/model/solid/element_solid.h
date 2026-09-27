@@ -199,6 +199,11 @@ public:
         Precision*   buffer,
         const Field& displacement
     ) override;
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement,
+        const Field* thermal_free_strain
+    ) override;
     MapMatrix stiffness_tangent(
         Precision*   buffer,
         NodeData&    nodal_forces,
@@ -228,6 +233,9 @@ public:
                                      const TenField& field) override;
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+    void apply_thermal_free_strain(Field& thermal_free_strain,
+                                   const Field& node_temp,
+                                   Precision ref_temp) override;
 
     // Stress/strain recovery is state-neutral. Constitutive response is evaluated
     // only at material integration points; nodal output is extrapolated from the
@@ -239,6 +247,14 @@ public:
         const RowMatrix& rst,
         int              offset,
         bool             use_green_lagrange_nl) override;
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl,
+        const Field*     thermal_free_strain) override;
     void compute_compliance(
         Field& displacement,
         Field& result) override;
