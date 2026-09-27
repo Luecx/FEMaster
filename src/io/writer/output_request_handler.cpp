@@ -230,12 +230,18 @@ void OutputRequestHandler::write_frame(ResultWriters& writer, const model::Model
 }
 
 /**
- * Writes every requested step-lifetime quantity exactly once.
+ * Writes every provided step-lifetime quantity exactly once.
+ *
+ * Step fields are compact analysis metadata rather than potentially large mesh
+ * fields. If an analysis provides them, they are part of the result definition
+ * itself and are therefore written independently of NODE/ELEMENT output
+ * filtering. Examples are eigenvalues, frequencies, modal participation and
+ * buckling factors.
  */
 void OutputRequestHandler::write_step(ResultWriters& writer, const model::ModelData* model_data) {
     for (std::size_t i = 0; i < field_count; ++i) {
         const auto field = static_cast<OutputField>(i);
-        if (!requests_[i] || !output_field_is_step_field(field)) continue;
+        if (!output_field_is_step_field(field) || step_fields_[i] == nullptr) continue;
 
         write(field, writer, model_data, {}, std::numeric_limits<Precision>::quiet_NaN());
     }
