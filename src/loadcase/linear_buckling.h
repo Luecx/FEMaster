@@ -58,8 +58,7 @@ struct LinearBuckling : public LoadCase {
     LinearBuckling() {
         using io::writer::OutputField;
         output.set_defaults({
-            OutputField::BUCKLING_MODE,
-            OutputField::BUCKLING_FACTORS
+            OutputField::BUCKLING_MODE
         });
     }
 
