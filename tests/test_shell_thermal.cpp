@@ -107,6 +107,59 @@ void check_uniform_thermal_load(
         EXPECT_GT(rotational_load, 1e-6);
     }
 
+    if (!use_abd) {
+        model::Field thermal_free_strain{
+            "THERMAL_FREE_STRAIN",
+            model::FieldDomain::ELEMENT_IP,
+            model._data->field_rows(model::FieldDomain::ELEMENT_IP),
+            1
+        };
+        thermal_free_strain.set_zero();
+        load.apply_thermal_free_strain(*model._data, thermal_free_strain);
+
+        model::Field displacement{
+            "DISPLACEMENT", model::FieldDomain::NODE, static_cast<Index>(N), 6
+        };
+        displacement.set_zero();
+        for (Index node = 0; node < static_cast<Index>(N); ++node) {
+            displacement(node, 0) = 0.2 * coords[static_cast<std::size_t>(node)].x();
+            displacement(node, 1) = 0.2 * coords[static_cast<std::size_t>(node)].y();
+        }
+
+        auto stress_strain =
+            model.compute_stress_nodal(displacement, false, &thermal_free_strain);
+        const auto& stress = std::get<0>(stress_strain);
+        const auto& strain = std::get<1>(stress_strain);
+
+        for (Index node = 0; node < static_cast<Index>(N); ++node) {
+            EXPECT_NEAR(strain(node, 0), 0.2, 1e-9);
+            EXPECT_NEAR(strain(node, 1), 0.2, 1e-9);
+            for (Index component = 0; component < 6; ++component) {
+                EXPECT_NEAR(stress(node, component), 0.0, 1e-8)
+                    << "node=" << node << ", component=" << component;
+            }
+        }
+
+        const auto resultants =
+            model.compute_shell_resultants(displacement, &thermal_free_strain);
+        for (Index node = 0; node < static_cast<Index>(N); ++node) {
+            for (Index component = 0; component < 8; ++component) {
+                EXPECT_NEAR(resultants(node, component), 0.0, 1e-8)
+                    << "node=" << node << ", resultant=" << component;
+            }
+        }
+
+        Precision kg_storage[6 * N * 6 * N] {};
+        const DynamicMatrix Kg_free =
+            element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+        EXPECT_LT(Kg_free.norm(), 1e-8);
+
+        displacement.set_zero();
+        const DynamicMatrix Kg_restrained =
+            element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+        EXPECT_GT(Kg_restrained.norm(), 1e-6);
+    }
+
     // No thermal RHS when all nodal temperatures equal the reference state.
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         (*temperature)(node, 0) = load.ref_temp_;
