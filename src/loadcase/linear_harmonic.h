@@ -33,6 +33,18 @@ namespace loadcase {
  * @brief Executes a direct linear harmonic response analysis.
  */
 struct LinearHarmonic : public LoadCase {
+    // Keep the existing real/imaginary harmonic result selection as the default.
+    LinearHarmonic() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT_REAL,
+            OutputField::DISPLACEMENT_IMAG,
+            OutputField::STRESS_REAL,
+            OutputField::STRESS_IMAG,
+            OutputField::STRAIN_REAL,
+            OutputField::STRAIN_IMAG
+        });
+    }
     std::vector<std::string> supps; ///< Support identifiers applied to the model.
     std::vector<std::string> loads; ///< Harmonic load-amplitude identifiers.
     std::vector<Precision> frequencies; ///< Excitation frequencies.
