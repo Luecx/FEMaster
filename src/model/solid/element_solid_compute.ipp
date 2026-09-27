@@ -111,9 +111,9 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
     logging::error(!use_green_lagrange_nl || thermal_free_strain == nullptr,
         "SolidElement: thermal free strain recovery is supported only for linear kinematics");
     if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
                        && thermal_free_strain->components == 1,
-            "SolidElement: thermal free strain must be scalar ELEMENT_IP data");
+            "SolidElement: thermal free strain must be scalar ELEMENT_NODAL data");
     }
 
     const auto&     scheme      = this->integration_scheme_stiffness();
@@ -131,6 +131,14 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
     const auto local_displacement_vec =
         Eigen::Map<const StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
     const auto current_coords = reference_coords + local_displacement;
+
+    StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+    if (thermal_free_strain) {
+        for (Index node = 0; node < N; ++node) {
+            nodal_thermal_strain(node) =
+                (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + node, 0);
+        }
+    }
 
     RowMatrix ip_strain = RowMatrix::Zero(scheme.count(), n_strain);
     RowMatrix ip_stress = RowMatrix::Zero(scheme.count(), n_strain);
@@ -158,7 +166,7 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
             Vec6 mechanical_strain_voigt = global_strain_voigt;
             if (thermal_free_strain) {
                 const Precision free_strain =
-                    (*thermal_free_strain)(this->ip_index(ip), 0);
+                    this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
                 mechanical_strain_voigt(0) -= free_strain;
                 mechanical_strain_voigt(1) -= free_strain;
                 mechanical_strain_voigt(2) -= free_strain;
