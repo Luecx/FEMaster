@@ -55,15 +55,15 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
 
     model::Field thermal_free_strain{
         "THERMAL_FREE_STRAIN",
-        model::FieldDomain::ELEMENT_IP,
-        model._data->field_rows(model::FieldDomain::ELEMENT_IP),
+        model::FieldDomain::ELEMENT_NODAL,
+        model._data->field_rows(model::FieldDomain::ELEMENT_NODAL),
         1
     };
     thermal_free_strain.set_zero();
     load.apply_thermal_free_strain(*model._data, thermal_free_strain);
 
-    for (Index ip = 0; ip < thermal_free_strain.rows; ++ip) {
-        EXPECT_NEAR(thermal_free_strain(ip, 0), 0.2, 1e-12);
+    for (Index row = 0; row < thermal_free_strain.rows; ++row) {
+        EXPECT_NEAR(thermal_free_strain(row, 0), 0.2, 1e-12);
     }
 
     model::Field displacement{"DISPLACEMENT", model::FieldDomain::NODE, 8, 6};
