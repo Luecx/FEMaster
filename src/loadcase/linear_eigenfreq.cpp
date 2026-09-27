@@ -191,9 +191,10 @@ static void write_results(std::vector<ModalMode>& modes,
 
     const Index num_modes = static_cast<Index>(modes.size());
 
-    model::Field eigenvalues{"EIGENVALUES",      model::FieldDomain::UNKNOWN, num_modes, 1};
-    model::Field eigenfreqs {"EIGENFREQUENCIES", model::FieldDomain::UNKNOWN, num_modes, 1};
-    model::Field freqs      {"FREQUENCIES",      model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field eigenvalues   {"EIGENVALUES",      model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field eigenfreqs    {"EIGENFREQUENCIES", model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field freqs         {"FREQUENCIES",      model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field participation {"PARTICIPATION",    model::FieldDomain::UNKNOWN, num_modes, 6};
 
     // Modal analysis has no thermal load contribution. Supplying an explicit
     // empty dependency keeps stress recovery available for requested mode
@@ -207,29 +208,25 @@ static void write_results(std::vector<ModalMode>& modes,
         eigenfreqs (i) = modes[index].freq * 2 * pi;
         freqs      (i) = modes[index].freq;
 
-        model::Field participation{
-            "PARTICIPATION",
-            model::FieldDomain::UNKNOWN,
-            6,
-            1
-        };
-        for (Index j = 0; j < 6; ++j) participation(j, 0) = modes[index].participation(j);
+        for (Index j = 0; j < 6; ++j) {
+            participation(i, j) = modes[index].participation(j);
+        }
 
         output.begin_frame(
             modes[index].freq,
             "_" + std::to_string(i + 1)
         );
         output.provide(OutputField::DISPLACEMENT,        modes[index].mode_mat);
-        output.provide(OutputField::PARTICIPATION,       participation);
         output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
         output.write_frame(*writer, mdl->_data.get());
     }
 
-    // Eigenvalue/frequency arrays describe the complete step and are therefore
-    // retained separately from the per-mode frame cache.
+    // Compact modal metadata belongs to the analysis result itself and is
+    // always written, independently of node/element field filtering.
     output.provide_step(OutputField::EIGENVALUES,      eigenvalues);
     output.provide_step(OutputField::EIGENFREQUENCIES, eigenfreqs);
     output.provide_step(OutputField::FREQUENCIES,      freqs);
+    output.provide_step(OutputField::PARTICIPATION,    participation);
     output.write_step(*writer, mdl->_data.get());
 }
 
