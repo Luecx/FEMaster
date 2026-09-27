@@ -195,10 +195,13 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
-    auto r_internal = Timer::measure(
-        [&]() { return transformer->reactions(K, f, q); },
-        "computing internal nodal forces r_int = K u - f");
-    (void) r_internal;
+    // Internal nodal force is a primary equilibrium quantity of the solved
+    // system. Keep it available even though it is not part of the historical
+    // default output set so an explicit request can report it without another
+    // model recovery pass.
+    auto internal_active = Timer::measure(
+        [&]() { return K * u; },
+        "computing internal nodal forces K u");
 
     auto r_support = Timer::measure(
         [&]() { return transformer->support_reactions(K, f, q); },
@@ -212,29 +215,9 @@ void LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
         "expanding support reactions to matrix form");
 
-    auto section_forces = Timer::measure(
-        [&]() { return model->compute_section_forces(global_disp_mat); },
-        "computing beam section forces");
-
-    auto shear_flow = Timer::measure(
-        [&]() { return model->compute_shear_flow(global_disp_mat); },
-        "computing shear-flow output");
-
-    auto stress_strain = Timer::measure(
-        [&]() { return model->compute_stress_nodal(global_disp_mat, false, &thermal_free_strain); },
-        "interpolating stress and strain at nodes");
-    auto stress = std::move(std::get<0>(stress_strain));
-    auto strain = std::move(std::get<1>(stress_strain));
-
-    auto stress_top_bottom = Timer::measure(
-        [&]() { return model->compute_stress_top_bot(global_disp_mat, false, &thermal_free_strain); },
-        "interpolating top/bottom stress at nodes");
-    auto stress_top = std::move(std::get<0>(stress_top_bottom));
-    auto stress_bot = std::move(std::get<1>(stress_top_bottom));
-
-    auto shell_resultants = Timer::measure(
-        [&]() { return model->compute_shell_resultants(global_disp_mat, &thermal_free_strain); },
-        "interpolating shell resultants at nodes");
+    auto global_internal_mat = Timer::measure(
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, internal_active); },
+        "expanding internal nodal forces to matrix form");
 
     if (!stiffness_file.empty()) {
         io::writer::write_mtx(stiffness_file + "_K.mtx", K);
@@ -262,21 +245,24 @@ void LinearStatic::run() {
 
     Timer::measure(
         [&]() {
+            using io::writer::OutputField;
+
             writer->add_loadcase(id, io::writer::WriterStepType::Static);
-            writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
-            writer->write_field(strain          , "STRAIN", model->_data.get());
-            writer->write_field(stress          , "STRESS", model->_data.get());
-            writer->write_field(stress_top      , "STRESS_TOP", model->_data.get());
-            writer->write_field(stress_bot      , "STRESS_BOT", model->_data.get());
-            writer->write_field(shell_resultants, "SHELL_RESULTANTS", model->_data.get());
-            writer->write_field(global_load_mat , "EXTERNAL_FORCES", model->_data.get());
-            writer->write_field(reaction_masked , "REACTION_FORCES", model->_data.get());
-            writer->write_field(section_forces  , "LOCAL_SECTION_FORCES", model->_data.get());
-            if (shear_flow.rows > 0) {
-                writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
-            }
+
+            // The static step exposes only quantities obtained directly from
+            // the solved equilibrium state. Stress, strain, shell resultants,
+            // section forces and shear flow are recovered lazily by the output
+            // handler if the active request set actually needs them.
+            output.begin_frame();
+            output.provide(OutputField::DISPLACEMENT,        global_disp_mat);
+            output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
+            output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
+            output.provide(OutputField::REACTION_FORCES,     reaction_masked);
+            output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+
+            output.write_frame(*writer, model->_data.get());
         },
-        "writing result fields");
+        "resolving and writing requested result fields");
 
     transformer->post_check_static(K, f, q);
     model->step_end();

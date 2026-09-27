@@ -15,6 +15,7 @@
 #include "../constraints/constraint_groups.h"
 #include "../model/model.h"
 #include "../io/writer/writers.h"
+#include "../io/writer/output_request_handler.h"
 
 #include <memory>
 #include <string>
@@ -47,6 +48,9 @@ struct LoadCase {
     ID                         id     = -1;
     io::writer::ResultWriters* writer = nullptr;
     model::Model*              model  = nullptr;
+
+    // Per-step output requests, provided basis fields and lazy recovered fields
+    io::writer::OutputRequestHandler output;
 
     // Diagnostic settings
     bool report_constraints = false;

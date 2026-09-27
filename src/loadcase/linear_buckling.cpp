@@ -383,19 +383,28 @@ void LinearBuckling::run() {
     // Summary
     print_buckling_summary(modes, eigopt.sigma, k_req);
 
-    // (11) Write results
+    // (11) Publish requested results. The eigensolver provides only the
+    // displacement-like eigenvector; BUCKLING_MODE is resolved as an alias.
+    using io::writer::OutputField;
+
     writer->add_loadcase(id, io::writer::WriterStepType::Buckling);
-    Index num_modes = static_cast<Index>(modes.size());
+    const Index num_modes = static_cast<Index>(modes.size());
 
     model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field empty_thermal_free_strain;
 
     for (Index i = 0; i < num_modes; ++i) {
-        lambdas(i) = modes[static_cast<size_t>(i)].lambda;
+        auto& mode = modes[static_cast<std::size_t>(i)];
+        lambdas(i) = mode.lambda;
 
-        writer->write_field(modes[static_cast<size_t>(i)].mode_mat, "BUCKLING_MODE_" + std::to_string(i + 1), model->_data.get(), modes[static_cast<size_t>(i)].lambda);
+        output.begin_frame(mode.lambda, "_" + std::to_string(i + 1));
+        output.provide(OutputField::DISPLACEMENT,        mode.mode_mat);
+        output.provide(OutputField::THERMAL_FREE_STRAIN, empty_thermal_free_strain);
+        output.write_frame(*writer, model->_data.get());
     }
 
-    writer->write_field(lambdas, lambdas.name, nullptr);
+    output.provide_step(OutputField::BUCKLING_FACTORS, lambdas);
+    output.write_step(*writer, model->_data.get());
 
     // After (4) K assembled
     if (!stiffness_file.empty()) {

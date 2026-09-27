@@ -226,16 +226,9 @@ void LinearStaticTopo::run() {
         "expanding support reactions to matrix form"
     );
 
-    auto [stress, strain] = Timer::measure(
-        [&]() { return model->compute_stress_nodal(global_disp_mat, false, &thermal_free_strain); },
-        "Interpolating stress and strain at nodes"
-    );
-
-    auto shear_flow = Timer::measure(
-        [&]() { return model->compute_shear_flow(global_disp_mat); },
-        "computing shear-flow output"
-    );
-
+    // Compliance is also required to form the topology density sensitivity,
+    // so compute it once here and expose it as an already available field.
+    // Other ordinary FE results remain lazy output-handler recoveries.
     auto compliance_raw = model->compute_compliance(global_disp_mat);
     model::Field density_grad = model->_data->create_field_(
         "DENS_GRAD", model::FieldDomain::ELEMENT, 1, false);
@@ -246,12 +239,7 @@ void LinearStaticTopo::run() {
         density_grad(r, 0) = -exponent * compliance_raw(r, 0) / rho;
     }
 
-    auto volumes = model->compute_volumes();
     const bool has_orientation = orientation != nullptr;
-    model::Field angle_grad;
-    if (has_orientation) {
-        angle_grad = model->compute_compliance_angle_derivative(global_disp_mat);
-    }
 
     BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
     support_mask.setConstant(false);
@@ -271,23 +259,41 @@ void LinearStaticTopo::run() {
         "REACTION_FORCES"
     );
 
-    writer->add_loadcase(id, io::writer::WriterStepType::Static);
-    writer->write_field(global_disp_mat, "DISPLACEMENT", model->_data.get());
-    writer->write_field(strain, "STRAIN", model->_data.get());
-    writer->write_field(stress, "STRESS", model->_data.get());
-    writer->write_field(global_load_mat, "EXTERNAL_FORCES", model->_data.get());
-    writer->write_field(reaction_masked, "REACTION_FORCES", model->_data.get());
-    writer->write_field(compliance_raw, "COMPLIANCE", model->_data.get());
-    writer->write_field(density_grad, "DENS_GRAD", model->_data.get());
-    writer->write_field(volumes, "VOLUME", model->_data.get());
-    writer->write_field(*density, "DENSITY", model->_data.get());
-    if (shear_flow.rows > 0) {
-        writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
-    }
+    using io::writer::OutputField;
+
+    // The historical topology defaults include orientation fields only when an
+    // orientation field is configured. Re-applying defaults here is safe:
+    // explicit input-deck requests are retained by OutputRequestHandler.
     if (has_orientation) {
-        writer->write_field(angle_grad, "ORIENTATION_GRAD", model->_data.get());
-        writer->write_field(*orientation, "ORIENTATION", model->_data.get());
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::COMPLIANCE,
+            OutputField::DENS_GRAD,
+            OutputField::VOLUME,
+            OutputField::DENSITY,
+            OutputField::SHEAR_FLOW,
+            OutputField::ORIENTATION_GRAD,
+            OutputField::ORIENTATION
+        });
     }
+
+    writer->add_loadcase(id, io::writer::WriterStepType::Static);
+
+    output.begin_frame();
+    output.provide(OutputField::DISPLACEMENT,        global_disp_mat);
+    output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
+    output.provide(OutputField::REACTION_FORCES,     reaction_masked);
+    output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+    output.provide(OutputField::COMPLIANCE,          compliance_raw);
+    output.provide(OutputField::DENS_GRAD,           density_grad);
+    output.provide(OutputField::DENSITY,             *density);
+    if (has_orientation) output.provide(OutputField::ORIENTATION, *orientation);
+
+    output.write_frame(*writer, model->_data.get());
 
     CT->post_check_static(K, f, q);
 

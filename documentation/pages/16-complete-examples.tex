@@ -789,7 +789,7 @@ U
 \end{abaqusdeck}
 \end{dialectexamples}
 
-The \cmd{NODE FILE} card on the Abaqus side is accepted but does not control FEMaster output. The native \cmd{WRITEEVERY} setting determines the requested transient write cadence for the FEMaster form.
+The \cmd{NODE FILE} card actively filters FEMaster frame output for this step. Because the example requests only \val{U}, FEMaster writes displacement frames but omits the transient default velocity and acceleration Fields. The native \cmd{WRITEEVERY} setting controls only the write cadence; it does not change which Fields are selected.
 
 \section{Linear harmonic frequency sweep}
 

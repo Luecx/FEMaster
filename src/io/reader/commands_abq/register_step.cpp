@@ -10,8 +10,8 @@
  * Supported procedures include static load control, Riks arc-length analysis,
  * linear static perturbation, eigenfrequency extraction, linear buckling, direct
  * implicit transient dynamics and direct steady-state harmonic response. Abaqus
- * node/element file and print requests are accepted and ignored because result
- * output remains controlled by FEMaster's writers.
+ * Abaqus/CalculiX field-output requests are handled by the shared output
+ * request registration and resolved by each load case at write time.
  *
  * @see loadcase::LinearStatic
  * @see loadcase::NonlinearStatic
@@ -466,32 +466,6 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             )
         );
     });
-
-    // ---------------------------------------------------------------------
-    // Ignored Abaqus output requests
-    // ---------------------------------------------------------------------
-    const auto register_ignored_output_request = [&](const std::string& name) {
-        registry.command(name, [](fem::io::dsl::Command& command) {
-            command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "STEP"}));
-            command.doc("Accept and ignore an Abaqus result-output request.");
-
-            command.variant(fem::io::dsl::Variant::make()
-                .segment(fem::io::dsl::Segment::make()
-                    .range(fem::io::dsl::LineRange{}.min(0))
-                    .pattern(fem::io::dsl::Pattern::make()
-                        .fixed<std::string, 64>().name("OUTPUT").desc("Ignored output variables")
-                            .on_missing(std::string{"_"}).on_empty(std::string{"_"})
-                    )
-                    .bind([](const std::array<std::string, 64>&) {})
-                )
-            );
-        });
-    };
-
-    register_ignored_output_request("NODEFILE");
-    register_ignored_output_request("ELFILE");
-    register_ignored_output_request("NODEPRINT");
-    register_ignored_output_request("ELPRINT");
 
     // ---------------------------------------------------------------------
     // Step terminator

@@ -54,6 +54,14 @@ struct LinearBuckling : public LoadCase {
     solver::SolverDevice device = solver::CPU;
     solver::SolverMethod method = solver::DIRECT;
 
+    // Construction and default result requests
+    LinearBuckling() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::BUCKLING_MODE
+        });
+    }
+
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARBUCKLING"; }
     void run() override;

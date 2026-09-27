@@ -5,7 +5,7 @@ FEMaster writes analysis results in its own result formats and provides several 
 
 The native \file{.res} format preserves FEMaster Field domains and is the most complete textual result source. FEMR provides a seekable, compressed binary representation for efficient programmatic access. FRD output provides a CalculiX/CGX-compatible visualization format for supported nodal quantities.
 
-Abaqus output-request cards such as \cmd{NODE FILE} are accepted where documented so that otherwise supported Abaqus decks do not fail solely because they contain common output requests. These cards currently do not control FEMaster's result writers.
+Abaqus/CalculiX field-output cards such as \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} select which FEMaster result Fields are written for the active step. The first explicit field-output request replaces that step's default result selection. \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted for compatibility but remain ignored because FEMaster does not implement a separate text-print result path.
 
 \keywordpage{OVERVIEW}
 
@@ -102,21 +102,60 @@ No Abaqus output-request card maps to this FEMaster constraint diagnostic.
 \end{noabaqus}
 \end{dialectexamples}
 
-\section{Abaqus output-request keywords}
+\section{Abaqus and CalculiX output-request keywords}
 
-The supported Abaqus reader accepts four common file/print request keywords: \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT}. Their requested variable names are read so that the deck remains syntactically acceptable, but the cards do not filter or configure FEMaster result output.
+FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
-Acceptance of an output card does not imply that FEMaster reproduces the corresponding Abaqus output-file semantics. Post-processing is based on FEMaster's documented result files and Fields.
+The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
 
-\keywordpage{NODE FILE}
+The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does not itself change the request set. The actual selection is performed by the following node/element output cards.
 
-\cmd{NODE FILE} is accepted in supported Abaqus input but does not create an Abaqus-style node file. Requested variables such as \val{U} or \val{RF} do not change which FEMaster result Fields are produced.
+\cmd{NODE PRINT} and \cmd{EL PRINT} remain compatibility-only keywords. Their variables are accepted and ignored because FEMaster does not provide a separate textual print-output mechanism.
+
+\keywordpage{NODE OUTPUT}
+
+\cmd{NODE OUTPUT} selects nodal result quantities for the active step. When it is the first explicit output card, the step defaults are cleared before the listed variables are added.
 
 \exampleheading
 \begin{dialectexamples}
-\begin{nofemaster}
-Native FEMaster has no \cmd{NODE FILE} input keyword. Nodal results are written by the enabled FEMaster result writers.
-\end{nofemaster}
+\begin{femasterdeck}
+*NODE OUTPUT
+U, RF
+\end{femasterdeck}
+\begin{abaqusdeck}
+*OUTPUT, FIELD
+*NODE OUTPUT
+U, RF
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{ELEMENT OUTPUT}
+
+\cmd{ELEMENT OUTPUT} selects element-derived result quantities for the active step. It uses the same request set as \cmd{EL FILE}; the spelling does not select a different FEMaster result format.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*ELEMENT OUTPUT
+S, E
+\end{femasterdeck}
+\begin{abaqusdeck}
+*OUTPUT, FIELD
+*ELEMENT OUTPUT
+S, E
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{NODE FILE}
+
+\cmd{NODE FILE} is the CalculiX-style alias of \cmd{NODE OUTPUT}. It selects the listed nodal result quantities for the active step but does not force creation of a separate ASCII node-results file.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE FILE
+U, RF
+\end{femasterdeck}
 \begin{abaqusdeck}
 *NODE FILE
 U, RF
@@ -125,13 +164,14 @@ U, RF
 
 \keywordpage{EL FILE}
 
-\cmd{EL FILE} is accepted and ignored in the same sense as \cmd{NODE FILE}. It does not create a separate Abaqus-style element file and does not select a subset of FEMaster element Fields.
+\cmd{EL FILE} is the CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It selects the listed element-derived result quantities without changing the configured FEMaster result writer.
 
 \exampleheading
 \begin{dialectexamples}
-\begin{nofemaster}
-Native FEMaster has no \cmd{EL FILE} keyword.
-\end{nofemaster}
+\begin{femasterdeck}
+*EL FILE
+S, E
+\end{femasterdeck}
 \begin{abaqusdeck}
 *EL FILE
 S, E
@@ -140,13 +180,14 @@ S, E
 
 \keywordpage{NODE PRINT}
 
-\cmd{NODE PRINT} is accepted so that imported Abaqus decks may retain common print requests, but it does not generate an Abaqus-formatted nodal print table.
+\cmd{NODE PRINT} is accepted and ignored. It does not modify the active field-output request set and does not generate an Abaqus/CalculiX text print table.
 
 \exampleheading
 \begin{dialectexamples}
-\begin{nofemaster}
-No native \cmd{NODE PRINT} keyword is used for FEMaster result selection.
-\end{nofemaster}
+\begin{femasterdeck}
+*NODE PRINT
+U, RF
+\end{femasterdeck}
 \begin{abaqusdeck}
 *NODE PRINT
 U, RF
@@ -155,13 +196,14 @@ U, RF
 
 \keywordpage{EL PRINT}
 
-\cmd{EL PRINT} is the element counterpart of \cmd{NODE PRINT}. The keyword is accepted but does not configure FEMaster result output.
+\cmd{EL PRINT} is accepted and ignored in the same way as \cmd{NODE PRINT}. It neither filters FEMaster result Fields nor generates a separate textual element-results table.
 
 \exampleheading
 \begin{dialectexamples}
-\begin{nofemaster}
-No native \cmd{EL PRINT} keyword is used for FEMaster result selection.
-\end{nofemaster}
+\begin{femasterdeck}
+*EL PRINT
+S, E
+\end{femasterdeck}
 \begin{abaqusdeck}
 *EL PRINT
 S, E
@@ -240,8 +282,8 @@ Typical Fields depend on analysis type:
 \endhead
 Linear static & Displacement, strain, stress, shell top/bottom stresses and resultants where applicable, external forces, reactions, section forces, and related recovered quantities. \\
 Nonlinear static & Accepted-increment displacement, stress, reaction-force, and load-factor states plus final displacement, strain, stress, internal/external forces, and reactions. \\
-Eigenfrequency & Mode shapes, eigenvalues, eigenfrequencies/frequencies, and participation-related quantities where available. \\
-Linear buckling & Buckling mode shapes and buckling factors. \\
+Eigenfrequency & Requested mode-frame Fields plus always-written step metadata: eigenvalues, eigenfrequencies/frequencies, and modal participation. \\
+Linear buckling & Requested buckling-mode frame Fields plus always-written buckling factors. \\
 Linear transient & Displacement, velocity, and acceleration at written time frames. \\
 Linear harmonic & Real and imaginary displacement, stress, and strain amplitudes for the requested excitation frequencies. \\
 \bottomrule
@@ -274,7 +316,7 @@ Amplitude and phase can be reconstructed from
 \varphi=\operatorname{atan2}(q_\mathrm{imag},q_\mathrm{real}).
 \]
 Harmonic results distinguish the real part at a chosen phase, the complex amplitude magnitude, and signed components. These quantities are not interchangeable.
-Each excitation-frequency sample retains its own six real/imaginary displacement, stress, and strain Fields. An ascending, one-based sweep index is appended to the native Field names (for example, \val{DISPLACEMENT\_REAL\_1} and \val{DISPLACEMENT\_IMAG\_1}); the physical excitation frequency remains the result-frame value. This also keeps samples with repeated frequency values distinct in \file{.res} output.
+Each excitation-frequency sample retains its own real/imaginary displacement, stress, and strain Fields. An ascending, one-based sweep index is appended to the native Field names (for example, \val{DISPLACEMENT\_REAL\_1} and \val{DISPLACEMENT\_IMAG\_1}); the physical excitation frequency remains the result-frame value. This also keeps samples with repeated frequency values distinct in \file{.res} output.
 The node-wise magnitude of the complex displacement vector can be reconstructed from the first three translational components of the paired real and imaginary Fields. The console's response norm instead combines all active degrees of freedom of the full displacement vectors, including rotational degrees of freedom where present, and is not the maximum node-wise displacement amplitude.
 
 The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.

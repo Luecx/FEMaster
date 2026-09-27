@@ -169,6 +169,12 @@ void Transient::run() {
     }
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
+
+    // Direct transient integration currently has no thermal loading path.
+    // Still provide the common dependency explicitly as an empty field so
+    // structural recovery can use the same dependency graph as other steps.
+    model::Field thermal_free_strain;
+
     for (int k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
         const auto& qk  = result.u[static_cast<size_t>(k)];
@@ -177,20 +183,23 @@ void Transient::run() {
         const Precision frame_time =
             static_cast<Precision>(t_start + static_cast<double>(k) * dt);
 
-        // Displacement: u = T q + u_p
+        // Newmark supplies displacement, velocity and acceleration directly.
+        // Any additional requested quantity is resolved from these basis fields.
         auto u_full = CT->recover_displacement(qk);
-        auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k), model->_data.get(), frame_time);
-
-        // Velocity recovery uses the active constraint backend mapping.
         auto v_full = CT->recover_velocity(qvk);
-        auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
-        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k), model->_data.get(), frame_time);
-
-        // Acceleration recovery uses the active constraint backend mapping.
         auto a_full = CT->recover_acceleration(qak);
-        auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
-        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k), model->_data.get(), frame_time);
+
+        auto U_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
+        auto V_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
+        auto A_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
+
+        using io::writer::OutputField;
+        output.begin_frame(frame_time, "_" + std::to_string(k));
+        output.provide(OutputField::DISPLACEMENT,        U_mat);
+        output.provide(OutputField::VELOCITY,            V_mat);
+        output.provide(OutputField::ACCELERATION,        A_mat);
+        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+        output.write_frame(*writer, model->_data.get());
     }
 
     logging::info(true, "Transient analysis completed.");

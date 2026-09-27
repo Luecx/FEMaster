@@ -173,38 +173,61 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
 }
 
 /**
- * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
+ * @brief Publish modal frame and step fields through the common output resolver.
+ *
+ * Eigenvectors are supplied only as DISPLACEMENT. MODE_SHAPE is a derived
+ * semantic alias handled by OutputRequestHandler, so the eigensolver does not
+ * need a separate mode-shape storage convention.
  */
-static void write_results(const std::vector<ModalMode>& modes,
-                          io::writer::ResultWriters*        writer,
-                          int                           loadcase_id,
-                          model::Model*                 mdl)
+static void write_results(std::vector<ModalMode>& modes,
+                          io::writer::OutputRequestHandler& output,
+                          io::writer::ResultWriters* writer,
+                          int loadcase_id,
+                          model::Model* mdl)
 {
+    using io::writer::OutputField;
+
     writer->add_loadcase(loadcase_id, io::writer::WriterStepType::Eigenfrequency);
 
-    Index num_modes = static_cast<Index>(modes.size());
+    const Index num_modes = static_cast<Index>(modes.size());
 
-    model::Field eigenvalues{"EIGENVALUES"     , model::FieldDomain::UNKNOWN, num_modes, 1};
-    model::Field eigenfreqs {"EIGENFREQUENCIES", model::FieldDomain::UNKNOWN, num_modes, 1};
-    model::Field freqs      {"FREQUENCIES"     , model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field eigenvalues   {"EIGENVALUES",      model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field eigenfreqs    {"EIGENFREQUENCIES", model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field freqs         {"FREQUENCIES",      model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field participation {"PARTICIPATION",    model::FieldDomain::UNKNOWN, num_modes, 6};
 
-    model::Field particip   {"PARTICIPATION"   , model::FieldDomain::UNKNOWN, 6, 1};
+    // Modal analysis has no thermal load contribution. Supplying an explicit
+    // empty dependency keeps stress recovery available for requested mode
+    // stresses without introducing a modal-specific special case.
+    model::Field thermal_free_strain;
 
-    for (size_t i = 0; i < num_modes; ++i) {
-        eigenvalues(i) = modes[i].lambda;
-        eigenfreqs (i) = modes[i].freq * 2 * pi;
-        freqs      (i) = modes[i].freq;
+    for (Index i = 0; i < num_modes; ++i) {
+        const auto index = static_cast<std::size_t>(i);
+
+        eigenvalues(i) = modes[index].lambda;
+        eigenfreqs (i) = modes[index].freq * 2 * pi;
+        freqs      (i) = modes[index].freq;
 
         for (Index j = 0; j < 6; ++j) {
-            particip(j, 0) = modes[i].participation(j);
+            participation(i, j) = modes[index].participation(j);
         }
 
-        writer->write_field(modes[i].mode_mat, "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get(), modes[i].freq);
-        writer->write_field(particip         , "PARTICIPATION_" + std::to_string(i + 1), nullptr);
+        output.begin_frame(
+            modes[index].freq,
+            "_" + std::to_string(i + 1)
+        );
+        output.provide(OutputField::DISPLACEMENT,        modes[index].mode_mat);
+        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+        output.write_frame(*writer, mdl->_data.get());
     }
-    writer->write_field(eigenvalues, eigenvalues.name, nullptr);
-    writer->write_field(eigenfreqs , eigenfreqs.name , nullptr);
-    writer->write_field(freqs      , freqs.name      , nullptr);
+
+    // Compact modal metadata belongs to the analysis result itself and is
+    // always written, independently of node/element field filtering.
+    output.provide_step(OutputField::EIGENVALUES,      eigenvalues);
+    output.provide_step(OutputField::EIGENFREQUENCIES, eigenfreqs);
+    output.provide_step(OutputField::FREQUENCIES,      freqs);
+    output.provide_step(OutputField::PARTICIPATION,    participation);
+    output.write_step(*writer, mdl->_data.get());
 }
 
 /**
@@ -337,7 +360,7 @@ void LinearEigenfrequency::run() {
 
     // (8) Print + write
     display_eigen_summary(modes);
-    write_results(modes, writer, id, model);
+    write_results(modes, output, writer, id, model);
 
     logging::info(true, "Eigenfrequency analysis completed.");
     model->step_end();

@@ -70,6 +70,16 @@ struct Transient : public LoadCase {
     std::string mass_file;       ///< write "_M.mtx" (active) and "_Mr.mtx" (reduced)
     std::string damping_file;    ///< write "_C.mtx" (reduced)
 
+    // Construction and default result requests
+    Transient() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::VELOCITY,
+            OutputField::ACCELERATION
+        });
+    }
+
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARTRANSIENT"; }
     void run() override;

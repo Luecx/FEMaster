@@ -195,6 +195,23 @@ struct NonlinearStatic : public LoadCase {
      */
     Precision zero_stiffness_regularization_alpha = Precision(1e-4);
 
+    // Construction and default result requests
+    NonlinearStatic() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::STRESS_TOP,
+            OutputField::STRESS_BOT,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::INTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::LAMBDA
+        });
+        output.set_nonlinear(true);
+    }
+
     // Analysis identity and execution
     std::string type_name() const override { return "NONLINEARSTATIC"; }
     void run() override;

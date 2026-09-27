@@ -39,6 +39,24 @@ struct LinearStatic : public LoadCase {
     bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
 	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).
 
+    // Construction and default result requests
+    LinearStatic() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::STRESS_TOP,
+            OutputField::STRESS_BOT,
+            OutputField::SHELL_RESULTANTS,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::LOCAL_SECTION_FORCES,
+            OutputField::SHEAR_FLOW
+        });
+    }
+
+
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARSTATIC"; }
     void run() override;

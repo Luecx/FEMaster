@@ -93,6 +93,7 @@ void register_loadcase_inertiarelief    (fem::io::dsl::Registry& registry, Parse
 void register_loadcase_initialvelocity  (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_loads            (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_newmark          (fem::io::dsl::Registry& registry, Parser& parser);
+void register_output                    (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_nonlinear        (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_numeigenvalues   (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_rebalance        (fem::io::dsl::Registry& registry, Parser& parser);

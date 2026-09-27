@@ -380,6 +380,12 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     loadcase->id     = next_loadcase_id_++;
     loadcase->writer = &writer_;
     loadcase->model  = model_.get();
+
+    // Output requests are configured while the step is parsed, but derived
+    // fields are recovered later during run(). Bind the model before exposing
+    // the active load case to any child output command.
+    loadcase->output.bind(model_.get());
+
     active_loadcase_ = std::move(loadcase);
 }
 
@@ -509,6 +515,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_loadcase_initialvelocity(registry, *this);
     commands::register_loadcase_inertiarelief(registry, *this);
     commands::register_loadcase_rebalance(registry, *this);
+    commands::register_output(registry, *this);
 }
 
 } // namespace fem::io::reader
