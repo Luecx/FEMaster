@@ -92,6 +92,7 @@ void check_uniform_thermal_load(
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         free_expansion(6 * node + 0) = 0.2 * coords[node].x();
         free_expansion(6 * node + 1) = 0.2 * coords[node].y();
+        free_expansion(6 * node + 2) = 0.2 * coords[node].z();
     }
     const auto expected = (K * free_expansion).eval();
 
@@ -124,6 +125,7 @@ void check_uniform_thermal_load(
         for (Index node = 0; node < static_cast<Index>(N); ++node) {
             displacement(node, 0) = 0.2 * coords[static_cast<std::size_t>(node)].x();
             displacement(node, 1) = 0.2 * coords[static_cast<std::size_t>(node)].y();
+            displacement(node, 2) = 0.2 * coords[static_cast<std::size_t>(node)].z();
         }
 
         auto stress_strain =
@@ -211,5 +213,24 @@ TEST(ShellThermal, S4ABDWithMembraneBendingCoupling) {
     check_uniform_thermal_load<fem::model::FRTShellS4, 4>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0),
          fem::Vec3(1, 1, 0), fem::Vec3(0, 1, 0)}, true
+    );
+}
+
+TEST(ShellThermal, S8CurvedIntegrated) {
+    constexpr fem::Precision radius = 2.0;
+    constexpr fem::Precision angle = 0.2;
+
+    const auto p = [](fem::Precision theta, fem::Precision y) {
+        return fem::Vec3(
+            radius * std::sin(theta),
+            y,
+            radius * std::cos(theta)
+        );
+    };
+
+    check_uniform_thermal_load<fem::model::FRTShellS8, 8>(
+        {p(-angle, 0.0), p( angle, 0.0), p( angle, 1.0), p(-angle, 1.0),
+         p( 0.0,   0.0), p( angle, 0.5), p( 0.0,   1.0), p(-angle, 0.5)},
+        false
     );
 }
