@@ -91,7 +91,7 @@ void TLoad::apply(model::ModelData& model_data, model::Field& rhs, Precision tim
 
 /**
  * Accumulates the scalar isotropic free thermal strain at structural material
- * integration points. The field uses the compiled ELEMENT_IP enumeration so
+ * element nodes. The field uses the compiled ELEMENT_NODAL enumeration so
  * each element owns a disjoint range and multiple TLOAD definitions superimpose.
  */
 void TLoad::apply_thermal_free_strain(model::ModelData& model_data,
@@ -104,8 +104,8 @@ void TLoad::apply_thermal_free_strain(model::ModelData& model_data,
         "TLOAD: temperature field ", temp_field_->name, " must have one component");
     logging::error(std::isfinite(ref_temp_),
         "TLOAD: reference temperature must be finite");
-    logging::error(thermal_free_strain.domain == model::FieldDomain::ELEMENT_IP,
-        "TLOAD: thermal free strain field must use ELEMENT_IP domain");
+    logging::error(thermal_free_strain.domain == model::FieldDomain::ELEMENT_NODAL,
+        "TLOAD: thermal free strain field must use ELEMENT_NODAL domain");
     logging::error(thermal_free_strain.components == 1,
         "TLOAD: thermal free strain field must have one component");
 
