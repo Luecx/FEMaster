@@ -62,6 +62,17 @@ void OutputRequestHandler::set_nonlinear(bool nonlinear) {
 }
 
 /**
+ * Installs an optional preparation hook for derived model recovery.
+ *
+ * Linear procedures leave this empty. Nonlinear procedures use it to reset
+ * constitutive trial history before independent post-processing evaluations,
+ * preserving the same state semantics as the former direct recovery calls.
+ */
+void OutputRequestHandler::set_before_compute(std::function<void()> callback) {
+    before_compute_ = std::move(callback);
+}
+
+/**
  * Starts an explicit request set exactly once.
  *
  * Abaqus uses *OUTPUT, FIELD before NODE/ELEMENT OUTPUT, while CalculiX may
@@ -242,6 +253,11 @@ std::size_t OutputRequestHandler::index(OutputField field) {
  * recovery work instead of evaluating the model twice.
  */
 void OutputRequestHandler::compute(OutputField field) {
+    // Each derived recovery must observe the same accepted physical state.
+    // This is a no-op for linear analyses and resets nonlinear trial history
+    // when the owning step supplied a preparation callback.
+    if (before_compute_) before_compute_();
+
     switch (field) {
         case OutputField::STRESS:
         case OutputField::STRAIN: {
