@@ -30,8 +30,8 @@ namespace fem::model {
  *
  * Load and stiffness quadrature may differ. Each auxiliary load point therefore
  * reuses the state row of the nearest constitutive stiffness point in natural
- * coordinates. The material tangent call reads the old state and writes the
- * separate new state; no additional storage is owned by this routine.
+ * coordinates. The material tangent query is state-neutral and reads only the
+ * committed state; no trial constitutive history is modified by load assembly.
  *
  * @param node_loads Global nodal thermal-load field to increment.
  * @param node_temp Scalar nodal temperature field.
