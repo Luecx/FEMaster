@@ -99,6 +99,7 @@ private:
         Precision& det0
     );
 
+    Matrix37 linear_full_stiffness();
     Vector13 linear_internal_parameters(const Field& displacement);
     NonlinearEvaluation evaluate_nonlinear(
         const Field&    displacement,
