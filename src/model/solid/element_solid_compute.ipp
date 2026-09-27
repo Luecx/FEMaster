@@ -92,10 +92,29 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
                                             const RowMatrix& rst,
                                             int              offset,
                                             bool             use_green_lagrange_nl) {
+    compute_stress_strain(
+        strain, stress, displacement, rst, offset, use_green_lagrange_nl, nullptr);
+}
+
+template<Index N>
+void SolidElement<N>::compute_stress_strain(Field*           strain,
+                                            Field*           stress,
+                                            const Field&     displacement,
+                                            const RowMatrix& rst,
+                                            int              offset,
+                                            bool             use_green_lagrange_nl,
+                                            const Field*     thermal_free_strain) {
     logging::error(strain != nullptr || stress != nullptr,
         "SolidElement: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
         "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
+    logging::error(!use_green_lagrange_nl || thermal_free_strain == nullptr,
+        "SolidElement: thermal free strain recovery is supported only for linear kinematics");
+    if (thermal_free_strain) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+                       && thermal_free_strain->components == 1,
+            "SolidElement: thermal free strain must be scalar ELEMENT_IP data");
+    }
 
     const auto&     scheme      = this->integration_scheme_stiffness();
     const RowMatrix ip_rst      = this->stress_strain_ip_rst();
@@ -135,17 +154,26 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
                 continue;
             }
 
-            const Vec6                   global_strain_voigt = B * local_displacement_vec;
-            const VolumeStrainLinearized global_strain(global_strain_voigt);
+            const Vec6 global_strain_voigt = B * local_displacement_vec;
+            Vec6 mechanical_strain_voigt = global_strain_voigt;
+            if (thermal_free_strain) {
+                const Precision free_strain =
+                    (*thermal_free_strain)(this->ip_index(ip), 0);
+                mechanical_strain_voigt(0) -= free_strain;
+                mechanical_strain_voigt(1) -= free_strain;
+                mechanical_strain_voigt(2) -= free_strain;
+            }
+
+            const VolumeStrainLinearized mechanical_strain(mechanical_strain_voigt);
             VolumeStressCauchy           global_stress;
             Mat6                         global_tangent;
             evaluate_material(
                 point.r, point.s, point.t,
-                global_strain, old_state, nullptr,
+                mechanical_strain, old_state, nullptr,
                 global_stress, global_tangent);
 
             for (Dim component = 0; component < n_strain; ++component) {
-                ip_strain(ip, component) = global_strain.voigt()(component);
+                ip_strain(ip, component) = global_strain_voigt(component);
                 ip_stress(ip, component) = global_stress.voigt()(component);
             }
             continue;
