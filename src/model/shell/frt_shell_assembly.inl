@@ -507,6 +507,24 @@ void FRTShell<N>::assemble_drill_stabilization(
     }
 }
 
+template<Index N>
+typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
+    const ReferencePoint& point,
+    Precision             free_strain
+) const {
+    Vec8 thermal_strain = Vec8::Zero();
+    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX)) = free_strain;
+    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonYY)) = free_strain;
+    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX)) =
+        free_strain * point.X_ab.col(0).dot(point.D_ab.col(0));
+    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaYY)) =
+        free_strain * point.X_ab.col(1).dot(point.D_ab.col(1));
+    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXY)) =
+        free_strain * (point.X_ab.col(0).dot(point.D_ab.col(1))
+                     + point.X_ab.col(1).dot(point.D_ab.col(0)));
+    return thermal_strain;
+}
+
 /**
  * Integrates equivalent nodal forces from a scalar midsurface temperature field.
  *
@@ -562,22 +580,7 @@ void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisi
             shape_function(point.r, point.s).dot(nodal_temperatures);
         const Precision free_strain = alpha * (temperature - ref_temp);
 
-        Vec8 thermal_strain = Vec8::Zero();
-        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX)) = free_strain;
-        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonYY)) = free_strain;
-
-        // The shell curvature measure is x_,a dot d_,b. Under an infinitesimal
-        // uniform expansion x = (1 + epsilon_th) X with unchanged unit directors,
-        // its free change is epsilon_th X_,a dot D_,b. Use the same pointwise
-        // orthonormal reference basis and engineering mixed-curvature convention
-        // as compute_natural_strain() and transform_strain_to_local().
-        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX)) =
-            free_strain * point.X_ab.col(0).dot(point.D_ab.col(0));
-        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaYY)) =
-            free_strain * point.X_ab.col(1).dot(point.D_ab.col(1));
-        thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXY)) =
-            free_strain * (point.X_ab.col(0).dot(point.D_ab.col(1))
-                         + point.X_ab.col(1).dot(point.D_ab.col(0)));
+        const Vec8 thermal_strain = thermal_generalized_strain(point, free_strain);
 
         thermal_force.noalias() += (point.w * point.detJ)
             * data.ip_B[id].transpose()
@@ -589,6 +592,40 @@ void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisi
         for (Index dof = 0; dof < dofs_per_node; ++dof) {
             node_loads(node_id, dof) += thermal_force(dofs_per_node * node + dof);
         }
+    }
+}
+
+template<Index N>
+void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
+                                            const Field& node_temp,
+                                            Precision ref_temp) {
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_IP
+                   && thermal_free_strain.components == 1,
+                   "FRTShell: thermal free strain requires scalar ELEMENT_IP storage");
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+                   "FRTShell: thermal free strain requires a scalar nodal temperature field");
+    logging::error(std::isfinite(ref_temp),
+                   "FRTShell: thermal reference temperature must be finite");
+
+    const auto material = this->get_material();
+    logging::error(material->has_thermal_expansion(),
+                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
+
+    VecN nodal_temperatures;
+    for (Index node = 0; node < num_nodes; ++node) {
+        const Precision value =
+            node_temp(static_cast<Index>(this->node_ids[node]), 0);
+        nodal_temperatures(node) = std::isfinite(value) ? value : ref_temp;
+    }
+
+    const Precision alpha = material->get_thermal_expansion();
+    const auto& points = reference_data().ip_points;
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
+        const auto& point = points[static_cast<std::size_t>(ip)];
+        const Precision temperature =
+            shape_function(point.r, point.s).dot(nodal_temperatures);
+        thermal_free_strain(this->ip_index(ip), 0) +=
+            alpha * (temperature - ref_temp);
     }
 }
 
@@ -652,6 +689,21 @@ MapMatrix FRTShell<N>::stiffness_geom(
     Precision*   buffer,
     const Field& displacement
 ) {
+    return stiffness_geom(buffer, displacement, nullptr);
+}
+
+template<Index N>
+MapMatrix FRTShell<N>::stiffness_geom(
+    Precision*   buffer,
+    const Field& displacement,
+    const Field* thermal_free_strain
+) {
+    if (thermal_free_strain) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+                       && thermal_free_strain->components == 1,
+                       "FRTShell: thermal free strain must be scalar ELEMENT_IP data");
+    }
+
     const CurrentState state = reference_state();
     EvaluationData data = init_evaluation(
         state,
@@ -677,7 +729,13 @@ MapMatrix FRTShell<N>::stiffness_geom(
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
-        const ShellGeneralizedStrain strain(data.ip_B[id] * q);
+        Vec8 strain_values = data.ip_B[id] * q;
+        if (thermal_free_strain) {
+            const Precision free_strain =
+                (*thermal_free_strain)(this->ip_index(ip), 0);
+            strain_values -= thermal_generalized_strain(point, free_strain);
+        }
+        const ShellGeneralizedStrain strain(strain_values);
         ShellStressResultants resultants;
         Mat8 tangent;
 
