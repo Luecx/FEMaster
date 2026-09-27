@@ -2,14 +2,14 @@
  * @file c3d8i.h
  * @brief Eight-node fully integrated hexahedron with incompatible modes.
  *
- * C3D8I augments the compatible trilinear deformation gradient with thirteen
- * element-local enhanced modes. Nine vectorial modes improve bending/shear
- * response and four scalar volumetric modes reduce near-incompressible locking.
- * The internal variables are solved locally and statically condensed.
+ * C3D8I augments the trilinear brick with thirteen element-local enhanced
+ * deformation modes. Nine vectorial modes improve bending/shear behaviour and
+ * four scalar dilatational modes reduce near-incompressible locking. The local
+ * variables are eliminated by static condensation.
  *
- * Finite deformation uses an incremental enhanced deformation gradient updated
- * multiplicatively from the last accepted configuration. The enhanced history is
- * committed only with an accepted nonlinear load increment.
+ * At finite strain the enhanced deformation gradient is updated incrementally
+ * and multiplicatively from the last accepted configuration. Its state is
+ * committed or rolled back with the nonlinear load increment.
  */
 
 #pragma once
@@ -17,26 +17,26 @@
 #include "c3d8.h"
 
 #include <array>
-#include <vector>
 
 namespace fem::model {
 
 class C3D8I final : public C3D8 {
 public:
-    static constexpr Index N          = 8;
-    static constexpr Dim   D          = 3;
-    static constexpr Index ndof       = N * D;
-    static constexpr Index n_internal = 13;
-    static constexpr Index n_total    = ndof + n_internal;
+    static constexpr Index N                = 8;
+    static constexpr Dim   D                = 3;
+    static constexpr Index ndof             = N * D;
+    static constexpr Index principal_modes  = 9;
+    static constexpr Index volumetric_modes = 4;
+    static constexpr Index internal_dofs    = 13;
+    static constexpr Index total_dofs       = ndof + internal_dofs;
 
-    using Vector13   = StaticVector<n_internal>;
-    using Vector24   = StaticVector<ndof>;
-    using Vector37   = StaticVector<n_total>;
-    using Matrix13   = StaticMatrix<n_internal, n_internal>;
-    using Matrix24   = StaticMatrix<ndof, ndof>;
-    using Matrix37   = StaticMatrix<n_total, n_total>;
-    using Matrix6x13 = StaticMatrix<6, n_internal>;
-    using Matrix6x37 = StaticMatrix<6, n_total>;
+    using Matrix24 = StaticMatrix<ndof, ndof>;
+    using Vector24 = StaticVector<ndof>;
+    using Matrix13 = StaticMatrix<internal_dofs, internal_dofs>;
+    using Vector13 = StaticVector<internal_dofs>;
+    using Matrix37 = StaticMatrix<total_dofs, total_dofs>;
+    using Vector37 = StaticVector<total_dofs>;
+    using BMatrix  = StaticMatrix<6, total_dofs>;
 
     C3D8I(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8I() override = default;
@@ -68,70 +68,56 @@ public:
     void nonlinear_rollback_increment() override;
 
 private:
-    struct TrialState {
-        StaticMatrix<N, D> coordinates = StaticMatrix<N, D>::Zero();
-        std::array<Mat3, N> deformation_gradients{};
-        bool valid = false;
-    };
-
-    struct LinearData {
-        Matrix24 Kuu = Matrix24::Zero();
-        StaticMatrix<ndof, n_internal> Kua =
-            StaticMatrix<ndof, n_internal>::Zero();
-        StaticMatrix<n_internal, ndof> Kau =
-            StaticMatrix<n_internal, ndof>::Zero();
-        Matrix13 Kaa = Matrix13::Zero();
-        std::array<StaticMatrix<6, ndof>, N> B{};
-        std::array<Matrix6x13, N> M{};
-        Precision characteristic_length = Precision(1);
-    };
-
-    struct NonlinearData {
+    struct NonlinearEvaluation {
         Vector37 residual = Vector37::Zero();
         Matrix37 tangent  = Matrix37::Zero();
-        std::array<Mat3, N> deformation_gradients{};
+        std::array<Mat3, N> enhanced_F{};
     };
 
-    LinearData linear_data();
-    Vector13 linear_internal_parameters(const LinearData& data, const Field& displacement);
+    struct InternalSolution {
+        Vector13 parameters = Vector13::Zero();
+        NonlinearEvaluation evaluation;
+    };
 
-    Matrix6x13 incompatible_strain_modes(
-        const StaticMatrix<N, D>& coordinates,
-        Precision                 r,
-        Precision                 s,
-        Precision                 t,
-        Precision                 characteristic_length
-    );
-
-    NonlinearData evaluate_nonlinear(
-        const StaticMatrix<N, D>& current_coordinates,
-        const Vector13&           internal,
-        bool                      write_material_state
-    );
-
-    NonlinearData solve_internal_modes(
-        const StaticMatrix<N, D>& current_coordinates,
-        Vector13&                 internal
-    );
-
-    void write_material_state(const std::array<Mat3, N>& deformation_gradients);
-    void scatter_force(NodeData& nodal_forces, const Vector24& local_force);
+    Precision characteristic_length_ = Precision(1);
+    StaticMatrix<N, D> committed_coords_ = StaticMatrix<N, D>::Zero();
+    StaticMatrix<N, D> trial_coords_     = StaticMatrix<N, D>::Zero();
+    std::array<Mat3, N> committed_F_{};
+    std::array<Mat3, N> trial_F_{};
+    Vector13 trial_internal_ = Vector13::Zero();
+    bool trial_valid_ = false;
+    bool nonlinear_state_initialized_ = false;
 
     static Vec6 strain_variation(const Mat3& F, const Mat3& dF);
-    static Precision stress_second_variation(
-        const Mat3& S,
-        const Mat3& F,
-        const Mat3& dFp,
-        const Mat3& dFq,
-        const Mat3& d2F
+    static Vec6 linearized_strain(const Mat3& gradient);
+    static Precision stress_contraction(const Mat3& stress, const Mat3& variation);
+
+    StaticMatrix<6, internal_dofs> linear_internal_B(
+        Precision r,
+        Precision s,
+        Precision t,
+        const StaticMatrix<N, D>& reference_coords,
+        Precision& det0
     );
 
-    Precision reference_characteristic_length();
+    Matrix37 linear_full_stiffness();
+    Vector13 linear_internal_parameters(const Field& displacement);
 
-    bool initialized_ = false;
-    StaticMatrix<N, D> committed_coordinates_ = StaticMatrix<N, D>::Zero();
-    std::array<Mat3, N> committed_deformation_gradients_{};
-    std::vector<TrialState> trial_stack_;
+    NonlinearEvaluation evaluate_nonlinear(
+        const Field&    displacement,
+        const Vector13& internal,
+        bool            with_tangent,
+        bool            write_material_state
+    );
+
+    InternalSolution solve_internal(
+        const Field& displacement,
+        bool         with_tangent,
+        bool         write_material_state,
+        bool         update_trial_cache
+    );
+
+    void scatter_force(NodeData& nodal_forces, const Vector24& local_force);
 };
 
 } // namespace fem::model
