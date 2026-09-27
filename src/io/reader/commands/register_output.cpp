@@ -3,11 +3,12 @@
  * @brief Registers Abaqus/CalculiX-compatible field-output requests.
  *
  * FEMaster intentionally does not distinguish between ASCII and binary output
- * request cards. Abaqus-style *OUTPUT, FIELD with *NODE OUTPUT /
- * *ELEMENT OUTPUT and CalculiX-style *NODE FILE / *EL FILE all modify the same
- * per-step OutputRequestHandler.
+ * request cards. NODE OUTPUT / ELEMENT OUTPUT and CalculiX-style NODE FILE /
+ * EL FILE all modify the same per-step OutputRequestHandler.
  *
- * NODE PRINT and EL PRINT remain outside this result-file interface.
+ * Abaqus *OUTPUT, FIELD is accepted as a compatibility container but has no
+ * semantic effect. NODE PRINT and EL PRINT are accepted and ignored because
+ * FEMaster does not implement a separate text-print result path.
  *
  * @see io::writer::OutputRequestHandler
  * @see io::writer::OutputField
@@ -73,35 +74,20 @@ void register_field_list(io::dsl::Registry& registry,
 /**
  * Registers the common result-output grammar.
  *
- * *OUTPUT, FIELD starts an explicit request set in Abaqus syntax. CalculiX
- * cards do not require that container, therefore the first NODE FILE/EL FILE
- * request also starts the explicit set through OutputRequestHandler::request().
+ * NODE/ELEMENT result cards are self-contained requests in FEMaster. The first
+ * such card replaces the owning step's default request set. Abaqus' surrounding
+ * *OUTPUT, FIELD card is therefore syntactic compatibility only and is ignored.
  */
 void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
-    registry.command("OUTPUT", [&](io::dsl::Command& command) {
+    registry.command("OUTPUT", [](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STEP"}));
-        command.doc("Begin an explicit field-output selection for the active step.");
+        command.doc("Accept the Abaqus OUTPUT container without changing result requests.");
 
         command.keyword(
             io::dsl::KeywordSpec::make()
-                .flag("FIELD").doc("Select field output")
-                .key("VARIABLE").optional().allowed({"PRESELECT"})
-                    .doc("Restore the step-defined default output selection")
+                .flag("FIELD").doc("Accepted Abaqus field-output selector")
+                .key("VARIABLE").optional().doc("Accepted Abaqus output option")
         );
-
-        command.on_enter([&parser](const io::dsl::Keys& keys) {
-            auto* loadcase = parser.active_loadcase();
-            logging::error(loadcase != nullptr,
-                "OUTPUT must follow the analysis procedure that creates the active step");
-            logging::error(keys.has("FIELD"),
-                "Only *OUTPUT, FIELD is supported");
-
-            if (keys.has("VARIABLE") && keys.raw("VARIABLE") == "PRESELECT") {
-                loadcase->output.use_defaults();
-            } else {
-                loadcase->output.begin_explicit_requests();
-            }
-        });
 
         command.variant(io::dsl::Variant::make());
     });
@@ -120,6 +106,30 @@ void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
         "Request element-derived result fields using CalculiX EL FILE syntax.");
     register_field_list(registry, parser, "ELOUTPUT",
         "Request element-derived result fields using CalculiX EL OUTPUT syntax.");
+
+    // Abaqus/CalculiX PRINT output is a separate textual reporting mechanism.
+    // FEMaster has no equivalent text-print path, so accept these cards only to
+    // keep compatible decks readable and deliberately ignore their variables.
+    const auto register_ignored_print = [&](const std::string& name) {
+        registry.command(name, [](io::dsl::Command& command) {
+            command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STEP"}));
+            command.doc("Accept and ignore a textual PRINT output request.");
+
+            command.variant(io::dsl::Variant::make()
+                .segment(io::dsl::Segment::make()
+                    .range(io::dsl::LineRange{}.min(0))
+                    .pattern(io::dsl::Pattern::make()
+                        .fixed<std::string, 32>().name("FIELD")
+                            .on_missing(std::string{}).on_empty(std::string{})
+                    )
+                    .bind([](const std::array<std::string, 32>&) {})
+                )
+            );
+        });
+    };
+
+    register_ignored_print("NODEPRINT");
+    register_ignored_print("ELPRINT");
 }
 
 } // namespace fem::io::reader::commands
