@@ -78,23 +78,11 @@ enum class OutputField : std::uint8_t {
     COUNT
 };
 
-/**
- * @brief Returns the unchanged FEMaster result-file base name for a field.
- */
-std::string_view output_field_name(OutputField field);
+// Stable FEMaster output naming and input-deck request translation
+std::string_view              output_field_name(OutputField field);
+std::optional<OutputField>    output_field_from_request(std::string token);
 
-/**
- * @brief Maps an Abaqus/CalculiX or FEMaster request token to an output field.
- *
- * Both compact solver-style names (for example U, RF, S, E) and the existing
- * FEMaster field names are accepted. The mapping does not choose a writer
- * format and therefore treats NODE FILE and NODE OUTPUT identically.
- */
-std::optional<OutputField> output_field_from_request(std::string token);
-
-/**
- * @brief Returns true for quantities written once for the complete analysis step.
- */
+// Step/frame lifetime classification
 bool output_field_is_step_field(OutputField field);
 
 } // namespace fem::io::writer
