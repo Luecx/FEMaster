@@ -30,6 +30,17 @@ namespace loadcase {
  * implementing a run function for solving the eigenvalue problem.
  */
 struct LinearEigenfrequency : public LoadCase {
+    // Modal defaults reproduce the fields currently emitted by this procedure.
+    LinearEigenfrequency() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::MODE_SHAPE,
+            OutputField::PARTICIPATION,
+            OutputField::EIGENVALUES,
+            OutputField::EIGENFREQUENCIES,
+            OutputField::FREQUENCIES
+        });
+    }
     //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
