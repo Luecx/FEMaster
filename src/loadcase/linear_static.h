@@ -28,6 +28,22 @@ namespace loadcase {
  * @brief Executes a linear static analysis on the model.
  */
 struct LinearStatic : public LoadCase {
+    // Preserve the current static result set until an input deck overrides it.
+    LinearStatic() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::STRESS_TOP,
+            OutputField::STRESS_BOT,
+            OutputField::SHELL_RESULTANTS,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::LOCAL_SECTION_FORCES,
+            OutputField::SHEAR_FLOW
+        });
+    }
     std::vector<std::string> supps; ///< Support identifiers applied to the model.
     std::vector<std::string> loads; ///< Load identifiers applied to the model.
     solver::SolverDevice device = solver::CPU; ///< Solver device selection.
