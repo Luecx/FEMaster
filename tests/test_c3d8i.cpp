@@ -75,9 +75,9 @@ TEST(Elements_C3D8I, AffineLinearPatchMatchesC3D8) {
     std::array<Precision, 24 * 24> storage_c {};
     std::array<Precision, 24 * 24> storage_i {};
 
-    const Matrix24 Kc = compatible._data->elements[0]
+    const StaticMatrix<24, 24> Kc = compatible._data->elements[0]
         ->as<model::C3D8>()->stiffness(storage_c.data());
-    const Matrix24 Ki = incompatible._data->elements[0]
+    const StaticMatrix<24, 24> Ki = incompatible._data->elements[0]
         ->as<model::C3D8I>()->stiffness(storage_i.data());
 
     StaticVector<24> u = StaticVector<24>::Zero();
@@ -161,10 +161,10 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     forces.set_zero();
 
     std::array<Precision, 24 * 24> storage {};
-    const Matrix24 tangent =
+    const StaticMatrix<24, 24> tangent =
         element->stiffness_tangent(storage.data(), forces, displacement);
 
-    Matrix24 finite_difference = Matrix24::Zero();
+    StaticMatrix<24, 24> finite_difference = Matrix24::Zero();
     const Precision h = 2e-7;
 
     for (Index column = 0; column < 24; ++column) {
