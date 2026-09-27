@@ -128,9 +128,9 @@ template<Index N>
 void SolidElement<N>::apply_thermal_free_strain(Field& thermal_free_strain,
                                                 const Field& node_temp,
                                                 Precision ref_temp) {
-    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_IP
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
                    && thermal_free_strain.components == 1,
-                   "SolidElement: thermal free strain requires scalar ELEMENT_IP storage");
+                   "SolidElement: thermal free strain requires scalar ELEMENT_NODAL storage");
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
                    "SolidElement: thermal free strain requires a scalar nodal temperature field");
     logging::error(std::isfinite(ref_temp),
@@ -140,19 +140,11 @@ void SolidElement<N>::apply_thermal_free_strain(Field& thermal_free_strain,
     logging::error(material->has_thermal_expansion(),
                    "SolidElement: material has no thermal expansion at element ", this->elem_id);
 
-    StaticVector<N> nodal_temperature;
+    const Precision alpha = material->get_thermal_expansion();
     for (Index node = 0; node < N; ++node) {
         const Precision value = node_temp(static_cast<Index>(node_ids[node]), 0);
-        nodal_temperature(node) = std::isfinite(value) ? value : ref_temp;
-    }
-
-    const Precision alpha = material->get_thermal_expansion();
-    const auto& scheme = this->integration_scheme_stiffness();
-    for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto point = scheme.get_point(ip);
-        const Precision temperature =
-            shape_function(point.r, point.s, point.t).dot(nodal_temperature);
-        thermal_free_strain(this->ip_index(ip), 0) +=
+        const Precision temperature = std::isfinite(value) ? value : ref_temp;
+        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
             alpha * (temperature - ref_temp);
     }
 }
