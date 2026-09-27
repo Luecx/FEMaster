@@ -140,6 +140,7 @@ std::optional<OutputField> output_field_from_request(std::string token) {
  */
 bool output_field_is_step_field(OutputField field) {
     switch (field) {
+        case OutputField::PARTICIPATION:
         case OutputField::EIGENVALUES:
         case OutputField::EIGENFREQUENCIES:
         case OutputField::FREQUENCIES:
