@@ -49,9 +49,7 @@ public:
             OutputField::DENS_GRAD,
             OutputField::VOLUME,
             OutputField::DENSITY,
-            OutputField::SHEAR_FLOW,
-            OutputField::ORIENTATION_GRAD,
-            OutputField::ORIENTATION
+            OutputField::SHEAR_FLOW
         });
     }
 
