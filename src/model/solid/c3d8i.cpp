@@ -58,9 +58,10 @@ Precision C3D8I::stress_contraction(const Mat3& stress, const Mat3& variation) {
 }
 
 void C3D8I::step_begin() {
-    committed_coords_ = node_coords_reference();
+    committed_coords_ = node_coords_current();
     trial_coords_     = committed_coords_;
     trial_internal_.setZero();
+    trial_valid_ = false;
 
     for (auto& F : committed_F_) F.setIdentity();
     for (auto& F : trial_F_) F.setIdentity();
@@ -88,6 +89,7 @@ void C3D8I::step_begin() {
 void C3D8I::step_end() {
     nonlinear_state_initialized_ = false;
     trial_internal_.setZero();
+    trial_valid_ = false;
 }
 
 void C3D8I::nonlinear_begin_increment() {
@@ -97,15 +99,20 @@ void C3D8I::nonlinear_begin_increment() {
     trial_coords_   = committed_coords_;
     trial_F_        = committed_F_;
     trial_internal_.setZero();
+    trial_valid_ = false;
 }
 
 void C3D8I::nonlinear_commit_increment() {
     logging::error(nonlinear_state_initialized_,
         "C3D8I: nonlinear state is not initialized in element ", elem_id);
 
+    logging::error(trial_valid_,
+        "C3D8I: committing increment without a valid local state in element ", elem_id);
+
     committed_coords_ = trial_coords_;
     committed_F_      = trial_F_;
     trial_internal_.setZero();
+    trial_valid_ = false;
 }
 
 void C3D8I::nonlinear_rollback_increment() {
@@ -114,6 +121,7 @@ void C3D8I::nonlinear_rollback_increment() {
     trial_coords_ = committed_coords_;
     trial_F_      = committed_F_;
     trial_internal_.setZero();
+    trial_valid_ = false;
 }
 
 StaticMatrix<6, C3D8I::internal_dofs>
@@ -254,6 +262,68 @@ MapMatrix C3D8I::stiffness(Precision* buffer) {
 
     MapMatrix mapped{buffer, ndof, ndof};
     mapped = Precision(0.5) * (condensed + condensed.transpose());
+    return mapped;
+}
+
+MapMatrix C3D8I::stiffness_geom(
+    Precision*   buffer,
+    const Field& displacement
+) {
+    const auto reference_coords = node_coords_reference();
+    const Vector13 internal = linear_internal_parameters(displacement);
+
+    Vector24 u = Vector24::Zero();
+    const auto local = nodal_data<D>(displacement);
+    for (Index a = 0; a < N; ++a) {
+        for (Dim d = 0; d < D; ++d) {
+            u(D * a + d) = local(a, d);
+        }
+    }
+
+    Matrix24 geometric = Matrix24::Zero();
+    const auto& scheme = integration_scheme_stiffness();
+
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
+
+        Precision det0 = Precision(0);
+        const auto dN_dX = shape_derivatives_reference(
+            reference_coords, point.r, point.s, point.t, det0);
+        const auto Bu = strain_displacement(dN_dX);
+
+        Precision incompatible_det = Precision(0);
+        const auto Bi = linear_internal_B(
+            point.r, point.s, point.t,
+            reference_coords, incompatible_det);
+
+        const VolumeStrainLinearized strain(Bu * u + Bi * internal);
+        const Index state_row = mp_index(ip);
+        const Precision* old_state =
+            &(*_model_data->material_state_old)(state_row, 0);
+
+        VolumeStressCauchy stress;
+        Mat6 C;
+        evaluate_material(
+            point.r, point.s, point.t,
+            strain, old_state, nullptr, stress, C);
+
+        const Mat3 sigma = stress.tensor();
+        const Precision measure = point.w * det0;
+
+        for (Index a = 0; a < N; ++a) {
+            const Vec3 dNa = dN_dX.row(a).transpose();
+            for (Index b = 0; b < N; ++b) {
+                const Vec3 dNb = dN_dX.row(b).transpose();
+                const Precision value = dNa.dot(sigma * dNb) * measure;
+                for (Dim d = 0; d < D; ++d) {
+                    geometric(D * a + d, D * b + d) += value;
+                }
+            }
+        }
+    }
+
+    MapMatrix mapped{buffer, ndof, ndof};
+    mapped = Precision(0.5) * (geometric + geometric.transpose());
     return mapped;
 }
 
@@ -570,6 +640,7 @@ C3D8I::InternalSolution C3D8I::solve_internal(
         trial_internal_ = internal;
         trial_coords_ = node_coords_reference() + nodal_data<D>(displacement);
         trial_F_ = evaluation.enhanced_F;
+        trial_valid_ = true;
     }
 
     return InternalSolution{internal, std::move(evaluation)};
