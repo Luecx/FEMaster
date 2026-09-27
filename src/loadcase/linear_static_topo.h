@@ -36,6 +36,25 @@ struct LinearStaticTopo : public LinearStatic {
     Precision exponent = 1;  /**< Exponent used in SIMP-like penalization schemes. */
 
 public:
+    // Topology output extends the static defaults with optimization fields.
+    LinearStaticTopo() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::COMPLIANCE,
+            OutputField::DENS_GRAD,
+            OutputField::VOLUME,
+            OutputField::DENSITY,
+            OutputField::SHEAR_FLOW,
+            OutputField::ORIENTATION_GRAD,
+            OutputField::ORIENTATION
+        });
+    }
+
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARSTATICTOPO"; }
     void run() override;
