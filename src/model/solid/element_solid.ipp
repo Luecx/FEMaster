@@ -565,9 +565,9 @@ SolidElement<N>::stiffness_geom(Precision* buffer,
                                 const Field& displacement,
                                 const Field* thermal_free_strain) {
     if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
                        && thermal_free_strain->components == 1,
-                       "SolidElement: thermal free strain must be scalar ELEMENT_IP data");
+                       "SolidElement: thermal free strain must be scalar ELEMENT_NODAL data");
     }
 
     const StaticMatrix<N, D> reference_coords  = this->node_coords_reference();
@@ -576,10 +576,19 @@ SolidElement<N>::stiffness_geom(Precision* buffer,
     const auto local_displacement_vec =
         Eigen::Map<const StaticVector<D * N>>(local_disp_mat.data(), D * N);
 
+    StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+    if (thermal_free_strain) {
+        for (Index node = 0; node < N; ++node) {
+            nodal_thermal_strain(node) =
+                (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + node, 0);
+        }
+    }
+
     Index ip = 0;
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &reference_coords, &local_displacement_vec, &ip, thermal_free_strain]
+        [this, &reference_coords, &local_displacement_vec, &nodal_thermal_strain,
+         &ip, thermal_free_strain]
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
         Precision det0;
@@ -593,7 +602,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer,
         const Index local_ip = ip++;
         if (thermal_free_strain) {
             const Precision free_strain =
-                (*thermal_free_strain)(this->ip_index(local_ip), 0);
+                this->shape_function(r, s, t).dot(nodal_thermal_strain);
             strain_values(0) -= free_strain;
             strain_values(1) -= free_strain;
             strain_values(2) -= free_strain;
