@@ -158,6 +158,9 @@ std::vector<OutputField> OutputRequestHandler::requirements(OutputField field) c
         case OutputField::HEAT_FLUX:
             return {OutputField::TEMPERATURE};
 
+        // Harmonic real and imaginary displacement fields are independent
+        // primary sources. Their constitutive outputs therefore follow two
+        // separate dependency branches rather than a generic DISPLACEMENT.
         case OutputField::STRESS_REAL:
         case OutputField::STRAIN_REAL:
             return {OutputField::DISPLACEMENT_REAL, OutputField::THERMAL_FREE_STRAIN};
