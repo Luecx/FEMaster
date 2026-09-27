@@ -100,10 +100,8 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
 
         const Index      state_row = this->mp_index(state_ip);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-
-        // Convert free thermal strain to stress using the selected state-row tangent
-        auto mat_matrix = material_tangent_reference(r, s, t, old_state, new_state);
+        // Convert free thermal strain to stress using a state-neutral tangent query.
+        auto mat_matrix = material_tangent_reference(r, s, t, old_state, nullptr);
         auto stress = mat_matrix * strain;
 
         // Map thermal stress to its element nodal-force contribution
@@ -123,6 +121,39 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
         node_loads(n_id, 1) += nodal_impact(local_id * 3 + 1);
         node_loads(n_id, 2) += nodal_impact(local_id * 3 + 2);
         local_id++;
+    }
+}
+
+template<Index N>
+void SolidElement<N>::apply_thermal_free_strain(Field& thermal_free_strain,
+                                                const Field& node_temp,
+                                                Precision ref_temp) {
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_IP
+                   && thermal_free_strain.components == 1,
+                   "SolidElement: thermal free strain requires scalar ELEMENT_IP storage");
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+                   "SolidElement: thermal free strain requires a scalar nodal temperature field");
+    logging::error(std::isfinite(ref_temp),
+                   "SolidElement: thermal reference temperature must be finite");
+
+    const auto material = this->material();
+    logging::error(material->has_thermal_expansion(),
+                   "SolidElement: material has no thermal expansion at element ", this->elem_id);
+
+    StaticVector<N> nodal_temperature;
+    for (Index node = 0; node < N; ++node) {
+        const Precision value = node_temp(static_cast<Index>(node_ids[node]), 0);
+        nodal_temperature(node) = std::isfinite(value) ? value : ref_temp;
+    }
+
+    const Precision alpha = material->get_thermal_expansion();
+    const auto& scheme = this->integration_scheme_stiffness();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
+        const Precision temperature =
+            shape_function(point.r, point.s, point.t).dot(nodal_temperature);
+        thermal_free_strain(this->ip_index(ip), 0) +=
+            alpha * (temperature - ref_temp);
     }
 }
 
