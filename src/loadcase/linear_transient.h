@@ -31,6 +31,15 @@
 namespace fem { namespace loadcase {
 
 struct Transient : public LoadCase {
+    // Newmark directly supplies all three kinematic fields for every frame.
+    Transient() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::VELOCITY,
+            OutputField::ACCELERATION
+        });
+    }
     // User inputs
     std::vector<std::string> supps;   ///< supports/ties/couplings
     std::vector<std::string> loads;   ///< load collectors (time-independent)
