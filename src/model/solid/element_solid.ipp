@@ -579,7 +579,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer,
     Index ip = 0;
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &reference_coords, &local_displacement_vec, &ip]
+        [this, &reference_coords, &local_displacement_vec, &ip, thermal_free_strain]
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
         Precision det0;
