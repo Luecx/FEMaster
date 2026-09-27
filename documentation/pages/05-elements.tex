@@ -18,6 +18,7 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{C3D5} & 5 & Five-node pyramid input represented by a degenerated hexahedral topology. \\
 \val{C3D6} & 6 & Linear wedge solid. \\
 \val{C3D8} & 8 & Linear fully integrated hexahedral solid. \\
+\val{C3D8I} & 8 & Full-integration hexahedral solid with condensed incompatible modes. \\
 \val{C3D8R} & 8 & Reduced-integration hexahedral solid with hourglass stabilization. \\
 \val{C3D10} & 10 & Quadratic tetrahedral solid. \\
 \val{C3D15} & 15 & Quadratic wedge solid. \\
@@ -154,6 +155,22 @@ Hexahedral topology provides direct control of the number of elements through th
 The element remains low order. A coarse mesh can be too stiff in bending, and straight element edges only approximate curved boundaries. Through-thickness resolution and refinement of curved or stress-critical geometry directly control the corresponding bending-stress and geometry errors.
 
 Warping, skew, negative Jacobians, and extreme aspect ratios can remove the numerical advantages of the hexahedral topology. A clean quadratic tetrahedral mesh can provide a more accurate mapping than a badly distorted hexahedral mesh; topology alone does not determine mesh quality.
+
+\clearpage
+\subsection{\val{C3D8I}: incompatible-mode 8-node hexahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D8I, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
+\end{syntax}
+
+\val{C3D8I} uses the same trilinear eight-node geometry and full $2\times2\times2$ integration rule as \val{C3D8}, but augments the deformation gradient with thirteen element-local incompatible modes. Nine Wilson modes improve bending by relaxing the parasitic shear and Poisson locking of a first-order brick. Four additional scalar dilatational modes reduce volumetric locking for nearly incompressible, but not exactly incompressible, material response.
+
+The incompatible variables are internal to each element. FEMaster solves their local equilibrium equations during every nonlinear element evaluation and removes them from the global Newton system by static condensation. Consequently, a \val{C3D8I} contributes the same 24 nodal translational unknowns as \val{C3D8}.
+
+For geometrically nonlinear analysis the enhancement is applied to the incremental deformation gradient measured from the last accepted configuration. Principal incompatible modes are added to this incremental gradient, while the four dilatational modes enter multiplicatively. The enhanced total deformation gradient is committed only after an accepted load increment; failed Newton trials and cutbacks therefore do not advance the internal element state. Material response continues to use the ordinary three-dimensional Green--Lagrange/PK2 constitutive interface, so no material-specific C3D8I implementation is required.
+
+The element is fully integrated and therefore does not use hourglass stabilization. It is intended primarily for first-order hexahedral meshes in bending and for cases where a regular \val{C3D8} is excessively stiff. As with other incompatible-mode formulations, performance deteriorates for strongly distorted element shapes. Exactly incompressible materials still require a mixed or hybrid formulation rather than relying on incompatible modes alone.
 
 \clearpage
 \subsection{\val{C3D8R}: reduced-integration 8-node hexahedral solid}
