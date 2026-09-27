@@ -181,6 +181,13 @@ struct StructuralElement : ElementInterface {
         (void) displacement;
         return false;
     }
+    virtual bool compute_shell_section_forces(Field& section_forces,
+                                              Field& contribution_count,
+                                              const Field& displacement,
+                                              const Field* thermal_free_strain) {
+        (void) thermal_free_strain;
+        return compute_shell_section_forces(section_forces, contribution_count, displacement);
+    }
 };
 } // namespace model
 } // namespace fem
