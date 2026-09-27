@@ -31,15 +31,6 @@
 namespace fem { namespace loadcase {
 
 struct Transient : public LoadCase {
-    // Newmark directly supplies all three kinematic fields for every frame.
-    Transient() {
-        using io::writer::OutputField;
-        output.set_defaults({
-            OutputField::DISPLACEMENT,
-            OutputField::VELOCITY,
-            OutputField::ACCELERATION
-        });
-    }
     // User inputs
     std::vector<std::string> supps;   ///< supports/ties/couplings
     std::vector<std::string> loads;   ///< load collectors (time-independent)
@@ -78,6 +69,16 @@ struct Transient : public LoadCase {
     std::string stiffness_file;  ///< write "_K.mtx" (active) and "_A.mtx" (reduced)
     std::string mass_file;       ///< write "_M.mtx" (active) and "_Mr.mtx" (reduced)
     std::string damping_file;    ///< write "_C.mtx" (reduced)
+
+    // Construction and default result requests
+    Transient() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::VELOCITY,
+            OutputField::ACCELERATION
+        });
+    }
 
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARTRANSIENT"; }
