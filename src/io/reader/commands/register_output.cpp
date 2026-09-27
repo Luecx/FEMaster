@@ -21,6 +21,7 @@
 #include "../../writer/output_field.h"
 
 #include "../../../core/logging.h"
+#include "../../../loadcase/linear_harmonic.h"
 
 #include <array>
 #include <string>
@@ -40,6 +41,29 @@ void request_tokens(Parser& parser, const std::array<std::string, 32>& tokens) {
         const auto field = io::writer::output_field_from_request(token);
         logging::error(field.has_value(),
             "Unsupported output field request: ", token);
+
+        // Harmonic response stores real and imaginary solution components as
+        // separate primary fields. Standard Abaqus/CalculiX U/S/E requests
+        // therefore expand to both component outputs instead of introducing a
+        // synthetic generic displacement/stress/strain source.
+        if (dynamic_cast<loadcase::LinearHarmonic*>(loadcase) != nullptr) {
+            switch (*field) {
+                case io::writer::OutputField::DISPLACEMENT:
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL);
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_IMAG);
+                    continue;
+                case io::writer::OutputField::STRESS:
+                    loadcase->output.request(io::writer::OutputField::STRESS_REAL);
+                    loadcase->output.request(io::writer::OutputField::STRESS_IMAG);
+                    continue;
+                case io::writer::OutputField::STRAIN:
+                    loadcase->output.request(io::writer::OutputField::STRAIN_REAL);
+                    loadcase->output.request(io::writer::OutputField::STRAIN_IMAG);
+                    continue;
+                default:
+                    break;
+            }
+        }
 
         loadcase->output.request(*field);
     }
