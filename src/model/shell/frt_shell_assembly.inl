@@ -599,9 +599,9 @@ template<Index N>
 void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
                                             const Field& node_temp,
                                             Precision ref_temp) {
-    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_IP
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
                    && thermal_free_strain.components == 1,
-                   "FRTShell: thermal free strain requires scalar ELEMENT_IP storage");
+                   "FRTShell: thermal free strain requires scalar ELEMENT_NODAL storage");
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
                    "FRTShell: thermal free strain requires a scalar nodal temperature field");
     logging::error(std::isfinite(ref_temp),
@@ -611,20 +611,12 @@ void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
     logging::error(material->has_thermal_expansion(),
                    "FRTShell: material has no thermal expansion for element ", this->elem_id);
 
-    VecN nodal_temperatures;
+    const Precision alpha = material->get_thermal_expansion();
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision value =
             node_temp(static_cast<Index>(this->node_ids[node]), 0);
-        nodal_temperatures(node) = std::isfinite(value) ? value : ref_temp;
-    }
-
-    const Precision alpha = material->get_thermal_expansion();
-    const auto& points = reference_data().ip_points;
-    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const auto& point = points[static_cast<std::size_t>(ip)];
-        const Precision temperature =
-            shape_function(point.r, point.s).dot(nodal_temperatures);
-        thermal_free_strain(this->ip_index(ip), 0) +=
+        const Precision temperature = std::isfinite(value) ? value : ref_temp;
+        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
             alpha * (temperature - ref_temp);
     }
 }
@@ -699,9 +691,9 @@ MapMatrix FRTShell<N>::stiffness_geom(
     const Field* thermal_free_strain
 ) {
     if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
                        && thermal_free_strain->components == 1,
-                       "FRTShell: thermal free strain must be scalar ELEMENT_IP data");
+                       "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
     }
 
     const CurrentState state = reference_state();
@@ -732,7 +724,7 @@ MapMatrix FRTShell<N>::stiffness_geom(
         Vec8 strain_values = data.ip_B[id] * q;
         if (thermal_free_strain) {
             const Precision free_strain =
-                (*thermal_free_strain)(this->ip_index(ip), 0);
+                thermal_free_strain_at(thermal_free_strain, point.r, point.s);
             strain_values -= thermal_generalized_strain(point, free_strain);
         }
         const ShellGeneralizedStrain strain(strain_values);
