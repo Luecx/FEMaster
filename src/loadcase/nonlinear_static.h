@@ -42,6 +42,22 @@ enum class NonlinearControl {
  * converged load step.
  */
 struct NonlinearStatic : public LoadCase {
+    // The union matches the quantities currently written across nonlinear frames.
+    NonlinearStatic() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::DISPLACEMENT,
+            OutputField::STRAIN,
+            OutputField::STRESS,
+            OutputField::STRESS_TOP,
+            OutputField::STRESS_BOT,
+            OutputField::EXTERNAL_FORCES,
+            OutputField::INTERNAL_FORCES,
+            OutputField::REACTION_FORCES,
+            OutputField::LAMBDA
+        });
+        output.set_nonlinear(true);
+    }
     using ConstraintMethod = constraint::ConstraintTransformer::Method;
 
     /**
