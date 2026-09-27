@@ -112,8 +112,8 @@ void check_uniform_thermal_load(
     if (!use_abd) {
         model::Field thermal_free_strain{
             "THERMAL_FREE_STRAIN",
-            model::FieldDomain::ELEMENT_IP,
-            model._data->field_rows(model::FieldDomain::ELEMENT_IP),
+            model::FieldDomain::ELEMENT_NODAL,
+            model._data->field_rows(model::FieldDomain::ELEMENT_NODAL),
             1
         };
         thermal_free_strain.set_zero();
