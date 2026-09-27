@@ -20,6 +20,7 @@
 #include "../../data/field.h"
 
 #include <array>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <optional>
@@ -68,12 +69,17 @@ class OutputRequestHandler {
     // Kinematic recovery mode selected by the owning analysis step
     bool nonlinear_ = false;
 
+    // Optional analysis hook run before each derived model recovery. Nonlinear
+    // steps use it to restore constitutive trial storage from committed state.
+    std::function<void()> before_compute_;
+
 public:
     // Analysis binding and step-defined default requests
     void bind(model::Model* model);
     void set_defaults(std::initializer_list<OutputField> fields);
     void use_defaults();
     void set_nonlinear(bool nonlinear);
+    void set_before_compute(std::function<void()> callback);
 
     // Explicit requests supplied by the input deck
     void begin_explicit_requests();
