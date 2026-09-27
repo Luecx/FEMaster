@@ -10,6 +10,7 @@ class ElementTopology(Enum):
     PYRAMID5 = "PYRAMID5"
     WEDGE6 = "WEDGE6"
     HEX8 = "HEX8"
+    HEX8I = "HEX8I"
     TET10 = "TET10"
     WEDGE15 = "WEDGE15"
     HEX20 = "HEX20"
@@ -30,6 +31,7 @@ FEMASTER_ELEMENT_TYPES: dict[ElementTopology, str] = {
     ElementTopology.PYRAMID5: "C3D5",
     ElementTopology.WEDGE6: "C3D6",
     ElementTopology.HEX8: "C3D8",
+    ElementTopology.HEX8I: "C3D8I",
     ElementTopology.TET10: "C3D10",
     ElementTopology.WEDGE15: "C3D15",
     ElementTopology.HEX20: "C3D20",
@@ -50,6 +52,7 @@ TOPOLOGY_NODE_COUNTS: dict[ElementTopology, tuple[int, ...]] = {
     ElementTopology.PYRAMID5: (5,),
     ElementTopology.WEDGE6: (6,),
     ElementTopology.HEX8: (8,),
+    ElementTopology.HEX8I: (8,),
     ElementTopology.TET10: (10,),
     ElementTopology.WEDGE15: (15,),
     ElementTopology.HEX20: (20,),
@@ -69,6 +72,7 @@ C3D4 = ElementTopology.TET4
 C3D5 = ElementTopology.PYRAMID5
 C3D6 = ElementTopology.WEDGE6
 C3D8 = ElementTopology.HEX8
+C3D8I = ElementTopology.HEX8I
 C3D10 = ElementTopology.TET10
 C3D15 = ElementTopology.WEDGE15
 C3D20 = ElementTopology.HEX20
