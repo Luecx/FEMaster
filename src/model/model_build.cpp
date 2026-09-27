@@ -28,6 +28,7 @@
  * @date 25.08.2026
  */
 
+#include "../bc/neumann/load_t.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
@@ -317,6 +318,32 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
     }
 
     return load_matrix;
+}
+
+/**
+ * Builds the accumulated isotropic free thermal strain at structural integration
+ * points for the selected load collectors.
+ */
+Field Model::build_thermal_free_strain(std::vector<std::string> load_sets) {
+    Field thermal_free_strain{
+        "THERMAL_FREE_STRAIN",
+        FieldDomain::ELEMENT_IP,
+        _data->field_rows(FieldDomain::ELEMENT_IP),
+        1
+    };
+    thermal_free_strain.set_zero();
+
+    for (auto& key : load_sets) {
+        auto data = _data->load_cols.get(key);
+        for (const auto& load : data->entries()) {
+            if (!load) continue;
+            auto thermal = std::dynamic_pointer_cast<bc::TLoad>(load);
+            if (!thermal) continue;
+            thermal->apply_thermal_free_strain(*_data, thermal_free_strain);
+        }
+    }
+
+    return thermal_free_strain;
 }
 
 /**
@@ -696,11 +723,21 @@ void Model::build_internal_force_nonlinear(
 SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
     const Field&  displacement,
-    const Field*  stiffness_scalar
+    const Field*  stiffness_scalar,
+    const Field*  thermal_free_strain
 ) {
+    if (thermal_free_strain) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP,
+            "thermal free strain field must use ELEMENT_IP domain");
+        logging::error(thermal_free_strain->components == 1,
+            "thermal free strain field must have 1 component");
+        logging::error(thermal_free_strain->rows == _data->field_rows(FieldDomain::ELEMENT_IP),
+            "thermal free strain field has wrong integration-point count");
+    }
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
-            MapMatrix geometric_stiffness = structural->stiffness_geom(storage, displacement);
+            MapMatrix geometric_stiffness = structural->stiffness_geom(
+                storage, displacement, thermal_free_strain);
 
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
