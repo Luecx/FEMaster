@@ -37,28 +37,18 @@ Precision FRTShell<N>::thermal_free_strain_at(const Field* thermal_free_strain,
         return Precision(0);
     }
 
-    logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_IP
+    logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
                    && thermal_free_strain->components == 1,
-                   "FRTShell: thermal free strain must be scalar ELEMENT_IP data");
+                   "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
-    const auto& points = reference_data().ip_points;
-    Index nearest_ip = 0;
-    Precision nearest_distance =
-        (r - points[0].r) * (r - points[0].r)
-        + (s - points[0].s) * (s - points[0].s);
-
-    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
-        const auto& point = points[static_cast<std::size_t>(ip)];
-        const Precision distance =
-            (r - point.r) * (r - point.r)
-            + (s - point.s) * (s - point.s);
-        if (distance < nearest_distance) {
-            nearest_ip = ip;
-            nearest_distance = distance;
-        }
+    const VecN shape = shape_function(r, s);
+    Precision value = Precision(0);
+    for (Index node = 0; node < num_nodes; ++node) {
+        value += shape(node)
+            * (*thermal_free_strain)(
+                static_cast<Index>(this->elem_nodal_offset) + node, 0);
     }
-
-    return (*thermal_free_strain)(this->ip_index(nearest_ip), 0);
+    return value;
 }
 
 /**
