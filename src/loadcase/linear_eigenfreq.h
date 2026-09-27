@@ -44,11 +44,7 @@ struct LinearEigenfrequency : public LoadCase {
     LinearEigenfrequency() {
         using io::writer::OutputField;
         output.set_defaults({
-            OutputField::MODE_SHAPE,
-            OutputField::PARTICIPATION,
-            OutputField::EIGENVALUES,
-            OutputField::EIGENFREQUENCIES,
-            OutputField::FREQUENCIES
+            OutputField::MODE_SHAPE
         });
     }
 
