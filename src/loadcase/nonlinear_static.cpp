@@ -899,12 +899,21 @@ void NonlinearStatic::run() {
     // The final state is another regular result frame. Supplying the same basis
     // fields as accepted increments keeps all requested constitutive recovery
     // in one dependency-driven path.
+    model::Field final_lambda{
+        "LAMBDA",
+        model::FieldDomain::UNKNOWN,
+        1,
+        1
+    };
+    final_lambda(0) = load_factor;
+
     output.begin_frame(load_factor, "_" + std::to_string(final_frame));
     output.provide(OutputField::DISPLACEMENT,        displacement);
     output.provide(OutputField::EXTERNAL_FORCES,     global_load_final);
     output.provide(OutputField::INTERNAL_FORCES,     final_internal);
     output.provide(OutputField::REACTION_FORCES,     reaction_masked);
     output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+    output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
 
     *model->_data->positions = original_positions;
