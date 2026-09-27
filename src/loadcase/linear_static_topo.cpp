@@ -59,6 +59,11 @@ void LinearStaticTopo::run() {
         "constructing load matrix (node x 6)"
     );
 
+    auto thermal_free_strain = Timer::measure(
+        [&]() { return model->build_thermal_free_strain(loads); },
+        "constructing thermal free strain field"
+    );
+
     if (inertia_relief) {
         logging::error(supps.empty(),
             "InertiaRelief: cannot be used with *SUPPORT in this load case. "
@@ -222,7 +227,7 @@ void LinearStaticTopo::run() {
     );
 
     auto [stress, strain] = Timer::measure(
-        [&]() { return model->compute_stress_nodal(global_disp_mat, false); },
+        [&]() { return model->compute_stress_nodal(global_disp_mat, false, &thermal_free_strain); },
         "Interpolating stress and strain at nodes"
     );
 

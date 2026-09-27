@@ -90,6 +90,39 @@ void TLoad::apply(model::ModelData& model_data, model::Field& rhs, Precision tim
 }
 
 /**
+ * Accumulates the scalar isotropic free thermal strain at structural material
+ * element nodes. The field uses the compiled ELEMENT_NODAL enumeration so
+ * each element owns a disjoint range and multiple TLOAD definitions superimpose.
+ */
+void TLoad::apply_thermal_free_strain(model::ModelData& model_data,
+                                      model::Field& thermal_free_strain) const {
+    logging::error(temp_field_ != nullptr,
+        "TLOAD: temperature field is not initialized");
+    logging::error(temp_field_->domain == model::FieldDomain::NODE,
+        "TLOAD: temperature field ", temp_field_->name, " must use NODE domain");
+    logging::error(temp_field_->components == 1,
+        "TLOAD: temperature field ", temp_field_->name, " must have one component");
+    logging::error(std::isfinite(ref_temp_),
+        "TLOAD: reference temperature must be finite");
+    logging::error(thermal_free_strain.domain == model::FieldDomain::ELEMENT_NODAL,
+        "TLOAD: thermal free strain field must use ELEMENT_NODAL domain");
+    logging::error(thermal_free_strain.components == 1,
+        "TLOAD: thermal free strain field must have one component");
+
+    for (auto& element : model_data.elements) {
+        if (!element) {
+            continue;
+        }
+        auto* structural = element->as<model::StructuralElement>();
+        if (!structural) {
+            continue;
+        }
+        structural->apply_thermal_free_strain(
+            thermal_free_strain, *temp_field_, ref_temp_);
+    }
+}
+
+/**
  * Builds a compact diagnostic representation of the structural thermal load.
  *
  * The output identifies the scalar nodal temperature field and the stress-free

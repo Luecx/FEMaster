@@ -208,6 +208,11 @@ void LinearBuckling::run() {
         "building global load matrix"
     );
 
+    auto thermal_free_strain = Timer::measure(
+        [&]() { return model->build_thermal_free_strain(loads); },
+        "building thermal free strain field"
+    );
+
     // (4) Active stiffness K (n x n)
     auto K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
@@ -283,7 +288,10 @@ void LinearBuckling::run() {
     );
 
     auto Kg = Timer::measure(
-        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, U_mat); },
+        [&]() {
+            return model->build_geom_stiffness_matrix(
+                active_dof_idx_mat, U_mat, nullptr, &thermal_free_strain);
+        },
         "assembling geometric stiffness K_g from preload displacement"
     );
 

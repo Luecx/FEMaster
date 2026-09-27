@@ -48,6 +48,10 @@ void LinearStatic::run() {
         [&]() { return model->build_load_matrix(loads); },
         "constructing load matrix (node x 6)");
 
+    auto thermal_free_strain = Timer::measure(
+        [&]() { return model->build_thermal_free_strain(loads); },
+        "constructing thermal free strain field");
+
     if (inertia_relief) {
         logging::error(supps.empty(),
             "InertiaRelief: cannot be used with *SUPPORT in this load case. "
@@ -217,19 +221,19 @@ void LinearStatic::run() {
         "computing shear-flow output");
 
     auto stress_strain = Timer::measure(
-        [&]() { return model->compute_stress_nodal(global_disp_mat, false); },
+        [&]() { return model->compute_stress_nodal(global_disp_mat, false, &thermal_free_strain); },
         "interpolating stress and strain at nodes");
     auto stress = std::move(std::get<0>(stress_strain));
     auto strain = std::move(std::get<1>(stress_strain));
 
     auto stress_top_bottom = Timer::measure(
-        [&]() { return model->compute_stress_top_bot(global_disp_mat, false); },
+        [&]() { return model->compute_stress_top_bot(global_disp_mat, false, &thermal_free_strain); },
         "interpolating top/bottom stress at nodes");
     auto stress_top = std::move(std::get<0>(stress_top_bottom));
     auto stress_bot = std::move(std::get<1>(stress_top_bottom));
 
     auto shell_resultants = Timer::measure(
-        [&]() { return model->compute_shell_resultants(global_disp_mat); },
+        [&]() { return model->compute_shell_resultants(global_disp_mat, &thermal_free_strain); },
         "interpolating shell resultants at nodes");
 
     if (!stiffness_file.empty()) {

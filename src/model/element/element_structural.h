@@ -73,6 +73,12 @@ struct StructuralElement : ElementInterface {
     virtual Precision volume() = 0;
     virtual MapMatrix stiffness(Precision* buffer) = 0;
     virtual MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) = 0;
+    virtual MapMatrix stiffness_geom(Precision* buffer,
+                                     const Field& displacement,
+                                     const Field* thermal_free_strain) {
+        (void) thermal_free_strain;
+        return stiffness_geom(buffer, displacement);
+    }
 
     // Physical nonlinear equilibrium evaluation. The internal force is always
     // accumulated into nodal_forces. If buffer is non-null, the same material
@@ -115,6 +121,13 @@ struct StructuralElement : ElementInterface {
                                              const TenField& field) = 0;
 
     virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;
+    virtual void apply_thermal_free_strain(Field& thermal_free_strain,
+                                           const Field& node_temp,
+                                           Precision ref_temp) {
+        (void) thermal_free_strain;
+        (void) node_temp;
+        (void) ref_temp;
+    }
 
     // Structural result recovery. These routines are independent of temporary
     // stresses or resultants used during operator assembly and explicitly write
@@ -127,6 +140,18 @@ struct StructuralElement : ElementInterface {
         int              offset,
         bool             use_green_lagrange_nl
     ) = 0;
+    virtual void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl,
+        const Field*     thermal_free_strain
+    ) {
+        (void) thermal_free_strain;
+        compute_stress_strain(strain, stress, displacement, rst, offset, use_green_lagrange_nl);
+    }
 
     virtual void compute_compliance(Field& displacement, Field& result) {
         (void) displacement;
@@ -155,6 +180,13 @@ struct StructuralElement : ElementInterface {
         (void) contribution_count;
         (void) displacement;
         return false;
+    }
+    virtual bool compute_shell_section_forces(Field& section_forces,
+                                              Field& contribution_count,
+                                              const Field& displacement,
+                                              const Field* thermal_free_strain) {
+        (void) thermal_free_strain;
+        return compute_shell_section_forces(section_forces, contribution_count, displacement);
     }
 };
 } // namespace model

@@ -521,6 +521,9 @@ struct FRTShell : ShellElement<N> {
     ShellSection* shell_section() const;
     Precision topology_stiffness_scale() const;
     Mat8 resultant_stiffness(Precision r = Precision(0), Precision s = Precision(0)) const;
+    Vec8 thermal_generalized_strain(const ReferencePoint& point, Precision free_strain) const;
+    Precision thermal_free_strain_at(const Field* thermal_free_strain,
+                                     Precision r, Precision s) const;
 
     // Element tangent and force assembly internals.
     // These routines assemble the pieces of the shell residual linearization:
@@ -577,6 +580,7 @@ struct FRTShell : ShellElement<N> {
         Precision             s,
         Precision             zeta,
         bool                  nonlinear,
+        const Field*          thermal_free_strain,
         Vec6&                 strain_out,
         Vec6&                 stress_out
     ) const;
@@ -594,6 +598,11 @@ struct FRTShell : ShellElement<N> {
         Precision*   buffer,
         const Field& displacement
     ) override;
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement,
+        const Field* thermal_free_strain
+    ) override;
     MapMatrix stiffness_tangent(
         Precision*   buffer,
         NodeData&    nodal_forces,
@@ -604,6 +613,9 @@ struct FRTShell : ShellElement<N> {
     // six-DOF thermal equivalent nodal forces. Temperature is uniform through
     // the thickness; the section tangent includes membrane/bending coupling.
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+    void apply_thermal_free_strain(Field& thermal_free_strain,
+                                   const Field& node_temp,
+                                   Precision ref_temp) override;
 
     // Basic geometric integration and mass interface.
     // These functions expose scalar geometric properties used outside the
@@ -639,6 +651,15 @@ struct FRTShell : ShellElement<N> {
         int              offset,
         bool             use_green_lagrange_nl
     ) override;
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl,
+        const Field*     thermal_free_strain
+    ) override;
     void compute_compliance(
         Field& displacement,
         Field& result
@@ -647,6 +668,12 @@ struct FRTShell : ShellElement<N> {
         Field&       section_forces,
         Field&       contribution_count,
         const Field& displacement
+    ) override;
+    bool compute_shell_section_forces(
+        Field&       section_forces,
+        Field&       contribution_count,
+        const Field& displacement,
+        const Field* thermal_free_strain
     ) override;
 
 };

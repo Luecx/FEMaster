@@ -66,6 +66,8 @@ struct TLoad : Neumann {
     // assembly to every structural element.
     void apply(model::ModelData& model_data, model::Field& rhs,
                Precision time, bool ignore_amplitude = false) override;
+    void apply_thermal_free_strain(model::ModelData& model_data,
+                                   model::Field& thermal_free_strain) const;
 
     // Diagnostics
     std::string str() const override;

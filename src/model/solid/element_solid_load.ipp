@@ -30,8 +30,8 @@ namespace fem::model {
  *
  * Load and stiffness quadrature may differ. Each auxiliary load point therefore
  * reuses the state row of the nearest constitutive stiffness point in natural
- * coordinates. The material tangent call reads the old state and writes the
- * separate new state; no additional storage is owned by this routine.
+ * coordinates. The material tangent query is state-neutral and reads only the
+ * committed state; no trial constitutive history is modified by load assembly.
  *
  * @param node_loads Global nodal thermal-load field to increment.
  * @param node_temp Scalar nodal temperature field.
@@ -100,10 +100,8 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
 
         const Index      state_row = this->mp_index(state_ip);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-
-        // Convert free thermal strain to stress using the selected state-row tangent
-        auto mat_matrix = material_tangent_reference(r, s, t, old_state, new_state);
+        // Convert free thermal strain to stress using a state-neutral tangent query.
+        auto mat_matrix = material_tangent_reference(r, s, t, old_state, nullptr);
         auto stress = mat_matrix * strain;
 
         // Map thermal stress to its element nodal-force contribution
@@ -123,6 +121,31 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
         node_loads(n_id, 1) += nodal_impact(local_id * 3 + 1);
         node_loads(n_id, 2) += nodal_impact(local_id * 3 + 2);
         local_id++;
+    }
+}
+
+template<Index N>
+void SolidElement<N>::apply_thermal_free_strain(Field& thermal_free_strain,
+                                                const Field& node_temp,
+                                                Precision ref_temp) {
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
+                   && thermal_free_strain.components == 1,
+                   "SolidElement: thermal free strain requires scalar ELEMENT_NODAL storage");
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+                   "SolidElement: thermal free strain requires a scalar nodal temperature field");
+    logging::error(std::isfinite(ref_temp),
+                   "SolidElement: thermal reference temperature must be finite");
+
+    const auto material = this->material();
+    logging::error(material->has_thermal_expansion(),
+                   "SolidElement: material has no thermal expansion at element ", this->elem_id);
+
+    const Precision alpha = material->get_thermal_expansion();
+    for (Index node = 0; node < N; ++node) {
+        const Precision value = node_temp(static_cast<Index>(node_ids[node]), 0);
+        const Precision temperature = std::isfinite(value) ? value : ref_temp;
+        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
+            alpha * (temperature - ref_temp);
     }
 }
 

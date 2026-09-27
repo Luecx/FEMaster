@@ -192,6 +192,8 @@ struct Model {
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
+    Field build_thermal_free_strain(
+        std::vector<std::string> load_sets = {});
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
         const std::vector<std::string>& supp_sets = {});
@@ -207,8 +209,9 @@ struct Model {
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
-        const Field& ip_stress,
-        const Field* stiffness_scalar = nullptr);
+        const Field& displacement,
+        const Field* stiffness_scalar = nullptr,
+        const Field* thermal_free_strain = nullptr);
     void build_internal_force_nonlinear(
         SystemDofIds& indices,
         NodeData& nodal_forces,
@@ -219,10 +222,13 @@ struct Model {
     // quantities retain their established integration-point, element-nodal or
     // nodal domains. Heat flux is recovered element-nodally by each thermal
     // formulation and projected to a unique global NODE field before output.
-    Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
-    std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
-    std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
-    Field compute_shell_resultants(Field& displacement);
+    Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false,
+                               const Field* thermal_free_strain = nullptr);
+    std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false,
+                                                  const Field* thermal_free_strain = nullptr);
+    std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false,
+                                                    const Field* thermal_free_strain = nullptr);
+    Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);
     Field compute_volumes();

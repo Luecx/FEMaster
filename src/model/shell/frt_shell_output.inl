@@ -29,6 +29,28 @@ namespace fem::model {
 
 using math::normalized;
 
+template<Index N>
+Precision FRTShell<N>::thermal_free_strain_at(const Field* thermal_free_strain,
+                                              Precision r,
+                                              Precision s) const {
+    if (!thermal_free_strain) {
+        return Precision(0);
+    }
+
+    logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                   && thermal_free_strain->components == 1,
+                   "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
+
+    const VecN shape = shape_function(r, s);
+    Precision value = Precision(0);
+    for (Index node = 0; node < num_nodes; ++node) {
+        value += shape(node)
+            * (*thermal_free_strain)(
+                static_cast<Index>(this->elem_nodal_offset) + node, 0);
+    }
+    return value;
+}
+
 /**
  * Evaluates the generalized shell strain at an arbitrary natural point.
  *
@@ -238,6 +260,7 @@ void FRTShell<N>::physical_stress_strain_at(
     Precision             s,
     Precision             zeta,
     bool                  nonlinear,
+    const Field*          thermal_free_strain,
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
@@ -250,6 +273,16 @@ void FRTShell<N>::physical_stress_strain_at(
         s,
         nonlinear
     );
+
+    Vec8 mechanical_generalized_strain = generalized_strain;
+    if (thermal_free_strain) {
+        const ReferencePoint* cached = cached_reference_point(r, s);
+        const ReferencePoint temporary =
+            cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+        const ReferencePoint& point = cached ? *cached : temporary;
+        mechanical_generalized_strain -= thermal_generalized_strain(
+            point, thermal_free_strain_at(thermal_free_strain, r, s));
+    }
 
     const Precision h = this->get_section()->thickness_;
     const Precision z = Precision(0.5) * h * zeta;
@@ -309,7 +342,7 @@ void FRTShell<N>::physical_stress_strain_at(
     const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
         reference_position(r, s),
         reference_basis,
-        ShellGeneralizedStrain(generalized_strain),
+        ShellGeneralizedStrain(mechanical_generalized_strain),
         old_state,
         nullptr,
         this->_model_data->material_state_old->components,
@@ -339,10 +372,24 @@ void FRTShell<N>::compute_stress_strain(Field*           strain,
                                         const RowMatrix& rst,
                                         int              offset,
                                         bool             use_green_lagrange_nl) {
+    compute_stress_strain(
+        strain, stress, displacement, rst, offset, use_green_lagrange_nl, nullptr);
+}
+
+template<Index N>
+void FRTShell<N>::compute_stress_strain(Field*           strain,
+                                        Field*           stress,
+                                        const Field&     displacement,
+                                        const RowMatrix& rst,
+                                        int              offset,
+                                        bool             use_green_lagrange_nl,
+                                        const Field*     thermal_free_strain) {
     logging::error(strain != nullptr || stress != nullptr,
                    "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
                    "FRTShell: stress/strain coordinates require r, s and t columns");
+    logging::error(!use_green_lagrange_nl || thermal_free_strain == nullptr,
+                   "FRTShell: thermal free strain recovery is supported only for linear kinematics");
 
     const CurrentState state = use_green_lagrange_nl
         ? current_state_from_displacement(displacement)
@@ -369,6 +416,7 @@ void FRTShell<N>::compute_stress_strain(Field*           strain,
             rst(point, 1),
             rst(point, 2),
             use_green_lagrange_nl,
+            thermal_free_strain,
             strain_value,
             stress_value
         );
@@ -413,6 +461,15 @@ template<Index N>
 bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
                                                Field&       contribution_count,
                                                const Field& displacement) {
+    return compute_shell_section_forces(
+        resultants, contribution_count, displacement, nullptr);
+}
+
+template<Index N>
+bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
+                                               Field&       contribution_count,
+                                               const Field& displacement,
+                                               const Field* thermal_free_strain) {
     logging::error(resultants.components >= num_strains,
                    "FRTShell: shell section forces require eight components "
                    "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
@@ -436,13 +493,21 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         const Precision r = rst(node, 0);
         const Precision s = rst(node, 1);
 
-        const Vec8 strain_values = generalized_strain_at(
+        Vec8 strain_values = generalized_strain_at(
             data,
             q,
             r,
             s,
             false
         );
+        if (thermal_free_strain) {
+            const ReferencePoint* cached = cached_reference_point(r, s);
+            const ReferencePoint temporary =
+                cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+            const ReferencePoint& point = cached ? *cached : temporary;
+            strain_values -= thermal_generalized_strain(
+                point, thermal_free_strain_at(thermal_free_strain, r, s));
+        }
         const ShellGeneralizedStrain strain(strain_values);
 
         // Select the closest constitutive IP because natural nodal points own no
