@@ -15,6 +15,7 @@ ELEMENT_TYPES: dict[str, ElementTopology] = {
     "C3D5": ElementTopology.PYRAMID5,
     "C3D6": ElementTopology.WEDGE6,
     "C3D8": ElementTopology.HEX8,
+    "C3D8I": ElementTopology.HEX8I,
     "C3D10": ElementTopology.TET10,
     "C3D15": ElementTopology.WEDGE15,
     "C3D20": ElementTopology.HEX20,
