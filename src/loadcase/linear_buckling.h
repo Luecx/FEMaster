@@ -35,14 +35,6 @@
 namespace fem { namespace loadcase {
 
 struct LinearBuckling : public LoadCase {
-    // Buckling mode shapes are derived aliases of the displacement eigenvectors.
-    LinearBuckling() {
-        using io::writer::OutputField;
-        output.set_defaults({
-            OutputField::BUCKLING_MODE,
-            OutputField::BUCKLING_FACTORS
-        });
-    }
     // User inputs
     std::vector<std::string> supps;           ///< Support/coupling identifiers → constraints.
     std::vector<std::string> loads;           ///< Load identifiers → preload (for K_g).
@@ -61,6 +53,15 @@ struct LinearBuckling : public LoadCase {
     // Solver selection
     solver::SolverDevice device = solver::CPU;
     solver::SolverMethod method = solver::DIRECT;
+
+    // Construction and default result requests
+    LinearBuckling() {
+        using io::writer::OutputField;
+        output.set_defaults({
+            OutputField::BUCKLING_MODE,
+            OutputField::BUCKLING_FACTORS
+        });
+    }
 
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARBUCKLING"; }
