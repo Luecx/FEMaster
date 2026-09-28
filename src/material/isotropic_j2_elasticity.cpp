@@ -675,10 +675,9 @@ void IsotropicJ2Elasticity::evaluate(const AxialStrainLinearized& strain,
  * Evaluates finite-strain axial J2 under `S22 = S33 = 0`.
  *
  * Green-Lagrange axial strain and PK2 stress are work-conjugate. The transverse
- * stress solve and optional scalar Schur complement use the symmetric finite-strain
- * PK2/Green-Lagrange algorithmic tangent without changing the stress measure.
- * The three-dimensional tangent remains necessary internally for the transverse
- * Newton solve even when the final scalar tangent is not requested.
+ * stress solve and scalar Schur complement retain the exact finite-strain
+ * PK2/Green-Lagrange tangent. Because the reduced tangent is scalar, this preserves
+ * exact local Newton convergence without introducing global matrix asymmetry.
  *
  * @param strain Axial Green-Lagrange strain.
  * @param old_state Immutable committed J2 state.
