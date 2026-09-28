@@ -447,17 +447,6 @@ bool NewtonSolver::solve(
         // Newton correction
         x += accepted_correction;
 
-        // A vanishing correction combined with a non-converged residual
-        // indicates that the nonlinear iteration can no longer make meaningful
-        // progress
-        if (early_failure_detection &&
-            iteration >= convergence_check_start &&
-            stagnation_tolerance > Precision(0) &&
-            last_correction_norm_ <= stagnation_tolerance) {
-            failed_by_stagnation_ = true;
-
-            return false;
-        }
     }
 
     // The convergence tolerances were not reached within the configured
