@@ -7,6 +7,7 @@
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/s4.h"
+#include "../src/io/writer/output_field.h"
 #include "../src/io/writer/writer_frd.h"
 #include "../src/io/writer/writer_femr.h"
 #include "../src/io/writer/writer_res.h"
@@ -180,6 +181,33 @@ TEST(Reader_Writer, WritesReactionForcesToFrd) {
     EXPECT_NE(text.find(" -5  F1"), std::string::npos);
     EXPECT_NE(text.find("1.23000E+02"), std::string::npos);
     EXPECT_NE(text.find("-4.50000E+00"), std::string::npos);
+
+    std::filesystem::remove(output_path);
+}
+
+TEST(Reader_Writer, WritesPeeqToFrd) {
+    const std::string output_path = "tests/TMP_WRITER_PEEQ.FRD";
+    std::filesystem::remove(output_path);
+
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.compile();
+
+    model::Field peeq("PEEQ", model::FieldDomain::NODE, 1, 1);
+    peeq(0, 0) = Precision(0.125);
+
+    {
+        io::writer::FrdWriter writer(output_path);
+        writer.write_model_data(*model._data);
+        writer.add_loadcase(1, io::writer::WriterStepType::Static);
+        writer.write_field(peeq, "PEEQ", model._data.get(), Precision(1));
+    }
+
+    const std::string text = read_text(output_path);
+    EXPECT_NE(text.find(" -4  PEEQ"), std::string::npos);
+    EXPECT_NE(text.find(" -5  PEEQ"), std::string::npos);
+    EXPECT_NE(text.find("1.25000E-01"), std::string::npos);
+    EXPECT_EQ(io::writer::output_field_from_request("peeq"), io::writer::OutputField::PEEQ);
 
     std::filesystem::remove(output_path);
 }
