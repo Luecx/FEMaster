@@ -41,43 +41,13 @@ class File {
 private:
     Line                               _line;          ///< Last parsed/returned line (normalized).
     FilePtr                            _sub_file;      ///< Active sub-file for `*INCLUDE`.
-    std::filesystem::path              _path;          ///< Path of the current input file.
+
+    // Path of the current input file
+    std::filesystem::path _path;
+
     std::ifstream                      _stream;        ///< Underlying file stream.
     std::shared_ptr<const std::string> _source;        ///< Shared source path for returned lines.
     std::size_t                        _line_number{}; ///< Current one-based source line number.
-
-    static std::string trim(std::string value) {
-        const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
-        value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
-        value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
-        return value;
-    }
-
-    static std::string include_path(const std::string& line) {
-        std::size_t pos = line.find(',');
-        while (pos != std::string::npos) {
-            const std::size_t next = line.find(',', pos + 1);
-            std::string token = trim(line.substr(pos + 1, next == std::string::npos ? next : next - pos - 1));
-            const std::size_t eq = token.find('=');
-            if (eq != std::string::npos) {
-                std::string key = trim(token.substr(0, eq));
-                std::transform(key.begin(), key.end(), key.begin(),
-                               [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
-
-                if (key == "INPUT" || key == "SRC") {
-                    std::string value = trim(token.substr(eq + 1));
-                    if (value.size() >= 2 &&
-                        ((value.front() == '"' && value.back() == '"') ||
-                         (value.front() == '\'' && value.back() == '\'')))
-                        value = value.substr(1, value.size() - 2);
-                    return value;
-                }
-            }
-
-            pos = next;
-        }
-        return {};
-    }
 
     /**
      * @brief Opens a sub-file for nested include processing.
@@ -141,11 +111,42 @@ public:
             _line.set_location(_source, _line_number + 1);
         }
 
-        // Parse INCLUDE from the original line so file-system paths retain their case.
+        // Parse INCLUDE from the original source line so the file-system path keeps its case
         if (_line.type() == KEYWORD_LINE && _line.command() == "INCLUDE") {
-            const std::string path = include_path(str);
+            auto trim = [](std::string value) {
+                const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+                value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+                value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+                return value;
+            };
+
+            std::string path;
+            for (std::size_t pos = str.find(','); pos != std::string::npos;) {
+                const std::size_t next = str.find(',', pos + 1);
+                std::string token = trim(str.substr(pos + 1, next == std::string::npos ? next : next - pos - 1));
+
+                const std::size_t eq = token.find('=');
+                if (eq != std::string::npos) {
+                    std::string key = trim(token.substr(0, eq));
+                    std::transform(key.begin(), key.end(), key.begin(),
+                                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+
+                    if (key == "INPUT" || key == "SRC") {
+                        path = trim(token.substr(eq + 1));
+                        if (path.size() >= 2 &&
+                            ((path.front() == '"' && path.back() == '"') ||
+                             (path.front() == '\'' && path.back() == '\'')))
+                            path = path.substr(1, path.size() - 2);
+                        break;
+                    }
+                }
+
+                pos = next;
+            }
+
             if (path.empty())
                 throw std::runtime_error("INCLUDE requires INPUT=... or SRC=... at " + _line.location().str());
+
             open_sub_file(path);
             return next();
         }
