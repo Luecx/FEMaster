@@ -167,8 +167,9 @@ public:
     Precision maximum_increment = Precision(1.0);
 
     // Adaptive increment controls
-    Precision growth_factor     = Precision(1.5);
-    Precision cutback_factor    = Precision(0.5);
+    Precision growth_factor          = Precision(1.5);
+    Precision cutback_factor         = Precision(0.5);
+    Precision severe_cutback_factor  = Precision(0.25);
 
     Index fast_iterations       = 6;
     Index slow_iterations       = 10;
