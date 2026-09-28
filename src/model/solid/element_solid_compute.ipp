@@ -15,6 +15,7 @@
 #pragma once
 
 #include "../../cos/rectangular_system.h"
+#include "../../material/isotropic_j2_elasticity.h"
 #include "../../section/section_solid.h"
 
 namespace fem::model {
@@ -238,6 +239,67 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
             if (stress) (*stress)(row, component) = nodal_stress(n, component);
         }
     }
+}
+
+/**
+ * Recovers accumulated equivalent plastic strain from committed solid material
+ * history and extrapolates the integration-point values to the element nodes.
+ *
+ * Each solid integration point owns one material-state row. J2 materials expose
+ * PEEQ directly from that committed row, so recovery does not reevaluate the
+ * constitutive law or modify trial history. The same topology-specific
+ * extrapolation matrix used by stress recovery maps the scalar IP values to
+ * element-nodal output.
+ *
+ * A J2 material whose nonlinear state storage has not been initialized yet
+ * contributes zero PEEQ at all element nodes. Non-J2 materials return false and
+ * are excluded from the subsequent model-wide nodal average.
+ *
+ * @param peeq Scalar ELEMENT_NODAL output field.
+ * @param offset First element-nodal row belonging to this element.
+ * @return True when the element uses J2 plasticity and contributes PEEQ.
+ */
+template<Index N>
+bool SolidElement<N>::compute_peeq(Field& peeq, int offset) {
+    logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
+        "SolidElement: PEEQ recovery requires scalar ELEMENT_NODAL output");
+
+    auto mat = get_section()->material_;
+    if (!mat || !mat->has_elasticity()) return false;
+
+    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
+    if (!j2) return false;
+
+    // A J2 material that has not entered a nonlinear analysis is still virgin.
+    const auto& state = this->_model_data->material_state_old;
+    if (!state || state->components < j2->state_size()) {
+        for (Index node = 0; node < N; ++node) {
+            peeq(static_cast<Index>(offset) + node, 0) = Precision(0);
+        }
+        return true;
+    }
+
+    // Read the accepted history at every constitutive integration point.
+    const auto& scheme = this->integration_scheme_stiffness();
+    RowMatrix ip_peeq = RowMatrix::Zero(scheme.count(), 1);
+
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const Index state_row = this->mp_index(ip);
+        const Precision* old_state = &(*state)(state_row, 0);
+        ip_peeq(ip, 0) = j2->equivalent_plastic_strain(old_state);
+    }
+
+    // Extrapolate the scalar integration-point history to the element nodes.
+    const RowMatrix& E = this->extrapolation_matrix();
+    logging::error(E.rows() == N && E.cols() == static_cast<Eigen::Index>(scheme.count()),
+        "SolidElement: invalid PEEQ extrapolation matrix for element ", this->elem_id);
+
+    const RowMatrix nodal_peeq = E * ip_peeq;
+    for (Index node = 0; node < N; ++node) {
+        peeq(static_cast<Index>(offset) + node, 0) = nodal_peeq(node, 0);
+    }
+
+    return true;
 }
 
 /**
