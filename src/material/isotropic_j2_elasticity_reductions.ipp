@@ -34,8 +34,8 @@
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @param converged_tangent Receives the full three-dimensional symmetric
- *                          algorithmic tangent before plane-stress condensation.
+ * @param converged_tangent Receives the full three-dimensional tangent used by
+ *                          the reduction. This is exact for finite strain.
  * @return Converged full three-dimensional stress.
  */
 template<bool Finite>
@@ -139,7 +139,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
             );
 
             stress = response.stress;
-            candidate_tangent = tangent_finite(
+            candidate_tangent = tangent_finite_exact(
                 response,
                 shear,
                 bulk,
