@@ -104,7 +104,7 @@ struct IsotropicJ2Elasticity : Elasticity {
     // components of Cp = Fp^T Fp followed by accumulated equivalent plastic strain.
     Index state_size() const override;
     void  initialize_state(Precision* state) const override;
-    [[nodiscard]] Precision equivalent_plastic_strain(const Precision* state) const;
+    Precision equivalent_plastic_strain(const Precision* state) const;
 
     // Axial reductions enforce zero transverse stress through the corresponding
     // three-dimensional constitutive law. The external scalar tangent is optional,
