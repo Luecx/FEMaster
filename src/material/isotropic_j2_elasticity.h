@@ -135,8 +135,8 @@ struct IsotropicJ2Elasticity : Elasticity {
                   Mat6*                            tangent = nullptr) const override;
 
     // Integrated-shell material response under the local plane-stress condition
-    // S33 = 0. Tangent output is optional; the thickness solve itself still uses
-    // the three-dimensional consistent derivative for its Newton update.
+    // S33 = 0. Tangent output is optional; the thickness solve itself uses the
+    // three-dimensional algorithmic tangent for its Newton update.
     void evaluate(const ShellMaterialStrainLinearized& strain,
                   const Precision*                     old_state,
                   Precision*                           new_state,
