@@ -52,8 +52,9 @@ namespace fem::material {
  *
  *     Fp_(n+1) = exp(A) Fp_n.
  *
- * Its algorithmic tangent is the consistent analytic derivative of the same
- * discrete return map used for the stress update. Persistent state contains only
+ * The exact analytic derivative of the finite return map is formed internally,
+ * but the tangent exposed to the global nonlinear solve is its symmetric part.
+ * The stress and history update remain unchanged. Persistent state contains only
  * `Cp` and accumulated equivalent plastic strain; local return-map unknowns are
  * reconstructed for every candidate from the committed state.
  */
