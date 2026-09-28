@@ -19,8 +19,10 @@
 #include "frt_shell.h"
 
 #include "../../core/logging.h"
+#include "../../material/isotropic_j2_elasticity.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
 #include "../../material/stress/volume_stress_cauchy.h"
+#include "../../math/extrapolate.h"
 #include "../../math/vec_util.h"
 
 #include <cmath>
@@ -439,6 +441,109 @@ void FRTShell<N>::compute_stress_strain(Field*           strain,
             }
         }
     }
+}
+
+/**
+ * Recovers accumulated equivalent plastic strain from committed shell material
+ * history.
+ *
+ * Every in-plane shell integration point owns a contiguous block of
+ * through-thickness material states. The largest J2 PEEQ value in that block is
+ * retained as the scalar shell value for the in-plane point. Those maxima are
+ * then extrapolated in natural midsurface coordinates to the shell nodes.
+ *
+ * Linear triangular recovery is used for S3 and S6 because their common cubic
+ * triangle rule does not provide enough independent samples for a complete
+ * quadratic field. S4 uses bilinear recovery and S8 uses the quadratic
+ * serendipity basis supported by its 3 x 3 integration rule.
+ *
+ * A J2 material whose nonlinear state storage has not been initialized yet
+ * contributes zero PEEQ. Non-J2 shell sections do not participate in the
+ * model-wide PEEQ average.
+ *
+ * @param peeq Scalar ELEMENT_NODAL output field.
+ * @param offset First element-nodal row belonging to this shell.
+ * @return True when the shell material uses J2 plasticity.
+ */
+template<Index N>
+bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
+    logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
+        "FRTShell: PEEQ recovery requires scalar ELEMENT_NODAL output");
+
+    auto mat = this->get_material();
+    if (!mat || !mat->has_elasticity()) return false;
+
+    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
+    if (!j2) return false;
+
+    const RowMatrix ip_rst    = this->stress_strain_ip_rst();
+    const RowMatrix nodal_rst = this->stress_strain_nodal_rst();
+    RowMatrix ip_peeq         = RowMatrix::Zero(ip_rst.rows(), 1);
+
+    // A virgin J2 shell has zero accumulated plastic strain before nonlinear
+    // state storage has been expanded to the constitutive state width.
+    const auto& state = this->_model_data->material_state_old;
+    if (state && state->components >= j2->state_size()) {
+        const Index material_points = this->num_mp_per_ip();
+
+        // Reduce the through-thickness history to its maximum at each in-plane IP.
+        for (Index ip = 0; ip < static_cast<Index>(ip_rst.rows()); ++ip) {
+            Precision maximum = Precision(0);
+
+            for (Index mp = 0; mp < material_points; ++mp) {
+                const Index state_row = this->mp_index(ip, mp);
+                const Precision* old_state = &(*state)(state_row, 0);
+                maximum = std::max(maximum, j2->equivalent_plastic_strain(old_state));
+            }
+
+            ip_peeq(ip, 0) = maximum;
+        }
+    }
+
+    // Reconstruct the reduced scalar field at the natural shell nodes.
+    using math::ExtrapolationBasis;
+    RowMatrix E;
+
+    if constexpr (N == 3 || N == 6) {
+        E = math::extrapolate(
+            ip_rst,
+            nodal_rst,
+            {ExtrapolationBasis::F1, ExtrapolationBasis::FR, ExtrapolationBasis::FS}
+        );
+    } else if constexpr (N == 4) {
+        E = math::extrapolate(
+            ip_rst,
+            nodal_rst,
+            {
+                ExtrapolationBasis::F1,
+                ExtrapolationBasis::FR,
+                ExtrapolationBasis::FS,
+                ExtrapolationBasis::FRS
+            }
+        );
+    } else {
+        E = math::extrapolate(
+            ip_rst,
+            nodal_rst,
+            {
+                ExtrapolationBasis::F1,
+                ExtrapolationBasis::FR,
+                ExtrapolationBasis::FS,
+                ExtrapolationBasis::FRR,
+                ExtrapolationBasis::FSS,
+                ExtrapolationBasis::FRS,
+                ExtrapolationBasis::FRRS,
+                ExtrapolationBasis::FSSR
+            }
+        );
+    }
+
+    const RowMatrix nodal_peeq = E * ip_peeq;
+    for (Index node = 0; node < N; ++node) {
+        peeq(static_cast<Index>(offset) + node, 0) = nodal_peeq(node, 0);
+    }
+
+    return true;
 }
 
 /**
