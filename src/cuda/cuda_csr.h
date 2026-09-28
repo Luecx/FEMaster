@@ -27,9 +27,13 @@ struct CudaCSR{
         , m_row_ptr(new CudaArray<int          >(matrix.rows() + 1))
         , m_nnz(matrix.nonZeros())
         , m_cols(matrix.cols()) {
-        m_val_ptr->upload(matrix.valuePtr());
-        m_col_ind->upload(matrix.innerIndexPtr());
-        m_row_ptr->upload(matrix.outerIndexPtr());
+        // CSC storage of A^T has the same layout as CSR storage of A
+        SparseMatrix matrix_t = matrix.transpose();
+        matrix_t.makeCompressed();
+
+        m_val_ptr->upload(matrix_t.valuePtr());
+        m_col_ind->upload(matrix_t.innerIndexPtr());
+        m_row_ptr->upload(matrix_t.outerIndexPtr());
     }
 
     CudaCSR(SparseMatrix &matrix, CudaCSR &similar)
@@ -40,16 +44,23 @@ struct CudaCSR{
             , m_cols(similar.m_cols) {
         runtime_check(matrix.nonZeros() == m_nnz, "cannot construct matrix with same column indices and row pointers");
         runtime_check(matrix.cols() == m_cols, "cannot construct matrix with same column indices and row pointers");
-        m_val_ptr->upload(matrix.valuePtr());
+
+        SparseMatrix matrix_t = matrix.transpose();
+        matrix_t.makeCompressed();
+        m_val_ptr->upload(matrix_t.valuePtr());
     }
 
     void download(SparseMatrix &matrix) {
         runtime_check(matrix.nonZeros() == m_nnz, "cannot construct matrix with same column indices and row pointers");
         runtime_check(matrix.cols() == m_cols, "cannot construct matrix with same column indices and row pointers");
 
-        m_val_ptr->download(matrix.valuePtr());
-        m_col_ind->download(matrix.innerIndexPtr());
-        m_row_ptr->download(matrix.outerIndexPtr());
+        SparseMatrix matrix_t = matrix.transpose();
+        matrix_t.makeCompressed();
+
+        m_val_ptr->download(matrix_t.valuePtr());
+        m_col_ind->download(matrix_t.innerIndexPtr());
+        m_row_ptr->download(matrix_t.outerIndexPtr());
+        matrix = matrix_t.transpose();
     }
 
     CudaArray<CudaPrecision>& val_ptr() {
