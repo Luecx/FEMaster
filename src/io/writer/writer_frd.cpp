@@ -453,6 +453,12 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
+            {"PEEQ"}, "PEEQ",
+            {
+                FRDComponent::scalar("PEEQ", 1)
+            }
+        },
+        {
             {"STRAIN", "TOTALSTRAIN", "TOSTRAIN"}, "TOSTRAIN",
             {
                 FRDComponent::tensor("EXX", 1, 1),
