@@ -346,7 +346,7 @@ void LoadControl::configure_newton_() {
     newton_.correction_tolerance    = Precision(1e-2);
     newton_.stagnation_tolerance    = Precision(1e-3) * tolerance;
     newton_.check_finite            = true;
-    newton_.early_failure_detection = false;
+    newton_.early_failure_detection = true;
 
     newton_.begin_line_search_trial    = begin_line_search_trial;
     newton_.commit_line_search_trial   = commit_line_search_trial;
