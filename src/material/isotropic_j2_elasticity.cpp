@@ -218,6 +218,10 @@ Index IsotropicJ2Elasticity::state_size() const {
     return state_count;
 }
 
+Precision IsotropicJ2Elasticity::equivalent_plastic_strain(const Precision* state) const {
+    return state[eqp_index];
+}
+
 /**
  * Initializes the undeformed, virgin material history.
  *
