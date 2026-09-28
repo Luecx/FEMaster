@@ -477,7 +477,11 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain
                        > Precision(100) * std::numeric_limits<Precision>::epsilon(),
             "J2: singular thickness-normal tangent during shell condensation");
 
-        *tangent = Caa - (Caz * Cza) / tangent_3d(eliminated, eliminated);
+        const Mat5 exact_tangent =
+            Caa - (Caz * Cza) / tangent_3d(eliminated, eliminated);
+
+        *tangent =
+            Precision(0.5) * (exact_tangent + exact_tangent.transpose());
     }
 
     // Publish only the state belonging to the converged plane-stress candidate.
@@ -498,8 +502,8 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain
  * The reduction has the same structure as the infinitesimal shell case, but the
  * three-dimensional constitutive candidates use Green-Lagrange strain, PK2
  * stress and the multiplicative finite-strain return map. The local thickness
- * solve uses the symmetric three-dimensional algorithmic tangent; the final
- * five-component Schur complement is produced only when requested.
+ * solve retains the exact three-dimensional tangent. The exact plane-stress Schur
+ * complement is formed first and only then symmetrized for global shell assembly.
  *
  * @param strain Green-Lagrange shell material strain.
  * @param old_state Immutable committed J2 state.
