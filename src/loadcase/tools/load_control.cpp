@@ -106,6 +106,9 @@ bool LoadControl::solve(
         "LoadControl requires growth_factor > 0");
     logging::error(cutback_factor > Precision(0) && cutback_factor < Precision(1),
         "LoadControl requires cutback_factor between 0 and 1");
+    logging::error(severe_cutback_factor > Precision(0) &&
+                   severe_cutback_factor <= cutback_factor,
+        "LoadControl requires severe_cutback_factor between 0 and cutback_factor");
     logging::error(fast_iterations > 0,
         "LoadControl requires fast_iterations > 0");
     logging::error(slow_iterations >= fast_iterations,
@@ -262,7 +265,16 @@ bool LoadControl::solve(
                 return false;
             }
 
-            increment_ *= cutback_factor;
+            const std::string failure(attempt_failure_reason);
+            const bool severe_failure =
+                failure == "DIVERGENCE" ||
+                failure == "LINE_SEARCH_FAILED" ||
+                failure == "LINE_SEARCH_STAGNATION" ||
+                failure == "ANALYSIS_ERROR";
+
+            increment_ *= severe_failure
+                ? severe_cutback_factor
+                : cutback_factor;
             ++cutback_count;
 
             logging::info(
@@ -344,7 +356,6 @@ void LoadControl::configure_newton_() {
     newton_.maximum_iterations      = maximum_iterations;
     newton_.residual_tolerance      = tolerance;
     newton_.correction_tolerance    = Precision(1e-2);
-    newton_.stagnation_tolerance    = Precision(1e-3) * tolerance;
     newton_.check_finite            = true;
     newton_.early_failure_detection = true;
 
