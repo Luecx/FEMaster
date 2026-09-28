@@ -139,7 +139,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
             );
 
             stress = response.stress;
-            candidate_tangent = tangent_finite_exact(
+            candidate_tangent = tangent_finite(
                 response,
                 shear,
                 bulk,
@@ -349,7 +349,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
             );
 
             stress = response.stress;
-            candidate_tangent = tangent_finite(
+            candidate_tangent = tangent_finite_exact(
                 response,
                 shear,
                 bulk,
