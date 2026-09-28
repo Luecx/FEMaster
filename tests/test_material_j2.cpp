@@ -166,7 +166,7 @@ TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {
     EXPECT_NEAR(trial[6], Precision(0), Precision(1e-14));
 }
 
-TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
+TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
     material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
 
     // A single linear hardening segment avoids derivative ambiguity at interior
@@ -194,7 +194,7 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
     );
     ASSERT_GT(committed[6], Precision(0));
 
-    // Evaluate the analytic tangent at a nearby plastic state from exactly the
+    // Evaluate the solver tangent at a nearby plastic state from exactly the
     // same committed history used by every independent perturbation below.
     Vec6 strain_values = preload_values;
     strain_values(0) += Precision(0.003);
@@ -211,6 +211,8 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
         &tangent
     );
 
+    // Finite differences recover the exact derivative of the unchanged stress
+    // update. The solver tangent is deliberately its symmetric part.
     Mat6 tangent_fd = Mat6::Zero();
     const Precision h = Precision(1e-7);
 
@@ -241,13 +243,16 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
             (stress_plus.voigt() - stress_minus.voigt()) / (Precision(2) * h);
     }
 
+    const Mat6 tangent_fd_symmetric =
+        Precision(0.5) * (tangent_fd + tangent_fd.transpose());
     const Precision scale = std::max(Precision(1), tangent_fd.norm());
-    EXPECT_LT((tangent - tangent_fd).norm() / scale, Precision(2e-4));
 
-    // A true/Cauchy hardening table is converted to the internal
-    // Mandel/Kirchhoff yield radius with J. The resulting exact PK2/E tangent can
-    // be genuinely nonsymmetric, so finite-difference consistency rather than
-    // major symmetry is the constitutive contract.
+    EXPECT_LT((tangent - tangent.transpose()).norm() / scale, Precision(1e-12));
+    EXPECT_LT((tangent - tangent_fd_symmetric).norm() / scale, Precision(2e-4));
+
+    // PLASTIC remains a true/Cauchy hardening table and the stress/state update
+    // remains unchanged. Only the Newton tangent is symmetrized so the global
+    // nonlinear solve can use a symmetric-indefinite sparse factorization.
 }
 
 TEST(Material_J2, PlasticCommandReplacesIsotropicElasticity) {
