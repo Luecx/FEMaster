@@ -5,6 +5,7 @@
 
 #include "../src/bc/neumann/load_t.h"
 #include "../src/material/isotropic_elasticity.h"
+#include "../src/material/isotropic_j2_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/frt_shell_s3.h"
 #include "../src/model/shell/frt_shell_s4.h"
@@ -187,6 +188,69 @@ void check_uniform_thermal_load(
 }
 
 } // namespace
+
+TEST(ShellPlasticity, PeeqUsesThicknessMaximumBeforeExtrapolation) {
+    using namespace fem;
+
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_element<model::FRTShellS4>(0, 0, 1, 2, 3);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::IsotropicJ2Elasticity>(210000.0, 0.3);
+    model.add_material(material);
+
+    const auto region = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(std::make_shared<IntegratedShellSection>(
+        material, region, Precision(0.2), nullptr
+    ));
+    model.compile();
+
+    auto* shell = model._data->elements[0]->as<model::FRTShellS4>();
+    ASSERT_NE(shell, nullptr);
+
+    // Expand committed state to the J2 layout and initialize every shell material point
+    const Index material_points = model._data->field_rows(model::FieldDomain::ELEMENT_MP);
+    model._data->material_state_old = std::make_shared<model::Field>(
+        "MATERIAL_STATE_OLD", model::FieldDomain::ELEMENT_MP, material_points, 7
+    );
+    model.initialize_material_state(*model._data->material_state_old);
+
+    const RowMatrix ip_rst = shell->stress_strain_ip_rst();
+
+    // Prescribe a bilinear in-plane PEEQ field. At each in-plane IP exactly one
+    // of the five thickness points carries the target maximum; all others are lower.
+    for (Index ip = 0; ip < static_cast<Index>(ip_rst.rows()); ++ip) {
+        const Precision r = ip_rst(ip, 0);
+        const Precision s = ip_rst(ip, 1);
+        const Precision expected = Precision(0.2) + Precision(0.03) * r
+                                 + Precision(0.04) * s + Precision(0.02) * r * s;
+
+        for (Index mp = 0; mp < shell->num_mp_per_ip(); ++mp) {
+            (*model._data->material_state_old)(shell->mp_index(ip, mp), 6) =
+                expected - Precision(0.01) * static_cast<Precision>(mp + 1);
+        }
+
+        const Index maximum_mp = (ip + 2) % shell->num_mp_per_ip();
+        (*model._data->material_state_old)(shell->mp_index(ip, maximum_mp), 6) = expected;
+    }
+
+    // The shell first reduces through thickness and then extrapolates the IP
+    // maxima to nodes. A bilinear source field must therefore be reproduced exactly.
+    const model::Field peeq = model.compute_peeq_nodal();
+    const RowMatrix nodal_rst = shell->stress_strain_nodal_rst();
+
+    for (Index node = 0; node < static_cast<Index>(nodal_rst.rows()); ++node) {
+        const Precision r = nodal_rst(node, 0);
+        const Precision s = nodal_rst(node, 1);
+        const Precision expected = Precision(0.2) + Precision(0.03) * r
+                                 + Precision(0.04) * s + Precision(0.02) * r * s;
+        EXPECT_NEAR(peeq(node, 0), expected, Precision(1e-12));
+    }
+}
 
 TEST(ShellThermal, S3Integrated) {
     check_uniform_thermal_load<fem::model::FRTShellS3, 3>(
