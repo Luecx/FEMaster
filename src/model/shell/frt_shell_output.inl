@@ -474,7 +474,7 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
     auto mat = this->get_material();
     if (!mat || !mat->has_elasticity()) return false;
 
-    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
+    const auto* j2 = mat->elasticity()->as<material::IsotropicJ2Elasticity>();
     if (!j2) return false;
 
     const RowMatrix ip_rst    = this->stress_strain_ip_rst();
@@ -501,18 +501,21 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
         }
     }
 
-    // Reconstruct the reduced scalar field at the natural shell nodes.
+    // Reconstruct the reduced scalar field at the natural shell nodes. The
+    // operator depends only on topology and quadrature, so build it once per
+    // concrete FRT shell topology instead of refactorizing it for every element.
     using math::ExtrapolationBasis;
-    RowMatrix E;
+    RowMatrix nodal_peeq;
 
     if constexpr (N == 3 || N == 6) {
-        E = math::extrapolate(
+        static const RowMatrix E = math::extrapolate(
             ip_rst,
             nodal_rst,
             {ExtrapolationBasis::F1, ExtrapolationBasis::FR, ExtrapolationBasis::FS}
         );
+        nodal_peeq = E * ip_peeq;
     } else if constexpr (N == 4) {
-        E = math::extrapolate(
+        static const RowMatrix E = math::extrapolate(
             ip_rst,
             nodal_rst,
             {
@@ -522,8 +525,9 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
                 ExtrapolationBasis::FRS
             }
         );
+        nodal_peeq = E * ip_peeq;
     } else {
-        E = math::extrapolate(
+        static const RowMatrix E = math::extrapolate(
             ip_rst,
             nodal_rst,
             {
@@ -537,9 +541,8 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
                 ExtrapolationBasis::FSSR
             }
         );
+        nodal_peeq = E * ip_peeq;
     }
-
-    const RowMatrix nodal_peeq = E * ip_peeq;
     for (Index node = 0; node < N; ++node) {
         peeq(static_cast<Index>(offset) + node, 0) = nodal_peeq(node, 0);
     }
