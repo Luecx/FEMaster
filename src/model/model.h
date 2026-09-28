@@ -226,6 +226,7 @@ struct Model {
                                const Field* thermal_free_strain = nullptr);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false,
                                                   const Field* thermal_free_strain = nullptr);
+    Field compute_peeq_nodal();
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false,
                                                     const Field* thermal_free_strain = nullptr);
     Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
