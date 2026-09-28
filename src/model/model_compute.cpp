@@ -174,6 +174,58 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
 }
 
 /**
+ * Recovers accumulated equivalent plastic strain as a global nodal field.
+ *
+ * Supporting structural elements read PEEQ directly from accepted constitutive
+ * history and write one scalar value per element node. Solid and shell
+ * formulations perform their integration-point extrapolation before this
+ * model-level operation. The compiled element-nodal offsets keep those writes
+ * disjoint, after which the ordinary element-nodal projection averages
+ * contributions at shared global nodes.
+ *
+ * Elements without a PEEQ-capable material or formulation are assigned zero
+ * weight and therefore do not dilute neighboring plasticity results.
+ *
+ * @return Scalar global NODE field named PEEQ.
+ */
+Field Model::compute_peeq_nodal() {
+    // Validate and access the compiled element-nodal enumeration
+    logging::error(_data->element_nodal_offsets != nullptr,
+        "element nodal offset field has not been initialized");
+
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
+    const Index element_count       = static_cast<Index>(_data->elements.size());
+
+    // Allocate disjoint element-nodal PEEQ storage and participation weights
+    Field element_peeq   {"ELEMENT_NODAL_PEEQ", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
+    Field element_weights{"PEEQ_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    element_peeq.set_zero();
+    element_weights.set_zero();
+
+    // Let each structural formulation recover accepted material history locally
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) return;
+
+            if (auto sel = el->as<StructuralElement>()) {
+                const Index offset = static_cast<Index>(
+                    nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+
+                if (sel->compute_peeq(element_peeq, static_cast<int>(offset))) {
+                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
+                }
+            }
+        }, Index(8));
+
+    // Average participating element values onto global nodes
+    Field peeq = _data->element_nodal_to_nodal(element_peeq, element_weights, "PEEQ");
+    peeq.check_finite("Nodal PEEQ");
+    return peeq;
+}
+
+/**
  * Recovers averaged stress on the top and bottom shell faces.
  *
  * Shell recovery coordinates use the formulation-provided natural nodal points
