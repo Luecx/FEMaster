@@ -161,7 +161,6 @@ struct StructuralElement : ElementInterface {
         (void) offset;
         return false;
     }
-
     virtual void compute_compliance(Field& displacement, Field& result) {
         (void) displacement;
         (void) result;
