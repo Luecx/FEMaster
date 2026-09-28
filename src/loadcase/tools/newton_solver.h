@@ -18,9 +18,9 @@
  * temporary evaluations performed during the line search.
  *
  * The solver additionally records the diagnostics required for nonlinear path
- * control and can terminate early when it detects divergence, repeated residual
- * growth, residual stagnation or insufficient reduction from the initial
- * residual.
+ * control and can terminate early when it detects clear divergence, persistently
+ * slow predicted convergence or repeated strongly damped line-search steps with
+ * negligible residual progress.
  *
  * Increment management, load-factor adaptation, active-set restarts and result
  * writing remain responsibilities of the calling solution strategy.
@@ -156,23 +156,29 @@ public:
     Index     maximum_iterations   = 30;
     Precision residual_tolerance   = Precision(1e-8);
     Precision correction_tolerance = Precision(1e-3);
-    Precision stagnation_tolerance = Precision(0);
 
     // Numerical validity and early-failure detection
-    bool  check_finite            = true;
-    bool  early_failure_detection = true;
-    Index convergence_check_start = 4;
+    bool  check_finite                  = true;
+    bool  early_failure_detection       = true;
+    Index convergence_check_start       = 4;
+    Index slow_convergence_check_start  = 8;
 
-    // Early-failure thresholds. The minimum residual reduction is expressed as
-    // the largest admissible ratio between the current and initial residual.
+    // Divergence is detected either by a catastrophic increase relative to the
+    // first residual or by a sustained move away from the best residual reached.
     Precision divergence_factor          = Precision(1e3);
-    Precision minimum_residual_reduction = Precision(0.8);
-    Precision stagnation_ratio           = Precision(1e-3);
+    Precision residual_growth_tolerance  = Precision(1e-2);
 
-    // Number of consecutive residual increases or stagnating residual changes
-    // accepted before early termination
-    Index maximum_residual_increases = 2;
-    Index maximum_stagnation_steps   = 2;
+    // CalculiX-inspired convergence forecast. Starting after a few Newton
+    // iterations, the observed residual decay rate predicts the total iteration
+    // count required to reach residual_tolerance. Several consecutive forecasts
+    // beyond maximum_iterations are required before the increment is rejected.
+    Index maximum_slow_convergence_checks = 3;
+
+    // Repeated severe line-search damping is treated as failure only when those
+    // accepted tiny steps do not reduce the residual meaningfully as a group.
+    Precision strong_damping_step_length     = Precision(1.0 / 64.0);
+    Precision strong_damping_residual_ratio  = Precision(0.9);
+    Index     maximum_strong_damping_steps   = 3;
 
     // Backtracking line-search settings
     bool      line_search_enabled             = true;
@@ -213,31 +219,34 @@ private:
     // Iteration state of the most recent solve
     Index iterations_ = 0;
 
-    Precision initial_residual_norm_  = Precision(0);
-    Precision last_residual_norm_     = Precision(0);
-    Precision last_correction_norm_   = Precision(0);
-    Precision previous_residual_norm_ = Precision(0);
-    Precision last_step_length_       = Precision(1);
+    Precision initial_residual_norm_          = Precision(0);
+    Precision best_residual_norm_             = Precision(0);
+    Precision last_residual_norm_             = Precision(0);
+    Precision last_correction_norm_           = Precision(0);
+    Precision previous_residual_norm_         = Precision(0);
+    Precision last_step_length_               = Precision(1);
+    Precision projected_iteration_count_      = Precision(0);
+    Precision strong_damping_reference_norm_  = Precision(0);
 
-    // Consecutive failure-detection counters
-    Index residual_increase_count_ = 0;
-    Index stagnation_count_        = 0;
+    // Persistent early-failure evidence. One isolated slow Newton step or one
+    // strongly damped line-search correction is not enough to reject an increment.
+    Index slow_convergence_count_ = 0;
+    Index strong_damping_count_   = 0;
 
     // Failure classification flags
-    bool failed_by_divergence_         = false;
-    bool failed_by_residual_increase_  = false;
-    bool failed_by_stagnation_         = false;
-    bool failed_by_poor_reduction_     = false;
-    bool failed_by_line_search_        = false;
-    bool failed_by_maximum_iterations_ = false;
+    bool failed_by_divergence_          = false;
+    bool failed_by_slow_convergence_    = false;
+    bool failed_by_strong_damping_      = false;
+    bool failed_by_line_search_         = false;
+    bool failed_by_maximum_iterations_  = false;
 
     // Reset all diagnostics and failure state before a new solve
     void reset_state_();
 
-    // Update residual history and failure-detection counters after each residual
+    // Update residual history and persistent failure evidence after each residual
     // evaluation
     void update_residual_history_();
-    void update_failure_counters_();
+    void update_failure_state_();
 
     // Evaluate the configured early-failure criteria
     bool should_stop_early_();
