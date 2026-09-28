@@ -453,9 +453,9 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
-            {"PEEQ"}, "PEEQ",
+            {"PEEQ"}, "PE",
             {
-                FRDComponent::scalar("PEEQ", 1)
+                FRDComponent::scalar("PE", 1)
             }
         },
         {
