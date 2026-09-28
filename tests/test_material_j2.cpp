@@ -3,9 +3,11 @@
 #include "../src/io/dsl/registry.h"
 #include "../src/io/reader/commands/register_functions.h"
 #include "../src/material/isotropic_j2_elasticity.h"
+#include "../src/material/strain/axial_strain_green_lagrange.h"
 #include "../src/material/strain/volume_strain_green_lagrange.h"
 #include "../src/material/strain/volume_strain_linearized.h"
 #include "../src/material/stress/volume_stress_cauchy.h"
+#include "../src/material/stress/axial_stress_pk2.h"
 #include "../src/material/stress/volume_stress_pk2.h"
 #include "../src/model/model.h"
 
@@ -253,6 +255,63 @@ TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
     // PLASTIC remains a true/Cauchy hardening table and the stress/state update
     // remains unchanged. Only the Newton tangent is symmetrized so the global
     // nonlinear solve can use a symmetric-indefinite sparse factorization.
+}
+
+TEST(Material_J2, FiniteAxialTangentRemainsConsistentWithReducedStress) {
+    material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
+    j2.add_yield_point(Precision(250), Precision(0));
+    j2.add_yield_point(Precision(700), Precision(0.30));
+
+    std::vector<Precision> initial(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> committed(initial.size());
+    j2.initialize_state(initial.data());
+
+    AxialStressPK2 preload_stress;
+    Precision preload_tangent = Precision(0);
+    j2.evaluate(
+        AxialStrainGreenLagrange(Precision(0.012)),
+        initial.data(),
+        committed.data(),
+        preload_stress,
+        &preload_tangent
+    );
+    ASSERT_GT(committed[6], Precision(0));
+
+    const Precision strain_value = Precision(0.015);
+    AxialStressPK2 stress;
+    Precision tangent = Precision(0);
+    j2.evaluate(
+        AxialStrainGreenLagrange(strain_value),
+        committed.data(),
+        nullptr,
+        stress,
+        &tangent
+    );
+
+    const Precision h = Precision(1e-7);
+    AxialStressPK2 stress_plus;
+    AxialStressPK2 stress_minus;
+
+    j2.evaluate(
+        AxialStrainGreenLagrange(strain_value + h),
+        committed.data(),
+        nullptr,
+        stress_plus,
+        nullptr
+    );
+    j2.evaluate(
+        AxialStrainGreenLagrange(strain_value - h),
+        committed.data(),
+        nullptr,
+        stress_minus,
+        nullptr
+    );
+
+    const Precision tangent_fd =
+        (stress_plus.value() - stress_minus.value()) / (Precision(2) * h);
+    const Precision scale = std::max(Precision(1), std::abs(tangent_fd));
+
+    EXPECT_LT(std::abs(tangent - tangent_fd) / scale, Precision(2e-4));
 }
 
 TEST(Material_J2, PlasticCommandReplacesIsotropicElasticity) {
