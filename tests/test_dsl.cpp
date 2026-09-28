@@ -82,6 +82,44 @@ TEST(DSL_File, Include) {
     EXPECT_EQ(l3.values().size(), 3u);
 }
 
+TEST(DSL_File, IncludeInputPreservesCaseAndResolvesRelativePaths) {
+    const std::filesystem::path root = std::filesystem::path("tests") / "TMP_INCLUDE_TREE";
+    const std::filesystem::path sub = root / "sub";
+    const std::filesystem::path mainf = root / "main.inp";
+    const std::filesystem::path first = sub / "MiXeD_Mesh.inc";
+    const std::filesystem::path second = sub / "Second.inc";
+
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(sub);
+    {
+        std::ofstream os(second);
+        os << "*FOO,BAR\n";
+    }
+    {
+        std::ofstream os(first);
+        os << "1,2,3\n";
+        os << "*INCLUDE,SRC=Second.inc\n";
+    }
+    {
+        std::ofstream os(mainf);
+        os << "*INCLUDE, INPUT=sub/MiXeD_Mesh.inc\n";
+        os << "4,5,6\n";
+    }
+
+    io::dsl::File f(mainf.string());
+    auto& l1 = f.next_line();
+    ASSERT_EQ(l1.type(), io::dsl::DATA_LINE);
+    EXPECT_EQ(l1.values().size(), 3u);
+    auto& l2 = f.next_line();
+    ASSERT_EQ(l2.type(), io::dsl::KEYWORD_LINE);
+    EXPECT_EQ(l2.command(), std::string("FOO"));
+    auto& l3 = f.next_line();
+    ASSERT_EQ(l3.type(), io::dsl::DATA_LINE);
+    EXPECT_EQ(l3.values().size(), 3u);
+
+    std::filesystem::remove_all(root);
+}
+
 // 9–10) Keys normalization and boolean semantics; 11–12) Registry basics/printing
 TEST(DSL_Keys_Registry, KeysAndRegistry) {
     io::dsl::Line l; l = std::string("*CMD, A=1, B=YES, C=off, FLAG");
