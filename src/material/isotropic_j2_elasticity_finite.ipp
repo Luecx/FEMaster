@@ -48,9 +48,9 @@ struct FinitePoint {
  * @brief Result of one complete finite-strain constitutive update.
  *
  * The converged stress is stored through the generic VolumeStress representation.
- * C, Fp_old, alpha_old and the converged local unknown x are retained only because
- * the analytically consistent tangent linearizes exactly the same converged return
- * map afterwards.
+ * C, Fp_old, alpha_old and the converged local unknown x are retained because
+ * the exact derivative of the converged return map is formed before its symmetric
+ * part is exposed as the global algorithmic tangent.
  */
 struct FiniteResponse {
     VolumeStress stress;
@@ -71,7 +71,7 @@ struct DirectionalResponse {
 };
 
 /**
- * @brief Local Jacobian blocks required by Newton and the consistent tangent.
+ * @brief Local Jacobian blocks required by Newton and tangent linearization.
  *
  * residual_x = dR/dx and stress_x = dS/dx are both exact analytical derivatives
  * of the discrete finite-strain return map.
