@@ -31,8 +31,6 @@
 #include "../core/timer.h"
 #include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../material/isotropic_j2_elasticity.h"
-#include "../material/material.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
 #include "../io/writer/write_mtx.h"
@@ -111,17 +109,6 @@ Precision calculate_relative_force_residual(
     return residual_force == Precision(0)
         ? Precision(0)
         : std::numeric_limits<Precision>::infinity();
-}
-
-bool has_nonsymmetric_finite_j2_tangent(const model::ModelData& data) {
-    for (const auto& [name, material_ptr] : data.materials) {
-        (void) name;
-        if (material_ptr && material_ptr->has_elasticity()
-            && material_ptr->elasticity()->as<material::IsotropicJ2Elasticity>() != nullptr) {
-            return true;
-        }
-    }
-    return false;
 }
 
 } // namespace
@@ -292,19 +279,16 @@ void NonlinearStatic::run() {
 
     Precision load_factor = Precision(0);
 
-    // Use a symmetric-indefinite capable direct solver only when the reduced
-    // Newton system is guaranteed symmetric. Geometrically nonlinear tangents
-    // are not assumed positive definite: compression and limit/buckling points
-    // can make an otherwise valid symmetric tangent indefinite. Arc length has
-    // an unsymmetric augmented system, contact may be unsymmetric, and finite J2
-    // with a true/Cauchy hardening table contains the deformation-dependent
-    // J sigma_y conversion whose exact consistent tangent is generally nonsymmetric.
-    const bool has_nonsymmetric_j2 =
-        has_nonsymmetric_finite_j2_tangent(*model->_data);
+    // Load-controlled structural tangents use the symmetric-indefinite direct
+    // path whenever contact does not require a general matrix. Finite-strain J2
+    // exposes the symmetric part of its exact constitutive derivative, matching
+    // the symmetric-solver strategy used by CalculiX. The tangent can still be
+    // indefinite near compression, limit points or buckling, so SPD is not assumed.
+    // Arc length uses a nonsymmetric augmented system and contact may also be
+    // nonsymmetric, so those paths keep the general solver.
     const auto matrix_type =
         control == NonlinearControl::LoadControl
         && model->_data->contacts.empty()
-        && !has_nonsymmetric_j2
             ? solver::DirectSolverMatrixType::Symmetric
             : solver::DirectSolverMatrixType::General;
 
