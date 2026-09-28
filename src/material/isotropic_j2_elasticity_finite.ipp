@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// Finite-strain return map and consistent tangent
+// Finite-strain return map and symmetric tangent approximation
 // -----------------------------------------------------------------------------
 
 /**
@@ -857,38 +857,36 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
 }
 
 /**
- * @brief Builds the consistent analytical finite-strain algorithmic tangent.
+ * @brief Builds the symmetric finite-strain algorithmic tangent used globally.
  *
  * The converged local return map is defined implicitly by
  *
  *     R(x, E) = 0.
  *
- * Linearization gives
+ * Linearization gives the exact derivative
  *
- *     R_x dx + R_E dE = 0
- *
- * and therefore
- *
- *     dx/dE = -R_x^-1 R_E.
- *
- * The PK2 stress depends on both E and the converged local unknown x,
- *
- *     dS = S_E dE + S_x dx.
- *
- * Substitution yields the exact consistent tangent of the discrete return map,
- *
- *     C_alg = dS/dE
- *           = S_E - S_x R_x^-1 R_E.
+ *     C_exact = dS/dE
+ *             = S_E - S_x R_x^-1 R_E.
  *
  * S_E, S_x, R_E and R_x are all obtained from directional_response(), which
  * analytically differentiates the complete tensor chain including the exact
- * Fréchet derivative of exp(A). No finite differences are used in this function.
+ * Fréchet derivative of exp(A). No constitutive finite differences are used.
+ *
+ * Because PLASTIC tabulates true/Cauchy yield stress while the finite return map
+ * uses Mandel/Kirchhoff stress, the J conversion can make C_exact genuinely
+ * nonsymmetric. Following the symmetric-solver strategy used by CalculiX, the
+ * material tangent exposed to the global Newton solve is the symmetric part
+ *
+ *     C_alg = 1/2 (C_exact + C_exact^T).
+ *
+ * The stress and history update are unchanged; only the Newton Jacobian is
+ * approximated so symmetric-indefinite direct solvers can be used.
  *
  * @param base Converged finite-strain return-map response.
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @return Consistent six-by-six PK2 / Green-Lagrange material tangent.
+ * @return Symmetric six-by-six PK2 / Green-Lagrange algorithmic tangent.
  */
 Mat6 tangent_finite(const FiniteResponse& base,
                     Precision shear,
@@ -938,10 +936,10 @@ Mat6 tangent_finite(const FiniteResponse& base,
         }
     }
 
-    // Elastic states have no active local plastic unknowns. The partial stress
-    // derivative at fixed history is already the complete material tangent.
+    // Elastic states have no active local plastic unknowns. Symmetrize explicitly
+    // to remove only floating-point antisymmetry and guarantee the solver contract.
     if (!base.plastic) {
-        return stress_E;
+        return Precision(0.5) * (stress_E + stress_E.transpose());
     }
 
     // -------------------------------------------------------------------------
@@ -961,12 +959,13 @@ Mat6 tangent_finite(const FiniteResponse& base,
 
     Eigen::FullPivLU<Mat6> lu(local.residual_x);
     logging::error(lu.isInvertible(),
-        "J2: singular local Jacobian during consistent tangent evaluation");
+        "J2: singular local Jacobian during finite tangent evaluation");
 
-    // Do not symmetrize the result artificially. PLASTIC stores a Cauchy yield
-    // stress while this return map is written in Mandel/Kirchhoff stress. The
-    // required J conversion introduces genuine volumetric/deviatoric coupling,
-    // so the exact PK2/Green-Lagrange algorithmic tangent is not generally
-    // major-symmetric. The nonlinear global solve must preserve that derivative.
-    return stress_E - local.stress_x * lu.solve(residual_E);
+    const Mat6 exact_tangent =
+        stress_E - local.stress_x * lu.solve(residual_E);
+
+    // Keep the constitutive update exact but expose a symmetric Newton tangent.
+    // This trades exact quadratic convergence for the substantially cheaper
+    // symmetric-indefinite sparse factorization used by the global solve.
+    return Precision(0.5) * (exact_tangent + exact_tangent.transpose());
 }
