@@ -226,13 +226,13 @@ struct Model {
                                const Field* thermal_free_strain = nullptr);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false,
                                                   const Field* thermal_free_strain = nullptr);
-    Field compute_peeq_nodal();
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false,
                                                     const Field* thermal_free_strain = nullptr);
     Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);
     Field compute_volumes();
+    Field compute_peeq_nodal();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
     Field compute_heat_flux(const Field& temperature);
