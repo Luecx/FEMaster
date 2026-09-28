@@ -660,6 +660,10 @@ struct FRTShell : ShellElement<N> {
         bool             use_green_lagrange_nl,
         const Field*     thermal_free_strain
     ) override;
+    bool compute_peeq(
+        Field& peeq,
+        int    offset
+    ) override;
     void compute_compliance(
         Field& displacement,
         Field& result

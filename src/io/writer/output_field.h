@@ -43,6 +43,7 @@ enum class OutputField : std::uint8_t {
 
     STRESS,
     STRAIN,
+    PEEQ,
     STRESS_TOP,
     STRESS_BOT,
     SHELL_RESULTANTS,

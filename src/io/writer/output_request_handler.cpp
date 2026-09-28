@@ -318,6 +318,10 @@ void OutputRequestHandler::compute(OutputField field) {
                 model_->compute_compliance_angle_derivative(resolve(OutputField::DISPLACEMENT));
             return;
 
+        case OutputField::PEEQ:
+            computed_[index(field)] = model_->compute_peeq_nodal();
+            return;
+
         case OutputField::VOLUME:
             computed_[index(field)] = model_->compute_volumes();
             return;

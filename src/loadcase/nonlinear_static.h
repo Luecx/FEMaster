@@ -202,6 +202,7 @@ struct NonlinearStatic : public LoadCase {
             OutputField::DISPLACEMENT,
             OutputField::STRAIN,
             OutputField::STRESS,
+            OutputField::PEEQ,
             OutputField::STRESS_TOP,
             OutputField::STRESS_BOT,
             OutputField::EXTERNAL_FORCES,

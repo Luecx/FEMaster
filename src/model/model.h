@@ -232,6 +232,7 @@ struct Model {
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);
     Field compute_volumes();
+    Field compute_peeq_nodal();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
     Field compute_heat_flux(const Field& temperature);

@@ -153,6 +153,14 @@ struct StructuralElement : ElementInterface {
         compute_stress_strain(strain, stress, displacement, rst, offset, use_green_lagrange_nl);
     }
 
+    // Recover accumulated equivalent plastic strain from committed material
+    // history into this element's disjoint ELEMENT_NODAL row range. Unsupported
+    // formulations return false and do not participate in model-wide averaging.
+    virtual bool compute_peeq(Field& peeq, int offset) {
+        (void) peeq;
+        (void) offset;
+        return false;
+    }
     virtual void compute_compliance(Field& displacement, Field& result) {
         (void) displacement;
         (void) result;

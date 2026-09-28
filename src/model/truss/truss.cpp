@@ -22,6 +22,8 @@
 
 #include "truss.h"
 
+#include "../../material/isotropic_j2_elasticity.h"
+
 #include <cmath>
 
 namespace fem {
@@ -695,6 +697,43 @@ void T3::compute_stress_strain(Field*           strain,
             (*stress)(row, 0) = stress_value;
         }
     }
+}
+
+/**
+ * Recovers accumulated equivalent plastic strain from the committed truss state.
+ *
+ * The truss owns one constitutive material point, so its scalar PEEQ value is
+ * constant over the element and is copied to both element-nodal rows. Recovery
+ * reads accepted J2 history directly and does not reevaluate the material law.
+ *
+ * A J2 material whose nonlinear state storage has not been initialized yet
+ * contributes zero. Non-J2 materials return false and are excluded from the
+ * model-wide nodal average.
+ *
+ * @param peeq Scalar ELEMENT_NODAL output field.
+ * @param offset First element-nodal row belonging to the truss.
+ * @return True when the truss material uses J2 plasticity.
+ */
+bool T3::compute_peeq(Field& peeq, int offset) {
+    logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
+        "T3: PEEQ recovery requires scalar ELEMENT_NODAL output");
+
+    auto mat = get_material();
+    if (!mat || !mat->has_elasticity()) return false;
+
+    const auto* j2 = mat->elasticity()->as<material::IsotropicJ2Elasticity>();
+    if (!j2) return false;
+
+    Precision value = Precision(0);
+    const auto& state = this->_model_data->material_state_old;
+    if (state && state->components >= j2->state_size()) {
+        const Precision* old_state = &(*state)(this->mp_index(0), 0);
+        value = j2->equivalent_plastic_strain(old_state);
+    }
+
+    peeq(static_cast<Index>(offset) + 0, 0) = value;
+    peeq(static_cast<Index>(offset) + 1, 0) = value;
+    return true;
 }
 
 /**

@@ -185,6 +185,10 @@ struct T3 : StructuralElement {
         int              offset,
         bool             use_green_lagrange_nl
     ) override;
+    bool compute_peeq(
+        Field& peeq,
+        int    offset
+    ) override;
 
     // Element-level scalar compliance contribution based on the current
     // displacement field and the truss stiffness operator.
