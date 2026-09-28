@@ -474,7 +474,7 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
     auto mat = this->get_material();
     if (!mat || !mat->has_elasticity()) return false;
 
-    const auto* j2 = mat->elasticity()->as<material::IsotropicJ2Elasticity>();
+    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
     if (!j2) return false;
 
     const RowMatrix ip_rst    = this->stress_strain_ip_rst();
