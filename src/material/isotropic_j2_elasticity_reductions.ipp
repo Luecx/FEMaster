@@ -34,8 +34,8 @@
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @param converged_tangent Receives the full three-dimensional consistent tangent
- *                          before plane-stress condensation.
+ * @param converged_tangent Receives the full three-dimensional symmetric
+ *                          algorithmic tangent before plane-stress condensation.
  * @return Converged full three-dimensional stress.
  */
 template<bool Finite>
@@ -248,7 +248,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
  *     S33 = 0.
  *
  * A two-dimensional Newton iteration is used. Its Jacobian is the transverse
- * block of the same analytically consistent three-dimensional J2 tangent,
+ * block of the symmetric three-dimensional J2 algorithmic tangent,
  *
  *            [ C2222  C2233 ]
  *     J  =   [               ]
@@ -268,7 +268,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @param converged_tangent Receives the full three-dimensional consistent tangent.
+ * @param converged_tangent Receives the full three-dimensional symmetric algorithmic tangent.
  * @return Converged full three-dimensional stress.
  */
 template<bool Finite>
@@ -395,7 +395,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
         }
 
         // ---------------------------------------------------------------------
-        // Exact transverse Jacobian extracted from the consistent 3D tangent.
+        // Transverse Jacobian extracted from the symmetric 3D algorithmic tangent.
         // ---------------------------------------------------------------------
         Eigen::Matrix<Precision, 2, 2> jacobian;
         jacobian << candidate_tangent(1, 1), candidate_tangent(1, 2),
