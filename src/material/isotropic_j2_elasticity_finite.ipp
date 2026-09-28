@@ -857,13 +857,13 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
 }
 
 /**
- * @brief Builds the symmetric finite-strain algorithmic tangent used globally.
+ * @brief Builds the exact finite-strain PK2 / Green-Lagrange tangent.
  *
  * The converged local return map is defined implicitly by
  *
  *     R(x, E) = 0.
  *
- * Linearization gives the exact derivative
+ * Linearization gives
  *
  *     C_exact = dS/dE
  *             = S_E - S_x R_x^-1 R_E.
@@ -873,25 +873,19 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
  * Fréchet derivative of exp(A). No constitutive finite differences are used.
  *
  * Because PLASTIC tabulates true/Cauchy yield stress while the finite return map
- * uses Mandel/Kirchhoff stress, the J conversion can make C_exact genuinely
- * nonsymmetric. Following the symmetric-solver strategy used by CalculiX, the
- * material tangent exposed to the global Newton solve is the symmetric part
- *
- *     C_alg = 1/2 (C_exact + C_exact^T).
- *
- * The stress and history update are unchanged; only the Newton Jacobian is
- * approximated so symmetric-indefinite direct solvers can be used.
+ * uses Mandel/Kirchhoff stress, the J conversion can make this exact derivative
+ * genuinely nonsymmetric.
  *
  * @param base Converged finite-strain return-map response.
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @return Symmetric six-by-six PK2 / Green-Lagrange algorithmic tangent.
+ * @return Exact six-by-six PK2 / Green-Lagrange tangent.
  */
-Mat6 tangent_finite(const FiniteResponse& base,
-                    Precision shear,
-                    Precision bulk,
-                    const YieldCurve& yield_curve) {
+Mat6 tangent_finite_exact(const FiniteResponse& base,
+                          Precision shear,
+                          Precision bulk,
+                          const YieldCurve& yield_curve) {
     Mat6 stress_E   = Mat6::Zero();
     Mat6 residual_E = Mat6::Zero();
 
@@ -936,10 +930,10 @@ Mat6 tangent_finite(const FiniteResponse& base,
         }
     }
 
-    // Elastic states have no active local plastic unknowns. Symmetrize explicitly
-    // to remove only floating-point antisymmetry and guarantee the solver contract.
+    // Elastic states have no active local plastic unknowns. The partial stress
+    // derivative at fixed history is already the complete material tangent.
     if (!base.plastic) {
-        return Precision(0.5) * (stress_E + stress_E.transpose());
+        return stress_E;
     }
 
     // -------------------------------------------------------------------------
@@ -961,11 +955,22 @@ Mat6 tangent_finite(const FiniteResponse& base,
     logging::error(lu.isInvertible(),
         "J2: singular local Jacobian during finite tangent evaluation");
 
-    const Mat6 exact_tangent =
-        stress_E - local.stress_x * lu.solve(residual_E);
+    return stress_E - local.stress_x * lu.solve(residual_E);
+}
 
-    // Keep the constitutive update exact but expose a symmetric Newton tangent.
-    // This trades exact quadratic convergence for the substantially cheaper
-    // symmetric-indefinite sparse factorization used by the global solve.
+/**
+ * @brief Builds the symmetric finite-strain tangent exposed to global assembly.
+ *
+ * The constitutive stress/history update and exact local tangent remain unchanged.
+ * Only the multidimensional tangent used by the global structural Newton solve is
+ * symmetrized, following the CalculiX-style symmetric-solver strategy.
+ */
+Mat6 tangent_finite(const FiniteResponse& base,
+                    Precision shear,
+                    Precision bulk,
+                    const YieldCurve& yield_curve) {
+    const Mat6 exact_tangent =
+        tangent_finite_exact(base, shear, bulk, yield_curve);
+
     return Precision(0.5) * (exact_tangent + exact_tangent.transpose());
 }
