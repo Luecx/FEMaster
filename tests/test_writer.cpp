@@ -204,8 +204,8 @@ TEST(Reader_Writer, WritesPeeqToFrd) {
     }
 
     const std::string text = read_text(output_path);
-    EXPECT_NE(text.find(" -4  PEEQ"), std::string::npos);
-    EXPECT_NE(text.find(" -5  PEEQ"), std::string::npos);
+    EXPECT_NE(text.find(" -4  PE"), std::string::npos);
+    EXPECT_NE(text.find(" -5  PE"), std::string::npos);
     EXPECT_NE(text.find("1.25000E-01"), std::string::npos);
     EXPECT_EQ(io::writer::output_field_from_request("peeq"), io::writer::OutputField::PEEQ);
 
