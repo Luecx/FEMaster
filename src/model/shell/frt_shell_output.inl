@@ -25,6 +25,7 @@
 #include "../../math/extrapolate.h"
 #include "../../math/vec_util.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace fem::model {
