@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// Finite-strain return map and consistent tangent
+// Finite-strain return map and symmetric tangent approximation
 // -----------------------------------------------------------------------------
 
 /**
@@ -48,9 +48,9 @@ struct FinitePoint {
  * @brief Result of one complete finite-strain constitutive update.
  *
  * The converged stress is stored through the generic VolumeStress representation.
- * C, Fp_old, alpha_old and the converged local unknown x are retained only because
- * the analytically consistent tangent linearizes exactly the same converged return
- * map afterwards.
+ * C, Fp_old, alpha_old and the converged local unknown x are retained because
+ * the exact derivative of the converged return map is formed before its symmetric
+ * part is exposed as the global algorithmic tangent.
  */
 struct FiniteResponse {
     VolumeStress stress;
@@ -71,7 +71,7 @@ struct DirectionalResponse {
 };
 
 /**
- * @brief Local Jacobian blocks required by Newton and the consistent tangent.
+ * @brief Local Jacobian blocks required by Newton and tangent linearization.
  *
  * residual_x = dR/dx and stress_x = dS/dx are both exact analytical derivatives
  * of the discrete finite-strain return map.
@@ -857,7 +857,7 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
 }
 
 /**
- * @brief Builds the consistent analytical finite-strain algorithmic tangent.
+ * @brief Builds the exact finite-strain PK2 / Green-Lagrange tangent.
  *
  * The converged local return map is defined implicitly by
  *
@@ -865,35 +865,27 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
  *
  * Linearization gives
  *
- *     R_x dx + R_E dE = 0
- *
- * and therefore
- *
- *     dx/dE = -R_x^-1 R_E.
- *
- * The PK2 stress depends on both E and the converged local unknown x,
- *
- *     dS = S_E dE + S_x dx.
- *
- * Substitution yields the exact consistent tangent of the discrete return map,
- *
- *     C_alg = dS/dE
- *           = S_E - S_x R_x^-1 R_E.
+ *     C_exact = dS/dE
+ *             = S_E - S_x R_x^-1 R_E.
  *
  * S_E, S_x, R_E and R_x are all obtained from directional_response(), which
  * analytically differentiates the complete tensor chain including the exact
- * Fréchet derivative of exp(A). No finite differences are used in this function.
+ * Fréchet derivative of exp(A). No constitutive finite differences are used.
+ *
+ * Because PLASTIC tabulates true/Cauchy yield stress while the finite return map
+ * uses Mandel/Kirchhoff stress, the J conversion can make this exact derivative
+ * genuinely nonsymmetric.
  *
  * @param base Converged finite-strain return-map response.
  * @param shear Elastic shear modulus G.
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
- * @return Consistent six-by-six PK2 / Green-Lagrange material tangent.
+ * @return Exact six-by-six PK2 / Green-Lagrange tangent.
  */
-Mat6 tangent_finite(const FiniteResponse& base,
-                    Precision shear,
-                    Precision bulk,
-                    const YieldCurve& yield_curve) {
+Mat6 tangent_finite_exact(const FiniteResponse& base,
+                          Precision shear,
+                          Precision bulk,
+                          const YieldCurve& yield_curve) {
     Mat6 stress_E   = Mat6::Zero();
     Mat6 residual_E = Mat6::Zero();
 
@@ -961,12 +953,24 @@ Mat6 tangent_finite(const FiniteResponse& base,
 
     Eigen::FullPivLU<Mat6> lu(local.residual_x);
     logging::error(lu.isInvertible(),
-        "J2: singular local Jacobian during consistent tangent evaluation");
+        "J2: singular local Jacobian during finite tangent evaluation");
 
-    // Do not symmetrize the result artificially. PLASTIC stores a Cauchy yield
-    // stress while this return map is written in Mandel/Kirchhoff stress. The
-    // required J conversion introduces genuine volumetric/deviatoric coupling,
-    // so the exact PK2/Green-Lagrange algorithmic tangent is not generally
-    // major-symmetric. The nonlinear global solve must preserve that derivative.
     return stress_E - local.stress_x * lu.solve(residual_E);
+}
+
+/**
+ * @brief Builds the symmetric finite-strain tangent exposed to global assembly.
+ *
+ * The constitutive stress/history update and exact local tangent remain unchanged.
+ * Only the multidimensional tangent used by the global structural Newton solve is
+ * symmetrized, following the CalculiX-style symmetric-solver strategy.
+ */
+Mat6 tangent_finite(const FiniteResponse& base,
+                    Precision shear,
+                    Precision bulk,
+                    const YieldCurve& yield_curve) {
+    const Mat6 exact_tangent =
+        tangent_finite_exact(base, shear, bulk, yield_curve);
+
+    return Precision(0.5) * (exact_tangent + exact_tangent.transpose());
 }

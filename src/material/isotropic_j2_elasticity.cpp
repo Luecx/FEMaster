@@ -16,14 +16,15 @@
  *
  *     Fp_(n+1) = exp(A) Fp_n.
  *
- * The finite-strain algorithmic tangent is the exact consistent derivative of
- * the converged discrete return map,
+ * The finite-strain constitutive update is differentiated analytically,
  *
- *     C_alg = S_E - S_x R_x^-1 R_E.
+ *     C_exact = S_E - S_x R_x^-1 R_E,
  *
- * Every derivative entering this expression is analytical. In particular the
- * matrix exponential is differentiated by its exact spectral Frechet derivative;
- * no constitutive finite differences are used in production code.
+ * but the tangent exposed to the nonlinear global solve is its symmetric part.
+ * This follows the CalculiX-style trade-off of retaining the exact stress/history
+ * update while using a symmetric-indefinite global factorization. In particular
+ * the matrix exponential is still differentiated by its exact spectral Frechet
+ * derivative; no constitutive finite differences are used in production code.
  *
  * Tangent output follows the nullable-pointer contract of `Elasticity`. The full
  * three-dimensional constitutive paths therefore omit tangent construction when
@@ -324,15 +325,16 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainLinearized& strain,
  *     C = I + 2 E.
  *
  * The finite return map integrates the plastic metric and returns PK2 stress.
- * The algorithmic tangent is the consistent analytic derivative of exactly that
- * converged return map and is evaluated only for a non-null tangent pointer.
- * This is the relevant fast path for residual-only global line-search assembly.
+ * Its exact analytic derivative is formed internally and symmetrized before it is
+ * returned as the algorithmic tangent. This preserves the constitutive stress and
+ * history update while allowing a symmetric-indefinite global solve. Tangent
+ * construction is skipped for residual-only line-search assembly.
  *
  * @param strain Green-Lagrange strain in the reference material basis.
  * @param old_state Immutable committed J2 state.
  * @param new_state Optional destination for the converged trial state.
  * @param stress Second Piola-Kirchhoff stress.
- * @param tangent Optional consistent derivative `dS/dE`.
+ * @param tangent Optional symmetric algorithmic approximation of `dS/dE`.
  */
 void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
                                      const Precision*                 old_state,
@@ -366,7 +368,7 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 
     stress = VolumeStressPK2(response.stress.voigt());
 
-    // The consistent finite-strain tangent is the expensive part of the response,
+    // The finite-strain algorithmic tangent is the expensive part of the response,
     // so construct it only when global assembly actually needs it.
     if (tangent != nullptr) {
         *tangent = tangent_finite(response, shear, bulk, yield_points_);
@@ -475,7 +477,11 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain
                        > Precision(100) * std::numeric_limits<Precision>::epsilon(),
             "J2: singular thickness-normal tangent during shell condensation");
 
-        *tangent = Caa - (Caz * Cza) / tangent_3d(eliminated, eliminated);
+        const Mat5 exact_tangent =
+            Caa - (Caz * Cza) / tangent_3d(eliminated, eliminated);
+
+        *tangent =
+            Precision(0.5) * (exact_tangent + exact_tangent.transpose());
     }
 
     // Publish only the state belonging to the converged plane-stress candidate.
@@ -496,14 +502,14 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain
  * The reduction has the same structure as the infinitesimal shell case, but the
  * three-dimensional constitutive candidates use Green-Lagrange strain, PK2
  * stress and the multiplicative finite-strain return map. The local thickness
- * solve always requires the three-dimensional consistent tangent; the final
- * five-component Schur complement is produced only when requested.
+ * solve retains the exact three-dimensional tangent. The exact plane-stress Schur
+ * complement is formed first and only then symmetrized for global shell assembly.
  *
  * @param strain Green-Lagrange shell material strain.
  * @param old_state Immutable committed J2 state.
  * @param new_state Optional destination for the converged trial state.
  * @param stress Plane-stress shell PK2 stress.
- * @param tangent Optional condensed consistent shell tangent.
+ * @param tangent Optional condensed symmetric algorithmic shell tangent.
  */
 void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
                                      const Precision*                        old_state,
@@ -673,16 +679,15 @@ void IsotropicJ2Elasticity::evaluate(const AxialStrainLinearized& strain,
  * Evaluates finite-strain axial J2 under `S22 = S33 = 0`.
  *
  * Green-Lagrange axial strain and PK2 stress are work-conjugate. The transverse
- * stress solve and optional scalar Schur complement therefore use the exact
- * finite-strain PK2/Green-Lagrange tangent without changing stress measure.
- * The three-dimensional tangent remains necessary internally for the transverse
- * Newton solve even when the final scalar tangent is not requested.
+ * stress solve and scalar Schur complement retain the exact finite-strain
+ * PK2/Green-Lagrange tangent. Because the reduced tangent is scalar, this preserves
+ * exact local Newton convergence without introducing global matrix asymmetry.
  *
  * @param strain Axial Green-Lagrange strain.
  * @param old_state Immutable committed J2 state.
  * @param new_state Optional destination for the converged trial state.
  * @param stress Axial second Piola-Kirchhoff stress.
- * @param tangent Optional consistent scalar derivative `dS11/dE11`.
+ * @param tangent Optional algorithmic scalar derivative `dS11/dE11`.
  */
 void IsotropicJ2Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
                                      const Precision*                old_state,

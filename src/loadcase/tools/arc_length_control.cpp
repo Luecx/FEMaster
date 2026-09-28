@@ -519,7 +519,6 @@ void ArcLengthControl::configure_newton_() {
     newton_.maximum_iterations      = maximum_iterations;
     newton_.residual_tolerance      = tolerance;
     newton_.correction_tolerance    = Precision(1e-2);
-    newton_.stagnation_tolerance    = Precision(1e-3) * tolerance;
     newton_.check_finite            = true;
     newton_.early_failure_detection = true;
 

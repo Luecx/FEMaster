@@ -116,16 +116,24 @@ bool NewtonSolver::solve(
         "NewtonSolver requires residual_tolerance > 0");
     logging::error(correction_tolerance > Precision(0),
         "NewtonSolver requires correction_tolerance > 0");
-    logging::error(stagnation_tolerance >= Precision(0),
-        "NewtonSolver requires stagnation_tolerance >= 0");
     logging::error(convergence_check_start > 0,
         "NewtonSolver requires convergence_check_start > 0");
+    logging::error(slow_convergence_check_start >= convergence_check_start,
+        "NewtonSolver requires slow_convergence_check_start >= convergence_check_start");
+    logging::error(maximum_slow_convergence_checks > 0,
+        "NewtonSolver requires maximum_slow_convergence_checks > 0");
     logging::error(divergence_factor > Precision(1),
         "NewtonSolver requires divergence_factor > 1");
-    logging::error(minimum_residual_reduction >= Precision(0),
-        "NewtonSolver requires minimum_residual_reduction >= 0");
-    logging::error(stagnation_ratio >= Precision(0),
-        "NewtonSolver requires stagnation_ratio >= 0");
+    logging::error(residual_growth_tolerance >= Precision(0),
+        "NewtonSolver requires residual_growth_tolerance >= 0");
+    logging::error(strong_damping_step_length > Precision(0) &&
+                   strong_damping_step_length <= Precision(1),
+        "NewtonSolver requires strong_damping_step_length between 0 and 1");
+    logging::error(strong_damping_residual_ratio > Precision(0) &&
+                   strong_damping_residual_ratio < Precision(1),
+        "NewtonSolver requires strong_damping_residual_ratio between 0 and 1");
+    logging::error(maximum_strong_damping_steps > 0,
+        "NewtonSolver requires maximum_strong_damping_steps > 0");
 
     // Validate the backtracking line-search settings
     logging::error(maximum_line_search_iterations > 0,
@@ -178,13 +186,14 @@ bool NewtonSolver::solve(
         logging::error(!check_finite || std::isfinite(last_residual_norm_),
             "NewtonSolver: residual norm is NaN or Inf");
 
-        // Store the first residual as the reference value for divergence and
-        // relative reduction checks
+        // Store the first residual as the reference for hard-divergence checks
+        // and initialize the best residual reached in this Newton solve.
         if (iteration == 1) {
             initial_residual_norm_ = last_residual_norm_;
+            best_residual_norm_    = last_residual_norm_;
+        } else {
+            update_failure_state_();
         }
-
-        update_failure_counters_();
 
         // Equilibrium and correction convergence are checked before another
         // linear solve. The first evaluation has no preceding correction, so it
@@ -447,17 +456,6 @@ bool NewtonSolver::solve(
         // Newton correction
         x += accepted_correction;
 
-        // A vanishing correction combined with a non-converged residual
-        // indicates that the nonlinear iteration can no longer make meaningful
-        // progress
-        if (early_failure_detection &&
-            iteration >= convergence_check_start &&
-            stagnation_tolerance > Precision(0) &&
-            last_correction_norm_ <= stagnation_tolerance) {
-            failed_by_stagnation_ = true;
-
-            return false;
-        }
     }
 
     // The convergence tolerances were not reached within the configured
@@ -503,16 +501,12 @@ const char* NewtonSolver::failure_reason() const {
         return "DIVERGENCE";
     }
 
-    if (failed_by_residual_increase_) {
-        return "RESIDUAL_INCREASE";
+    if (failed_by_strong_damping_) {
+        return "LINE_SEARCH_STAGNATION";
     }
 
-    if (failed_by_stagnation_) {
-        return "STAGNATION";
-    }
-
-    if (failed_by_poor_reduction_) {
-        return "POOR_RESIDUAL_REDUCTION";
+    if (failed_by_slow_convergence_) {
+        return "SLOW_CONVERGENCE";
     }
 
     if (failed_by_line_search_) {
@@ -536,21 +530,23 @@ void NewtonSolver::reset_state_() {
     // Reset iteration and convergence diagnostics
     iterations_ = 0;
 
-    initial_residual_norm_  = Precision(0);
-    last_residual_norm_     = Precision(0);
-    last_correction_norm_   = Precision(0);
-    previous_residual_norm_ = Precision(0);
-    last_step_length_       = Precision(1);
+    initial_residual_norm_         = Precision(0);
+    best_residual_norm_            = Precision(0);
+    last_residual_norm_            = Precision(0);
+    last_correction_norm_          = Precision(0);
+    previous_residual_norm_        = Precision(0);
+    last_step_length_              = Precision(1);
+    projected_iteration_count_     = Precision(0);
+    strong_damping_reference_norm_ = Precision(0);
 
-    // Reset consecutive failure-detection counters
-    residual_increase_count_ = 0;
-    stagnation_count_        = 0;
+    // Reset persistent failure evidence
+    slow_convergence_count_ = 0;
+    strong_damping_count_   = 0;
 
     // Reset all mutually descriptive failure flags
     failed_by_divergence_         = false;
-    failed_by_residual_increase_  = false;
-    failed_by_stagnation_         = false;
-    failed_by_poor_reduction_     = false;
+    failed_by_slow_convergence_   = false;
+    failed_by_strong_damping_     = false;
     failed_by_line_search_        = false;
     failed_by_maximum_iterations_ = false;
 }
@@ -564,121 +560,151 @@ void NewtonSolver::update_residual_history_() {
 }
 
 /**
- * Updates the counters used to detect repeated residual increase and
- * stagnation.
+ * Updates persistent evidence used by the early-failure detector.
  *
- * A residual increase is counted only when the current residual exceeds the
- * immediately preceding residual. Any non-increasing step resets the
- * corresponding counter.
+ * The slow-convergence forecast follows the idea used by CalculiX: the ratio
  *
- * Residual stagnation is detected from the relative change
+ *     rho = r_i / r_(i-1)
  *
- *     |r_current - r_previous| / max(r_previous, epsilon).
+ * is interpreted as the current asymptotic residual decay rate. For 0 < rho < 1,
+ * the estimated total iteration count required to reach the residual tolerance is
  *
- * Any relative change above `stagnation_ratio` resets the stagnation counter.
+ *     i_est = i + ceil(log(tol / r_i) / log(rho)).
+ *
+ * A single pessimistic estimate is not enough to reject the increment because
+ * Newton convergence can accelerate abruptly after yielding or active-set changes.
+ * Several consecutive forecasts beyond the configured iteration budget are
+ * required.
+ *
+ * Strong line-search damping is tracked independently. Several accepted steps at
+ * or below strong_damping_step_length only count as stagnation when the residual
+ * has failed to decrease by at least the configured amount across the whole
+ * sequence.
  */
-void NewtonSolver::update_failure_counters_() {
-    // The first residual has no preceding value for comparison
-    if (iterations_ <= 1) {
-        return;
-    }
+void NewtonSolver::update_failure_state_() {
+    const Precision epsilon = std::numeric_limits<Precision>::epsilon();
 
-    // Count consecutive residual increases
-    if (previous_residual_norm_ > Precision(0) &&
-        last_residual_norm_ > previous_residual_norm_) {
-        ++residual_increase_count_;
+    // CalculiX-inspired convergence-rate forecast.
+    if (iterations_ >= slow_convergence_check_start &&
+        previous_residual_norm_ > residual_tolerance &&
+        last_residual_norm_ > residual_tolerance) {
+        const Precision rate =
+            last_residual_norm_ /
+            std::max(previous_residual_norm_, epsilon);
+
+        bool projected_beyond_budget = false;
+        projected_iteration_count_   = Precision(0);
+
+        if (rate >= Precision(1)) {
+            projected_iteration_count_ =
+                std::numeric_limits<Precision>::infinity();
+            projected_beyond_budget = true;
+        } else if (rate > Precision(0)) {
+            const Precision remaining =
+                std::log(residual_tolerance / last_residual_norm_) /
+                std::log(rate);
+
+            if (std::isfinite(remaining)) {
+                projected_iteration_count_ =
+                    Precision(iterations_) + std::ceil(std::max(Precision(0), remaining));
+                projected_beyond_budget =
+                    projected_iteration_count_ > Precision(maximum_iterations);
+            }
+        }
+
+        if (projected_beyond_budget) {
+            ++slow_convergence_count_;
+        } else {
+            slow_convergence_count_ = 0;
+        }
     } else {
-        residual_increase_count_ = 0;
+        slow_convergence_count_ = 0;
+        projected_iteration_count_ = Precision(0);
     }
 
-    // Relative stagnation cannot be evaluated against a non-positive previous
-    // residual norm
-    if (previous_residual_norm_ <= Precision(0)) {
-        return;
-    }
-
-    const Precision relative_change =
-        std::abs(last_residual_norm_ - previous_residual_norm_) /
-        std::max(previous_residual_norm_, std::numeric_limits<Precision>::epsilon());
-
-    // Count consecutive residual changes below the configured relative
-    // stagnation threshold
-    if (relative_change <= stagnation_ratio) {
-        ++stagnation_count_;
+    // A strongly damped accepted step is meaningful evidence only when it repeats.
+    // Keep the residual at the start of the damping sequence so the group can be
+    // judged by actual progress rather than by alpha alone.
+    if (last_step_length_ <= strong_damping_step_length) {
+        if (strong_damping_count_ == 0) {
+            strong_damping_reference_norm_ = previous_residual_norm_;
+        }
+        ++strong_damping_count_;
     } else {
-        stagnation_count_ = 0;
+        strong_damping_count_          = 0;
+        strong_damping_reference_norm_ = Precision(0);
     }
+
+    best_residual_norm_ = std::min(best_residual_norm_, last_residual_norm_);
 }
 
 /**
- * Evaluates the configured early-failure criteria.
+ * Evaluates robust early-failure criteria.
  *
- * Early failure is disabled completely when `early_failure_detection` is
- * false. It is also postponed until `convergence_check_start` residual
- * evaluations have been completed.
+ * The checks intentionally distinguish three situations:
  *
- * The checks are evaluated in the following order:
+ * 1. clear divergence: catastrophic growth or a sustained move away from the
+ *    best residual reached so far;
+ * 2. line-search stagnation: several severely damped accepted steps that achieve
+ *    less than the required aggregate residual reduction;
+ * 3. slow convergence: several consecutive CalculiX-style convergence forecasts
+ *    predict that the residual tolerance cannot be reached within the Newton
+ *    iteration budget.
  *
- * 1. residual divergence relative to the initial norm,
- * 2. repeated residual increase,
- * 3. repeated residual stagnation,
- * 4. insufficient reduction relative to the initial residual.
- *
- * The first fulfilled condition sets its corresponding failure flag and
- * terminates the nonlinear solve.
- *
- * @return `true` when the current residual history requires early termination.
+ * This avoids the former sensitivity to one arbitrary residual-ratio threshold
+ * or one tiny correction while still cutting increments that are demonstrably
+ * wasting nonlinear iterations.
  */
 bool NewtonSolver::should_stop_early_() {
-    // Allow the calling solution strategy to disable all heuristic early
-    // termination checks
     if (!early_failure_detection) {
         return false;
     }
 
-    // Collect enough residual history before classifying slow or unstable
-    // convergence
-    if (iterations_ < convergence_check_start) {
-        return false;
-    }
+    const Precision epsilon = std::numeric_limits<Precision>::epsilon();
+    const Precision safe_initial =
+        std::max(initial_residual_norm_, epsilon);
 
-    // Protect all relative checks against a zero initial residual
-    const Precision safe_initial_residual =
-        std::max(initial_residual_norm_, std::numeric_limits<Precision>::epsilon());
-
-    // Stop when the residual has grown far beyond its initial magnitude
-    if (last_residual_norm_ > divergence_factor * safe_initial_residual) {
+    // Catastrophic divergence can be detected immediately after the first step.
+    if (iterations_ > 1 &&
+        last_residual_norm_ > divergence_factor * safe_initial) {
         failed_by_divergence_ = true;
-
         return true;
     }
 
-    // Stop after the configured number of consecutive residual increases
-    if (maximum_residual_increases > 0 &&
-        residual_increase_count_ >= maximum_residual_increases) {
-        failed_by_residual_increase_ = true;
+    // CalculiX similarly compares the current residual with the best residual
+    // already reached before declaring divergence. Add a small relative margin
+    // so harmless numerical oscillation around the minimum is not classified as
+    // divergence.
+    if (iterations_ >= convergence_check_start &&
+        best_residual_norm_ > Precision(0)) {
+        const Precision growth_limit =
+            (Precision(1) + residual_growth_tolerance) * best_residual_norm_;
 
+        if (previous_residual_norm_ > growth_limit &&
+            last_residual_norm_ > growth_limit &&
+            last_residual_norm_ > previous_residual_norm_ &&
+            last_residual_norm_ > residual_tolerance) {
+            failed_by_divergence_ = true;
+            return true;
+        }
+    }
+
+    // Repeated severe damping is a failure only when the complete sequence made
+    // less than (1 - strong_damping_residual_ratio) relative residual progress.
+    if (strong_damping_count_ >= maximum_strong_damping_steps &&
+        strong_damping_reference_norm_ > Precision(0) &&
+        last_residual_norm_ >
+            strong_damping_residual_ratio * strong_damping_reference_norm_) {
+        failed_by_strong_damping_ = true;
         return true;
     }
 
-    // Stop after the configured number of consecutive stagnating residual
-    // changes
-    if (maximum_stagnation_steps > 0 &&
-        stagnation_count_ >= maximum_stagnation_steps) {
-        failed_by_stagnation_ = true;
-
-        return true;
-    }
-
-    const Precision residual_ratio =
-        last_residual_norm_ / safe_initial_residual;
-
-    // Require the current residual to fall below the configured fraction of
-    // the initial residual once convergence monitoring begins
-    if (minimum_residual_reduction > Precision(0) &&
-        residual_ratio > minimum_residual_reduction) {
-        failed_by_poor_reduction_ = true;
-
+    // Do not trust one convergence forecast: plastic transitions can suddenly
+    // accelerate after several mediocre iterations. Persistent forecasts beyond
+    // the actual Newton budget are strong evidence that a smaller increment is
+    // cheaper than continuing.
+    if (slow_convergence_count_ >= maximum_slow_convergence_checks) {
+        failed_by_slow_convergence_ = true;
         return true;
     }
 
