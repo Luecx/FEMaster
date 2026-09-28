@@ -267,7 +267,7 @@ bool SolidElement<N>::compute_peeq(Field& peeq, int offset) {
     auto mat = get_section()->material_;
     if (!mat || !mat->has_elasticity()) return false;
 
-    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
+    const auto* j2 = mat->elasticity()->as<material::IsotropicJ2Elasticity>();
     if (!j2) return false;
 
     // A J2 material that has not entered a nonlinear analysis is still virgin.
