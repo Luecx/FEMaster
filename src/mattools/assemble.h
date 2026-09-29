@@ -47,6 +47,17 @@
 
 namespace fem { namespace mattools {
 
+struct AssemblyTimings {
+    Time element_loop_ms    = 0;
+    Time force_reduction_ms = 0;
+    Time insertion_ms       = 0;
+    Time merge_ms           = 0;
+
+    [[nodiscard]] Time total() const {
+        return element_loop_ms + force_reduction_ms + insertion_ms + merge_ms;
+    }
+};
+
 /**
  * Evaluates an element-local matrix and optionally exposes a nodal force field.
  *
@@ -119,7 +130,8 @@ template<typename Lambda>
 SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>& elements,
                                             const SystemDofIds& indices,
                                             Lambda&& compute_local_matrix,
-                                            model::NodeData* nodal_forces = nullptr) {
+                                            model::NodeData* nodal_forces = nullptr,
+                                            AssemblyTimings* timings = nullptr) {
     // The serial path must also restore linear-algebra threading on return or throw.
     const parallel::ScopedLinearAlgebraThreads threading;
 
@@ -141,6 +153,10 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     // Flush the triplet buffer after approximately sixteen million entries to
     // bound peak temporary memory consumption.
     constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
+
+    Time insertion_ms = 0;
+    Timer loop_timer;
+    loop_timer.start();
 
     // Process all elements in their original storage order.
     for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
@@ -202,7 +218,9 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         // Periodically insert completed batches into the global matrix to keep
         // the temporary triplet storage bounded.
         if (triplets.size() > BATCH_SIZE) {
-            global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+            insertion_ms += Timer::measure_time([&]() {
+                global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+            });
 
             // Reuse the allocated vector capacity for the next batch.
             triplets.clear();
@@ -211,7 +229,15 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
     // Insert the final incomplete triplet batch after all elements have been
     // processed.
-    global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    insertion_ms += Timer::measure_time([&]() {
+        global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    });
+    loop_timer.stop();
+
+    if (timings) {
+        timings->element_loop_ms += std::max(Time(0), loop_timer.elapsed() - insertion_ms);
+        timings->insertion_ms    += insertion_ms;
+    }
 
     return global_matrix;
 }
@@ -265,7 +291,8 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                                            Lambda&& compute_local_matrix,
                                            model::NodeData* nodal_forces,
                                            int num_threads,
-                                           std::size_t min_batch_size) {
+                                           std::size_t min_batch_size,
+                                           AssemblyTimings* timings = nullptr) {
     // Use the storage-index type selected by Eigen for direct access to the
     // compressed sparse matrix arrays.
     using StorageIndex = typename SparseMatrix::StorageIndex;
@@ -398,6 +425,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     threading.limit();
 
     timer.stop();
+    if (timings) timings->element_loop_ms += timer.elapsed();
 
     logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
     timer.start();
@@ -422,6 +450,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
         std::vector<model::NodeData>{}.swap(thread_nodal_forces);
 
         timer.stop();
+        if (timings) timings->force_reduction_ms += timer.elapsed();
         logging::info(true, "Time for force reduction  : ", timer.elapsed(), " ms");
         timer.start();
     }
@@ -442,6 +471,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     std::vector<TripletList>{}.swap(thread_triplets);
 
     timer.stop();
+    if (timings) timings->insertion_ms += timer.elapsed();
     logging::info(true, "Time for last insertion   : ", timer.elapsed(), " ms");
     timer.start();
 
@@ -591,6 +621,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     outer_indices[global_size] = static_cast<StorageIndex>(total_nonzeros);
 
     timer.stop();
+    if (timings) timings->merge_ms += timer.elapsed();
     logging::info(true, "Time for k-way merge      : ", timer.elapsed(), " ms");
     logging::info(true, "Pattern nonzeros          : ", total_nonzeros);
 
@@ -624,10 +655,11 @@ template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                              const SystemDofIds& indices,
                              Lambda&& compute_local_matrix,
-                             model::NodeData* nodal_forces = nullptr) {
+                             model::NodeData* nodal_forces = nullptr,
+                             AssemblyTimings* timings = nullptr) {
 #ifndef _OPENMP
     // OpenMP support is unavailable, so assembly must remain serial.
-    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces, timings);
 #else
     // Avoid worker-local sparse matrices for small element batches and systems
     constexpr std::size_t min_batch_size = 64;
@@ -637,11 +669,11 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
 
     if (num_threads > 1 && indices.maxCoeff() + 1 > 128) {
         return assemble_matrix_multithreaded(
-            elements, indices, compute_local_matrix, nodal_forces, num_threads, min_batch_size
+            elements, indices, compute_local_matrix, nodal_forces, num_threads, min_batch_size, timings
         );
     }
 
-    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces, timings);
 #endif
 }
 
