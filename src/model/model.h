@@ -42,6 +42,8 @@
 #include <ostream>
 #include <utility>
 
+namespace fem::mattools { struct AssemblyTimings; }
+
 namespace fem::model {
 
 /**
@@ -206,7 +208,8 @@ struct Model {
         SystemDofIds& indices,
         NodeData& nodal_forces,
         const Field& displacement,
-        const Field* stiffness_scalar = nullptr);
+        const Field* stiffness_scalar = nullptr,
+        mattools::AssemblyTimings* assembly_timings = nullptr);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
         const Field& displacement,
