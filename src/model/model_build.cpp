@@ -572,7 +572,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     SystemDofIds& indices,
     NodeData&     nodal_forces,
     const Field&  displacement,
-    const Field*  stiffness_scalar
+    const Field*  stiffness_scalar,
+    mattools::AssemblyTimings* assembly_timings
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "tangent internal force output must use NODE domain");
@@ -611,7 +612,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         _data->elements,
         indices,
         lambda,
-        &nodal_forces
+        &nodal_forces,
+        assembly_timings
     );
 
     if (!_data->point_elements.empty()) {
@@ -628,7 +630,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             _data->point_elements,
             indices,
             point_lambda,
-            &nodal_forces
+            &nodal_forces,
+            assembly_timings
         );
     }
 
