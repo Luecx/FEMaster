@@ -33,10 +33,11 @@ const char* cudss_status_name(cudssStatus_t status) {
 
 DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
                                const DynamicMatrix& rhs,
-                               DirectSolverMatrixType matrix_type) {
+                               DirectSolverMatrixType matrix_type,
+                               DirectSolveTimings* timings) {
 #ifndef SUPPORT_GPU
     logging::info(true, "This build does not support gpu-accelerated solving, falling back to cpu");
-    return solve_direct_cpu(mat, rhs, matrix_type);
+    return solve_direct_cpu(mat, rhs, matrix_type, timings);
 #else
 #ifndef USE_CUDSS
     // The legacy cuSolver sparse path is Cholesky-only. Symmetric-indefinite
@@ -45,7 +46,7 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     if (matrix_type != DirectSolverMatrixType::SPD) {
         logging::info(true,
             "Legacy cuSolver direct path supports only SPD/Cholesky; falling back to CPU");
-        return solve_direct_cpu(mat, rhs, matrix_type);
+        return solve_direct_cpu(mat, rhs, matrix_type, timings);
     }
 #endif
 
@@ -189,9 +190,14 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
     runtime_check_cuda(cusparseDestroyMatDescr(descr));
 #endif
 
+    Timer residual_timer;
+    residual_timer.start();
+    const Precision relative_residual = (rhs - mat * sol).norm() / rhs.norm();
+    residual_timer.stop();
+    if (timings) timings->residual_ms += residual_timer.elapsed();
     logging::info(true, "Solving finished");
     logging::info(true, "Elapsed time: " + std::to_string(t.elapsed()) + " ms");
-    logging::info(true, "residual    : ", (rhs - mat * sol).norm() / (rhs.norm()));
+    logging::info(true, "residual    : ", relative_residual);
     return sol;
 #endif
 }
