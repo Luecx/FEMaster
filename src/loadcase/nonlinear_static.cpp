@@ -29,10 +29,12 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/assemble.h"
 #include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
+#include "../solve/sparse/solve_sparse.h"
 #include "../io/writer/write_mtx.h"
 #include "tools/arc_length_control.h"
 #include "tools/load_control.h"
@@ -110,6 +112,18 @@ Precision calculate_relative_force_residual(
         ? Precision(0)
         : std::numeric_limits<Precision>::infinity();
 }
+
+struct NonlinearIterationTimings {
+    Time state_ms          = 0;
+    mattools::AssemblyTimings assembly;
+    Time model_other_ms    = 0;
+    Time regularization_ms = 0;
+    Time residual_ms       = 0;
+    Time constraint_ms     = 0;
+    Time line_search_ms    = 0;
+    Time solve_copy_ms     = 0;
+    solver::DirectSolveTimings direct_solve;
+};
 
 } // namespace
 
@@ -297,7 +311,7 @@ void NonlinearStatic::run() {
     logging::info(true, "Control: ",
         control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
-    logging::info(true, " inc iter      lambda      rel_force          rel_du   ls   asm_ms solve_ms");
+    logging::info(true, " inc iter      lambda      rel_force          rel_du   ls  eval_ms solve_ms");
     logging::info(true, "----------------------------------------------------------------------------");
 
     writer->add_loadcase(id, io::writer::WriterStepType::Static);
@@ -307,11 +321,35 @@ void NonlinearStatic::run() {
     Precision     current_evaluation_lambda = Precision(0);
     DynamicVector increment_start_displacement = u_total;
 
+    NonlinearIterationTimings iteration_timings;
+    Time total_eval_ms = 0;
+    Time total_solve_ms = 0;
+    Time total_state_ms = 0;
+    Time total_element_loop_ms = 0;
+    Time total_force_reduction_ms = 0;
+    Time total_insertion_ms = 0;
+    Time total_merge_ms = 0;
+    Time total_model_other_ms = 0;
+    Time total_regularization_ms = 0;
+    Time total_residual_ms = 0;
+    Time total_constraint_ms = 0;
+    Time total_line_search_ms = 0;
+    Time total_solve_copy_ms = 0;
+    Time total_factorization_ms = 0;
+    Time total_backsolve_ms = 0;
+    Time total_solver_residual_ms = 0;
+    Time predictor_total_ms = 0;
+    Time active_set_total_ms = 0;
+    Time increment_output_total_ms = 0;
+
     auto assemble_state = [&](const DynamicVector& q,
                               Precision            lambda,
                               DynamicVector&       residual,
                               SparseMatrix&        tangent,
                               SparseMatrix*        full_tangent) {
+        Timer phase_timer;
+        phase_timer.start();
+
         nonlinear_state.reset_material_state();
 
         const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
@@ -331,38 +369,59 @@ void NonlinearStatic::run() {
         };
         internal_mat.set_zero();
 
+        phase_timer.stop();
+        iteration_timings.state_ms = phase_timer.elapsed();
+
         SparseMatrix Kt;
+        mattools::AssemblyTimings sparse_timings;
 
         const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
 
+        phase_timer.start();
         try {
             Kt = model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 internal_mat,
-                displacement_evaluation
+                displacement_evaluation,
+                nullptr,
+                &sparse_timings
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
             throw;
         }
+        phase_timer.stop();
 
         if (logging_was_enabled) logging::enable();
 
+        iteration_timings.assembly = sparse_timings;
+        iteration_timings.model_other_ms =
+            std::max(Time(0), phase_timer.elapsed() - sparse_timings.total());
+
+        phase_timer.start();
         if (regularize_zero_stiffness_rows) {
             regularise_stiffness(Kt, zero_stiffness_regularization_alpha);
         }
+        phase_timer.stop();
+        iteration_timings.regularization_ms = phase_timer.elapsed();
 
+        phase_timer.start();
         const DynamicVector internal_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
 
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
+        phase_timer.stop();
+        iteration_timings.residual_ms = phase_timer.elapsed();
 
+        phase_timer.start();
         transformer->project_vector(full_residual, residual);
 
         if (full_tangent) *full_tangent = Kt;
         tangent = transformer->assemble_system_matrix(Kt);
+        phase_timer.stop();
+        iteration_timings.constraint_ms = phase_timer.elapsed();
 
         logging::error(residual.allFinite(),
             "Reduced residual contains NaN/Inf entries");
@@ -380,6 +439,7 @@ void NonlinearStatic::run() {
                         Precision            lambda,
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
+        iteration_timings = {};
         current_evaluation_lambda = lambda;
         assemble_state(q, lambda, residual, tangent, nullptr);
     };
@@ -387,6 +447,9 @@ void NonlinearStatic::run() {
     auto evaluate_residual = [&](const DynamicVector& q,
                                  Precision            lambda,
                                  DynamicVector&       residual) {
+        Timer line_search_timer;
+        line_search_timer.start();
+
         current_evaluation_lambda = lambda;
         nonlinear_state.reset_material_state();
 
@@ -433,11 +496,20 @@ void NonlinearStatic::run() {
 
         logging::error(residual.allFinite(),
             "Reduced residual contains NaN/Inf entries");
+
+        line_search_timer.stop();
+        iteration_timings.line_search_ms += line_search_timer.elapsed();
     };
 
     auto linear_solve = [&](const SparseMatrix& tangent,
                             const DynamicVector& rhs) {
+        Timer copy_timer;
+        copy_timer.start();
         SparseMatrix matrix = tangent;
+        copy_timer.stop();
+
+        iteration_timings.solve_copy_ms = copy_timer.elapsed();
+        iteration_timings.direct_solve = {};
 
         DynamicVector solution;
         const bool logging_was_enabled = logging::is_enabled();
@@ -449,7 +521,8 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                matrix_type
+                matrix_type,
+                &iteration_timings.direct_solve
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -463,6 +536,7 @@ void NonlinearStatic::run() {
     auto predictor = [&](DynamicVector& q,
                          Precision      lambda,
                          Precision      target_lambda) {
+        predictor_total_ms += Timer::measure_time([&]() {
         if (q.size() == 0) return;
 
         // Estimate the next equilibrium displacement from the last two
@@ -520,11 +594,18 @@ void NonlinearStatic::run() {
         const DynamicVector dq_dlambda =
             linear_solve(accepted_tangent, predictor_rhs);
         q += (target_lambda - lambda) * dq_dlambda;
+        });
     };
 
     auto matrix_solve = [&](const SparseMatrix& tangent,
                             const DynamicMatrix& rhs) {
+        Timer copy_timer;
+        copy_timer.start();
         SparseMatrix matrix = tangent;
+        copy_timer.stop();
+
+        iteration_timings.solve_copy_ms = copy_timer.elapsed();
+        iteration_timings.direct_solve = {};
 
         DynamicMatrix solution;
         const bool logging_was_enabled = logging::is_enabled();
@@ -536,7 +617,8 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                matrix_type
+                matrix_type,
+                &iteration_timings.direct_solve
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -590,6 +672,20 @@ void NonlinearStatic::run() {
                             Index     line_search_iterations,
                             Time      assembly_ms,
                             Time      solve_ms) {
+        const Time eval_known =
+            iteration_timings.state_ms +
+            iteration_timings.assembly.total() +
+            iteration_timings.model_other_ms +
+            iteration_timings.regularization_ms +
+            iteration_timings.residual_ms +
+            iteration_timings.constraint_ms;
+        const Time eval_other = std::max(Time(0), assembly_ms - eval_known);
+
+        const Time solve_known =
+            iteration_timings.solve_copy_ms +
+            iteration_timings.direct_solve.total();
+        const Time solve_other = std::max(Time(0), solve_ms - solve_known);
+
         logging::info(
             true,
             std::setw(4), increment,
@@ -603,11 +699,54 @@ void NonlinearStatic::run() {
             std::setw(9), assembly_ms,
             std::setw(9), solve_ms
         );
+
+        logging::info(
+            true,
+            "      eval [ms]: state=", iteration_timings.state_ms,
+            " elem_loop=", iteration_timings.assembly.element_loop_ms,
+            " force_red=", iteration_timings.assembly.force_reduction_ms,
+            " insert=", iteration_timings.assembly.insertion_ms,
+            " merge=", iteration_timings.assembly.merge_ms,
+            " model_other=", iteration_timings.model_other_ms,
+            " regularize=", iteration_timings.regularization_ms,
+            " residual=", iteration_timings.residual_ms,
+            " constraints=", iteration_timings.constraint_ms,
+            " other=", eval_other
+        );
+        logging::info(
+            true,
+            "     solve [ms]: copy=", iteration_timings.solve_copy_ms,
+            " factor=", iteration_timings.direct_solve.factorization_ms,
+            " backsolve=", iteration_timings.direct_solve.backsolve_ms,
+            " check=", iteration_timings.direct_solve.residual_ms,
+            " other=", solve_other,
+            " line_search=", iteration_timings.line_search_ms
+        );
+
+        total_eval_ms += assembly_ms;
+        total_solve_ms += solve_ms;
+        total_state_ms += iteration_timings.state_ms;
+        total_element_loop_ms += iteration_timings.assembly.element_loop_ms;
+        total_force_reduction_ms += iteration_timings.assembly.force_reduction_ms;
+        total_insertion_ms += iteration_timings.assembly.insertion_ms;
+        total_merge_ms += iteration_timings.assembly.merge_ms;
+        total_model_other_ms += iteration_timings.model_other_ms;
+        total_regularization_ms += iteration_timings.regularization_ms;
+        total_residual_ms += iteration_timings.residual_ms;
+        total_constraint_ms += iteration_timings.constraint_ms;
+        total_line_search_ms += iteration_timings.line_search_ms;
+        total_solve_copy_ms += iteration_timings.solve_copy_ms;
+        total_factorization_ms += iteration_timings.direct_solve.factorization_ms;
+        total_backsolve_ms += iteration_timings.direct_solve.backsolve_ms;
+        total_solver_residual_ms += iteration_timings.direct_solve.residual_ms;
     };
 
     auto on_increment = [&](Index                increment,
                             const DynamicVector& q,
                             Precision            lambda) {
+        Timer increment_timer;
+        increment_timer.start();
+
         last_converged_increment = increment;
 
         q_total     = q;
@@ -666,6 +805,9 @@ void NonlinearStatic::run() {
         output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
         output.provide(OutputField::LAMBDA,              lambda_field);
         output.write_frame(*writer, model->_data.get());
+
+        increment_timer.stop();
+        increment_output_total_ms += increment_timer.elapsed();
     };
 
     auto begin_increment_trial = [&]() {
@@ -712,6 +854,8 @@ void NonlinearStatic::run() {
                                  Precision            lambda) {
         if (model->_data->contacts.empty()) return true;
 
+        Timer active_set_timer;
+        active_set_timer.start();
         nonlinear_state.begin_contact_trial();
 
         try {
@@ -732,6 +876,9 @@ void NonlinearStatic::run() {
 
         const bool unchanged = nonlinear_state.update_contact_active_set();
         nonlinear_state.commit_contact_trial();
+
+        active_set_timer.stop();
+        active_set_total_ms += active_set_timer.elapsed();
         return unchanged;
     };
 
@@ -741,6 +888,9 @@ void NonlinearStatic::run() {
     const Index configured_max_iterations = static_cast<Index>(max_iterations);
     const Index configured_max_increments = static_cast<Index>(max_increments);
     const Index configured_slow_iterations = static_cast<Index>(slow_iterations);
+
+    Timer nonlinear_control_timer;
+    nonlinear_control_timer.start();
 
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
@@ -823,6 +973,58 @@ void NonlinearStatic::run() {
 
         failure_reason = arc_length_control.failure_reason();
     }
+
+    nonlinear_control_timer.stop();
+
+    const Time solve_known_total =
+        total_solve_copy_ms + total_factorization_ms +
+        total_backsolve_ms + total_solver_residual_ms;
+    const Time solve_other_total = std::max(Time(0), total_solve_ms - solve_known_total);
+
+    const Time eval_known_total =
+        total_state_ms + total_element_loop_ms + total_force_reduction_ms +
+        total_insertion_ms + total_merge_ms + total_model_other_ms +
+        total_regularization_ms + total_residual_ms + total_constraint_ms;
+    const Time eval_other_total = std::max(Time(0), total_eval_ms - eval_known_total);
+
+    const Time controller_other_ms = std::max(
+        Time(0),
+        nonlinear_control_timer.elapsed() -
+        total_eval_ms -
+        total_solve_ms -
+        total_line_search_ms -
+        predictor_total_ms -
+        active_set_total_ms -
+        increment_output_total_ms
+    );
+
+    logging::info(true, "");
+    logging::info(true, "Nonlinear timing summary [ms]");
+    logging::up();
+    logging::info(true, "Newton evaluations      : ", total_eval_ms);
+    logging::info(true, "  state/update          : ", total_state_ms);
+    logging::info(true, "  element loop          : ", total_element_loop_ms);
+    logging::info(true, "  force reduction       : ", total_force_reduction_ms);
+    logging::info(true, "  sparse insertion      : ", total_insertion_ms);
+    logging::info(true, "  sparse merge          : ", total_merge_ms);
+    logging::info(true, "  model/contact/feature : ", total_model_other_ms);
+    logging::info(true, "  regularization        : ", total_regularization_ms);
+    logging::info(true, "  residual construction : ", total_residual_ms);
+    logging::info(true, "  constraint reduction  : ", total_constraint_ms);
+    logging::info(true, "  unclassified eval     : ", eval_other_total);
+    logging::info(true, "Newton linear systems   : ", total_solve_ms);
+    logging::info(true, "  sparse matrix copy    : ", total_solve_copy_ms);
+    logging::info(true, "  factorization/compute : ", total_factorization_ms);
+    logging::info(true, "  backsolve             : ", total_backsolve_ms);
+    logging::info(true, "  solver residual check : ", total_solver_residual_ms);
+    logging::info(true, "  wrapper/augmentation  : ", solve_other_total);
+    logging::info(true, "Line-search residuals   : ", total_line_search_ms);
+    logging::info(true, "Predictor work          : ", predictor_total_ms);
+    logging::info(true, "Contact active-set work : ", active_set_total_ms);
+    logging::info(true, "Accepted increment I/O  : ", increment_output_total_ms);
+    logging::info(true, "Other control overhead  : ", controller_other_ms);
+    logging::info(true, "Nonlinear controller    : ", nonlinear_control_timer.elapsed());
+    logging::down();
 
     logging::error(converged,
         "NONLINEARSTATIC failed: ", failure_reason);
