@@ -58,7 +58,8 @@ namespace fem::solver::detail {
  * @param matrix_type Structural matrix type used to select LU or LDLT.
  * @return Dense matrix containing the solution columns.
  */
-DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, DirectSolverMatrixType matrix_type) {
+DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, DirectSolverMatrixType matrix_type,
+                               DirectSolveTimings* timings) {
     Timer t{};
     t.start();
 
@@ -70,19 +71,33 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 #if defined(USE_MKL)
         // Factorize and solve the general system with PARDISO LU
         Eigen::PardisoLU<SparseMatrix> solver{};
+        Timer phase_timer;
+        phase_timer.start();
         solver.compute(mat);
+        phase_timer.stop();
+        if (timings) timings->factorization_ms += phase_timer.elapsed();
 
         if (solver.info() == Eigen::Success) {
-            sol     = solver.solve(rhs);
+            phase_timer.start();
+            sol = solver.solve(rhs);
+            phase_timer.stop();
+            if (timings) timings->backsolve_ms += phase_timer.elapsed();
             success = solver.info() == Eigen::Success;
         }
 #else
         // Keep the portable Eigen LU path for general matrices on Apple and fallback builds
         Eigen::SparseLU<SparseMatrix, Eigen::COLAMDOrdering<int>> solver{};
+        Timer phase_timer;
+        phase_timer.start();
         solver.compute(mat);
+        phase_timer.stop();
+        if (timings) timings->factorization_ms += phase_timer.elapsed();
 
         if (solver.info() == Eigen::Success) {
-            sol     = solver.solve(rhs);
+            phase_timer.start();
+            sol = solver.solve(rhs);
+            phase_timer.stop();
+            if (timings) timings->backsolve_ms += phase_timer.elapsed();
             success = solver.info() == Eigen::Success;
         }
 #endif
@@ -91,9 +106,16 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
         if (!success) {
             logging::warning(false, "General sparse LU failed; falling back to SparseQR");
 
+            Timer phase_timer;
+            phase_timer.start();
             Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr(mat);
             qr.compute(mat);
+            phase_timer.stop();
+            if (timings) timings->factorization_ms += phase_timer.elapsed();
+            phase_timer.start();
             sol = qr.solve(rhs);
+            phase_timer.stop();
+            if (timings) timings->backsolve_ms += phase_timer.elapsed();
 
             logging::error(qr.info() == Eigen::Success,
                 "Solving general sparse system failed with SparseQR");
@@ -101,9 +123,14 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 
         // Report the solve time and relative residual
         t.stop();
+        Timer residual_timer;
+        residual_timer.start();
+        const Precision relative_residual = (rhs - mat * sol).norm() / rhs.norm();
+        residual_timer.stop();
+        if (timings) timings->residual_ms += residual_timer.elapsed();
         logging::info(true, "Solving finished");
         logging::info(true, "Elapsed time : ", t.elapsed(), " ms");
-        logging::info(true, "Residual     : ", (rhs - mat * sol).norm() / rhs.norm());
+        logging::info(true, "Residual     : ", relative_residual);
         return sol;
     }
 
@@ -119,10 +146,17 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     logging::info(true, "MKL max threads          : ", mkl_max_threads);
 
     Eigen::PardisoLDLT<SparseMatrix> solver{};
+    Timer phase_timer;
+    phase_timer.start();
     solver.compute(mat);
+    phase_timer.stop();
+    if (timings) timings->factorization_ms += phase_timer.elapsed();
 
     if (solver.info() == Eigen::Success) {
-        sol     = solver.solve(rhs);
+        phase_timer.start();
+        sol = solver.solve(rhs);
+        phase_timer.stop();
+        if (timings) timings->backsolve_ms += phase_timer.elapsed();
         success = solver.info() == Eigen::Success;
     }
 #elif defined(USE_ACCELERATE)
@@ -130,19 +164,33 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     mat.makeCompressed();
 
     Eigen::AccelerateLDLT<SparseMatrix> solver{};
+    Timer phase_timer;
+    phase_timer.start();
     solver.compute(mat);
+    phase_timer.stop();
+    if (timings) timings->factorization_ms += phase_timer.elapsed();
 
     if (solver.info() == Eigen::Success) {
-        sol     = solver.solve(rhs);
+        phase_timer.start();
+        sol = solver.solve(rhs);
+        phase_timer.stop();
+        if (timings) timings->backsolve_ms += phase_timer.elapsed();
         success = solver.info() == Eigen::Success;
     }
 #else
     // Use Eigen's portable symmetric factorization when no native backend is enabled
     Eigen::SimplicialLDLT<SparseMatrix> solver{};
+    Timer phase_timer;
+    phase_timer.start();
     solver.compute(mat);
+    phase_timer.stop();
+    if (timings) timings->factorization_ms += phase_timer.elapsed();
 
     if (solver.info() == Eigen::Success) {
-        sol     = solver.solve(rhs);
+        phase_timer.start();
+        sol = solver.solve(rhs);
+        phase_timer.stop();
+        if (timings) timings->backsolve_ms += phase_timer.elapsed();
         success = solver.info() == Eigen::Success;
     }
 #endif
@@ -151,9 +199,16 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     if (!success) {
         logging::warning(false, "Sparse LDLT failed; falling back to SparseQR");
 
+        Timer phase_timer;
+        phase_timer.start();
         Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr(mat);
         qr.compute(mat);
+        phase_timer.stop();
+        if (timings) timings->factorization_ms += phase_timer.elapsed();
+        phase_timer.start();
         sol = qr.solve(rhs);
+        phase_timer.stop();
+        if (timings) timings->backsolve_ms += phase_timer.elapsed();
 
         logging::error(qr.info() == Eigen::Success,
             "Solving sparse system failed with SparseQR");
@@ -161,9 +216,14 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 
     // Report the solve time and relative residual
     t.stop();
+    Timer residual_timer;
+    residual_timer.start();
+    const Precision relative_residual = (rhs - mat * sol).norm() / rhs.norm();
+    residual_timer.stop();
+    if (timings) timings->residual_ms += residual_timer.elapsed();
     logging::info(true, "Solving finished");
     logging::info(true, "Elapsed time : ", t.elapsed(), " ms");
-    logging::info(true, "Residual     : ", (rhs - mat * sol).norm() / rhs.norm());
+    logging::info(true, "Residual     : ", relative_residual);
 
     return sol;
 }
