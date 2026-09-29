@@ -25,9 +25,10 @@ inline DynamicMatrix solve(SolverDevice device,
                            SolverMethod method,
                            SparseMatrix& mat,
                            const DynamicMatrix& rhs,
-                           DirectSolverMatrixType direct_matrix_type = DirectSolverMatrixType::SPD) {
+                           DirectSolverMatrixType direct_matrix_type = DirectSolverMatrixType::SPD,
+                           DirectSolveTimings* timings = nullptr) {
     if (method == DIRECT) {
-        return solve_direct(device, mat, rhs, direct_matrix_type);
+        return solve_direct(device, mat, rhs, direct_matrix_type, timings);
     } else {
         return solve_indirect(device, mat, rhs);
     }
@@ -40,9 +41,10 @@ inline DynamicVector solve(SolverDevice device,
                            SolverMethod method,
                            SparseMatrix& mat,
                            const DynamicVector& rhs,
-                           DirectSolverMatrixType direct_matrix_type = DirectSolverMatrixType::SPD) {
+                           DirectSolverMatrixType direct_matrix_type = DirectSolverMatrixType::SPD,
+                           DirectSolveTimings* timings = nullptr) {
     const DynamicMatrix rhs_matrix = rhs;
-    const DynamicMatrix solution = solve(device, method, mat, rhs_matrix, direct_matrix_type);
+    const DynamicMatrix solution = solve(device, method, mat, rhs_matrix, direct_matrix_type, timings);
     return solution.col(0);
 }
 }  // namespace solver
