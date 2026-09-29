@@ -48,13 +48,16 @@
 namespace fem { namespace mattools {
 
 struct AssemblyTimings {
-    Time element_loop_ms    = 0;
+    Time setup_ms           = 0;
+    Time element_eval_ms    = 0;
+    Time triplet_build_ms   = 0;
     Time force_reduction_ms = 0;
     Time insertion_ms       = 0;
     Time merge_ms           = 0;
 
     [[nodiscard]] Time total() const {
-        return element_loop_ms + force_reduction_ms + insertion_ms + merge_ms;
+        return setup_ms + element_eval_ms + triplet_build_ms +
+               force_reduction_ms + insertion_ms + merge_ms;
     }
 };
 
@@ -132,6 +135,9 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
                                             Lambda&& compute_local_matrix,
                                             model::NodeData* nodal_forces = nullptr,
                                             AssemblyTimings* timings = nullptr) {
+    Timer setup_timer;
+    setup_timer.start();
+
     // The serial path must also restore linear-algebra threading on return or throw.
     const parallel::ScopedLinearAlgebraThreads threading;
 
@@ -154,7 +160,11 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     // bound peak temporary memory consumption.
     constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
 
+    setup_timer.stop();
+    if (timings) timings->setup_ms += setup_timer.elapsed();
+
     Time insertion_ms = 0;
+    Time element_eval_ms = 0;
     Timer loop_timer;
     loop_timer.start();
 
@@ -173,12 +183,16 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
         // Evaluate the current element matrix into the temporary storage.
+        Timer element_timer;
+        element_timer.start();
         auto local_matrix = compute_local_matrix_with_optional_forces(
             compute_local_matrix,
             element,
             local_matrix_storage,
             nodal_forces
         );
+        element_timer.stop();
+        element_eval_ms += element_timer.elapsed();
 
         // Determine the element topology and infer the uniform number of local
         // DOFs associated with each node.
@@ -235,8 +249,10 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     loop_timer.stop();
 
     if (timings) {
-        timings->element_loop_ms += std::max(Time(0), loop_timer.elapsed() - insertion_ms);
-        timings->insertion_ms    += insertion_ms;
+        timings->element_eval_ms  += element_eval_ms;
+        timings->triplet_build_ms += std::max(
+            Time(0), loop_timer.elapsed() - insertion_ms - element_eval_ms);
+        timings->insertion_ms += insertion_ms;
     }
 
     return global_matrix;
@@ -297,6 +313,9 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // compressed sparse matrix arrays.
     using StorageIndex = typename SparseMatrix::StorageIndex;
 
+    Timer setup_timer;
+    setup_timer.start();
+
     // Keep library-level threading suppressed during local assembly and merge,
     // including paths that throw before the final sparse matrix is returned.
     const parallel::ScopedLinearAlgebraThreads threading;
@@ -336,6 +355,11 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
         thread_triplets[thread_id].reserve(BATCH_SIZE);
     }
 
+    std::vector<Time> thread_element_eval_ms(static_cast<std::size_t>(num_threads), Time(0));
+
+    setup_timer.stop();
+    if (timings) timings->setup_ms += setup_timer.elapsed();
+
     // Measure the principal assembly and merge phases independently.
     Timer timer;
     timer.start();
@@ -365,12 +389,16 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                 ? &thread_nodal_forces[static_cast<std::size_t>(thread_id)]
                 : nullptr;
 
+            Timer element_timer;
+            element_timer.start();
             auto local_matrix = compute_local_matrix_with_optional_forces(
                 compute_local_matrix,
                 element,
                 local_matrix_storage,
                 local_nodal_forces
             );
+            element_timer.stop();
+            thread_element_eval_ms[static_cast<std::size_t>(thread_id)] += element_timer.elapsed();
 
             // Infer the complete local algebraic dimension and the uniform
             // number of DOFs associated with each node.
@@ -425,7 +453,12 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     threading.limit();
 
     timer.stop();
-    if (timings) timings->element_loop_ms += timer.elapsed();
+    if (timings) {
+        const Time element_eval_ms = *std::max_element(
+            thread_element_eval_ms.begin(), thread_element_eval_ms.end());
+        timings->element_eval_ms += element_eval_ms;
+        timings->triplet_build_ms += std::max(Time(0), timer.elapsed() - element_eval_ms);
+    }
 
     logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
     timer.start();
