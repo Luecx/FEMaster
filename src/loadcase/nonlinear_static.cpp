@@ -325,7 +325,9 @@ void NonlinearStatic::run() {
     Time total_eval_ms = 0;
     Time total_solve_ms = 0;
     Time total_state_ms = 0;
-    Time total_element_loop_ms = 0;
+    Time total_assembly_setup_ms = 0;
+    Time total_element_eval_ms = 0;
+    Time total_triplet_build_ms = 0;
     Time total_force_reduction_ms = 0;
     Time total_insertion_ms = 0;
     Time total_merge_ms = 0;
@@ -703,7 +705,9 @@ void NonlinearStatic::run() {
         logging::info(
             true,
             "      eval [ms]: state=", iteration_timings.state_ms,
-            " elem_loop=", iteration_timings.assembly.element_loop_ms,
+            " setup=", iteration_timings.assembly.setup_ms,
+            " elem_eval=", iteration_timings.assembly.element_eval_ms,
+            " triplets=", iteration_timings.assembly.triplet_build_ms,
             " force_red=", iteration_timings.assembly.force_reduction_ms,
             " insert=", iteration_timings.assembly.insertion_ms,
             " merge=", iteration_timings.assembly.merge_ms,
@@ -726,7 +730,9 @@ void NonlinearStatic::run() {
         total_eval_ms += assembly_ms;
         total_solve_ms += solve_ms;
         total_state_ms += iteration_timings.state_ms;
-        total_element_loop_ms += iteration_timings.assembly.element_loop_ms;
+        total_assembly_setup_ms += iteration_timings.assembly.setup_ms;
+        total_element_eval_ms += iteration_timings.assembly.element_eval_ms;
+        total_triplet_build_ms += iteration_timings.assembly.triplet_build_ms;
         total_force_reduction_ms += iteration_timings.assembly.force_reduction_ms;
         total_insertion_ms += iteration_timings.assembly.insertion_ms;
         total_merge_ms += iteration_timings.assembly.merge_ms;
@@ -982,7 +988,8 @@ void NonlinearStatic::run() {
     const Time solve_other_total = std::max(Time(0), total_solve_ms - solve_known_total);
 
     const Time eval_known_total =
-        total_state_ms + total_element_loop_ms + total_force_reduction_ms +
+        total_state_ms + total_assembly_setup_ms + total_element_eval_ms +
+        total_triplet_build_ms + total_force_reduction_ms +
         total_insertion_ms + total_merge_ms + total_model_other_ms +
         total_regularization_ms + total_residual_ms + total_constraint_ms;
     const Time eval_other_total = std::max(Time(0), total_eval_ms - eval_known_total);
@@ -1003,7 +1010,9 @@ void NonlinearStatic::run() {
     logging::up();
     logging::info(true, "Newton evaluations      : ", total_eval_ms);
     logging::info(true, "  state/update          : ", total_state_ms);
-    logging::info(true, "  element loop          : ", total_element_loop_ms);
+    logging::info(true, "  sparse setup          : ", total_assembly_setup_ms);
+    logging::info(true, "  element/material eval : ", total_element_eval_ms);
+    logging::info(true, "  DOF/triplet build     : ", total_triplet_build_ms);
     logging::info(true, "  force reduction       : ", total_force_reduction_ms);
     logging::info(true, "  sparse insertion      : ", total_insertion_ms);
     logging::info(true, "  sparse merge          : ", total_merge_ms);
