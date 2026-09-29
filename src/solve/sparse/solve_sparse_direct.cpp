@@ -8,7 +8,8 @@ namespace fem::solver {
 DynamicMatrix solve_direct(SolverDevice device,
                            SparseMatrix& mat,
                            const DynamicMatrix& rhs,
-                           DirectSolverMatrixType matrix_type) {
+                           DirectSolverMatrixType matrix_type,
+                           DirectSolveTimings* timings) {
     logging::error(mat.rows() == mat.cols(), "matrix must be square");
     logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
     logging::error(rhs.cols() > 0, "at least one right-hand side is required");
@@ -31,8 +32,8 @@ DynamicMatrix solve_direct(SolverDevice device,
 
     logging::up();
     DynamicMatrix sol = (device == GPU)
-        ? detail::solve_direct_gpu(mat, rhs, matrix_type)
-        : detail::solve_direct_cpu(mat, rhs, matrix_type);
+        ? detail::solve_direct_gpu(mat, rhs, matrix_type, timings)
+        : detail::solve_direct_cpu(mat, rhs, matrix_type, timings);
     logging::down();
     return sol;
 }
