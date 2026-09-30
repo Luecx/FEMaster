@@ -115,7 +115,8 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
                     const auto destination = part->node_sets.activate(ctx->name);
 
                     for (ID id = first;; id += inc) {
-                        destination->add(id);
+                        if (part->nodes.find(id) != part->nodes.end())
+                            destination->add(id);
 
                         const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
