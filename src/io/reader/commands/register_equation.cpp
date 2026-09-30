@@ -105,8 +105,27 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
                 .bind([&model, ctx](const std::array<std::string, 12>& data) {
-                    logging::error(ctx->remaining > 0,
-                        "EQUATION: more term data provided than declared");
+                    if (ctx->remaining == 0) {
+                        for (std::size_t i = 1; i < data.size(); ++i) {
+                            logging::error(data[i].empty(),
+                                "EQUATION: term count line must contain exactly one value");
+                        }
+
+                        std::int64_t terms = 0;
+                        std::istringstream terms_stream(data[0]);
+                        terms_stream >> terms;
+                        if (!terms_stream.eof()) terms_stream >> std::ws;
+
+                        logging::error(!terms_stream.fail() && terms_stream.eof(),
+                            "EQUATION: term count must be an integer");
+                        logging::error(terms >= 2,
+                            "EQUATION: at least two terms are required");
+
+                        ctx->remaining    = static_cast<Index>(terms);
+                        ctx->first_is_set = false;
+                        ctx->equations.clear();
+                        return;
+                    }
 
                     Index terms_on_line = 0;
 
