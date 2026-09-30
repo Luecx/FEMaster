@@ -21,10 +21,7 @@
 #include "../parser_abq.h"
 
 #include <array>
-#include <cmath>
-#include <cstdint>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <utility>
 
@@ -80,24 +77,9 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
         });
 
         command.variant(fem::io::dsl::Variant::make()
-            // The first data line contains only the signed term count. Parsing it as
-            // signed prevents negative values from wrapping into the unsigned Index type.
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::int64_t>().name("TERMS")
-                )
-                .bind([ctx](std::int64_t terms) {
-                    logging::error(terms >= 2,
-                        "EQUATION: at least two terms are required");
-
-                    ctx->remaining    = static_cast<Index>(terms);
-                    ctx->first_is_set = false;
-                    ctx->equations.clear();
-                })
-            )
-            // Abaqus permits one to four triples per physical data line. Missing tail
-            // fields are padded with empty strings so the fixed DSL pattern stays simple.
+            // Every physical line is normalized to twelve string fields. A line with
+            // only the first field populated starts a new equation; all other lines
+            // contain up to four (target, dof, coefficient) triples.
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
@@ -105,19 +87,11 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
                 .bind([&model, ctx](const std::array<std::string, 12>& data) {
-                    if (ctx->remaining == 0) {
-                        for (std::size_t i = 1; i < data.size(); ++i) {
-                            logging::error(data[i].empty(),
-                                "EQUATION: term count line must contain exactly one value");
-                        }
+                    if (data[1].empty()) {
+                        logging::error(ctx->remaining == 0,
+                            "EQUATION: fewer terms provided than declared");
 
-                        std::int64_t terms = 0;
-                        std::istringstream terms_stream(data[0]);
-                        terms_stream >> terms;
-                        if (!terms_stream.eof()) terms_stream >> std::ws;
-
-                        logging::error(!terms_stream.fail() && terms_stream.eof(),
-                            "EQUATION: term count must be an integer");
+                        const auto terms = std::stoll(data[0]);
                         logging::error(terms >= 2,
                             "EQUATION: at least two terms are required");
 
@@ -127,39 +101,24 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         return;
                     }
 
+                    logging::error(ctx->remaining > 0,
+                        "EQUATION: term data provided before term count");
+
                     Index terms_on_line = 0;
 
-                    // Parse each complete target/DOF/coefficient triple and append it
-                    // directly to the final equation rows.
-                    for (std::size_t i = 0; i < data.size(); i += 3) {
-                        if (data[i].empty()) break;
-
+                    for (std::size_t i = 0; i < data.size() && !data[i].empty(); i += 3) {
                         logging::error(!data[i + 1].empty() && !data[i + 2].empty(),
                             "EQUATION: incomplete node/DOF/coefficient triple");
 
-                        int       dof         = 0;
-                        Precision coefficient = Precision(0);
+                        const int       dof         = std::stoi(data[i + 1]);
+                        const Precision coefficient = static_cast<Precision>(std::stod(data[i + 2]));
 
-                        std::istringstream dof_stream        (data[i + 1]);
-                        std::istringstream coefficient_stream(data[i + 2]);
-                        dof_stream         >> dof;
-                        coefficient_stream >> coefficient;
-
-                        // Consume trailing whitespace only while unread characters remain.
-                        // Calling std::ws after numeric extraction already reached EOF sets failbit.
-                        if (!dof_stream.eof())         dof_stream         >> std::ws;
-                        if (!coefficient_stream.eof()) coefficient_stream >> std::ws;
-
-                        logging::error(!dof_stream.fail() && dof_stream.eof() && dof >= 1 && dof <= 6,
+                        logging::error(dof >= 1 && dof <= 6,
                             "EQUATION: DOF must be an integer in [1,6]");
-                        logging::error(!coefficient_stream.fail() && coefficient_stream.eof() && std::isfinite(coefficient),
-                            "EQUATION: coefficient must be finite");
 
                         const Dim  equation_dof = static_cast<Dim>(dof - 1);
                         const bool is_set       = model._data->node_sets.has(data[i]);
 
-                        // The first target determines whether this input expands to one
-                        // equation or one equation per member of an NSET.
                         if (ctx->equations.empty()) {
                             ctx->first_is_set = is_set;
 
@@ -178,10 +137,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                                     model.compiled_node_id(data[i]), equation_dof, coefficient
                                 });
                             }
-                        }
-                        // Subsequent NSETs are only legal when the first target was an
-                        // NSET, and they must have exactly the same cardinality for pairing.
-                        else if (is_set) {
+                        } else if (is_set) {
                             logging::error(ctx->first_is_set,
                                 "EQUATION: node sets are only valid when the first target is a node set");
 
@@ -192,10 +148,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                             for (std::size_t j = 0; j < ctx->equations.size(); ++j) {
                                 ctx->equations[j].entries.push_back({set->at(j), equation_dof, coefficient});
                             }
-                        }
-                        // A later single node contributes the same term to every row
-                        // generated by the first NSET, or to the single scalar equation.
-                        else {
+                        } else {
                             const ID node = model.compiled_node_id(data[i]);
                             for (auto& equation : ctx->equations) {
                                 equation.entries.push_back({node, equation_dof, coefficient});
@@ -205,21 +158,15 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         ++terms_on_line;
                     }
 
-                    // Validate the physical line before reducing the declared term count.
-                    logging::error(terms_on_line > 0,
-                        "EQUATION: data line contains no terms");
                     logging::error(terms_on_line <= ctx->remaining,
                         "EQUATION: more terms provided than declared");
 
                     ctx->remaining -= terms_on_line;
                     if (ctx->remaining != 0) return;
 
-                    // Once all declared terms are present, transfer the completed expanded
-                    // rows into the compiled model and clear the temporary parser storage.
-                    auto& equations = model._data->equations;
                     for (auto& equation : ctx->equations) {
                         equation.source = constraint::EquationSourceKind::Manual;
-                        equations.push_back(std::move(equation));
+                        model._data->equations.push_back(std::move(equation));
                     }
                     ctx->equations.clear();
                 })
