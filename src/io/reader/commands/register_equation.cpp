@@ -21,7 +21,10 @@
 #include "../parser_abq.h"
 
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -91,9 +94,15 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         logging::error(ctx->remaining == 0,
                             "EQUATION: fewer terms provided than declared");
 
-                        const auto terms = std::stoll(data[0]);
-                        logging::error(terms >= 2,
-                            "EQUATION: at least two terms are required");
+                        // Parse the term count strictly so malformed tokens cannot be
+                        // accepted through a valid numeric prefix such as "2foo".
+                        std::int64_t terms = 0;
+                        std::istringstream terms_stream(data[0]);
+                        terms_stream >> terms;
+                        if (!terms_stream.eof()) terms_stream >> std::ws;
+
+                        logging::error(!terms_stream.fail() && terms_stream.eof() && terms >= 2,
+                            "EQUATION: term count must be an integer of at least two");
 
                         ctx->remaining    = static_cast<Index>(terms);
                         ctx->first_is_set = false;
@@ -110,11 +119,24 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         logging::error(!data[i + 1].empty() && !data[i + 2].empty(),
                             "EQUATION: incomplete node/DOF/coefficient triple");
 
-                        const int       dof         = std::stoi(data[i + 1]);
-                        const Precision coefficient = static_cast<Precision>(std::stod(data[i + 2]));
+                        // Parse the numeric term fields with complete token consumption.
+                        // This rejects prefixes such as "1.5" for a DOF and prevents
+                        // non-finite coefficients from entering the constraint system.
+                        int       dof         = 0;
+                        Precision coefficient = Precision(0);
 
-                        logging::error(dof >= 1 && dof <= 6,
+                        std::istringstream dof_stream        (data[i + 1]);
+                        std::istringstream coefficient_stream(data[i + 2]);
+                        dof_stream         >> dof;
+                        coefficient_stream >> coefficient;
+
+                        if (!dof_stream.eof())         dof_stream         >> std::ws;
+                        if (!coefficient_stream.eof()) coefficient_stream >> std::ws;
+
+                        logging::error(!dof_stream.fail() && dof_stream.eof() && dof >= 1 && dof <= 6,
                             "EQUATION: DOF must be an integer in [1,6]");
+                        logging::error(!coefficient_stream.fail() && coefficient_stream.eof() && std::isfinite(coefficient),
+                            "EQUATION: coefficient must be finite");
 
                         const Dim  equation_dof = static_cast<Dim>(dof - 1);
                         const bool is_set       = model._data->node_sets.has(data[i]);
