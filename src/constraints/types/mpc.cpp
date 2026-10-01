@@ -90,8 +90,7 @@ Equations Mpc::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         "MPC BEAM: POSITION field is not initialized");
 
     const auto& node_coords = *model_data.positions;
-    const Vec3 r = node_coords.row_vec3(static_cast<Index>(node_1_id_))
-                 - node_coords.row_vec3(static_cast<Index>(node_2_id_));
+    const Vec3 r = node_coords.row_vec3(static_cast<Index>(node_1_id_)) - node_coords.row_vec3(static_cast<Index>(node_2_id_));
 
     const Precision dx = r(0);
     const Precision dy = r(1);
