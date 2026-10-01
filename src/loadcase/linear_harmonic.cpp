@@ -28,6 +28,9 @@
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
+#include "../solve/eigval/solve_eigval.h"
+
+#include <Eigen/LU>
 
 #include <algorithm>
 #include <cmath>
@@ -182,6 +185,95 @@ void LinearHarmonic::run() {
         [&]() { return damping.build(Mr, Kr); },
         "constructing reduced Rayleigh damping matrix Cr");
 
+    DynamicMatrix basis(Kr.rows(), 0);
+    DynamicVector eigenvalues;
+    DynamicMatrix modal_stiffness;
+    DynamicMatrix modal_mass;
+    DynamicMatrix modal_damping;
+    if (modal_basis) {
+        const Precision upper_frequency  = 2 * *std::max_element(frequencies.begin(), frequencies.end());
+        const Precision upper_omega      = 2 * pi * upper_frequency;
+        const Precision upper_eigenvalue = upper_omega * upper_omega;
+        logging::error(std::isfinite(upper_eigenvalue),
+            "LinearHarmonic: modal basis upper eigenvalue must be finite");
+
+        if (upper_eigenvalue > 0 && Kr.rows() > 1) {
+            solver::EigvalOpts opts;
+            opts.mode = solver::EigvalMode::ShiftInvert;
+            opts.sort = solver::EigvalOpts::Sort::LargestMagn;
+            auto pairs = Timer::measure(
+                [&]() { return solver::eigvals(device, Kr, Mr, Precision(0), upper_eigenvalue, opts); },
+                "constructing harmonic modal basis");
+
+            const Index num_modes = static_cast<Index>(pairs.size());
+            basis.resize(Kr.rows(), num_modes);
+            eigenvalues.resize(num_modes);
+            for (Index mode = 0; mode < num_modes; ++mode) {
+                const auto& pair = pairs[static_cast<std::size_t>(mode)];
+                const Precision modal_mass = pair.vector.dot(Mr * pair.vector);
+                logging::error(std::isfinite(modal_mass) && modal_mass > 0,
+                    "LinearHarmonic: modal mass must be finite and positive");
+                basis.col(mode)   = pair.vector / std::sqrt(modal_mass);
+                eigenvalues(mode) = pair.value;
+            }
+        }
+
+        if (basis.cols() > 0) {
+            auto load_basis = model->build_load_basis(loads);
+            if (!load_basis.empty()) {
+                const Index num_patterns = static_cast<Index>(load_basis.size());
+                DynamicMatrix load_vectors(Kr.rows(), num_patterns);
+                for (Index pattern = 0; pattern < num_patterns; ++pattern) {
+                    const auto& field = load_basis[pattern].second;
+                    const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, field);
+                    load_vectors.col(pattern) = transformer->assemble_system_rhs(K, f);
+                }
+
+                const DynamicMatrix static_responses = Timer::measure(
+                    [&]() { return solver::solve(device, method, Kr, load_vectors, solver::DirectSolverMatrixType::SPD); },
+                    "solving harmonic static load basis");
+                logging::error(static_responses.allFinite(),
+                    "LinearHarmonic: static load basis contains invalid values");
+
+                const Precision residual_tolerance = Precision(1e-10);
+                for (Index pattern = 0; pattern < num_patterns; ++pattern) {
+                    DynamicVector residual = static_responses.col(pattern);
+                    const Precision static_mass = residual.dot(Mr * residual);
+                    logging::error(std::isfinite(static_mass) && static_mass >= 0,
+                        "LinearHarmonic: static response mass norm must be finite and non-negative");
+                    if (static_mass == 0) {
+                        continue;
+                    }
+
+                    for (int pass = 0; pass < 2; ++pass) {
+                        const DynamicVector projection = basis.transpose() * (Mr * residual);
+                        residual -= basis * projection;
+                    }
+
+                    const Precision residual_mass = residual.dot(Mr * residual);
+                    logging::error(std::isfinite(residual_mass) && residual_mass >= 0,
+                        "LinearHarmonic: residual mass norm must be finite and non-negative");
+                    if (residual_mass <= residual_tolerance * residual_tolerance * static_mass) {
+                        continue;
+                    }
+
+                    const Eigen::Index column = basis.cols();
+                    basis.conservativeResize(Kr.rows(), column + 1);
+                    basis.col(column) = residual / std::sqrt(residual_mass);
+                }
+            }
+
+            modal_stiffness = basis.transpose() * (Kr * basis);
+            modal_mass     = basis.transpose() * (Mr * basis);
+            modal_damping  = damping.alpha * modal_mass + damping.beta * modal_stiffness;
+        }
+
+        logging::info(true             , "Modal basis modes          : ", eigenvalues.size());
+        logging::info(true             , "Residual basis vectors     : ", basis.cols() - eigenvalues.size());
+        logging::info(true             , "Modal basis upper frequency: ", upper_frequency);
+        logging::info(basis.cols() == 0, "Modal basis is empty; using the direct harmonic solver");
+    }
+
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
 
     logging::info(true, "Frequency sweep");
@@ -191,6 +283,8 @@ void LinearHarmonic::run() {
                   std::setw(18), "Response norm");
     logging::info(true, "----------------------------------------");
 
+    Timer sweep_timer;
+    sweep_timer.start();
     for (Index i = 0; i < static_cast<Index>(frequencies.size()); ++i) {
         const Precision frequency = frequencies[i];
         const Precision omega     = 2.0 * pi * frequency;
@@ -206,25 +300,51 @@ void LinearHarmonic::run() {
             const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
             const DynamicVector fr = transformer->assemble_system_rhs(K, f);
 
-            SparseMatrix A = Kr - omega * omega * Mr;
-            SparseMatrix B = omega * Cr;
-            A.makeCompressed();
-            B.makeCompressed();
+            DynamicVector q_real;
+            DynamicVector q_imag;
+            if (basis.cols() > 0) {
+                const Index num_modes = static_cast<Index>(basis.cols());
+                const DynamicMatrix A = modal_stiffness - omega * omega * modal_mass;
+                const DynamicMatrix B = omega * modal_damping;
 
-            SparseMatrix block_matrix = build_block_matrix(A, B);
-            const DynamicVector zero = DynamicVector::Zero(fr.size());
-            const DynamicVector rhs  = build_block_rhs(fr, zero);
+                DynamicMatrix block_matrix(2 * num_modes, 2 * num_modes);
+                block_matrix.topLeftCorner    (num_modes, num_modes) =  A;
+                block_matrix.topRightCorner   (num_modes, num_modes) = -B;
+                block_matrix.bottomLeftCorner (num_modes, num_modes) =  B;
+                block_matrix.bottomRightCorner(num_modes, num_modes) =  A;
 
-            DynamicVector solution = solve(
-                device,
-                method,
-                block_matrix,
-                rhs,
-                solver::DirectSolverMatrixType::General);
+                DynamicVector rhs = DynamicVector::Zero(2 * num_modes);
+                rhs.head(num_modes) = basis.transpose() * fr;
 
-            const Index n = static_cast<Index>(fr.size());
-            const DynamicVector q_real = solution.head(n);
-            const DynamicVector q_imag = solution.tail(n);
+                Eigen::FullPivLU<DynamicMatrix> modal_solver(block_matrix);
+                logging::error(modal_solver.isInvertible(),
+                    "LinearHarmonic: projected dynamic stiffness is singular");
+                const DynamicVector solution = modal_solver.solve(rhs);
+                logging::error(solution.allFinite(),
+                    "LinearHarmonic: projected harmonic solution contains invalid values");
+                q_real = basis * solution.head(num_modes);
+                q_imag = basis * solution.tail(num_modes);
+            } else {
+                SparseMatrix A = Kr - omega * omega * Mr;
+                SparseMatrix B = omega * Cr;
+                A.makeCompressed();
+                B.makeCompressed();
+
+                SparseMatrix block_matrix = build_block_matrix(A, B);
+                const DynamicVector zero = DynamicVector::Zero(fr.size());
+                const DynamicVector rhs  = build_block_rhs(fr, zero);
+
+                DynamicVector solution = solve(
+                    device,
+                    method,
+                    block_matrix,
+                    rhs,
+                    solver::DirectSolverMatrixType::General);
+
+                const Index n = static_cast<Index>(fr.size());
+                q_real = solution.head(n);
+                q_imag = solution.tail(n);
+            }
 
             u_real = transformer->recover_displacement(q_real);
             u_imag = transformer->recover_displacement(q_imag);
@@ -252,6 +372,8 @@ void LinearHarmonic::run() {
                       std::setw(18), std::scientific, std::setprecision(6),
                       std::sqrt(u_real.squaredNorm() + u_imag.squaredNorm()));
     }
+    sweep_timer.stop();
+    logging::info(true, "Harmonic frequency sweep elapsed: ", sweep_timer.elapsed(), " ms");
 
     logging::info(true, "");
     model->step_end();
