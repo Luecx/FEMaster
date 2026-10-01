@@ -291,7 +291,7 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
 
     // Add independent-node components required by two-node MPC kinematics
     for (const auto& mpc : _data->mpcs) {
-        const ID master_id = mpc.node_2();
+        const ID   master_id   = mpc.node_2();
         const auto master_dofs = mpc.master_dofs(mask);
 
         for (ID dof = 0; dof < 6; ++dof) {
