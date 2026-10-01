@@ -25,7 +25,8 @@ namespace constraint {
 struct ConstraintGroups {
     constraint::Equations supports;   ///< Equations originating from supports.
     constraint::Equations connectors; ///< Equations originating from connectors.
-    constraint::Equations mpcs;       ///< Equations originating from multi-point constraints.
+    // Equations originating from multi-point constraints
+    constraint::Equations mpcs;
     constraint::Equations couplings;  ///< Equations originating from couplings.
     constraint::Equations ties;       ///< Equations originating from tie constraints.
     constraint::Equations rbms;       ///< Equations originating from RBM constraints.
