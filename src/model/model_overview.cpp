@@ -226,6 +226,7 @@ void Model::print_overview() const {
     logging::info(true, "Constraints");
     logging::up();
     logging::info(true, "Connectors: ", model_data.connectors.size());
+    logging::info(true, "MPCs      : ", model_data.mpcs.size());
     logging::info(true, "Couplings : ", model_data.couplings.size());
     logging::up();
     for (const auto& coupling : model_data.couplings) {
