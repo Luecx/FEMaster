@@ -235,6 +235,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
     root.execute_children("RBM");
     root.execute_children("CONNECTOR");
+    root.execute_children("MPC");
     root.execute_children("CONTACT");
     root.execute_children("EQUATION");
 
@@ -253,6 +254,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
         assembly->execute_children("RBM");
         assembly->execute_children("CONNECTOR");
+        assembly->execute_children("MPC");
         assembly->execute_children("CONTACT");
         assembly->execute_children("EQUATION");
     }
@@ -485,6 +487,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_support(registry, mdl);
     commands::register_amplitude(registry, mdl);
     commands::register_connector(registry, mdl);
+    commands::register_mpc(registry, mdl);
     commands::register_coupling(registry, mdl);
     commands::register_tie(registry, mdl);
     commands::register_contact(registry, mdl);
