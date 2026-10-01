@@ -101,4 +101,13 @@ eigvals(SolverDevice device,
         int k,
         const EigvalOpts& opts);
 
+
+std::vector<EigvalPair>
+eigvals(SolverDevice device,
+        const SparseMatrix& A,
+        const SparseMatrix& B,
+        Precision min_val,
+        Precision max_val,
+        const EigvalOpts& opts);
+
 } // namespace fem::solver

@@ -10,4 +10,7 @@ eigval_simple_gpu(const SparseMatrix& A, int k, const EigvalOpts& opts);
 std::vector<EigvalPair>
 eigval_general_gpu(const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts);
 
+std::vector<EigvalPair>
+eigval_general_gpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val, const EigvalOpts& opts);
+
 } // namespace fem::solver::detail

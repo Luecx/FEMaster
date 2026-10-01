@@ -11,6 +11,9 @@ std::vector<EigvalPair>
 eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts);
 
 std::vector<EigvalPair>
+eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val, const EigvalOpts& opts);
+
+std::vector<EigvalPair>
 eigval_simple_regular_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts);
 
 std::vector<EigvalPair>

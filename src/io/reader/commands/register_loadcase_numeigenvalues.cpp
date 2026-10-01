@@ -23,6 +23,9 @@
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
 
+#include <array>
+#include <cmath>
+
 namespace fem::io::reader::commands {
 
 void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& parser) {
@@ -50,11 +53,41 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
                     }
                     if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
                         lc->num_eigenvalues = count;
+                        lc->use_eigenvalue_range = false;
                         return;
                     }
 
                     logging::error(false,
                         "NUMEIGENVALUES not supported for loadcase type ", base->type_name());
+                })
+            )
+        );
+    });
+
+    registry.command("EIGENVALUERANGE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.doc("Set an open eigenvalue interval for eigenfrequency loadcases; bounds are lambda, not Hz.");
+
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .fixed<Precision, 2>().name("RANGE").desc("Minimum and maximum eigenvalue")
+                )
+                .bind([&parser](const std::array<Precision, 2>& bounds) {
+                    auto* base = parser.active_loadcase();
+                    logging::error(base != nullptr,
+                        "EIGENVALUERANGE must appear inside *LOADCASE");
+
+                    auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base);
+                    logging::error(lc != nullptr,
+                        "EIGENVALUERANGE not supported for loadcase type ", base->type_name());
+                    logging::error(std::isfinite(bounds[0]) && std::isfinite(bounds[1]) && bounds[0] < bounds[1],
+                        "EIGENVALUERANGE requires finite bounds with min < max");
+
+                    lc->min_eigenvalue       = bounds[0];
+                    lc->max_eigenvalue       = bounds[1];
+                    lc->use_eigenvalue_range = true;
                 })
             )
         );

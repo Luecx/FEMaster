@@ -15,4 +15,10 @@ eigval_general_gpu(const SparseMatrix& A, const SparseMatrix& B, int k, const Ei
     return eigval_general_cpu(A, B, k, opts);
 }
 
+std::vector<EigvalPair>
+eigval_general_gpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val, const EigvalOpts& opts) {
+    logging::info(true, "Eigval (generalized): GPU path not implemented; falling back to CPU");
+    return eigval_general_cpu(A, B, min_val, max_val, opts);
+}
+
 } // namespace fem::solver::detail
