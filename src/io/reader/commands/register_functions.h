@@ -60,6 +60,7 @@ void register_inertialload     (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_instance         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_mass             (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_material         (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_mpc              (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_node             (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_normal           (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_nset             (fem::io::dsl::Registry& registry, fem::model::Model& model);
