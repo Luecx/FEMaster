@@ -289,6 +289,16 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         }
     }
 
+    // Add independent-node components required by two-node MPC kinematics
+    for (const auto& mpc : _data->mpcs) {
+        const ID master_id = mpc.node_2();
+        const auto master_dofs = mpc.master_dofs(mask);
+
+        for (ID dof = 0; dof < 6; ++dof) {
+            mask(master_id, dof) |= master_dofs(0, dof);
+        }
+    }
+
     return mattools::numerate_dofs(mask);
 }
 
@@ -444,6 +454,17 @@ constraint::ConstraintGroups Model::collect_constraints(
             groups.connectors.push_back(std::move(eq));
         }
         ++connector_idx;
+    }
+
+    Index mpc_idx = 0;
+    for (auto& mpc : _data->mpcs) {
+        auto eqs = mpc.get_equations(system_dof_ids, *_data);
+        for (auto& eq : eqs) {
+            eq.source       = constraint::EquationSourceKind::Mpc;
+            eq.source_index = mpc_idx;
+            groups.mpcs.push_back(std::move(eq));
+        }
+        ++mpc_idx;
     }
 
     Index coupling_idx = 0;
