@@ -330,7 +330,12 @@ void LinearEigenfrequency::run() {
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
-        [&]() { return solver::eigvals(device, A, Mr, k_req, eigopt); },
+        [&]() {
+            if (use_eigenvalue_range) {
+                return solver::eigvals(device, A, Mr, min_eigenvalue, max_eigenvalue, eigopt);
+            }
+            return solver::eigvals(device, A, Mr, k_req, eigopt);
+        },
         "solving generalized EVP (modal)"
     );
 

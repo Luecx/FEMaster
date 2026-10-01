@@ -35,6 +35,9 @@ struct LinearEigenfrequency : public LoadCase {
     //-------------------------------------------------------------------------
     std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
     int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
+    bool      use_eigenvalue_range = false;
+    Precision min_eigenvalue       = 0;
+    Precision max_eigenvalue       = 0;
 
     // Solver selection
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
