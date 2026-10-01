@@ -99,6 +99,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_rotary_inertia(registry, model());
     commands::register_spring(registry, model());
     commands::register_equation(registry, model());
+    commands::register_mpc(registry, model());
     commands::register_coupling(registry, model());
     commands::register_loadcase_solver(registry, *this);
 
@@ -248,10 +249,12 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     root.execute_children("BOUNDARY");
     root.execute_children("EQUATION");
+    root.execute_children("MPC");
 
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("BOUNDARY");
         assembly->execute_children("EQUATION");
+        assembly->execute_children("MPC");
     }
 
     // ---------------------------------------------------------------------
