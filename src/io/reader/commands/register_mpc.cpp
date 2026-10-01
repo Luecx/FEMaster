@@ -19,8 +19,6 @@
 #include "register_functions.h"
 #include "../../dsl/registry.h"
 
-#include <algorithm>
-#include <cctype>
 #include <string>
 
 #include "../../../constraints/types/mpc.h"
@@ -63,14 +61,9 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                     .one<std::string>().name("NODE1")
                     .one<std::string>().name("NODE2")
                 )
-                .bind([&model](std::string type,
+                .bind([&model](const std::string& type,
                                const std::string& node_1,
                                const std::string& node_2) {
-                    // Normalize the data-line type independently of keyword normalization
-                    std::transform(type.begin(), type.end(), type.begin(), [](unsigned char c) {
-                        return static_cast<char>(std::toupper(c));
-                    });
-
                     constraint::Mpc::Type mpc_type = constraint::Mpc::Type::Beam;
                     if (type == "BEAM") {
                         mpc_type = constraint::Mpc::Type::Beam;
