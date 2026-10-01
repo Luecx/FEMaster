@@ -21,13 +21,11 @@
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
-#include "strain/volume_strain_linearized.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/beam_stress_resultants.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
-#include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
 namespace fem::material {
@@ -40,9 +38,6 @@ bool Elasticity::supports_axial_green_lagrange() const {
     return false;
 }
 
-bool Elasticity::supports_volume_linearized() const {
-    return false;
-}
 
 bool Elasticity::supports_volume_green_lagrange() const {
     return false;
@@ -98,20 +93,6 @@ void Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
         "Elasticity model does not support Green-Lagrange axial evaluation");
 }
 
-void Elasticity::evaluate(const VolumeStrainLinearized& strain,
-                          const Precision*              old_state,
-                          Precision*                    new_state,
-                          VolumeStressCauchy&           stress,
-                          Mat6*                         tangent) const {
-    (void) strain;
-    (void) old_state;
-    (void) new_state;
-    (void) stress;
-    (void) tangent;
-
-    logging::error(false,
-        "Elasticity model does not support linearized volume evaluation");
-}
 
 void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
                           const Precision*                 old_state,

@@ -35,7 +35,6 @@ namespace fem {
 
 struct AxialStrainLinearized;
 struct AxialStrainGreenLagrange;
-struct VolumeStrainLinearized;
 struct VolumeStrainGreenLagrange;
 struct BeamGeneralizedStrain;
 struct ShellMaterialStrainLinearized;
@@ -43,7 +42,6 @@ struct ShellMaterialStrainGreenLagrange;
 
 struct AxialStressCauchy;
 struct AxialStressPK2;
-struct VolumeStressCauchy;
 struct VolumeStressPK2;
 struct BeamStressResultants;
 struct ShellMaterialStressCauchy;
@@ -54,10 +52,10 @@ namespace material {
 /**
  * @brief Polymorphic interface for axial, solid, beam and shell elasticity.
  *
- * The interface exposes separate overloads for linearized and finite-strain
- * evaluations so their stress measures remain explicit. Linearized axial,
- * volume and shell calls return Cauchy stress. Their finite-strain counterparts
- * accept Green-Lagrange strain and return second Piola-Kirchhoff stress. Beam
+ * Axial and shell formulations expose separate linearized and finite-strain
+ * overloads so their stress measures remain explicit. Three-dimensional volume
+ * response uses one Green-Lagrange/PK2 constitutive path; linear analyses obtain
+ * their material operator by linearizing that response at the base state. Beam
  * evaluation operates directly on generalized strains and resultants.
  *
  * Capability queries allow sections and elements to reject unsupported
@@ -88,7 +86,6 @@ struct Elasticity {
     virtual bool supports_axial_linearized() const;
     virtual bool supports_axial_green_lagrange() const;
 
-    virtual bool supports_volume_linearized() const;
     virtual bool supports_volume_green_lagrange() const;
 
     virtual bool supports_beam_resultants() const;
@@ -123,15 +120,6 @@ struct Elasticity {
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
                           Precision*                      tangent = nullptr) const;
-
-    // Infinitesimal three-dimensional response in the material basis. Voigt
-    // ordering follows VolumeStrain/VolumeStress; the optional tangent maps
-    // engineering strain components to Cauchy-stress components.
-    virtual void evaluate(const VolumeStrainLinearized& strain,
-                          const Precision*              old_state,
-                          Precision*                    new_state,
-                          VolumeStressCauchy&           stress,
-                          Mat6*                         tangent = nullptr) const;
 
     // Total-Lagrangian three-dimensional response in the reference material
     // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;

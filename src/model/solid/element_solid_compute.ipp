@@ -152,8 +152,8 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
         const Index      state_row = this->mp_index(ip);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-        // Linear recovery evaluates the small-strain field and Cauchy stress at
-        // the material point without producing a new constitutive state.
+        // Linear recovery evaluates infinitesimal kinematics with the finite-
+        // strain constitutive tangent frozen at the undeformed base state.
         if (!use_green_lagrange_nl) {
             Precision det;
             const StaticMatrix<n_strain, D * N> B = this->strain_displacements(
@@ -173,17 +173,22 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
                 mechanical_strain_voigt(2) -= free_strain;
             }
 
-            const VolumeStrainLinearized mechanical_strain(mechanical_strain_voigt);
-            VolumeStressCauchy           global_stress;
-            Mat6                         global_tangent;
+            // Linear stress recovery uses the same finite-strain material
+            // tangent as nonlinear analysis, frozen at the undeformed base state.
+            const VolumeStrainGreenLagrange base_strain;
+            VolumeStressPK2 base_stress;
+            Mat6            global_tangent;
             evaluate_material(
                 point.r, point.s, point.t,
-                mechanical_strain, old_state, nullptr,
-                global_stress, global_tangent);
+                base_strain, old_state, nullptr,
+                base_stress, global_tangent);
+
+            const Vec6 global_stress_voigt =
+                global_tangent * mechanical_strain_voigt;
 
             for (Dim component = 0; component < n_strain; ++component) {
                 ip_strain(ip, component) = global_strain_voigt(component);
-                ip_stress(ip, component) = global_stress.voigt()(component);
+                ip_stress(ip, component) = global_stress_voigt(component);
             }
             continue;
         }

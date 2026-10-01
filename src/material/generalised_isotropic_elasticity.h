@@ -47,7 +47,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
     // The law is linear in every supplied strain measure and contains no state.
     bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
@@ -69,11 +68,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
 
     // Linearized three-dimensional response. Normal entries follow isotropic
     // E/nu coupling, while all engineering shear diagonals use the supplied G.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     // Finite-strain response with the identical constant material operator,
     // interpreted as the mapping from Green-Lagrange strain to PK2 stress.

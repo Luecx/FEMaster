@@ -95,7 +95,6 @@ struct IsotropicJ2Elasticity : Elasticity {
     // Supported strain/stress-measure pairs
     bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
@@ -123,11 +122,6 @@ struct IsotropicJ2Elasticity : Elasticity {
 
     // Three-dimensional material response. A null tangent preserves the complete
     // stress/state update while omitting construction of the algorithmic matrix.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   const Precision*                 old_state,

@@ -71,18 +71,12 @@ struct OrthotropicElasticity : Elasticity {
 
     // Advertise three-dimensional and shell response for both infinitesimal and
     // Green-Lagrange strain measures. Axial and beam reductions are unsupported.
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
     // Linearized three-dimensional orthotropic response in material axes. The
     // optional tangent maps engineering strain to Cauchy stress.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.

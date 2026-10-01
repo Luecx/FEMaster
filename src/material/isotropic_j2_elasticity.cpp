@@ -189,9 +189,6 @@ bool IsotropicJ2Elasticity::supports_axial_green_lagrange() const {
     return true;
 }
 
-bool IsotropicJ2Elasticity::supports_volume_linearized() const {
-    return true;
-}
 
 bool IsotropicJ2Elasticity::supports_volume_green_lagrange() const {
     return true;
@@ -251,75 +248,6 @@ void IsotropicJ2Elasticity::initialize_state(Precision* state) const {
 // Three-dimensional material response
 // -----------------------------------------------------------------------------
 
-/**
- * Evaluates the infinitesimal three-dimensional J2 response.
- *
- * Every constitutive candidate starts from the immutable committed state. The
- * small-strain radial return mutates only a local working copy. Cauchy stress is
- * always returned, while the exact radial-return tangent is constructed only
- * when the caller supplies tangent storage.
- *
- * After the constitutive update, the converged candidate history is copied to
- * `new_state` when requested. Passing `new_state == nullptr` therefore performs
- * an otherwise identical state-neutral material evaluation.
- *
- * @param strain Infinitesimal volume strain in the material basis.
- * @param old_state Immutable committed J2 state.
- * @param new_state Optional destination for the converged trial state.
- * @param stress Cauchy stress in the material basis.
- * @param tangent Optional consistent derivative `d sigma/d epsilon`.
- */
-void IsotropicJ2Elasticity::evaluate(const VolumeStrainLinearized& strain,
-                                     const Precision*              old_state,
-                                     Precision*                    new_state,
-                                     VolumeStressCauchy&           stress,
-                                     Mat6*                         tangent) const {
-    // Start the candidate from the committed history. Writing all seven entries
-    // explicitly keeps the state layout visible and prevents any previous trial
-    // state from feeding the next Newton or line-search evaluation.
-    State state{
-        old_state[0],
-        old_state[1],
-        old_state[2],
-        old_state[3],
-        old_state[4],
-        old_state[5],
-        old_state[6]
-    };
-
-    const Precision shear = shear_modulus();
-    const Precision bulk  = bulk_modulus();
-
-    // VolumeStrainLinearized derives from VolumeStrain, so the internal return
-    // map works entirely with the common six-component volume representation.
-    const SmallResponse response = integrate_small_strain(
-        strain,
-        state,
-        shear,
-        bulk,
-        yield_points_
-    );
-
-    // Stress belongs to every constitutive evaluation. The tangent is additional
-    // output and is intentionally omitted for stress-only calls.
-    stress = VolumeStressCauchy(response.stress.voigt());
-
-    if (tangent != nullptr) {
-        *tangent = tangent_small(response, shear, bulk, yield_points_);
-    }
-
-    // Publish the converged candidate state only when persistent trial storage was
-    // supplied by the nonlinear state manager.
-    if (new_state != nullptr) {
-        new_state[0] = state[0];
-        new_state[1] = state[1];
-        new_state[2] = state[2];
-        new_state[3] = state[3];
-        new_state[4] = state[4];
-        new_state[5] = state[5];
-        new_state[6] = state[6];
-    }
-}
 
 /**
  * Evaluates the multiplicative finite-strain three-dimensional J2 response.

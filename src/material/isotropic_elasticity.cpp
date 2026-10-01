@@ -58,9 +58,6 @@ bool IsotropicElasticity::supports_axial_green_lagrange() const {
     return true;
 }
 
-bool IsotropicElasticity::supports_volume_linearized() const {
-    return true;
-}
 
 bool IsotropicElasticity::supports_volume_green_lagrange() const {
     return true;
@@ -189,35 +186,6 @@ void IsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
     }
 }
 
-/**
- * Evaluates linearized three-dimensional Cauchy stress in material coordinates.
- *
- * The constant Hooke operator is required for the stress multiplication itself,
- * so it is constructed once regardless of whether the caller also requests it as
- * tangent output.
- *
- * @param strain Infinitesimal engineering strain vector.
- * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
- * @param new_state Unused output state row.
- * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Optional isotropic three-dimensional tangent.
- */
-void IsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                   const Precision*              old_state,
-                                   Precision*                    new_state,
-                                   VolumeStressCauchy&           stress,
-                                   Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    // Build the constitutive operator once and use it for the requested stress.
-    const Mat6 material_tangent = volume_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
 
 /**
  * Evaluates three-dimensional PK2 stress from Green-Lagrange strain.

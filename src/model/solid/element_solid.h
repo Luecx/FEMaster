@@ -20,7 +20,6 @@
 #include "../../math/extrapolate.h"
 #include "../../math/interpolate.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
-#include "../../material/strain/volume_strain_linearized.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"
 #include "../element/element_structural.h"
@@ -106,18 +105,6 @@ public:
     // A null new_state requests a state-neutral auxiliary constitutive query.
     Mat6 material_tangent_reference(Precision r, Precision s, Precision t,
                                     const Precision* old_state, Precision* new_state);
-
-    // Evaluate linearized Cauchy stress and tangent in global coordinates. The
-    // selected old/new state pointers are forwarded directly through
-    // SolidSection, after which optional element stiffness scaling is applied.
-    void evaluate_material(Precision                     r,
-                           Precision                     s,
-                           Precision                     t,
-                           const VolumeStrainLinearized& global_strain,
-                           const Precision*              old_state,
-                           Precision*                    new_state,
-                           VolumeStressCauchy&           global_stress,
-                           Mat6&                         global_tangent);
 
     // Evaluate Total-Lagrangian PK2 stress and dS/dE in global reference
     // coordinates with the same direct state-pointer and topology-scaling contract.

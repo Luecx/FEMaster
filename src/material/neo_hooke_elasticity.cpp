@@ -83,9 +83,6 @@ bool NeoHookeElasticity::supports_axial_green_lagrange() const {
     return true;
 }
 
-bool NeoHookeElasticity::supports_volume_linearized() const {
-    return true;
-}
 
 bool NeoHookeElasticity::supports_volume_green_lagrange() const {
     return true;
@@ -296,34 +293,6 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
     }
 }
 
-/**
- * Evaluates the infinitesimal three-dimensional Cauchy response.
- *
- * The constant linearized material operator is required for the stress
- * multiplication itself. It is copied to the optional tangent output only when
- * requested.
- *
- * @param strain Infinitesimal volume strain in engineering-Voigt ordering.
- * @param old_state Unused committed state row.
- * @param new_state Unused trial state row.
- * @param stress Cauchy stress in the material basis.
- * @param tangent Optional infinitesimal material tangent.
- */
-void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                  const Precision*              old_state,
-                                  Precision*                    new_state,
-                                  VolumeStressCauchy&           stress,
-                                  Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = linear_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
 
 /**
  * Evaluates the full three-dimensional finite-strain material response.

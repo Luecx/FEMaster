@@ -20,8 +20,6 @@
 
 #include "../cos/coordinate_system.h"
 #include "../material/strain/volume_strain_green_lagrange.h"
-#include "../material/strain/volume_strain_linearized.h"
-#include "../material/stress/volume_stress_cauchy.h"
 #include "../material/stress/volume_stress_pk2.h"
 
 #include <array>
@@ -33,28 +31,15 @@ namespace fem {
  *
  * The section owns the optional material orientation but no material-point
  * history. Every constitutive call receives the old and new state rows selected
- * by the element. Linearized response returns Cauchy stress, while finite-strain
- * response uses Green-Lagrange strain and PK2 stress in the reference material
- * basis before transformation back to global coordinates.
+ * by the element. Volume response uses Green-Lagrange strain and PK2 stress in
+ * the reference material basis before transformation back to global coordinates;
+ * linear operators query its tangent at their chosen base state.
  */
 struct SolidSection : Section {
     using Ptr = std::shared_ptr<SolidSection>;
 
     // Optional material orientation in the reference configuration
     cos::CoordinateSystem::Ptr orientation_ = nullptr;
-
-    // Evaluate infinitesimal solid response. Global engineering strain is
-    // transformed into the reference material basis composed from the optional
-    // section orientation and additional element rotation. The selected state
-    // row is passed directly to the material. Cauchy stress and the consistently
-    // transformed six-by-six tangent are returned in global coordinates.
-    void evaluate(const Vec3&                   position_reference,
-                  const Mat3&                   additional_rotation,
-                  const VolumeStrainLinearized& strain_global,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress_global,
-                  Mat6&                         tangent_global) const;
 
     // Evaluate Total-Lagrangian solid response with the same basis and state
     // ownership convention. Green-Lagrange strain is transformed into material

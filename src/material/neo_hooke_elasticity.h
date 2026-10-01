@@ -59,7 +59,6 @@ struct NeoHookeElasticity : Elasticity {
     // and Green-Lagrange kinematics.
     bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
@@ -81,13 +80,6 @@ struct NeoHookeElasticity : Elasticity {
                   AxialStressPK2&                 stress,
                   Precision*                      tangent = nullptr) const override;
 
-    // Infinitesimal three-dimensional response using the linearization of the
-    // finite-strain potential at C = I. Output is Cauchy stress in material axes.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     // Full finite-strain response. Green-Lagrange strain is mapped to C = I+2E;
     // the expensive analytic tangent is assembled only when requested.

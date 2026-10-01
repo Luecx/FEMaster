@@ -65,9 +65,6 @@ bool GeneralisedIsotropicElasticity::supports_axial_green_lagrange() const {
     return true;
 }
 
-bool GeneralisedIsotropicElasticity::supports_volume_linearized() const {
-    return true;
-}
 
 bool GeneralisedIsotropicElasticity::supports_volume_green_lagrange() const {
     return true;
@@ -185,33 +182,6 @@ void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& st
     }
 }
 
-/**
- * Evaluates linearized three-dimensional Cauchy stress in material coordinates.
- *
- * The generalized-isotropic operator is required to compute stress, so it is
- * assembled once and copied to the optional tangent output only when requested.
- *
- * @param strain Infinitesimal engineering strain vector.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Optional generalized isotropic tangent.
- */
-void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                              const Precision*              old_state,
-                                              Precision*                    new_state,
-                                              VolumeStressCauchy&           stress,
-                                              Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = volume_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
 
 /**
  * Evaluates three-dimensional PK2 stress from Green-Lagrange strain.

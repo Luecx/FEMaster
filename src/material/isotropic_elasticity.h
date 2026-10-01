@@ -45,7 +45,6 @@ struct IsotropicElasticity : Elasticity {
     // These flags allow the owning section to validate its requested kinematics.
     bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
@@ -68,11 +67,6 @@ struct IsotropicElasticity : Elasticity {
 
     // Linearized three-dimensional response in material coordinates. The
     // optional tangent maps engineering strain to Cauchy stress.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     // Finite-strain response using the same constant Hooke operator. Input is
     // Green-Lagrange strain and output is second Piola-Kirchhoff stress.
