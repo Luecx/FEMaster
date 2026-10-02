@@ -18,6 +18,7 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{C3D5} & 5 & Five-node pyramid input represented by a degenerated hexahedral topology. \\
 \val{C3D6} & 6 & Linear wedge solid. \\
 \val{C3D8} & 8 & Linear fully integrated hexahedral solid. \\
+\val{C3D8I} & 8 & Full-integration hexahedral solid with 13 condensed incompatible/enhanced modes. \\
 \val{C3D8R} & 8 & Reduced-integration hexahedral solid with hourglass stabilization. \\
 \val{C3D10} & 10 & Quadratic tetrahedral solid. \\
 \val{C3D15} & 15 & Quadratic wedge solid. \\
@@ -42,7 +43,7 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \bottomrule
 \end{longtable}
 
-The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} types are shared directly by both input dialects and map to the same internal point-element implementation. Abaqus shell names are translated as shown below.
+The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8I}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} types are shared directly by both input dialects and map to the same internal point-element implementation. Abaqus shell names are translated as shown below.
 
 \begin{table}[H]
 \centering
@@ -154,6 +155,56 @@ Hexahedral topology provides direct control of the number of elements through th
 The element remains low order. A coarse mesh can be too stiff in bending, and straight element edges only approximate curved boundaries. Through-thickness resolution and refinement of curved or stress-critical geometry directly control the corresponding bending-stress and geometry errors.
 
 Warping, skew, negative Jacobians, and extreme aspect ratios can remove the numerical advantages of the hexahedral topology. A clean quadratic tetrahedral mesh can provide a more accurate mapping than a badly distorted hexahedral mesh; topology alone does not determine mesh quality.
+
+\clearpage
+\subsection{\val{C3D8I}: incompatible-mode 8-node hexahedral solid}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.82\linewidth]{pages/figures/element_schematics/c3d8_schematic.png}
+    \caption{\val{C3D8I} topology; the eight external nodes are identical to \val{C3D8}.}
+\end{figure}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D8I, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
+\end{syntax}
+
+\val{C3D8I} uses the same trilinear eight-node geometry and the same full
+\(2\times2\times2\) integration rule as \val{C3D8}. Its compatible displacement
+field is augmented by 13 element-local enhanced modes. Nine principal
+vector-valued modes improve bending behaviour by removing parasitic constraints
+of the low-order compatible interpolation; four additional volumetric modes
+improve the response in nearly incompressible states.
+
+The 13 enhanced parameters are internal to each element. FEMaster solves their
+local stationarity equations and statically condenses them, so a \val{C3D8I}
+still contributes only the 24 translational nodal degrees of freedom of an
+ordinary eight-node solid to the global system. Unlike \val{C3D8R}, the element
+does not rely on reduced integration or hourglass stabilization.
+
+For geometrically nonlinear analysis the enhanced parameters are solved by a
+local Newton iteration at every element evaluation and the complete material and
+geometric tangent blocks are condensed by a Schur complement. The finite-strain
+kinematics use a right multiplicative enhancement
+\[
+\bar{\mathbf F}
+=
+\mathbf F_c
+\left(
+\mathbf I + \sum_m \alpha_m \mathbf H_m
+\right).
+\]
+The enhanced tensors therefore remain in the reference configuration. A
+superposed spatial rigid rotation maps
+\(\bar{\mathbf F}\rightarrow\mathbf Q\bar{\mathbf F}\), so the enhanced
+mode space and condensed response remain objective.
+
+\val{C3D8I} is intended primarily for low-order hexahedral meshes in which
+bending or near-incompressibility makes a standard \val{C3D8} unnecessarily
+stiff. It remains a trilinear geometry mapping and is still sensitive to severe
+warping and skew. The incompatible modes improve the kinematics; they do not turn
+a poor eight-node geometry into a higher-order element.
 
 \clearpage
 \subsection{\val{C3D8R}: reduced-integration 8-node hexahedral solid}
