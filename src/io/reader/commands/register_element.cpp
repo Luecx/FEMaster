@@ -41,6 +41,7 @@
 #include "../../../model/solid/c3d4.h"
 #include "../../../model/solid/c3d6.h"
 #include "../../../model/solid/c3d8.h"
+#include "../../../model/solid/c3d8i.h"
 #include "../../../model/solid/c3d8r.h"
 #include "../../../model/element/point.h"
 #include "../../../model/truss/truss.h"
@@ -77,7 +78,7 @@ void register_element(dsl::Registry& registry, model::Model& model) {
             dsl::KeywordSpec::make()
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
-                    "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
+                    "C3D4", "C3D5", "C3D6", "C3D8", "C3D8I", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
                     "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
                     "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS", "ROTARYI", "SPRING1"
                 })
@@ -115,6 +116,7 @@ void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ADD_ELEMENT_VARIANT("C3D4", C3D4, 4);
         FEM_ADD_ELEMENT_VARIANT("C3D6", C3D6, 6);
         FEM_ADD_ELEMENT_VARIANT("C3D8", C3D8, 8);
+        FEM_ADD_ELEMENT_VARIANT("C3D8I", C3D8I, 8);
         FEM_ADD_ELEMENT_VARIANT("C3D8R", C3D8R, 8);
         FEM_ADD_ELEMENT_VARIANT("C3D10", C3D10, 10);
         FEM_ADD_ELEMENT_VARIANT("C3D15", C3D15, 15);
