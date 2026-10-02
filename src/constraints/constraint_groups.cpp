@@ -23,6 +23,7 @@ void ConstraintGroups::report() const {
     } categories[] = {
         {"Supports", supports},
         {"Connectors", connectors},
+        {"MPCs", mpcs},
         {"Couplings", couplings},
         {"Ties", ties},
         {"RBMs", rbms},

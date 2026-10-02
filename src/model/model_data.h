@@ -35,6 +35,7 @@
 #include "../constraints/types/contact.h"
 #include "../constraints/types/coupling.h"
 #include "../constraints/types/equation.h"
+#include "../constraints/types/mpc.h"
 #include "../constraints/types/rbm.h"
 #include "../constraints/types/tie.h"
 #include "../core/types_cls.h"
@@ -156,6 +157,7 @@ struct ModelData {
 
     // Assembly constraints operating on dense global identifiers and regions
     std::vector<constraint::Connector> connectors;
+    std::vector<constraint::Mpc>       mpcs;
     std::vector<constraint::Coupling>  couplings;
     std::vector<constraint::Tie>       ties;
     std::vector<constraint::Contact>   contacts;
