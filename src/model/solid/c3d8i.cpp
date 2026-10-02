@@ -102,13 +102,12 @@ C3D8I::EnhancedModes C3D8I::enhanced_gradient_modes(
     }
 
     // Nine principal modes: three displacement-vector components for each
-    // natural-coordinate direction.
+    // natural-coordinate direction. Each tensor has only one nonzero row,
+    // equal to the scaled reference dual vector of that natural direction.
     for (Index direction = 0; direction < 3; ++direction) {
         for (Index component = 0; component < 3; ++component) {
-            Mat3 natural_gradient = Mat3::Zero();
-            natural_gradient(component, direction) = xi[direction];
-            modes[3 * direction + component] =
-                scale * natural_gradient * natural_to_reference;
+            modes[3 * direction + component].row(component) =
+                (scale * xi[direction]) * natural_to_reference.row(direction);
         }
     }
 
@@ -353,7 +352,7 @@ MapMatrix C3D8I::stiffness(Precision* buffer) {
 
     // Linear elasticity is analytically symmetric; remove round-off asymmetry in
     // the same way as the common fully integrated solid implementation.
-    condensed = Precision(0.5) * (condensed + condensed.transpose());
+    condensed = (Precision(0.5) * (condensed + condensed.transpose())).eval();
 
     MapMatrix mapped{buffer, ndof, ndof};
     mapped = condensed;
@@ -664,7 +663,7 @@ MapMatrix C3D8I::stiffness_geom(
         + elastic.kua * solver.solve(gaa * alpha_u);
 
     // The exact operator is symmetric for a conservative material formulation
-    geometric = Precision(0.5) * (geometric + geometric.transpose());
+    geometric = (Precision(0.5) * (geometric + geometric.transpose())).eval();
 
     MapMatrix mapped{buffer, ndof, ndof};
     mapped = geometric;
@@ -766,6 +765,53 @@ void C3D8I::apply_tload(
 }
 
 /**
+ * Prepares the fixed geometry used throughout one local enhanced-state solve.
+ *
+ * Reference derivatives and enhanced modes are evaluated once at each full
+ * C3D8 integration point. The compatible deformation gradient is formed as
+ * F_c = x^T dN/dX; it remains fixed while the local enhanced parameters change.
+ * This evaluation-local data is also reused by final assembly or recovery and
+ * carries no constitutive history across independent trial configurations.
+ *
+ * @param reference_coords Global nodal positions in the reference configuration.
+ * @param current_coords Global nodal positions in the supplied current configuration.
+ * @return Eight pointwise geometries with complete reference-volume weights.
+ */
+C3D8I::NonlinearPoints C3D8I::nonlinear_points(
+    const StaticMatrix<N, D>& reference_coords,
+    const StaticMatrix<N, D>& current_coords
+) {
+    NonlinearPoints points;
+    const auto& scheme = this->integration_scheme_stiffness();
+
+    // Preserve the full eight-point rule inherited from C3D8
+    logging::error(scheme.count() == points.size(),
+        "C3D8I: nonlinear evaluation requires eight integration points");
+
+    // Prepare immutable geometry before Newton iterates on the enhanced parameters
+    for (Index ip = 0; ip < points.size(); ++ip) {
+        const auto quadrature = scheme.get_point(ip);
+        auto& point = points[ip];
+
+        Precision det0 = Precision(0);
+        point.natural     = Vec3(quadrature.r, quadrature.s, quadrature.t);
+        point.derivatives = this->shape_derivatives_reference(
+            reference_coords, quadrature.r, quadrature.s, quadrature.t, det0);
+        point.compatible  = current_coords.transpose() * point.derivatives;
+        point.measure     = quadrature.w * det0;
+        point.modes       = enhanced_gradient_modes(
+            reference_coords, quadrature.r, quadrature.s, quadrature.t);
+
+        // Reject an inverted compatible configuration before any local material query
+        const Precision determinant = point.compatible.determinant();
+        logging::error(std::isfinite(determinant) && determinant > Precision(0),
+            "C3D8I: non-positive compatible deformation gradient in element ", elem_id,
+            "\ndet(F_c): ", determinant);
+    }
+    return points;
+}
+
+/**
  * Assembles the coupled nodal/enhanced residual and consistent finite-strain
  * tangent before static condensation.
  *
@@ -804,78 +850,45 @@ void C3D8I::apply_tload(
  * A writable trial-state row is supplied only for the final physical nonlinear
  * evaluation after the local enhanced Newton solve has converged.
  *
- * @param reference_coords Element nodal coordinates in the reference configuration.
- * @param current_coords Element nodal coordinates in the current configuration.
+ * @param points Fixed reference/current geometry at the eight integration points.
  * @param alpha Current element-local enhanced parameters.
  * @param write_material_state Write constitutive trial state for this evaluation.
  * @param assemble_global_blocks Also assemble nodal residual and nodal coupling blocks.
+ * @param assemble_tangent Construct local/global tangents. False selects the
+ *                         final nodal residual-only path after local convergence.
  * @return Coupled nodal/enhanced residual and tangent blocks before condensation.
  */
 C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
-    const StaticMatrix<N, D>& reference_coords,
-    const StaticMatrix<N, D>& current_coords,
-    const Vector13&           alpha,
-    bool                      write_material_state,
-    bool                      assemble_global_blocks
+    const NonlinearPoints& points,
+    const Vector13&        alpha,
+    bool                   write_material_state,
+    bool                   assemble_global_blocks,
+    bool                   assemble_tangent
 ) {
     EnhancedSystem system;
 
-    const auto& scheme = this->integration_scheme_stiffness();
-
     // Integrate all residual and tangent blocks over the reference element volume
-    for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto point = scheme.get_point(ip);
-
-        // Evaluate compatible reference derivatives and deformation gradient
-        Precision det0 = Precision(0);
-        const auto dN_dX = this->shape_derivatives_reference(
-            reference_coords,
-            point.r,
-            point.s,
-            point.t,
-            det0
-        );
-        const Mat3 compatible_F = this->deformation_gradient(
-            reference_coords,
-            current_coords,
-            point.r,
-            point.s,
-            point.t
-        );
+    for (Index ip = 0; ip < points.size(); ++ip) {
+        const auto& point        = points[ip];
+        const auto& dN_dX        = point.derivatives;
+        const auto& compatible_F = point.compatible;
+        const auto& modes        = point.modes;
 
         // Build the element-local right multiplicative enhancement
-        const EnhancedModes modes = enhanced_gradient_modes(
-            reference_coords,
-            point.r,
-            point.s,
-            point.t
-        );
-
         Mat3 enhancement = Mat3::Identity();
         for (Index mode = 0; mode < n_modes; ++mode) {
             enhancement.noalias() += alpha(mode) * modes[mode];
         }
 
         const Mat3 F = compatible_F * enhancement;
-        logging::error(std::isfinite(F.determinant()) && F.determinant() > Precision(0),
+        const Precision determinant = F.determinant();
+        logging::error(std::isfinite(determinant) && determinant > Precision(0),
             "C3D8I: non-positive enhanced deformation gradient in element ", elem_id,
-            "\ndet(F): ", F.determinant());
+            "\ndet(F): ", determinant);
 
         // Transform the compatible nodal deformation-gradient variations through
         // the same right enhancement used by the total deformation gradient
         const StaticMatrix<N, D> enhanced_shape_derivatives = dN_dX * enhancement;
-        const auto Bu = this->green_lagrange_strain_displacement(
-            enhanced_shape_derivatives,
-            F
-        );
-
-        // Enhanced-parameter variations are F_c H_alpha. Their Green-Lagrange
-        // derivatives form the local alpha B matrix.
-        EnhancedModes alpha_variations;
-        for (Index mode = 0; mode < n_modes; ++mode) {
-            alpha_variations[mode] = compatible_F * modes[mode];
-        }
-        const Matrix6x13 Ba = enhanced_green_lagrange_matrix(F, alpha_variations);
 
         // Evaluate the work-conjugate PK2 material response in the reference configuration
         const VolumeStrainGreenLagrange strain =
@@ -890,46 +903,59 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
         VolumeStressPK2 stress;
         Mat6            C;
         evaluate_material(
-            point.r,
-            point.s,
-            point.t,
+            point.natural(0),
+            point.natural(1),
+            point.natural(2),
             strain,
             old_state,
             new_state,
             stress,
-            C
+            assemble_tangent ? &C : nullptr
         );
 
-        const Precision measure      = point.w * det0;
+        const Precision measure      = point.measure;
         const Vec6      stress_voigt = stress.voigt();
+
+        // Final force-only evaluations need neither enhanced nor nodal Hessians
+        if (!assemble_tangent) {
+            const auto Bu = this->green_lagrange_strain_displacement(enhanced_shape_derivatives, F);
+            system.ru.noalias() += measure * Bu.transpose() * stress_voigt;
+            continue;
+        }
+
+        // Enhanced variations and their stress contractions are reused across all
+        // enhanced-enhanced and nodal-enhanced geometric tangent entries.
+        const Mat3 S = stress.tensor();
+        EnhancedModes alpha_variations;
+        EnhancedModes alpha_stress_variations;
+        for (Index mode = 0; mode < n_modes; ++mode) {
+            alpha_variations[mode]        = compatible_F * modes[mode];
+            alpha_stress_variations[mode] = alpha_variations[mode] * S;
+        }
+        const Matrix6x13 Ba = enhanced_green_lagrange_matrix(F, alpha_variations);
+        const Matrix6x13 CBa = measure * C * Ba;
 
         // Assemble the enhanced residual and its material tangent. These blocks
         // are required by every local alpha Newton iteration.
         system.ra.noalias()  += measure * Ba.transpose() * stress_voigt;
-        system.kaa.noalias() += measure * Ba.transpose() * C * Ba;
+        system.kaa.noalias() += Ba.transpose() * CBa;
 
         // The local Newton solve does not need any nodal tangent or residual block
         if (assemble_global_blocks) {
+            const auto Bu = this->green_lagrange_strain_displacement(enhanced_shape_derivatives, F);
+            const StaticMatrix<6, ndof> CBu = measure * C * Bu;
             system.ru.noalias()  += measure * Bu.transpose() * stress_voigt;
-            system.kuu.noalias() += measure * Bu.transpose() * C * Bu;
-            system.kua.noalias() += measure * Bu.transpose() * C * Ba;
-            system.kau.noalias() += measure * Ba.transpose() * C * Bu;
+            system.kuu.noalias() += Bu.transpose() * CBu;
+            system.kua.noalias() += Bu.transpose() * CBa;
+            system.kau.noalias() += Ba.transpose() * CBu;
         }
-
-        const Mat3 S = stress.tensor();
 
         // Add the enhanced-enhanced geometric tangent from
         // delta F_alpha = F_c H_alpha
         for (Index mode_a = 0; mode_a < n_modes; ++mode_a) {
             for (Index mode_b = 0; mode_b < n_modes; ++mode_b) {
-                Precision coefficient = Precision(0);
-
-                for (Dim component = 0; component < D; ++component) {
-                    const Vec3 ha = alpha_variations[mode_a].row(component).transpose();
-                    const Vec3 hb = alpha_variations[mode_b].row(component).transpose();
-                    coefficient += ha.dot(S * hb);
-                }
-
+                const Precision coefficient =
+                    alpha_variations[mode_a].cwiseProduct(alpha_stress_variations[mode_b]).sum();
                 system.kaa(mode_a, mode_b) += measure * coefficient;
             }
         }
@@ -961,21 +987,14 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
             }
 
             // Nodal-enhanced geometric tangent including d2F/(du dalpha)
-            for (Dim component = 0; component < D; ++component) {
-                for (Index mode = 0; mode < n_modes; ++mode) {
-                    const Vec3 enhanced_mode =
-                        alpha_variations[mode].row(component).transpose();
-                    const Vec3 mixed_gradient = modes[mode].transpose() * dNa;
+            for (Index mode = 0; mode < n_modes; ++mode) {
+                const Vec3 first_variation = alpha_stress_variations[mode] * enhanced_dNa;
+                const Vec3 mixed_variation = FS * (modes[mode].transpose() * dNa);
+                const Vec3 coefficient     = measure * (first_variation + mixed_variation);
 
-                    const Precision first_variation =
-                        enhanced_dNa.dot(S * enhanced_mode);
-                    const Precision mixed_variation =
-                        FS.row(component).dot(mixed_gradient);
-                    const Precision coefficient =
-                        measure * (first_variation + mixed_variation);
-
-                    system.kua(D * node_a + component, mode) += coefficient;
-                    system.kau(mode, D * node_a + component) += coefficient;
+                for (Dim component = 0; component < D; ++component) {
+                    system.kua(D * node_a + component, mode) += coefficient(component);
+                    system.kau(mode, D * node_a + component) += coefficient(component);
                 }
             }
         }
@@ -993,14 +1012,10 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
  * trial state. The converged alpha is subsequently used by the physical
  * nonlinear tangent evaluation, which performs the actual material-state update.
  *
- * @param reference_coords Element nodal coordinates in the reference configuration.
- * @param current_coords Element nodal coordinates in the current configuration.
+ * @param points Fixed reference/current geometry at the eight integration points.
  * @return Converged element-local enhanced parameters.
  */
-C3D8I::Vector13 C3D8I::solve_nonlinear_modes(
-    const StaticMatrix<N, D>& reference_coords,
-    const StaticMatrix<N, D>& current_coords
-) {
+C3D8I::Vector13 C3D8I::solve_nonlinear_modes(const NonlinearPoints& points) {
     // Initialize the element-local enhanced state for the current trial geometry
     Vector13 alpha = Vector13::Zero();
 
@@ -1010,7 +1025,7 @@ C3D8I::Vector13 C3D8I::solve_nonlinear_modes(
     // Enforce stationarity of the thirteen local enhanced equations
     for (Index iteration = 0; iteration < max_iterations; ++iteration) {
         const EnhancedSystem system = assemble_nonlinear_system(
-            reference_coords, current_coords, alpha, false, false);
+            points, alpha, false, false, true);
 
         Eigen::FullPivLU<Matrix13> solver(system.kaa);
         logging::error(solver.isInvertible(),
@@ -1089,11 +1104,12 @@ MapMatrix C3D8I::stiffness_tangent(
     const StaticMatrix<N, D> current_coords   = reference_coords + local_u;
 
     // Enforce stationarity of the element-local enhanced parameters
-    const Vector13 alpha = solve_nonlinear_modes(reference_coords, current_coords);
+    const NonlinearPoints points = nonlinear_points(reference_coords, current_coords);
+    const Vector13        alpha  = solve_nonlinear_modes(points);
 
     // Re-evaluate the converged state and write exactly this constitutive trial state
     const EnhancedSystem system = assemble_nonlinear_system(
-        reference_coords, current_coords, alpha, true, true);
+        points, alpha, true, true, buffer != nullptr);
 
     // Scatter the stationary nodal internal force before optional tangent assembly
     assemble_local_force(nodal_forces, system.ru);
@@ -1196,12 +1212,17 @@ void C3D8I::compute_stress_strain(
     }
 
     // Reconstruct the stationary enhanced state for the selected kinematics
-    const Vector13 alpha = use_green_lagrange_nl
-        ? solve_nonlinear_modes(reference_coords, current_coords)
-        : solve_linear_modes(
+    NonlinearPoints points;
+    Vector13        alpha;
+    if (use_green_lagrange_nl) {
+        points = nonlinear_points(reference_coords, current_coords);
+        alpha  = solve_nonlinear_modes(points);
+    } else {
+        alpha = solve_linear_modes(
             u,
             thermal_free_strain != nullptr ? &nodal_thermal_strain : nullptr
         );
+    }
 
     RowMatrix ip_strain = RowMatrix::Zero(scheme.count(), 6);
     RowMatrix ip_stress = RowMatrix::Zero(scheme.count(), 6);
@@ -1213,13 +1234,12 @@ void C3D8I::compute_stress_strain(
         const Precision* old_state =
             &(*this->_model_data->material_state_old)(state_row, 0);
 
-        Precision det0 = Precision(0);
-        const auto dN_dX = this->shape_derivatives_reference(
-            reference_coords, point.r, point.s, point.t, det0);
-        const EnhancedModes modes = enhanced_gradient_modes(
-            reference_coords, point.r, point.s, point.t);
-
         if (!use_green_lagrange_nl) {
+            Precision det0 = Precision(0);
+            const auto dN_dX = this->shape_derivatives_reference(
+                reference_coords, point.r, point.s, point.t, det0);
+            const EnhancedModes modes = enhanced_gradient_modes(
+                reference_coords, point.r, point.s, point.t);
             const auto B = this->strain_displacement(dN_dX);
             const Matrix6x13 G = enhanced_strain_matrix(modes);
             const Vec6 strain_values = B * u + G * alpha;
@@ -1249,13 +1269,8 @@ void C3D8I::compute_stress_strain(
 
         // Reconstruct the same objective multiplicative enhanced state used by
         // nonlinear residual and tangent assembly
-        const Mat3 compatible_F = this->deformation_gradient(
-            reference_coords,
-            current_coords,
-            point.r,
-            point.s,
-            point.t
-        );
+        const Mat3&          compatible_F = points[ip].compatible;
+        const EnhancedModes& modes        = points[ip].modes;
 
         Mat3 enhancement = Mat3::Identity();
         for (Index mode = 0; mode < n_modes; ++mode) {

@@ -10,10 +10,14 @@
 #include "../src/loadcase/tools/inertia_relief.h"
 #include "../src/material/material.h"
 #include "../src/model/model.h"
+#include "../src/model/element/point.h"
+#include "../src/section/section_point_mass.h"
 #include "../src/model/solid/c3d8.h"
 #include "../src/section/section_solid.h"
 
 #include <gtest/gtest.h>
+#include <array>
+#include <memory>
 
 using namespace fem;
 
@@ -156,8 +160,17 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     mdl.set_node(0, 0.0, 0.0, 0.0);
     mdl.compile();
 
-    mdl.add_point_mass_feature(
-        "NALL", 2.0, Vec3::Zero(), Vec3::Zero(), Vec3::Zero());
+    // Native nodal point masses are auxiliary elements in compiled node space
+    auto region  = std::make_shared<model::ElementRegion>("POINT_MASSES");
+    auto section = std::make_shared<PointMassSection>(region, 2.0);
+    for (const ID node : *mdl._data->node_sets.get("NALL")) {
+        const ID id = -1 - static_cast<ID>(mdl._data->point_elements.size());
+        region->add(id);
+        auto point = std::make_shared<model::PointElement>(id, std::array<ID, 1>{node});
+        point->_model_data = mdl._data.get();
+        point->set_section(section);
+        mdl._data->point_elements.push_back(point);
+    }
 
     bc::InertialLoad load;
     load.region_     = std::make_shared<model::ElementRegion>("EMPTY_REGION");
@@ -187,8 +200,17 @@ TEST(BC_Loads, InertiaReliefBalancesPointMassOnlyModel) {
     mdl.set_node(1,  1.0, 0.0, 0.0);
     mdl.compile();
 
-    mdl.add_point_mass_feature(
-        "NALL", 1.0, Vec3::Zero(), Vec3::Zero(), Vec3::Zero());
+    // Native nodal point masses are auxiliary elements in compiled node space
+    auto region  = std::make_shared<model::ElementRegion>("POINT_MASSES");
+    auto section = std::make_shared<PointMassSection>(region, 1.0);
+    for (const ID node : *mdl._data->node_sets.get("NALL")) {
+        const ID id = -1 - static_cast<ID>(mdl._data->point_elements.size());
+        region->add(id);
+        auto point = std::make_shared<model::PointElement>(id, std::array<ID, 1>{node});
+        point->_model_data = mdl._data.get();
+        point->set_section(section);
+        mdl._data->point_elements.push_back(point);
+    }
 
     model::Field global_load{"GLOBAL_LOAD", model::FieldDomain::NODE, 2, 6};
     global_load.set_zero();

@@ -45,7 +45,9 @@ namespace fem::solver::detail {
  * General matrices are factorized with LU. Symmetric matrices are factorized
  * with LDLT so the solver can exploit their structure while still supporting
  * indefinite finite-element systems. If the selected factorization or solve
- * fails, Eigen SparseQR is used as the common recovery path.
+ * fails, Eigen SparseQR is used as the common recovery path. Successful solves
+ * with a large residual receive up to three iterative-refinement corrections
+ * using the existing factorization and residuals accumulated in long double.
  *
  * Accelerate-enabled builds use Eigen SparseLU for general matrices and
  * AccelerateLDLT for symmetric matrices. The latter delegates the factorization
@@ -62,6 +64,48 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     Timer t{};
     t.start();
 
+    // Recover digits lost in ill-conditioned systems using the existing
+    // factorization. Extended-precision accumulation is needed because the
+    // stiffness contributions can be much larger than the applied loads.
+    auto refine_solution = [&](auto& solver, DynamicMatrix& solution) {
+        const Precision rhs_norm = rhs.norm();
+        if ((rhs - mat * solution).norm() <= Precision(1e-9) * rhs_norm) {
+            return;
+        }
+
+        auto residual_at = [&](const DynamicMatrix& values) {
+            Eigen::Matrix<long double, Eigen::Dynamic, Eigen::Dynamic> residual = rhs.cast<long double>();
+            for (Eigen::Index column = 0; column < mat.outerSize(); ++column) {
+                for (SparseMatrix::InnerIterator entry(mat, column); entry; ++entry) {
+                    for (Eigen::Index load = 0; load < rhs.cols(); ++load) {
+                        residual(entry.row(), load) -= static_cast<long double>(entry.value())
+                                                    * static_cast<long double>(values(entry.col(), load));
+                    }
+                }
+            }
+            return DynamicMatrix(residual.template cast<Precision>());
+        };
+
+        // Accept only corrections that reduce the accurately evaluated residual
+        DynamicMatrix residual = residual_at(solution);
+        for (Index iteration = 0; iteration < 3; ++iteration) {
+            if (residual.norm() <= Precision(1e-10) * rhs_norm) {
+                break;
+            }
+            const DynamicMatrix correction = solver.solve(residual);
+            if (solver.info() != Eigen::Success || !correction.allFinite()) {
+                break;
+            }
+            const DynamicMatrix candidate          = solution + correction;
+            const DynamicMatrix candidate_residual = residual_at(candidate);
+            if (candidate_residual.norm() >= residual.norm()) {
+                break;
+            }
+            solution = candidate;
+            residual = candidate_residual;
+        }
+    };
+
     // General matrices require an LU factorization because no symmetry can be assumed
     if (matrix_type == DirectSolverMatrixType::General) {
         DynamicMatrix sol{};
@@ -75,6 +119,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
         if (solver.info() == Eigen::Success) {
             sol     = solver.solve(rhs);
             success = solver.info() == Eigen::Success;
+            if (success) refine_solution(solver, sol);
         }
 #else
         // Keep the portable Eigen LU path for general matrices on Apple and fallback builds
@@ -84,6 +129,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
         if (solver.info() == Eigen::Success) {
             sol     = solver.solve(rhs);
             success = solver.info() == Eigen::Success;
+            if (success) refine_solution(solver, sol);
         }
 #endif
 
@@ -124,6 +170,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     if (solver.info() == Eigen::Success) {
         sol     = solver.solve(rhs);
         success = solver.info() == Eigen::Success;
+        if (success) refine_solution(solver, sol);
     }
 #elif defined(USE_ACCELERATE)
     // Eigen exposes Accelerate's symmetric sparse factorization directly
@@ -135,6 +182,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     if (solver.info() == Eigen::Success) {
         sol     = solver.solve(rhs);
         success = solver.info() == Eigen::Success;
+        if (success) refine_solution(solver, sol);
     }
 #else
     // Use Eigen's portable symmetric factorization when no native backend is enabled
@@ -144,6 +192,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     if (solver.info() == Eigen::Success) {
         sol     = solver.solve(rhs);
         success = solver.info() == Eigen::Success;
+        if (success) refine_solution(solver, sol);
     }
 #endif
 

@@ -108,6 +108,32 @@ public:
         Vector13    ra  = Vector13::Zero();
     };
 
+    /**
+     * @brief Fixed geometry of one constitutive point during a local EAS solve.
+     *
+     * The reference derivatives, physical reference-volume weight and enhanced
+     * basis are independent of the local parameters. The compatible deformation
+     * gradient is also fixed while Newton solves the enhanced stationarity
+     * equations at a supplied nodal configuration. These quantities are built
+     * once per element evaluation and reused by local Newton, final assembly
+     * and nonlinear recovery without storing trial history in the element.
+     */
+    struct NonlinearPoint {
+        // Natural coordinates and complete reference-volume quadrature weight
+        Vec3      natural = Vec3::Zero();
+        Precision measure = Precision(0);
+
+        // Reference interpolation derivatives and compatible finite deformation
+        StaticMatrix<N, D> derivatives = StaticMatrix<N, D>::Zero();
+        Mat3               compatible  = Mat3::Identity();
+
+        // Thirteen reference-configuration enhanced gradient tensors
+        EnhancedModes modes;
+    };
+
+    // Full C3D8 quadrature geometry owned by one evaluation, not by the element
+    using NonlinearPoints = std::array<NonlinearPoint, 8>;
+
     // Construction and element identity
     C3D8I(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8I() override = default;
@@ -181,12 +207,16 @@ private:
     // stiffness blocks; nonlinear assembly additionally forms residual and
     // stress-dependent geometric contributions for the supplied alpha state.
     EnhancedSystem assemble_linear_system();
-    EnhancedSystem assemble_nonlinear_system(
+    NonlinearPoints nonlinear_points(
         const StaticMatrix<N, D>& reference_coords,
-        const StaticMatrix<N, D>& current_coords,
-        const Vector13&           alpha,
-        bool                      write_material_state,
-        bool                      assemble_global_blocks
+        const StaticMatrix<N, D>& current_coords
+    );
+    EnhancedSystem assemble_nonlinear_system(
+        const NonlinearPoints& points,
+        const Vector13&        alpha,
+        bool                   write_material_state,
+        bool                   assemble_global_blocks,
+        bool                   assemble_tangent
     );
 
     // Solve the stationary local enhanced state for linearized or finite-strain
@@ -195,10 +225,7 @@ private:
         const Vector24&        displacement,
         const StaticVector<N>* thermal_free_strain = nullptr
     );
-    Vector13 solve_nonlinear_modes(
-        const StaticMatrix<N, D>& reference_coords,
-        const StaticMatrix<N, D>& current_coords
-    );
+    Vector13 solve_nonlinear_modes(const NonlinearPoints& points);
 
     // Map between the common global nodal fields and the element-local
     // translational ordering [u1x,u1y,u1z,...,u8x,u8y,u8z].

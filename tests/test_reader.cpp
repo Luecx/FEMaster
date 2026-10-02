@@ -82,7 +82,11 @@ TEST(Reader_Parser, ParsesRbmCommand) {
         os << "2, 1.0, 0.0, 0.0\n";
         os << "3, 0.0, 1.0, 0.0\n";
         os << "4, 0.0, 0.0, 1.0\n";
-        os << "*RBM, NSET=NALL\n";
+        os << "*ELEMENT, TYPE=C3D4, ELSET=SOLID\n";
+        os << "1, 1, 2, 3, 4\n";
+        os << "*MATERIAL, NAME=MAT\n*ELASTIC\n1000., 0.3\n*DENSITY\n1.\n";
+        os << "*SOLID SECTION, ELSET=SOLID, MATERIAL=MAT\n";
+        os << "*RBM, ELSET=SOLID\n";
     }
 
     io::reader::Parser parser;
@@ -103,6 +107,7 @@ TEST(Reader_Parser, ParsesOrthotropicEngineeringConstants) {
     {
         std::ofstream os(input_path);
         ASSERT_TRUE(os.is_open());
+        os << "*NODE\n1, 0., 0., 0.\n";
         os << "*MATERIAL, NAME=ORTHO\n";
         os << "*ELASTIC, TYPE=ENGINEERINGCONSTANTS\n";
         os << "100.0, 200.0, 300.0, 0.12, 0.13, 0.23, 12.0, 13.0, 23.0\n";
@@ -142,7 +147,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     Mat5                          tangent;
     Precision old_state = Precision(0);
     Precision new_state = Precision(0);
-    ortho.evaluate(strain, &old_state, &new_state, stress, tangent);
+    ortho.evaluate(strain, &old_state, &new_state, stress, &tangent);
 
     const Mat2 shear = tangent.template block<2, 2>(3, 3);
 

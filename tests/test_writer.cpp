@@ -6,7 +6,7 @@
 #include "../src/data/field.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
-#include "../src/model/shell/s4.h"
+#include "../src/model/shell/frt_shell_s4.h"
 #include "../src/io/writer/output_field.h"
 #include "../src/io/writer/writer_frd.h"
 #include "../src/io/writer/writer_femr.h"
@@ -46,7 +46,7 @@ T read_binary_value(const std::vector<std::uint8_t>& bytes, std::size_t offset) 
 std::vector<std::pair<std::uint32_t, double>> read_femr_frames(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
     const std::vector<std::uint8_t> bytes(
-        std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>{});
     std::vector<std::pair<std::uint32_t, double>> frames;
     std::size_t offset = 0;
     constexpr std::size_t chunk_header_size = 32;
@@ -70,16 +70,21 @@ TEST(Reader_Writer, WritesFieldTypeForModelField) {
     const std::string output_path = "tests/TMP_WRITER_FIELD.RES";
     std::filesystem::remove(output_path);
 
+    // Nodal output identifies rows through the compiled model
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.compile();
     model::Field field("U", model::FieldDomain::NODE, 2, 3);
     field.set_zero();
 
     {
         io::writer::ResWriter writer(output_path);
-        writer.write_field(field, "DISPLACEMENT");
+        writer.write_field(field, "DISPLACEMENT", model._data.get());
     }
 
     const std::string text = read_text(output_path);
-    EXPECT_NE(text.find("FIELD, NAME=DISPLACEMENT, TYPE=NODE, COLS=3, ROWS=2"), std::string::npos);
+    EXPECT_NE(text.find("FIELD, NAME=DISPLACEMENT, TYPE=NODE, INDEX_COLS=1, VALUE_COLS=3, ROWS=2"), std::string::npos);
 
     std::filesystem::remove(output_path);
 }
@@ -93,7 +98,13 @@ TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<model::S4>(0, 0, 1, 2, 3);
+    model.set_element<model::FRTShellS4>(0, 0, 1, 2, 3);
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.3);
+    model.add_material(material);
+    model.add_section(std::make_shared<IntegratedShellSection>(
+        material, model._data->parts.get()->elem_sets.get(SET_ELEM_ALL), 0.1, nullptr
+    ));
     model.compile();
 
     model::Field field("LOCAL_SECTION_FORCES", model::FieldDomain::ELEMENT_NODAL, 4, 3);
@@ -120,7 +131,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_elasticity<fem::material::IsotropicElasticity>(1000.0, 0.3);
@@ -128,10 +139,14 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
 
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
-        0.1
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
+        0.1,
+        nullptr
     ));
     model.compile();
+
+    // Shell recovery requires the initialized reference geometry
+    model.step_begin();
 
     fem::model::Field displacement("U", fem::model::FieldDomain::NODE, 4, 6);
     displacement.set_zero();
@@ -146,7 +161,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
 
     const std::string text = read_text(output_path);
     EXPECT_NE(text.find(" -4  SHR         8    1"), std::string::npos);
-    EXPECT_NE(text.find(" -5  SHR8"), std::string::npos);
+    EXPECT_NE(text.find(" -5  QY"), std::string::npos);
 
     std::filesystem::remove(output_path);
 }

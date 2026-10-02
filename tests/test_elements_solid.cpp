@@ -1,9 +1,18 @@
 /**
  * @file test_elements_solid.cpp
- * @brief Tests solid-element interpolation and compiled model result recovery.
+ * @brief Tests compatible and enhanced solid-element mechanics.
+ *
+ * The checks cover C3D8 interpolation and C3D8I affine consistency, condensed
+ * finite-strain tangents, rigid-motion objectivity and the linear rigid-body
+ * nullspace. Plastic loading exercises committed/trial history through the
+ * common nonlinear state manager and verifies that auxiliary element paths
+ * remain state-neutral.
  */
 
 #include "../src/material/isotropic_elasticity.h"
+#include "../src/material/isotropic_j2_elasticity.h"
+#include "../src/material/neo_hooke_elasticity.h"
+#include "../src/loadcase/tools/nonlinear_state_manager.h"
 #include "../src/model/model.h"
 #include "../src/model/solid/c3d8.h"
 #include "../src/model/solid/c3d8i.h"
@@ -11,7 +20,13 @@
 
 #include <gtest/gtest.h>
 
+#include <Eigen/Eigenvalues>
+#include <Eigen/Geometry>
+
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <memory>
 
 using namespace fem;
 
@@ -344,5 +359,273 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     // dispatch through StructuralElement.
     EXPECT_NO_THROW(model.compute_stress_nodal(displacement, true));
 
+    model.step_end();
+}
+
+/**
+ * Checks every condensed tangent column against centered differences of the
+ * stationary internal force for two hyperelastic laws and distorted geometry.
+ *
+ * The perturbed evaluations solve the local enhanced equations independently.
+ * Thus the comparison includes the implicit enhanced-state derivative rather
+ * than holding the local parameters fixed. A finite spatial rotation and
+ * translation additionally exercise force and tangent objectivity.
+ */
+TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
+    Precision maximum_tangent_error         = Precision(0);
+    Precision maximum_rotation_force_error  = Precision(0);
+    Precision maximum_rotation_tangent_error = Precision(0);
+
+    const std::array<Vec3, 8> regular {
+        Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(1, 1, 0), Vec3(0, 1, 0),
+        Vec3(0, 0, 1), Vec3(1, 0, 1), Vec3(1, 1, 1), Vec3(0, 1, 1)
+    };
+    const std::array<Vec3, 8> distorted {
+        Vec3(0, 0, 0), Vec3(1.2, 0, 0.1), Vec3(1.1, 1, 0), Vec3(-0.1, 0.9, -0.1),
+        Vec3(0.1, -0.1, 1), Vec3(1.1, 0.1, 1.2), Vec3(1, 1.1, 1.1), Vec3(0, 1, 0.9)
+    };
+
+    // Exercise compressible and nearly incompressible tangents for both laws
+    for (const auto& coords : {regular, distorted}) {
+        for (const bool neo_hooke : {false, true}) {
+            for (const Precision poisson : {Precision(0.3), Precision(0.4999)}) {
+                model::Model model;
+                for (Index node = 0; node < 8; ++node) {
+                    model.set_node(node, coords[node].x(), coords[node].y(), coords[node].z());
+                }
+                model.set_element<model::C3D8I>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+
+                auto material = std::make_shared<material::Material>("MAT");
+                if (neo_hooke) {
+                    const Precision shear = Precision(210000) / (Precision(2) * (Precision(1) + poisson));
+                    const Precision bulk  = Precision(210000) / (Precision(3) * (Precision(1) - Precision(2) * poisson));
+                    material->set_elasticity<material::NeoHookeElasticity>(shear / Precision(2), Precision(2) / bulk);
+                } else {
+                    material->set_elasticity<material::IsotropicElasticity>(210000, poisson);
+                }
+                model.add_material(material);
+
+                auto section = std::make_shared<SolidSection>();
+                section->material_ = material;
+                section->region_   = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+                model.add_section(section);
+                model.compile();
+                model.step_begin();
+
+                auto* element = model._data->elements[0]->as<model::C3D8I>();
+                ASSERT_NE(element, nullptr);
+
+                // Reconstruct the force through the same public residual-only path
+                auto internal_force = [&](const model::Field& displacement) {
+                    model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+                    forces.set_zero();
+                    element->stiffness_tangent(nullptr, forces, displacement);
+
+                    StaticVector<24> result;
+                    for (Index node = 0; node < 8; ++node) {
+                        for (Dim component = 0; component < 3; ++component) {
+                            result(3 * node + component) = forces(node, component);
+                        }
+                    }
+                    return result;
+                };
+
+                for (const Precision amplitude : {Precision(-0.10), Precision(0.02), Precision(0.15)}) {
+                    SCOPED_TRACE(::testing::Message() << "neo_hooke=" << neo_hooke
+                        << ", nu=" << poisson << ", amplitude=" << amplitude
+                        << ", distorted=" << (coords[1].x() != Precision(1)));
+
+                    // Combine finite affine deformation with non-affine bending
+                    model::Field displacement("U", model::FieldDomain::NODE, 8, 6);
+                    displacement.set_zero();
+                    for (Index node = 0; node < 8; ++node) {
+                        const Vec3& x = coords[node];
+                        displacement(node, 0) = amplitude * (Precision(0.3) * x.x() + x.x() * x.y());
+                        displacement(node, 1) = amplitude * (Precision(-0.2) * x.y() - x.y() * x.z());
+                        displacement(node, 2) = amplitude * (Precision(0.1) * x.z() + x.x() * x.z());
+                    }
+
+                    model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+                    forces.set_zero();
+                    Precision storage[24 * 24] {};
+                    const DynamicMatrix tangent = element->stiffness_tangent(storage, forces, displacement);
+                    EXPECT_LT((tangent - tangent.transpose()).norm(), Precision(1e-10) * tangent.norm());
+
+                    // Difference every independent translational degree of freedom
+                    DynamicMatrix difference(24, 24);
+                    constexpr Precision h = Precision(2e-7);
+                    for (Index column = 0; column < 24; ++column) {
+                        model::Field plus  = displacement;
+                        model::Field minus = displacement;
+                        plus (column / 3, column % 3) += h;
+                        minus(column / 3, column % 3) -= h;
+                        difference.col(column) = (internal_force(plus) - internal_force(minus)) / (Precision(2) * h);
+                    }
+                    const Precision derivative_error = (difference - tangent).norm() / tangent.norm();
+                    EXPECT_LT(derivative_error, Precision(2e-6));
+                    maximum_tangent_error = std::max(maximum_tangent_error, derivative_error);
+
+                    // Superpose an arbitrary finite rotation and translation
+                    const Mat3 Q = Eigen::AngleAxis<Precision>(Precision(1.2), Vec3(1, -2, 3).normalized()).toRotationMatrix();
+                    const Vec3 translation(0.7, -0.4, 0.3);
+                    model::Field rotated = displacement;
+                    StaticMatrix<24, 24> rotation = StaticMatrix<24, 24>::Zero();
+                    for (Index node = 0; node < 8; ++node) {
+                        const Vec3 current = coords[node] + Vec3(displacement(node, 0), displacement(node, 1), displacement(node, 2));
+                        const Vec3 value   = Q * current + translation - coords[node];
+                        for (Dim component = 0; component < 3; ++component) {
+                            rotated(node, component) = value(component);
+                        }
+                        rotation.block<3, 3>(3 * node, 3 * node) = Q;
+                    }
+                    forces.set_zero();
+                    const DynamicMatrix rotated_tangent = element->stiffness_tangent(storage, forces, rotated);
+                    const auto base_force    = internal_force(displacement);
+                    const auto rotated_force = internal_force(rotated);
+                    const Precision force_error = (rotated_force - rotation * base_force).norm()
+                        / (Precision(1) + base_force.norm());
+                    const Precision rotation_error = (rotated_tangent - rotation * tangent * rotation.transpose()).norm()
+                        / tangent.norm();
+                    EXPECT_LT(force_error, Precision(1e-8));
+                    EXPECT_LT(rotation_error, Precision(1e-9));
+                    maximum_rotation_force_error   = std::max(maximum_rotation_force_error, force_error);
+                    maximum_rotation_tangent_error = std::max(maximum_rotation_tangent_error, rotation_error);
+                }
+                model.step_end();
+            }
+        }
+    }
+
+    // Retain the worst errors from every material, geometry and deformation case
+    RecordProperty("maximum_tangent_relative_error", (::testing::Message() << maximum_tangent_error).GetString());
+    RecordProperty("maximum_rotation_force_relative_error", (::testing::Message() << maximum_rotation_force_error).GetString());
+    RecordProperty("maximum_rotation_tangent_relative_error", (::testing::Message() << maximum_rotation_tangent_error).GetString());
+}
+
+/**
+ * Checks the undeformed tangent, rigid-body nullspace and linear stiffness for
+ * an element spanning a range of volumetric-to-shear stiffness ratios.
+ */
+TEST(Elements_C3D8I, LinearLimitAndSixRigidBodyModes) {
+    for (const Precision poisson : {Precision(0), Precision(0.3), Precision(0.4999)}) {
+        SCOPED_TRACE(poisson);
+        model::Model model;
+        const std::array<Vec3, 8> coords {
+            Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(1, 1, 0), Vec3(0, 1, 0),
+            Vec3(0, 0, 1), Vec3(1, 0, 1), Vec3(1, 1, 1), Vec3(0, 1, 1)
+        };
+        for (Index node = 0; node < 8; ++node) {
+            model.set_node(node, coords[node].x(), coords[node].y(), coords[node].z());
+        }
+        model.set_element<model::C3D8I>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+        auto material = std::make_shared<material::Material>("MAT");
+        material->set_elasticity<material::IsotropicElasticity>(210000, poisson);
+        model.add_material(material);
+        auto section = std::make_shared<SolidSection>();
+        section->material_ = material;
+        section->region_   = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+        model.add_section(section);
+        model.compile();
+        model.step_begin();
+
+        // Compare linear condensation with the undeformed finite-strain tangent
+        auto* element = model._data->elements[0]->as<model::C3D8I>();
+        model::Field displacement("U", model::FieldDomain::NODE, 8, 6);
+        model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+        displacement.set_zero();
+        forces.set_zero();
+        Precision storage[24 * 24] {};
+        const DynamicMatrix linear    = element->stiffness(storage);
+        const DynamicMatrix nonlinear = element->stiffness_tangent(storage, forces, displacement);
+        EXPECT_LT((linear - nonlinear).norm(), Precision(1e-12) * linear.norm());
+        EXPECT_LT((linear - linear.transpose()).norm(), Precision(1e-14) * linear.norm());
+
+        // A stable eight-node continuum has six rigid modes and eighteen positive modes
+        Eigen::SelfAdjointEigenSolver<DynamicMatrix> eigenvalues(linear);
+        ASSERT_EQ(eigenvalues.info(), Eigen::Success);
+        for (Index mode = 0; mode < 6; ++mode) {
+            EXPECT_LT(std::abs(eigenvalues.eigenvalues()(mode)), Precision(1e-10) * linear.norm());
+        }
+        EXPECT_GT(eigenvalues.eigenvalues()(6), Precision(1));
+        model.step_end();
+    }
+}
+
+/**
+ * Exercises plastic loading, commitment, unloading and state-neutral auxiliary
+ * element evaluations. Only a physical trial force/tangent evaluation may
+ * overwrite material_state_new; material_state_old remains immutable.
+ */
+TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
+    model::Model model;
+    const std::array<Vec3, 8> coords {
+        Vec3(0, 0, 0), Vec3(1, 0, 0), Vec3(1, 1, 0), Vec3(0, 1, 0),
+        Vec3(0, 0, 1), Vec3(1, 0, 1), Vec3(1, 1, 1), Vec3(0, 1, 1)
+    };
+    for (Index node = 0; node < 8; ++node) {
+        model.set_node(node, coords[node].x(), coords[node].y(), coords[node].z());
+    }
+    model.set_element<model::C3D8I>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::IsotropicJ2Elasticity>(210000, 0.3);
+    auto* j2 = dynamic_cast<material::IsotropicJ2Elasticity*>(material->elasticity().get());
+    j2->add_yield_point(280, 0);
+    j2->add_yield_point(350, 0.1);
+    model.add_material(material);
+    auto section = std::make_shared<SolidSection>();
+    section->material_ = material;
+    section->region_   = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(section);
+    model.compile();
+    model.step_begin();
+    loadcase::tools::NonlinearStateManager state(model);
+
+    auto* element = model._data->elements[0]->as<model::C3D8I>();
+
+    // Commit two tensile increments and then unload from the second committed state
+    for (const Precision stretch : {Precision(0.004), Precision(0.008), Precision(0.007)}) {
+        SCOPED_TRACE(stretch);
+        model::Field displacement("U", model::FieldDomain::NODE, 8, 6);
+        displacement.set_zero();
+        for (Index node = 0; node < 8; ++node) {
+            displacement(node, 0) = stretch * coords[node].x();
+            displacement(node, 1) = -Precision(0.3) * stretch * coords[node].y();
+            displacement(node, 2) = -Precision(0.3) * stretch * coords[node].z();
+            displacement(node, 0) += Precision(0.15) * stretch * coords[node].x() * coords[node].y();
+            displacement(node, 2) += Precision(0.10) * stretch * coords[node].x() * coords[node].z();
+        }
+
+        // Physical trial evaluations must be deterministic from the committed history
+        const model::Field committed = *model._data->material_state_old;
+        model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+        forces.set_zero();
+        Precision storage[24 * 24] {};
+        const DynamicMatrix tangent = element->stiffness_tangent(storage, forces, displacement);
+        const model::Field trial = *model._data->material_state_new;
+        const model::Field original_force = forces;
+        forces.set_zero();
+        element->stiffness_tangent(nullptr, forces, displacement);
+        EXPECT_TRUE(tangent.allFinite());
+
+        // Auxiliary paths may reconstruct local parameters but must not commit history
+        element->stiffness(storage);
+        element->stiffness_geom(storage, displacement);
+        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, true));
+        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, false));
+        for (Index row = 0; row < trial.rows; ++row) {
+            for (Dim component = 0; component < trial.components; ++component) {
+                EXPECT_DOUBLE_EQ((*model._data->material_state_old)(row, component), committed(row, component));
+                EXPECT_NEAR((*model._data->material_state_new)(row, component), trial(row, component), Precision(1e-12));
+            }
+            EXPECT_GE(trial(row, 6), committed(row, 6) - Precision(1e-12));
+        }
+        for (Index node = 0; node < 8; ++node) {
+            for (Dim component = 0; component < 3; ++component) {
+                EXPECT_NEAR(forces(node, component), original_force(node, component), Precision(1e-9));
+            }
+        }
+        EXPECT_GT(trial(0, 6), Precision(0));
+        state.commit_material_state();
+    }
     model.step_end();
 }

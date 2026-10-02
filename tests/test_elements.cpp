@@ -7,7 +7,7 @@
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
-#include "../src/model/shell/s4.h"
+#include "../src/model/shell/frt_shell_s4.h"
 #include "../src/model/truss/truss.h"
 #include "../src/section/section_shell_abd.h"
 #include "../src/section/section_shell_integrated.h"
@@ -34,8 +34,9 @@ fem::model::Model build_qspt_model(bool with_density) {
     const auto part = model._data->parts.get();
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
-        part->elem_sets.get(fem::SET_ELEM_ALL),
-        0.1
+        part->elem_sets.get(SET_ELEM_ALL),
+        0.1,
+        nullptr
     ));
     model.compile();
 
@@ -71,13 +72,11 @@ TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
 
     auto shear_flow = model.compute_shear_flow(displacement);
     ASSERT_EQ(shear_flow.rows, 4);
-    ASSERT_EQ(shear_flow.components, 3);
+    ASSERT_EQ(shear_flow.components, 1);
 
     const fem::Precision expected[4] {-5.0, 5.0, -5.0, 5.0};
     for (int i = 0; i < 4; ++i) {
-        EXPECT_NEAR(shear_flow(i, 0), 0.0, 1e-12);
-        EXPECT_NEAR(shear_flow(i, 1), static_cast<fem::Precision>(i), 1e-12);
-        EXPECT_NEAR(shear_flow(i, 2), expected[i], 1e-12);
+        EXPECT_NEAR(shear_flow(i, 0), expected[i], 1e-12);
     }
 
     auto compliance = model.compute_compliance(displacement);
@@ -101,7 +100,7 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_density(10.0);
@@ -111,14 +110,18 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         0.1,
         abd,
-        shear
+        shear,
+        nullptr
     ));
     model.compile();
 
-    auto* elem = model._data->elements[0]->as<fem::model::S4>();
+    // Prepare the reference geometry required by shell evaluation
+    model.step_begin();
+
+    auto* elem = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(elem, nullptr);
 
     fem::Precision k_storage[24 * 24] {};
@@ -145,7 +148,7 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto orientation = std::make_shared<fem::cos::RectangularSystem>(
         "ORI",
@@ -161,13 +164,17 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         1.0,
         abd,
         shear,
-        orientation
+        orientation,
+        2
     ));
     model.compile();
+
+    // Prepare the reference geometry required by shell evaluation
+    model.step_begin();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
@@ -184,31 +191,35 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     }
 }
 
-TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
+TEST(Elements_S4, TransverseShearResultantsFollowShellXThenY) {
     fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     model.add_material(material);
 
-    fem::StaticMatrix<6, 6> abd   = fem::StaticMatrix<6, 6>::Zero();
+    fem::StaticMatrix<6, 6> abd   = fem::StaticMatrix<6, 6>::Identity();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Zero();
     shear(0, 0) = 2.0;
     shear(1, 1) = 3.0;
 
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         1.0,
         abd,
-        shear
+        shear,
+        nullptr
     ));
     model.compile();
+
+    // Prepare the reference geometry required by shell evaluation
+    model.step_begin();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
@@ -217,8 +228,8 @@ TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
 
     auto resultants = model.compute_shell_resultants(displacement);
     for (int node = 0; node < 4; ++node) {
-        EXPECT_NEAR(resultants(node, 6), 2.0, 1e-12);
-        EXPECT_NEAR(resultants(node, 7), 0.0, 1e-12);
+        EXPECT_NEAR(resultants(node, 6), 0.0, 1e-12);
+        EXPECT_NEAR(resultants(node, 7), 3.0, 1e-12);
     }
 }
 
@@ -236,7 +247,7 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
 
     model.add_section(std::make_shared<fem::TrussSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         2.0
     ));
     model.compile();
