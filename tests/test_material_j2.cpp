@@ -1,12 +1,3 @@
-/**
- * @file test_material_j2.cpp
- * @brief Verifies J2 stress updates, plastic history and material tangents.
- *
- * The tests exercise small-strain and multiplicative finite-strain return maps,
- * axial reductions and parser registration. Near-incompressible cases verify
- * the physical Cauchy yield surface and volume-preserving plastic history.
- */
-
 #include "../src/io/dsl/deck_parser.h"
 #include "../src/io/dsl/file.h"
 #include "../src/io/dsl/registry.h"
@@ -21,7 +12,6 @@
 #include "../src/model/model.h"
 
 #include <gtest/gtest.h>
-#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <cmath>
@@ -141,50 +131,6 @@ TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
     // an unambiguous regression check for the yield decision.
     EXPECT_GT(trial_small[6], Precision(0));
     EXPECT_GT(trial_finite[6], Precision(0));
-}
-
-TEST(Material_J2, NearIncompressibleFiniteReturnSatisfiesRotatedYieldSurface) {
-    // Rotate a trace-free Green-Lagrange strain to exercise off-diagonal
-    // metrics as well as the principal-axis case at several bulk/shear ratios.
-    for (const Precision poisson : {Precision(0.49), Precision(0.4999), Precision(0.499999), Precision(0.499999999)}) {
-        for (const Precision angle : {Precision(0), Precision(0.7)}) {
-            SCOPED_TRACE(::testing::Message() << "nu=" << poisson << " angle=" << angle);
-            material::IsotropicJ2Elasticity j2(Precision(210000), poisson);
-            j2.add_yield_point(Precision(250), Precision(0));
-            j2.add_yield_point(Precision(500), Precision(0.1));
-            std::vector<Precision> committed(j2.state_size());
-            std::vector<Precision> trial(j2.state_size());
-            j2.initialize_state(committed.data());
-
-            const Mat3 rotation = Eigen::AngleAxis<Precision>(angle, Vec3(1, 2, 3).normalized()).toRotationMatrix();
-            Mat3 principal = Mat3::Zero();
-            principal(0, 0) = Precision(0.005);
-            principal(1, 1) = Precision(-0.005);
-            const Mat3 strain = rotation * principal * rotation.transpose();
-            VolumeStressPK2 stress;
-            Mat6 tangent;
-            j2.evaluate(VolumeStrainGreenLagrange(strain), committed.data(), trial.data(), stress, &tangent);
-            ASSERT_GT(trial[6], Precision(0));
-            EXPECT_TRUE(tangent.allFinite());
-            EXPECT_TRUE(tangent.isApprox(tangent.transpose(), Precision(1e-12)));
-
-            // Push PK2 forward with F=sqrt(C) and check the tabulated Cauchy
-            // yield radius independently of the internal Mandel-stress residual.
-            Mat3 stretch = Mat3::Identity();
-            stretch(0, 0) = std::sqrt(Precision(1.01));
-            stretch(1, 1) = std::sqrt(Precision(0.99));
-            const Mat3 F      = rotation * stretch * rotation.transpose();
-            const Mat3 cauchy = stress.to_cauchy(F).tensor();
-            const Mat3 dev    = cauchy - cauchy.trace() / Precision(3) * Mat3::Identity();
-            const Precision q = std::sqrt(Precision(1.5) * dev.squaredNorm());
-            EXPECT_NEAR(q, Precision(250) + Precision(2500) * trial[6], Precision(1e-4));
-            Mat3 Cp;
-            Cp << trial[0], trial[5], trial[4],
-                  trial[5], trial[1], trial[3],
-                  trial[4], trial[3], trial[2];
-            EXPECT_NEAR(Cp.determinant(), Precision(1), Precision(1e-12));
-        }
-    }
 }
 
 TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {

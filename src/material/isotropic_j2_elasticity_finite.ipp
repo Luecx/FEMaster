@@ -1,14 +1,3 @@
-/**
- * @file isotropic_j2_elasticity_finite.ipp
- * @brief Implements the multiplicative finite-strain J2 return map.
- *
- * This implementation fragment belongs to isotropic_j2_elasticity.cpp. It
- * evaluates the exponential plastic update, solves the local flow and yield
- * equations and differentiates them analytically for the material tangent.
- * Nearly incompressible elastic metrics are evaluated with extended precision
- * to prevent the bulk modulus from amplifying kinematic rounding errors.
- */
-
 // -----------------------------------------------------------------------------
 // Finite-strain return map and symmetric tangent approximation
 // -----------------------------------------------------------------------------
@@ -221,36 +210,6 @@ FinitePoint finite_point(const Mat3& C,
 
     point.m = point.M
             - (point.M.trace() / Precision(3)) * Mat3::Identity();
-
-    // Near incompressibility amplifies roundoff in tr(Ee) by K/G. Reevaluate
-    // the exponential and elastic metric in extended precision before forming
-    // stress. Increasing the Newton tolerance would hide this loss of digits.
-    if (bulk / shear > Precision(1e6)) {
-        using ExtendedMat3 = Eigen::Matrix<long double, 3, 3>;
-        const ExtendedMat3 A = point.A.cast<long double>();
-        Eigen::SelfAdjointEigenSolver<ExtendedMat3> extended_solver(A);
-        logging::error(extended_solver.info() == Eigen::Success,
-            "J2: extended-precision plastic exponential failed");
-        const ExtendedMat3 exponential = extended_solver.eigenvectors()
-                                       * extended_solver.eigenvalues().array().exp().matrix().asDiagonal()
-                                       * extended_solver.eigenvectors().transpose();
-        const ExtendedMat3 Fp     = exponential * Fp_old.cast<long double>();
-        const ExtendedMat3 Fp_inv = Fp.inverse();
-        const ExtendedMat3 Ce     = Fp_inv.transpose() * C.cast<long double>() * Fp_inv;
-        const ExtendedMat3 Ee     = 0.5L * (Ce - ExtendedMat3::Identity());
-        const ExtendedMat3 Se     = static_cast<long double>(lame) * Ee.trace() * ExtendedMat3::Identity()
-                                  + 2.0L * static_cast<long double>(shear) * Ee;
-        const ExtendedMat3 M      = Ce * Se;
-        const ExtendedMat3 m      = M - (M.trace() / 3.0L) * ExtendedMat3::Identity();
-
-        // Keep the public point data and analytical derivative in solver precision
-        point.Fp     = Fp.cast<Precision>();
-        point.Fp_inv = Fp_inv.cast<Precision>();
-        point.Ce     = Ce.cast<Precision>();
-        point.Se     = Se.cast<Precision>();
-        point.M      = M.cast<Precision>();
-        point.m      = m.cast<Precision>();
-    }
 
     point.q = std::sqrt(std::max(
         Precision(0),

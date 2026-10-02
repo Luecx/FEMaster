@@ -21,13 +21,6 @@
 namespace fem {
 namespace constraint {
 
-/**
- * Checks constraint satisfaction and static equilibrium after recovering the
- * full displacement from the solved constraint system. Stiffness products are
- * accumulated in extended precision so cancellation in ill-conditioned models
- * does not dominate the reported force residual. Diagnostic tolerances and the
- * projected equilibrium equations are unchanged.
- */
 void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                               const DynamicVector& f,
                                               const DynamicVector& solution,
@@ -40,12 +33,6 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         return os.str();
     };
 
-    /**
-     * @brief One diagnostic result with its absolute and relative force or
-     * constraint residual, prescribed tolerance and display status.
-     *
-     * Instances are local to this report and hold no model or solver state.
-     */
     struct Item {
         std::string label;
         Precision abs_val;
@@ -104,20 +91,6 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
     const Precision den_Cu_d = std::max<Precision>(1, system_.d.size() ? system_.d.norm() : 0);
     const Precision rel_Cu_d = abs_Cu_d / (den_Cu_d > 0 ? den_Cu_d : 1);
 
-    // Accumulate internal forces before converting back to solver precision.
-    // Near incompressibility makes individual K_ij u_j contributions many
-    // orders of magnitude larger than their equilibrium sum.
-    Eigen::Matrix<long double, Eigen::Dynamic, 1> internal =
-        Eigen::Matrix<long double, Eigen::Dynamic, 1>::Zero(K.rows());
-    for (Eigen::Index column = 0; column < K.outerSize(); ++column) {
-        for (SparseMatrix::InnerIterator entry(K, column); entry; ++entry) {
-            internal(entry.row()) += static_cast<long double>(entry.value())
-                                   * static_cast<long double>(u(entry.col()));
-        }
-    }
-    const DynamicVector internal_force = internal.cast<Precision>();
-    const DynamicVector force_residual = (internal - f.cast<long double>()).cast<Precision>();
-
     if (method_ == Method::Lagrange) {
         std::vector<Item> items;
         items.reserve(4);
@@ -129,13 +102,13 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                              rel_Cu_d <= tol_constraint_rel,
                              true});
 
-        const DynamicVector residual           = force_residual;
+        const DynamicVector residual           = K * u - f;
         const DynamicVector multipliers        = extract_lagrange_multipliers(solution);
         const DynamicVector scaled_multipliers = scale_lagrange_rows(multipliers);
         const DynamicVector kkt_u              = residual + system_.C.transpose() * scaled_multipliers;
 
         const Precision abs_kkt_u = kkt_u.norm();
-        const Precision den_kkt_u = std::max<Precision>(1, std::max(internal_force.norm(), f.norm()));
+        const Precision den_kkt_u = std::max<Precision>(1, std::max((K * u).norm(), f.norm()));
         const Precision rel_kkt_u = abs_kkt_u / den_kkt_u;
 
         items.push_back(Item{"lagrange equilibrium",
@@ -174,7 +147,7 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         return;
     }
 
-    const DynamicVector resid = force_residual;
+    const DynamicVector resid = K * u - f;
     const Precision abs_resid = resid.norm();
     const Precision den_full = std::max<Precision>(1, f.size() ? f.norm() : 0);
     const Precision rel_resid = abs_resid / den_full;
@@ -184,7 +157,7 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
     DynamicVector TtKu(nm);
     DynamicVector red(nm);
     project_vector(f, Ttf);
-    project_vector(internal_force, TtKu);
+    project_vector(K * u, TtKu);
     project_vector(resid, red);
 
     const Precision abs_red = red.norm();
