@@ -44,6 +44,7 @@ struct LinearHarmonic : public LoadCase {
         constraint::ConstraintTransformer::Method::NullSpace;
 
     tools::RayleighDamping damping; ///< Proportional viscous damping model.
+    bool modal_basis = false;
 
     // Construction and default result requests
     LinearHarmonic() {
