@@ -1,7 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0091 NEW)
 
-project(FEMaster VERSION 2.0.0 LANGUAGES C CXX)
+# Keep the project version in sync with the solver and the version-bump workflow.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/core/version.h" FEMASTER_VERSION_HEADER)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "src/core/version.h")
+foreach(component MAJOR MINOR PATCH)
+    string(REGEX MATCH "#[ \t]*define[ \t]+VERSION_${component}[ \t]+([0-9]+)" match "${FEMASTER_VERSION_HEADER}")
+    if(NOT match)
+        message(FATAL_ERROR "Could not read VERSION_${component} from src/core/version.h")
+    endif()
+    set(FEMASTER_VERSION_${component} "${CMAKE_MATCH_1}")
+endforeach()
+project(FEMaster VERSION "${FEMASTER_VERSION_MAJOR}.${FEMASTER_VERSION_MINOR}.${FEMASTER_VERSION_PATCH}" LANGUAGES C CXX)
 
 include(FetchContent)
 
