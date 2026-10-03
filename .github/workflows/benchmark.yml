@@ -37,9 +37,22 @@ jobs:
           ref: ${{ inputs.reference }}
           path: reference
 
-      - name: Fetch header dependencies
+      - name: Prepare dependencies for older revisions
         shell: bash
         run: |
+          # FetchContent revisions obtain these dependencies during configuration.
+          legacy=false
+          for revision in candidate reference; do
+            if [[ -f "$revision/CMakeLists.txt" ]] && grep -q FEMASTER_DEPS_INCLUDE_DIR "$revision/CMakeLists.txt"; then
+              legacy=true
+            fi
+          done
+          if [[ "$legacy" == false ]]; then
+            exit 0
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y liblz4-dev
           mkdir -p deps/include
 
           git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
@@ -52,11 +65,11 @@ jobs:
           git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
           cp -r deps/argparse/include/argparse deps/include/argparse
 
-      - name: Install LZ4 and Intel oneMKL
+      - name: Install Intel oneMKL
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gpg liblz4-dev
+          sudo apt-get install -y ninja-build wget gpg
 
           wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
             gpg --dearmor | \
@@ -74,8 +87,11 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
 
-          cmake --preset linux-mkl-omp \
-            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+          args=()
+          if grep -q FEMASTER_DEPS_INCLUDE_DIR CMakeLists.txt; then
+            args+=(-DFEMASTER_DEPS_INCLUDE_DIR="$GITHUB_WORKSPACE/deps/include")
+          fi
+          cmake --preset linux-mkl-omp "${args[@]}"
 
       - name: Build candidate
         shell: bash
@@ -91,8 +107,11 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh
 
-          cmake --preset linux-mkl-omp \
-            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+          args=()
+          if grep -q FEMASTER_DEPS_INCLUDE_DIR CMakeLists.txt; then
+            args+=(-DFEMASTER_DEPS_INCLUDE_DIR="$GITHUB_WORKSPACE/deps/include")
+          fi
+          cmake --preset linux-mkl-omp "${args[@]}"
 
       - name: Build reference
         if: ${{ inputs.reference != '' }}

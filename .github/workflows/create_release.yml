@@ -107,27 +107,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch header dependencies
-        shell: bash
-        run: |
-          mkdir -p deps/include
-
-          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
-          cp -r deps/eigen/Eigen deps/include/Eigen
-          cp -r deps/eigen/unsupported deps/include/unsupported
-
-          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
-          cp -r deps/spectra/include/Spectra deps/include/Spectra
-
-          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
-          cp -r deps/argparse/include/argparse deps/include/argparse
-
-      - name: Install LZ4 and Intel oneAPI MKL Linux
+      - name: Install Intel oneAPI MKL Linux
         if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget gpg liblz4-dev
+          sudo apt-get install -y ninja-build wget gpg
 
           wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
             gpg --dearmor | \
@@ -157,25 +142,6 @@ jobs:
         with:
           arch: x64
 
-      - name: Install LZ4 Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          git clone --depth 1 --branch v1.10.0 https://github.com/lz4/lz4.git deps/lz4
-
-          cmake -S deps/lz4/build/cmake -B deps/lz4-build `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_C_COMPILER=cl `
-            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/deps/lz4-install" `
-            -DBUILD_SHARED_LIBS=OFF `
-            -DLZ4_BUILD_CLI=OFF
-
-          cmake --build deps/lz4-build
-          cmake --install deps/lz4-build
-
       - name: Check Intel oneAPI Windows
         if: runner.os == 'Windows'
         shell: cmd
@@ -188,11 +154,11 @@ jobs:
           where icx-cl
           icx-cl --version
 
-      - name: Install LZ4 and OpenMP macOS
+      - name: Install OpenMP macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          brew install lz4 libomp ninja
+          brew install libomp ninja
           echo "macOS: $(sw_vers -productVersion)"
           echo "arch : $(uname -m)"
           [[ "$(uname -m)" == "arm64" ]]
@@ -202,11 +168,7 @@ jobs:
         shell: bash
         run: |
           source /opt/intel/oneapi/setvars.sh
-          cmake --preset ${{ matrix.configure_preset }} \
-            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
-            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
-            -DLZ4_INCLUDE_DIR=/usr/include \
-            -DLZ4_LIBRARY=/usr/lib/x86_64-linux-gnu/liblz4.a
+          cmake --preset ${{ matrix.configure_preset }}
 
       - name: Build Linux MKL OpenMP
         if: runner.os == 'Linux'
@@ -222,7 +184,7 @@ jobs:
           CONFIGURE_PRESET: ${{ matrix.configure_preset }}
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-          cmake --preset %CONFIGURE_PRESET% -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include -Dlz4_DIR=%GITHUB_WORKSPACE%\deps\lz4-install\lib\cmake\lz4
+          cmake --preset %CONFIGURE_PRESET%
 
       - name: Build Windows Intel MKL OpenMP
         if: runner.os == 'Windows'
@@ -238,15 +200,10 @@ jobs:
         shell: bash
         run: |
           LIBOMP_PREFIX="$(brew --prefix libomp)"
-          LZ4_PREFIX="$(brew --prefix lz4)"
 
           cmake --preset ${{ matrix.configure_preset }} \
-            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_PREFIX_PATH="${LIBOMP_PREFIX}" \
-            -DCMAKE_DISABLE_FIND_PACKAGE_lz4=TRUE \
-            -DLZ4_INCLUDE_DIR="${LZ4_PREFIX}/include" \
-            -DLZ4_LIBRARY="${LZ4_PREFIX}/lib/liblz4.a" \
             -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
             -DOpenMP_CXX_LIB_NAMES=omp \
             -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib"
