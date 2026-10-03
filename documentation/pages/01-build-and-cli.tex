@@ -9,7 +9,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 \end{shellcmd}
 
-FEMR output adds an LZ4 build dependency. The current CMake configuration requires the LZ4 headers and library even if only \file{.res} and \file{.frd} output will be selected at runtime. Install the LZ4 development package (for example, \file{liblz4-dev} on Debian/Ubuntu), or supply \key{LZ4\_INCLUDE\_DIR} and \key{LZ4\_LIBRARY} to CMake if its package cannot be found.
+The build requires CMake 3.24 or newer, Git, and a C++17 compiler. CMake fetches the pinned Eigen, Spectra, argparse, and LZ4 sources through FetchContent and builds LZ4 with FEMaster. GoogleTest is fetched only when \key{FEMASTER_BUILD_TESTS} is enabled. No separate installation of these libraries is required. The first configuration requires network access; downloaded sources are stored in \file{<build-directory>/_deps} by default. Optional oneMKL, OpenMP, CUDA, and cuDSS backends still require their toolkits or runtimes to be installed separately. Apple Accelerate is supplied by the macOS SDK.
+
+For predownloaded dependencies, supply the corresponding FetchContent source directory override, such as \key{FETCHCONTENT_SOURCE_DIR_EIGEN}. \key{FETCHCONTENT_BASE_DIR} changes the download directory. Single-configuration builds place the executable in \file{<build-directory>/bin}; multi-configuration builds use \file{<build-directory>/bin/<configuration>}.
 
 A release build provides optimized execution for analysis work. A debug build retains assertions and development diagnostics at substantially higher runtime cost for larger finite-element models.
 
@@ -50,7 +52,6 @@ Apple Accelerate is available only on macOS. When enabled, supported symmetric C
 \key{FEMASTER_STATIC_RUNTIME} & Link compiler C/C++ runtimes statically where supported. \\
 \key{FEMASTER_FULLY_STATIC} & Produce a fully static Linux executable. Incompatible with CUDA shared libraries. \\
 \key{FEMASTER_TIME_REPORT} & Enable compiler timing diagnostics where supported. \\
-\key{FEMASTER_DEPS_INCLUDE_DIR} & Include root containing header-only dependencies such as Eigen, Spectra, and argparse. \\
 \key{FEMASTER_CUDSS_ROOT} & Root of an NVIDIA cuDSS installation. Defaults to the \key{CUDSS_DIR} environment variable. \\
 \bottomrule
 \end{longtable}
