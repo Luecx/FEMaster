@@ -622,213 +622,277 @@ void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
 }
 
 /**
- * Assembles the linear/reference shell stiffness.
+ * Evaluates shell force and tangent operators at a selected linearization state.
  *
- * The undeformed shell state supplies the reference B matrices. Section
- * tangents are queried at zero generalized strain without a writable material
- * target state, and the reference drilling tangent is added from the same
- * objective stabilization potential. No current resultants or geometric
- * stiffness enter this operator.
+ * A null `linearization` uses the reference shell state and infinitesimal
+ * generalized strains. A non-null state activates the finite-rotation shell
+ * kinematics and evaluates the complete consistent tangent about that state.
  *
- * @param buffer Caller-provided dense element matrix storage.
- * @return Mapped linear shell stiffness.
+ * Complete tangent, geometric tangent and internal force are independent
+ * requests. The existing evaluation workspace therefore retains its selective
+ * behavior: material tangents are omitted for residual-only finite evaluations,
+ * and second SO(3) derivatives are evaluated only when a geometric operator is
+ * actually needed.
+ *
+ * If force is requested at a displacement different from the finite
+ * linearization state, the returned residual is
+ *
+ *     f(u) = f(u_L) + K_T(u_L) (u - u_L).
+ *
+ * Constitutive trial state can only be written at the physical linearization
+ * state itself.
  */
 template<Index N>
-MapMatrix FRTShell<N>::stiffness(Precision* buffer) {
-    const CurrentState state = reference_state();
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        true,
-        false,
-        false,
-        false
-    );
-
-    Mat6N Kmat;
-    assemble_material_stiffness(data, Kmat);
-    assemble_drill_stabilization(data, &Kmat, nullptr);
-
-    // Remove only numerical asymmetry from the analytically symmetric tangent.
-    Kmat = Precision(0.5) * (Kmat + Kmat.transpose());
-
-    MapMatrix mapped(buffer, num_dofs, num_dofs);
-    mapped = Kmat;
-    return mapped;
-}
-
-/**
- * Evaluates the physical geometric stiffness from a linearized prestress state.
- *
- * Linear buckling supplies the displacement obtained from the linear preload
- * solve. Prestress must therefore use the same reference B matrices and the
- * linearized shell constitutive measure rather than finite-rotation shell
- * strains. At every integration point the element evaluates
- *
- *     epsilon_0 = B_0 u,
- *     n_0       = n(epsilon_0, state_committed),
- *
- * with `use_green_lagrange = false`. The resulting generalized resultants are
- * contracted with the strain Hessians evaluated at the reference state. The
- * complete path is state-neutral and keeps resultants local to this element.
- *
- * @param buffer Caller-provided dense element matrix storage.
- * @param displacement Global nodal displacement field from the linear preload solve.
- * @return Mapped physical geometric stiffness matrix.
- */
-template<Index N>
-MapMatrix FRTShell<N>::stiffness_geom(
-    Precision*   buffer,
-    const Field& displacement
+MapMatrix FRTShell<N>::evaluate(
+    Precision*   tangent_buffer,
+    Precision*   geometric_tangent_buffer,
+    NodeData*    internal_force_output,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
 ) {
-    return stiffness_geom(buffer, displacement, nullptr);
-}
+    const bool with_tangent   = tangent_buffer != nullptr;
+    const bool with_geometric = geometric_tangent_buffer != nullptr;
+    const bool with_force     = internal_force_output != nullptr;
 
-template<Index N>
-MapMatrix FRTShell<N>::stiffness_geom(
-    Precision*   buffer,
-    const Field& displacement,
-    const Field* thermal_free_strain
-) {
-    if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
-                       && thermal_free_strain->components == 1,
-                       "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
-    }
-
-    const CurrentState state = reference_state();
-    EvaluationData data = init_evaluation(
-        state,
-        true,
-        true,
-        true,
-        false,
-        false
-    );
-
-    const Vec6N q = element_displacement_vector(displacement);
-    const auto& points = reference_data().ip_points;
-    const Index state_stride = this->_model_data->material_state_old->components;
-    const Precision scale = topology_stiffness_scale();
-    ShellSection* section = shell_section();
-
-    // Keep the prestress resultants local and reuse the allocation across calls
-    // on the same worker thread. They are attached to EvaluationData only for
-    // the subsequent geometric contraction.
-    thread_local std::vector<Vec8> linear_resultants;
-    linear_resultants.resize(points.size());
-
-    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
-        const ReferencePoint& point = points[id];
-        Vec8 strain_values = data.ip_B[id] * q;
-        if (thermal_free_strain) {
-            const Precision free_strain =
-                thermal_free_strain_at(thermal_free_strain, point.r, point.s);
-            strain_values -= thermal_generalized_strain(point, free_strain);
-        }
-        const ShellGeneralizedStrain strain(strain_values);
-        ShellStressResultants resultants;
-        Mat8 tangent;
-
-        const Index      state_row = this->mp_index(ip, 0);
-        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Mat3 basis = point.basis;
-
-        section->evaluate(
-            reference_position(point.r, point.s),
-            basis,
-            strain,
-            old_state,
-            nullptr,
-            state_stride,
-            false,
-            resultants,
-            tangent
-        );
-
-        linear_resultants[id] = scale * resultants.values();
-    }
-
-    data.ip_resultants      = Span<Vec8>(linear_resultants);
-    data.with_resultants    = true;
-
-    Mat6N Kgeo;
-    assemble_geometric_stiffness(data, Kgeo);
-
-    MapMatrix mapped(buffer, num_dofs, num_dofs);
-    mapped = Kgeo;
-    return mapped;
-}
-
-/**
- * Assembles nonlinear shell internal force and optionally the consistent tangent.
- *
- * The supplied displacement field defines the physical trial configuration.
- * Every integration point evaluates its generalized strain and section response
- * once from committed material history into the persistent trial state. The
- * resulting local resultants are used immediately for the internal force and,
- * when matrix storage is requested, for the material and geometric tangent.
- *
- * A null matrix buffer performs a residual-only evaluation. It still updates
- * the physical material trial state and assembles the complete internal force,
- * including objective drilling stabilization, but skips all tangent-only work.
- *
- * @param buffer Optional dense tangent storage; null requests force only.
- * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial nodal displacement field.
- * @return Mapped complete tangent, or an empty map for residual-only evaluation.
- */
-template<Index N>
-MapMatrix FRTShell<N>::stiffness_tangent(
-    Precision*   buffer,
-    NodeData&    nodal_forces,
-    const Field& displacement
-) {
-    logging::error(nodal_forces.components >= dofs_per_node,
-                   "FRTShell: nonlinear internal force requires six nodal components");
-
-    const bool with_tangent = buffer != nullptr;
-    const CurrentState state = current_state_from_displacement(displacement);
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        true,
-        with_tangent,
-        true,
-        true
-    );
-
-    Vec6N internal_force;
-    assemble_internal_force(data, internal_force);
-
-    Mat6N tangent;
-    if (with_tangent) {
-        Mat6N Kmat;
-        Mat6N Kgeo;
-        assemble_material_stiffness(data, Kmat);
-        assemble_geometric_stiffness(data, Kgeo);
-        tangent = Kmat + Kgeo;
-        assemble_drill_stabilization(data, &tangent, &internal_force);
-    } else {
-        assemble_drill_stabilization(data, nullptr, &internal_force);
-    }
-
-    // Scatter the complete element internal force into the global nodal field.
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
-        for (Index dof = 0; dof < dofs_per_node; ++dof) {
-            nodal_forces(node_id, dof) += internal_force(dofs_per_node * node + dof);
-        }
-    }
-
-    if (!with_tangent) {
+    if (!with_tangent && !with_geometric && !with_force) {
         return MapMatrix(nullptr, 0, 0);
     }
 
-    MapMatrix mapped(buffer, num_dofs, num_dofs);
-    mapped = tangent;
-    return mapped;
+    logging::error(!with_force || displacement != nullptr,
+        "FRTShell: internal force evaluation requires displacement");
+    logging::error(!update_state || displacement != nullptr,
+        "FRTShell: material-state update requires displacement");
+
+    if (thermal_free_strain != nullptr) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                       && thermal_free_strain->components == 1,
+            "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
+    }
+
+    // -------------------------------------------------------------------------
+    // Reference/small-strain shell evaluation.
+    // -------------------------------------------------------------------------
+    if (linearization == nullptr) {
+        const CurrentState state = reference_state();
+        EvaluationData data = init_evaluation(
+            state,
+            true,
+            true,
+            with_geometric,
+            false,
+            false
+        );
+
+        const Vec6N q = displacement != nullptr
+            ? element_displacement_vector(*displacement)
+            : Vec6N::Zero();
+
+        const auto& points       = reference_data().ip_points;
+        const Index state_stride = this->_model_data->material_state_old->components;
+        const Precision scale    = topology_stiffness_scale();
+        ShellSection* section    = shell_section();
+
+        const bool need_linear_response =
+            with_force || with_geometric || displacement != nullptr || update_state;
+
+        thread_local std::vector<Vec8> linear_resultants;
+        if (need_linear_response) {
+            linear_resultants.resize(points.size());
+
+            for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
+                const std::size_t id = static_cast<std::size_t>(ip);
+                const ReferencePoint& point = points[id];
+
+                Vec8 strain_values = data.ip_B[id] * q;
+                if (thermal_free_strain != nullptr) {
+                    const Precision free_strain =
+                        thermal_free_strain_at(thermal_free_strain, point.r, point.s);
+                    strain_values -= thermal_generalized_strain(point, free_strain);
+                }
+
+                const ShellGeneralizedStrain strain(strain_values);
+                ShellStressResultants resultants;
+                Mat8 tangent;
+
+                const Index      state_row = this->mp_index(ip, 0);
+                const Precision* old_state =
+                    &(*this->_model_data->material_state_old)(state_row, 0);
+                Precision* new_state = update_state
+                    ? &(*this->_model_data->material_state_new)(state_row, 0)
+                    : nullptr;
+                Mat3 basis = point.basis;
+
+                section->evaluate(
+                    reference_position(point.r, point.s),
+                    basis,
+                    strain,
+                    old_state,
+                    new_state,
+                    state_stride,
+                    false,
+                    resultants,
+                    tangent
+                );
+
+                linear_resultants[id] = scale * resultants.values();
+                if (with_tangent) {
+                    data.ip_tangent[id] = scale * tangent;
+                }
+            }
+
+            if (with_force || with_geometric) {
+                data.ip_resultants   = Span<Vec8>(linear_resultants);
+                data.with_resultants = true;
+            }
+        }
+
+        Mat6N tangent = Mat6N::Zero();
+        Mat6N geometric = Mat6N::Zero();
+        Mat6N drill = Mat6N::Zero();
+        Vec6N force = Vec6N::Zero();
+
+        if (with_tangent) {
+            assemble_material_stiffness(data, tangent);
+        }
+
+        if (with_force || with_tangent) {
+            assemble_drill_stabilization(data, &drill, nullptr);
+        }
+
+        if (with_force) {
+            assemble_internal_force(data, force);
+            force.noalias() += drill * q;
+        }
+
+        if (with_tangent) {
+            tangent += drill;
+            tangent = Precision(0.5) * (tangent + tangent.transpose());
+            MapMatrix mapped(tangent_buffer, num_dofs, num_dofs);
+            mapped = tangent;
+        }
+
+        if (with_geometric) {
+            assemble_geometric_stiffness(data, geometric);
+            MapMatrix mapped(geometric_tangent_buffer, num_dofs, num_dofs);
+            mapped = geometric;
+        }
+
+        if (with_force) {
+            logging::error(internal_force_output->components >= dofs_per_node,
+                "FRTShell: internal force requires six nodal components");
+
+            for (Index node = 0; node < num_nodes; ++node) {
+                const Index node_id = static_cast<Index>(this->node_ids[node]);
+                for (Index dof = 0; dof < dofs_per_node; ++dof) {
+                    (*internal_force_output)(node_id, dof) +=
+                        force(dofs_per_node * node + dof);
+                }
+            }
+        }
+
+        if (with_tangent) {
+            return MapMatrix(tangent_buffer, num_dofs, num_dofs);
+        }
+        if (with_geometric) {
+            return MapMatrix(geometric_tangent_buffer, num_dofs, num_dofs);
+        }
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Finite-rotation shell evaluation about u_L.
+    // -------------------------------------------------------------------------
+    logging::error(thermal_free_strain == nullptr,
+        "FRTShell: finite-rotation thermal free strain is not implemented");
+    logging::error(!update_state || displacement == linearization,
+        "FRTShell: material state cannot be updated away from the linearization state");
+
+    const bool extrapolate_force =
+        with_force && displacement != linearization;
+    const bool need_complete_tangent =
+        with_tangent || extrapolate_force;
+    const bool need_B = with_force || need_complete_tangent;
+    const bool need_G = with_geometric || need_complete_tangent;
+
+    const CurrentState state =
+        current_state_from_displacement(*linearization);
+    const EvaluationData data = init_evaluation(
+        state,
+        true,
+        need_B,
+        need_G,
+        true,
+        update_state
+    );
+
+    Vec6N force = Vec6N::Zero();
+    if (with_force) {
+        assemble_internal_force(data, force);
+    }
+
+    Mat6N complete = Mat6N::Zero();
+    Mat6N geometric = Mat6N::Zero();
+
+    if (need_complete_tangent) {
+        Mat6N material;
+        assemble_material_stiffness(data, material);
+        assemble_geometric_stiffness(data, geometric);
+        complete = material + geometric;
+
+        assemble_drill_stabilization(
+            data,
+            &complete,
+            with_force ? &force : nullptr
+        );
+    } else {
+        if (with_geometric) {
+            assemble_geometric_stiffness(data, geometric);
+        }
+        if (with_force) {
+            assemble_drill_stabilization(data, nullptr, &force);
+        }
+    }
+
+    if (extrapolate_force) {
+        const Vec6N q =
+            element_displacement_vector(*displacement);
+        const Vec6N q_linearization =
+            element_displacement_vector(*linearization);
+        force.noalias() += complete * (q - q_linearization);
+    }
+
+    if (with_force) {
+        logging::error(internal_force_output->components >= dofs_per_node,
+            "FRTShell: internal force requires six nodal components");
+
+        for (Index node = 0; node < num_nodes; ++node) {
+            const Index node_id = static_cast<Index>(this->node_ids[node]);
+            for (Index dof = 0; dof < dofs_per_node; ++dof) {
+                (*internal_force_output)(node_id, dof) +=
+                    force(dofs_per_node * node + dof);
+            }
+        }
+    }
+
+    if (with_tangent) {
+        MapMatrix mapped(tangent_buffer, num_dofs, num_dofs);
+        mapped = complete;
+    }
+
+    if (with_geometric) {
+        MapMatrix mapped(geometric_tangent_buffer, num_dofs, num_dofs);
+        mapped = geometric;
+    }
+
+    if (with_tangent) {
+        return MapMatrix(tangent_buffer, num_dofs, num_dofs);
+    }
+    if (with_geometric) {
+        return MapMatrix(geometric_tangent_buffer, num_dofs, num_dofs);
+    }
+    return MapMatrix(nullptr, 0, 0);
 }
 
 } // namespace fem::model
