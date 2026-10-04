@@ -669,17 +669,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 const Precision* old_material_state =
                     &(*this->_model_data->material_state_old)(state_row, 0);
 
-                shell_section()->evaluate(
-                    reference_position(point.r, point.s),
-                    basis,
-                    zero_strain,
-                    old_material_state,
-                    nullptr,
-                    state_stride,
-                    false,
-                    zero_resultants,
-                    H0
-                );
+                shell_section()->evaluate(reference_position(point.r, point.s), basis, zero_strain, old_material_state, nullptr, state_stride, zero_resultants, H0);
 
                 point.drill_stiffness_base = drill_scale * std::abs(H0(gamma_12, gamma_12));
             }

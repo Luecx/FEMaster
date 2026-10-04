@@ -46,8 +46,8 @@ struct IntegratedShellSection : ShellSection {
     // points and integrate stress into membrane forces, moments and corrected
     // transverse shear forces. The state pointers identify the first old/new MP
     // rows and material_state_stride advances through their four following rows.
-    // Each pair is passed to the selected material evaluation, and the
-    // consistent tangent is integrated by the same rule.
+    // Each pair is evaluated with the Green-Lagrange/PK2 material response,
+    // and the consistent tangent is integrated by the same rule.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
@@ -55,31 +55,13 @@ struct IntegratedShellSection : ShellSection {
         const Precision*              old_material_state,
         Precision*                    new_material_state,
         Index                         material_state_stride,
-        bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
     ) const override;
 
-    // Recover physical Cauchy stress at arbitrary z using the closest stored
-    // Simpson material point as its history state. Strain is reconstructed in
-    // the section material basis. PK2 output from Green-Lagrange evaluation is
-    // pushed forward with deformation_gradient; linearized output is already
-    // Cauchy stress. The final components follow the common output-basis convention.
-    [[nodiscard]] VolumeStressCauchy evaluate_output_stress(
-        const Vec3&                   position_reference,
-        const Mat3&                   shell_basis_global,
-        const ShellGeneralizedStrain& strain_shell,
-        const Precision*              old_material_state,
-        Precision*                    new_material_state,
-        Index                         material_state_stride,
-        Precision                     z,
-        bool                          use_green_lagrange,
-        const Mat3&                   deformation_gradient
-    ) const override;
-
-    // Linearize the finite-strain physical stress recovery about an exact base
-    // generalized strain and deformation gradient.
-    [[nodiscard]] VolumeStressCauchy evaluate_output_stress_linearized(
+    // Recover physical Cauchy stress from an exact base generalized strain and
+    // deformation gradient followed by one affine perturbation.
+    [[nodiscard]] VolumeStressCauchy recover_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_base,

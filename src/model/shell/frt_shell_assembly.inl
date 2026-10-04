@@ -79,17 +79,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         // Supply the same pointwise global basis used by the strain transformation.
         Mat3 basis = point.basis;
 
-        section->evaluate(
-            reference_position(point.r, point.s),
-            basis,
-            strain,
-            old_state,
-            new_state,
-            state_stride,
-            true,
-            resultants,
-            tangent
-        );
+        section->evaluate(reference_position(point.r, point.s), basis, strain, old_state, new_state, state_stride, resultants, tangent);
 
         data.ip_resultants[id] = scale * resultants.values();
 

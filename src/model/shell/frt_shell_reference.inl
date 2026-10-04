@@ -489,17 +489,7 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    shell_section()->evaluate(
-        reference_position(r, s),
-        reference_basis_global(r, s),
-        zero_strain,
-        old_state,
-        nullptr,
-        this->_model_data->material_state_old->components,
-        false,
-        zero_resultants,
-        H
-    );
+    shell_section()->evaluate(reference_position(r, s), reference_basis_global(r, s), zero_strain, old_state, nullptr, this->_model_data->material_state_old->components, zero_resultants, H);
 
     return topology_stiffness_scale() * H;
 }

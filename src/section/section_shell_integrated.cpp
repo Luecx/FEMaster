@@ -114,7 +114,6 @@ IntegratedShellSection::IntegratedShellSection(
  * @param old_material_state First of the five through-thickness input state rows.
  * @param new_material_state Optional first through-thickness output state row.
  * @param material_state_stride Scalar distance between consecutive state rows.
- * @param use_green_lagrange Select PK2 or linearized Cauchy material evaluation.
  * @param resultants_shell Integrated resultants in the geometric shell basis.
  * @param tangent_shell Consistent generalized tangent in the geometric shell basis.
  */
@@ -125,7 +124,6 @@ void IntegratedShellSection::evaluate(
     const Precision*              old_material_state,
     Precision*                    new_material_state,
     Index                         material_state_stride,
-    bool                          use_green_lagrange,
     ShellStressResultants&        resultants_shell,
     Mat8&                         tangent_shell
 ) const {
@@ -168,10 +166,8 @@ void IntegratedShellSection::evaluate(
     // any through-thickness constitutive state.
     logging::error(material_ && material_->has_elasticity(),
         "IntegratedShellSection requires a material with elasticity");
-    logging::error(material_->elasticity()->supports_shell_integration_green_lagrange() || !use_green_lagrange,
+    logging::error(material_->elasticity()->supports_shell_integration_green_lagrange(),
         "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
-    logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
-        "IntegratedShellSection material does not support linearized shell evaluation");
 
     // Determine the material section basis. Without a prescribed orientation the
     // geometric shell basis itself is the material basis.
@@ -220,38 +216,21 @@ void IntegratedShellSection::evaluate(
             ? new_material_state + mp * material_state_stride
             : nullptr;
 
-        ShellMaterialStress material_stress;
-        Mat5                material_tangent;
+        const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
+        ShellMaterialStressPK2                 material_stress_pk2;
+        Mat5                                   material_tangent;
 
-        // Generalized section stiffness requires the material derivative at every
-        // Simpson point, so both branches pass its address explicitly.
-        if (use_green_lagrange) {
-            const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
-            ShellMaterialStressPK2                 material_stress_pk2;
+        // The section is always evaluated at an exact Green-Lagrange base state.
+        // Linear continuation away from that state is handled by the shell element.
+        material_->elasticity()->evaluate(
+            material_strain_gl,
+            old_state,
+            new_state,
+            material_stress_pk2,
+            &material_tangent
+        );
 
-            material_->elasticity()->evaluate(
-                material_strain_gl,
-                old_state,
-                new_state,
-                material_stress_pk2,
-                &material_tangent
-            );
-
-            material_stress.values() = material_stress_pk2.values();
-        } else {
-            const ShellMaterialStrainLinearized material_strain_linearized(material_strain.values());
-            ShellMaterialStressCauchy           material_stress_cauchy;
-
-            material_->elasticity()->evaluate(
-                material_strain_linearized,
-                old_state,
-                new_state,
-                material_stress_cauchy,
-                &material_tangent
-            );
-
-            material_stress.values() = material_stress_cauchy.values();
-        }
+        const ShellMaterialStress material_stress(material_stress_pk2.values());
 
         // Integrate membrane forces and bending moments from the in-plane stress
         // components. Bending resultants carry one additional factor z.
@@ -321,194 +300,15 @@ void IntegratedShellSection::evaluate(
 }
 
 /**
- * Evaluates physical Cauchy stress at one requested thickness coordinate.
- *
- * The output point reuses the closest of the five Simpson material-point state
- * rows belonging to the in-plane shell integration point supplied by the
- * element. A null output-state pointer is propagated to the selected material
- * point so result recovery remains state-neutral.
- *
- * Material strain is reconstructed in the same section basis used during
- * generalized integration. Linearized constitutive output is already Cauchy
- * stress. Finite-strain output is evaluated as PK2 stress and pushed forward by
- * the supplied deformation gradient before conversion to the configured output
- * basis. No tangent participates in either recovery path, so both constitutive
- * calls explicitly pass `nullptr` for tangent output.
- *
- * @param position_reference Physical reference position of the shell point.
- * @param shell_basis_global Geometric shell basis in global coordinates.
- * @param strain_shell Generalized strain in the geometric shell basis.
- * @param old_material_state First of the five through-thickness input state rows.
- * @param new_material_state Optional first through-thickness output state row.
- * @param material_state_stride Scalar distance between consecutive state rows.
- * @param z Physical thickness coordinate measured from the midsurface.
- * @param use_green_lagrange Select PK2-to-Cauchy finite-strain recovery.
- * @param deformation_gradient Three-dimensional deformation gradient at `z`.
- * @return Physical Cauchy stress in the configured output basis.
- */
-VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
-    const Vec3&                   position_reference,
-    const Mat3&                   shell_basis_global,
-    const ShellGeneralizedStrain& strain_shell,
-    const Precision*              old_material_state,
-    Precision*                    new_material_state,
-    Index                         material_state_stride,
-    Precision                     z,
-    bool                          use_green_lagrange,
-    const Mat3&                   deformation_gradient
-) const {
-    using GeneralizedStrainComponent = ShellGeneralizedStrain::Component;
-    using MaterialStrainComponent    = ShellMaterialStrain::Component;
-    using MaterialStressComponent    = ShellMaterialStress::Component;
-
-    constexpr GeneralizedStrainComponent EXX = GeneralizedStrainComponent::EpsilonXX;
-    constexpr GeneralizedStrainComponent EYY = GeneralizedStrainComponent::EpsilonYY;
-    constexpr GeneralizedStrainComponent GXY = GeneralizedStrainComponent::GammaXY;
-    constexpr GeneralizedStrainComponent KXX = GeneralizedStrainComponent::KappaXX;
-    constexpr GeneralizedStrainComponent KYY = GeneralizedStrainComponent::KappaYY;
-    constexpr GeneralizedStrainComponent KXY = GeneralizedStrainComponent::KappaXY;
-    constexpr GeneralizedStrainComponent GXZ = GeneralizedStrainComponent::GammaXZ;
-    constexpr GeneralizedStrainComponent GYZ = GeneralizedStrainComponent::GammaYZ;
-
-    constexpr MaterialStrainComponent MXX = MaterialStrainComponent::XX;
-    constexpr MaterialStrainComponent MYY = MaterialStrainComponent::YY;
-    constexpr MaterialStrainComponent MXY = MaterialStrainComponent::GammaXY;
-    constexpr MaterialStrainComponent MXZ = MaterialStrainComponent::GammaXZ;
-    constexpr MaterialStrainComponent MYZ = MaterialStrainComponent::GammaYZ;
-
-    constexpr MaterialStressComponent SXX = MaterialStressComponent::XX;
-    constexpr MaterialStressComponent SYY = MaterialStressComponent::YY;
-    constexpr MaterialStressComponent SXY = MaterialStressComponent::XY;
-    constexpr MaterialStressComponent SXZ = MaterialStressComponent::XZ;
-    constexpr MaterialStressComponent SYZ = MaterialStressComponent::YZ;
-
-    // Validate the material formulation selected for stress recovery.
-    logging::error(material_ && material_->has_elasticity(),
-        "IntegratedShellSection requires a material with elasticity");
-    logging::error(material_->elasticity()->supports_shell_integration_green_lagrange() || !use_green_lagrange,
-        "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
-    logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
-        "IntegratedShellSection material does not support linearized shell evaluation");
-
-    // Determine both recovery and configured output bases. Without an explicit
-    // orientation, material recovery is performed directly in shell coordinates.
-    const Mat3 output_basis_global = stress_basis(position_reference, shell_basis_global);
-    const Mat3 recovery_basis_global = orientation_
-        ? output_basis_global
-        : shell_basis_global;
-
-    const Mat2 recovery_axes_in_shell =
-        shell_basis_global.template block<3, 2>(0, 0).transpose()
-        * recovery_basis_global.template block<3, 2>(0, 0);
-
-    const ShellGeneralizedStrain strain_material =
-        strain_shell.transformed(recovery_axes_in_shell);
-
-    // Reconstruct material strain at the requested physical thickness coordinate.
-    ShellMaterialStrain material_strain;
-    material_strain[MXX] = strain_material[EXX] + z * strain_material[KXX];
-    material_strain[MYY] = strain_material[EYY] + z * strain_material[KYY];
-    material_strain[MXY] = strain_material[GXY] + z * strain_material[KXY];
-    material_strain[MXZ] = strain_material[GXZ];
-    material_strain[MYZ] = strain_material[GYZ];
-
-    // Select the nearest persistent Simpson material point because output
-    // coordinates need not coincide with constitutive thickness points.
-    Index     state_mp       = 0;
-    Precision state_distance =
-        std::abs(z - Precision(0.5) * thickness_ * simpson_points[0]);
-
-    for (Index mp = 1; mp < 5; ++mp) {
-        const Precision z_mp     = Precision(0.5) * thickness_ * simpson_points[mp];
-        const Precision distance = std::abs(z - z_mp);
-
-        if (distance < state_distance) {
-            state_mp       = mp;
-            state_distance = distance;
-        }
-    }
-
-    const Precision* old_state = old_material_state + state_mp * material_state_stride;
-    Precision* new_state = new_material_state
-        ? new_material_state + state_mp * material_state_stride
-        : nullptr;
-
-    // Embed the five shell material stress components into a symmetric 3D tensor
-    // for subsequent basis transformation and finite-strain push-forward.
-    auto shell_stress_tensor = [=](const ShellMaterialStress& stress) {
-        Mat3 tensor = Mat3::Zero();
-
-        tensor(0, 0) = stress[SXX];
-        tensor(1, 1) = stress[SYY];
-        tensor(0, 1) = stress[SXY];
-        tensor(1, 0) = stress[SXY];
-        tensor(0, 2) = stress[SXZ];
-        tensor(2, 0) = stress[SXZ];
-        tensor(1, 2) = stress[SYZ];
-        tensor(2, 1) = stress[SYZ];
-
-        return tensor;
-    };
-
-    if (!use_green_lagrange) {
-        // Linearized recovery already returns physical Cauchy stress. No material
-        // tangent is required for result output.
-        const ShellMaterialStrainLinearized material_strain_linearized(material_strain.values());
-        ShellMaterialStressCauchy           material_stress_cauchy;
-
-        material_->elasticity()->evaluate(
-            material_strain_linearized,
-            old_state,
-            new_state,
-            material_stress_cauchy,
-            nullptr
-        );
-
-        return VolumeStressCauchy(shell_stress_tensor(material_stress_cauchy))
-            .transformed(recovery_basis_global, output_basis_global);
-    }
-
-    // Finite-strain recovery obtains PK2 stress only and then pushes it forward
-    // with the supplied deformation gradient.
-    const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
-    ShellMaterialStressPK2                 material_stress_pk2;
-
-    material_->elasticity()->evaluate(
-        material_strain_gl,
-        old_state,
-        new_state,
-        material_stress_pk2,
-        nullptr
-    );
-
-    const Precision J = deformation_gradient.determinant();
-    logging::error(J > Precision(0) && std::isfinite(J),
-        "IntegratedShellSection: invalid deformation gradient during stress recovery, J = ", J);
-
-    // Transform the recovered PK2 stress to global reference coordinates and
-    // apply the standard push-forward
-    //
-    //     sigma = F S F^T / J.
-    const Mat3 second_pk_recovery = shell_stress_tensor(material_stress_pk2);
-    const Mat3 second_pk_global =
-        recovery_basis_global * second_pk_recovery * recovery_basis_global.transpose();
-    const Mat3 cauchy_global =
-        deformation_gradient * second_pk_global * deformation_gradient.transpose() / J;
-
-    return VolumeStressCauchy(cauchy_global)
-        .transformed(Mat3::Identity(), output_basis_global);
-}
-
-/**
- * Linearizes physical Cauchy stress about one exact finite-strain shell material
- * state.
+ * Recovers physical Cauchy stress from an exact finite-strain shell material
+ * base state followed by one affine perturbation.
  *
  * The material is evaluated once at the Green-Lagrange base strain to obtain
  * S0 and the consistent reduced tangent C0. The mechanical strain increment
  * produces Delta S = C0 Delta E. The PK2-to-Cauchy push-forward is then
  * differentiated with respect to both Delta S and Delta F.
  */
-VolumeStressCauchy IntegratedShellSection::evaluate_output_stress_linearized(
+VolumeStressCauchy IntegratedShellSection::recover_stress(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_base,
