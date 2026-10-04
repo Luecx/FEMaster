@@ -496,8 +496,7 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
         old_state,
         nullptr,
         this->_model_data->material_state_old->components,
-        false,
-        zero_resultants,
+                zero_resultants,
         H
     );
 
