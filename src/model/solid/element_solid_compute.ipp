@@ -733,7 +733,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
 template<Index N>
 void SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[D * N * D * N];
-    auto K = stiffness(buffer);
+    auto K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
