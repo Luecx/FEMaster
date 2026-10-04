@@ -7,8 +7,7 @@
  * directly where they occur instead of being hidden behind small generic helpers.
  * This makes each constitutive entry point readable in isolation.
  *
- * Internally, the small-strain model uses the classical radial return. The
- * finite-strain model uses
+ * The finite-strain model uses
  *
  *     F = Fe Fp
  *
@@ -113,6 +112,77 @@ IsotropicJ2Elasticity::IsotropicJ2Elasticity(Precision youngs_in,
  */
 Precision IsotropicJ2Elasticity::shear_modulus() const {
     return youngs / (Precision(2) * (Precision(1) + poisson));
+}
+
+/**
+ * Returns the elastic bulk modulus.
+ *
+ *     K = E / [3 (1 - 2 nu)].
+ *
+ * @return Elastic bulk modulus K.
+ */
+Precision IsotropicJ2Elasticity::bulk_modulus() const {
+    return youngs / (Precision(3) * (Precision(1) - Precision(2) * poisson));
+}
+
+/**
+ * Appends one point to the tabulated isotropic hardening curve.
+ *
+ * Equivalent plastic strain must increase strictly and yield stress must be
+ * non-decreasing. The first point is required at zero plastic strain because it
+ * defines the initial yield surface.
+ *
+ * @param yield_stress Yield stress at the supplied plastic strain.
+ * @param equivalent_plastic_strain Accumulated equivalent plastic strain.
+ */
+void IsotropicJ2Elasticity::add_yield_point(Precision yield_stress,
+                                            Precision equivalent_plastic_strain) {
+    // Validate the physical range before touching the hardening table.
+    logging::error(std::isfinite(yield_stress) && yield_stress > Precision(0),
+        "J2: yield stress must be finite and positive");
+    logging::error(std::isfinite(equivalent_plastic_strain)
+                   && equivalent_plastic_strain >= Precision(0),
+        "J2: equivalent plastic strain must be finite and non-negative");
+
+    const Precision strain_tolerance =
+        Precision(100) * std::numeric_limits<Precision>::epsilon();
+
+    if (yield_points_.empty()) {
+        // The first point defines initial yield and therefore belongs at alpha = 0.
+        logging::error(std::abs(equivalent_plastic_strain) <= strain_tolerance,
+            "J2: first yield point must have zero equivalent plastic strain");
+
+        // Remove harmless parser/decimal round-off from that exact initial value.
+        equivalent_plastic_strain = Precision(0);
+    } else {
+        // Every later point must extend the existing piecewise-linear curve.
+        const YieldPoint& previous = yield_points_.back();
+
+        logging::error(equivalent_plastic_strain > previous.equivalent_plastic_strain,
+            "J2: equivalent plastic strains must be added in strictly increasing order");
+        logging::error(yield_stress >= previous.yield_stress,
+            "J2: tabulated isotropic hardening must be non-decreasing");
+    }
+
+    yield_points_.push_back({yield_stress, equivalent_plastic_strain});
+}
+
+/**
+ * Returns the hardening table exactly as supplied to the material.
+ *
+ * @return Piecewise-linear isotropic hardening points in ascending plastic strain.
+ */
+const std::vector<IsotropicJ2Elasticity::YieldPoint>&
+IsotropicJ2Elasticity::get_yield_points() const {
+    return yield_points_;
+}
+
+bool IsotropicJ2Elasticity::supports_axial_green_lagrange() const {
+    return true;
+}
+
+bool IsotropicJ2Elasticity::supports_volume_green_lagrange() const {
+    return true;
 }
 
 bool IsotropicJ2Elasticity::supports_shell_integration_green_lagrange() const {
