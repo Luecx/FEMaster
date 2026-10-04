@@ -2,10 +2,11 @@
  * @file element_structural.h
  * @brief Declares the abstract base class for structural FEM elements.
  *
- * Structural elements extend `ElementInterface` with the mechanical operators
- * required by linear, prestressed and nonlinear analyses. The interface exposes
- * stiffness, geometric stiffness, nonlinear tangent/internal-force evaluation,
- * mass and structural result recovery while formulation-specific stress,
+ * Structural elements extend `ElementInterface` with one state-based mechanical
+ * evaluation used by linear, prestressed and nonlinear analyses. Independent
+ * output pointers request the complete tangent, geometric tangent and/or internal
+ * force without forcing unrelated work. Mass and structural result recovery
+ * remain separate while formulation-specific stress,
  * strain and constitutive integration remain responsibilities of the derived
  * element classes.
  *
@@ -32,26 +33,19 @@ namespace model {
  * @struct StructuralElement
  * @brief Common mechanical interface implemented by all structural elements.
  *
- * A structural element provides the discrete operators required by the global
- * structural analyses. Linear analyses request the material/linear stiffness
- * through `stiffness()`. Prestress-dependent analyses request the geometric
- * stiffness through `stiffness_geom()` for a supplied nodal displacement state.
- * Nonlinear equilibrium evaluations use `stiffness_tangent()`, which always
- * assembles the internal force and optionally assembles the consistent tangent.
+ * A structural element provides one mechanical state evaluation for the global
+ * structural analyses. The caller independently requests the complete tangent,
+ * the stress-dependent geometric tangent and the internal force through nullable
+ * output pointers. The displacement field defines the state whose force is
+ * requested, while an optional linearization field defines the state at which
+ * finite-deformation kinematics and the tangent are evaluated. A null
+ * linearization selects the reference/small-strain formulation.
  *
- * The nonlinear tangent routine uses the stiffness buffer itself as the request
- * for tangent assembly. A non-null buffer requests both the tangent matrix and
- * the matching internal force. A null buffer requests an internal-force-only
- * evaluation, which is useful for residual evaluations such as line-search
- * trials where no tangent matrix is required. Derived elements therefore keep a
- * single physical nonlinear evaluation path for both operations.
- *
- * Constitutive history follows a strict ownership rule. Read-only operators such
- * as `stiffness()` and `stiffness_geom()` may inspect committed material state but
- * must not modify the persistent trial state. `stiffness_tangent()` evaluates the
- * physical trial configuration from the committed state and may write the trial
- * material state. Promotion of trial state to committed state belongs to the
- * nonlinear increment controller, not to an element.
+ * Constitutive history follows a strict ownership rule. State-neutral evaluations
+ * read committed material history without modifying the persistent trial state.
+ * Only calls with `update_state=true` may write trial history. Promotion of trial
+ * state to committed state belongs to the nonlinear increment controller, not to
+ * an element.
  *
  * Stress, strain, constitutive tangents and stress resultants used while building
  * element operators are local intermediate quantities. Derived formulations may
@@ -66,29 +60,26 @@ struct StructuralElement : ElementInterface {
 
     ~StructuralElement() override = default;
 
-    // Fundamental mechanical measures and operators. stiffness() is the linear
-    // material operator. stiffness_geom() evaluates the stress-dependent
-    // geometric contribution for the supplied displacement state without
-    // advancing persistent material history.
+    // Mechanical state evaluation. A null linearization selects the
+    // reference/small-strain formulation. A non-null linearization selects the
+    // finite-deformation formulation and defines the state at which the residual
+    // is linearized. The requested matrix/force outputs are independent: null
+    // pointers deliberately skip work that the caller does not need.
+    //
+    // displacement is the state whose internal force is requested. When it
+    // differs from a non-null linearization, the element returns the first-order
+    // residual approximation about the linearization state. Persistent
+    // constitutive history is written only when update_state is true.
     virtual Precision volume() = 0;
-    virtual MapMatrix stiffness(Precision* buffer) = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer,
-                                     const Field& displacement,
-                                     const Field* thermal_free_strain) {
-        (void) thermal_free_strain;
-        return stiffness_geom(buffer, displacement);
-    }
-
-    // Physical nonlinear equilibrium evaluation. The internal force is always
-    // accumulated into nodal_forces. If buffer is non-null, the same material
-    // evaluation also assembles and returns the consistent tangent matrix. If
-    // buffer is null, tangent assembly is skipped while the complete internal
-    // force and trial material state are evaluated for the supplied displacement.
-    // The returned map is empty for an internal-force-only evaluation.
-    virtual MapMatrix stiffness_tangent(Precision*   buffer,
-                                        NodeData&    nodal_forces,
-                                        const Field& displacement) = 0;
+    virtual MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
+    ) = 0;
 
     // Inertial operator and formulation classification
     virtual MapMatrix mass(Precision* buffer) = 0;
