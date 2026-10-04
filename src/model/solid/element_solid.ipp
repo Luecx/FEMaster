@@ -8,7 +8,7 @@
  *
  * State-neutral constitutive queries read globally enumerated committed
  * material-point rows and pass no persistent target state. Physical nonlinear
- * trial updates are performed only by `stiffness_tangent()`.
+ * trial updates are performed only by `evaluate()`.
  *
  * @see SolidElement
  * @see SolidSection
