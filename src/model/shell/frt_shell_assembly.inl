@@ -15,7 +15,7 @@
  *
  * Generalized resultants and constitutive tangents remain local to the active
  * element evaluation. Only the physical nonlinear tangent path may write trial
- * material history; linear stiffness and prestress stiffness are state-neutral.
+ * material history; base-state stiffness and perturbation geometric stiffness are state-neutral.
  *
  * @see FRTShell
  *
@@ -514,7 +514,7 @@ void FRTShell<N>::assemble_drill_stabilization(
  * compatible reference metric and curvature increments. Deskewing and applying
  * the topology-specific MITC operator must match the mechanical strain path:
  * on curved MITC8 elements its assumed field differs from the pointwise field.
- * The same initial strain is used for loads, stress recovery and prestress.
+ * The same initial strain is used for loads, stress recovery and thermal stress increments.
  *
  * The supplied scalar retains the existing pointwise temperature interpolation.
  * This models constant-through-thickness expansion and introduces no thermal
@@ -588,8 +588,8 @@ typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
  * increments pass through the same MITC operator as mechanical strains.
  *
  * This is the linear/reference thermal RHS, not a constitutive update. It does
- * not modify material state; nonlinear constitutive stress recovery and
- * thermal-prestress geometric tangents require separate thermal state handling.
+ * not modify material state; finite-state thermal constitutive response still
+ * requires separate thermal state handling.
  */
 template<Index N>
 void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
