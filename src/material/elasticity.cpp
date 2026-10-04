@@ -1,3 +1,33 @@
+/**
+ * @file elasticity.cpp
+ * @brief Implements default behavior of the elastic constitutive interface.
+ *
+ * The base implementation declares every constitutive formulation unsupported,
+ * defines a stateless material-point layout and rejects overloads that a concrete
+ * elasticity model has not implemented.
+ *
+ * @see Elasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#include "elasticity.h"
+
+#include "strain/axial_strain_green_lagrange.h"
+#include "strain/beam_generalized_strain.h"
+#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/volume_strain_green_lagrange.h"
+#include "stress/axial_stress_cauchy.h"
+#include "stress/axial_stress_pk2.h"
+#include "stress/beam_stress_resultants.h"
+#include "stress/shell_material_stress_cauchy.h"
+#include "stress/shell_material_stress_pk2.h"
+#include "stress/volume_stress_cauchy.h"
+#include "stress/volume_stress_pk2.h"
+
+namespace fem::material {
+
 bool Elasticity::supports_axial_green_lagrange() const {
     return false;
 }
