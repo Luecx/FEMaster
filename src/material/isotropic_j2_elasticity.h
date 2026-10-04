@@ -93,11 +93,8 @@ struct IsotropicJ2Elasticity : Elasticity {
     [[nodiscard]] const std::vector<YieldPoint>& get_yield_points() const;
 
     // Supported strain/stress-measure pairs
-    bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
     // Persistent material-point history. Seven scalars store the six independent
@@ -109,12 +106,6 @@ struct IsotropicJ2Elasticity : Elasticity {
     // Axial reductions enforce zero transverse stress through the corresponding
     // three-dimensional constitutive law. The external scalar tangent is optional,
     // although the finite/local reduction may require derivatives internally.
-    void evaluate(const AxialStrainLinearized& strain,
-                  const Precision*             old_state,
-                  Precision*                   new_state,
-                  AxialStressCauchy&           stress,
-                  Precision*                   tangent = nullptr) const override;
-
     void evaluate(const AxialStrainGreenLagrange& strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
@@ -123,12 +114,6 @@ struct IsotropicJ2Elasticity : Elasticity {
 
     // Three-dimensional material response. A null tangent preserves the complete
     // stress/state update while omitting construction of the algorithmic matrix.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
-
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
@@ -138,12 +123,6 @@ struct IsotropicJ2Elasticity : Elasticity {
     // Integrated-shell material response under the local plane-stress condition
     // S33 = 0. Tangent output is optional; the thickness solve itself uses the
     // three-dimensional algorithmic tangent for its Newton update.
-    void evaluate(const ShellMaterialStrainLinearized& strain,
-                  const Precision*                     old_state,
-                  Precision*                           new_state,
-                  ShellMaterialStressCauchy&            stress,
-                  Mat5*                                tangent = nullptr) const override;
-
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
