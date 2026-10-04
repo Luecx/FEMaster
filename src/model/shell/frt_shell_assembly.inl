@@ -709,216 +709,113 @@ MapMatrix FRTShell<N>::evaluate(
 
     logging::error(!with_force || displacement != nullptr,
         "FRTShell: internal force evaluation requires displacement");
+    logging::error(!with_force || internal_force_output->components >= dofs_per_node,
+        "FRTShell: internal force requires six nodal components");
     logging::error(!update_state || (linearization != nullptr && displacement == linearization),
         "FRTShell: material state requires an exact evaluation at the linearization state");
-
-    if (thermal_free_strain != nullptr) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
-                       && thermal_free_strain->components == 1,
-            "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
-    }
-
-    // -------------------------------------------------------------------------
-    // Reference state u0 = 0
-    // -------------------------------------------------------------------------
-    if (linearization == nullptr) {
-        const CurrentState state = reference_state();
-        const Vec6N delta = displacement != nullptr
-                          ? element_displacement_vector(*displacement)
-                          : Vec6N::Zero();
-
-        // Force away from u0 requires the same complete tangent used for the
-        // first-order residual approximation. A separate geometric request
-        // additionally needs the strain Hessians at the base configuration.
-        const bool need_complete_tangent = with_tangent || with_force;
-        const bool need_G                = need_complete_tangent || with_geometric;
-
-        EvaluationData data = init_evaluation(
-            state,
-            true,
-            true,
-            need_G,
-            true,
-            false
-        );
-
-        Mat6N complete  = Mat6N::Zero();
-        Mat6N geometric = Mat6N::Zero();
-        Vec6N force     = Vec6N::Zero();
-
-        // Evaluate the exact base force and the complete tangent K_T(u0).
-        if (with_force) {
-            assemble_internal_force(data, force);
-        }
-
-        if (need_complete_tangent) {
-            Mat6N material;
-            Mat6N geometric_base;
-            assemble_material_stiffness(data, material);
-            assemble_geometric_stiffness(data, geometric_base);
-            complete = material + geometric_base;
-
-            assemble_drill_stabilization(
-                data,
-                &complete,
-                with_force ? &force : nullptr
-            );
-        }
-
-        // Build the generalized resultant increment caused by the perturbation
-        // from u0 to u. Thermal free strain acts as an additional negative
-        // generalized strain increment.
-        Vec6N thermal_force = Vec6N::Zero();
-        thread_local std::vector<Vec8> resultant_increment;
-
-        if (with_geometric) {
-            resultant_increment.resize(reference_data().ip_points.size());
-        }
-
-        if (with_geometric || (with_force && thermal_free_strain != nullptr)) {
-            const auto& points = reference_data().ip_points;
-
-            for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-                const std::size_t id = static_cast<std::size_t>(ip);
-                const ReferencePoint& point = points[id];
-
-                Vec8 increment = data.ip_tangent[id] * (data.ip_B[id] * delta);
-
-                if (thermal_free_strain != nullptr) {
-                    const Precision free_strain = thermal_free_strain_at(thermal_free_strain, point.r, point.s);
-                    const Vec8 thermal_strain   = thermal_generalized_strain(point, free_strain);
-                    const Vec8 thermal_resultant = data.ip_tangent[id] * thermal_strain;
-
-                    increment -= thermal_resultant;
-
-                    if (with_force) {
-                        thermal_force.noalias() += (point.w * point.detJ)
-                                                 * data.ip_B[id].transpose()
-                                                 * thermal_resultant;
-                    }
-                }
-
-                if (with_geometric) {
-                    resultant_increment[id] = increment;
-                }
-            }
-        }
-
-        // The separate geometric operator uses only the resultant increment
-        //
-        //     Delta n = H0 B0 (u - u0) - H0 epsilon_th,
-        //
-        // while K_T(u0) above already contains the geometric contribution from
-        // the resultants present at the base state.
-        if (with_geometric) {
-            EvaluationData geometric_data = data;
-            geometric_data.ip_resultants   = Span<Vec8>(resultant_increment);
-            geometric_data.with_resultants = true;
-
-            assemble_geometric_stiffness(geometric_data, geometric);
-
-            MapMatrix mapped(geometric_tangent_buffer, num_dofs, num_dofs);
-            mapped = geometric;
-        }
-
-        if (with_force) {
-            force.noalias() += complete * delta;
-            force.noalias() -= thermal_force;
-
-            logging::error(internal_force_output->components >= dofs_per_node,
-                "FRTShell: internal force requires six nodal components");
-
-            for (Index node = 0; node < num_nodes; ++node) {
-                const Index node_id = static_cast<Index>(this->node_ids[node]);
-                for (Index dof = 0; dof < dofs_per_node; ++dof) {
-                    (*internal_force_output)(node_id, dof) += force(dofs_per_node * node + dof);
-                }
-            }
-        }
-
-        if (with_tangent) {
-            MapMatrix mapped(tangent_buffer, num_dofs, num_dofs);
-            mapped = complete;
-        }
-
-        if (with_tangent) {
-            return MapMatrix(tangent_buffer, num_dofs, num_dofs);
-        }
-        if (with_geometric) {
-            return MapMatrix(geometric_tangent_buffer, num_dofs, num_dofs);
-        }
-        return MapMatrix(nullptr, 0, 0);
-    }
-
-    // -------------------------------------------------------------------------
-    // Finite-rotation shell evaluation about u0
-    // -------------------------------------------------------------------------
-    logging::error(thermal_free_strain == nullptr,
+    logging::error(!thermal_free_strain || linearization == nullptr,
         "FRTShell: finite-rotation thermal free strain is not implemented");
+    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
+        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
-    const Vec6N q0 = element_displacement_vector(*linearization);
-    const Vec6N q  = displacement != nullptr
-                   ? element_displacement_vector(*displacement)
-                   : q0;
+    // -------------------------------------------------------------------------
+    // exact state at the linearization point u0
+    // -------------------------------------------------------------------------
+
+    // A null linearization denotes q0 = 0. Reference and finite base states use
+    // the same nonlinear shell kinematics and the same Green-Lagrange section
+    // response; only the supplied nodal state differs.
+    const Vec6N q0 = linearization ? element_displacement_vector(*linearization) : Vec6N::Zero();
+    const Vec6N q  = displacement ? element_displacement_vector(*displacement) : q0;
     const Vec6N delta = q - q0;
 
+    const CurrentState state = linearization ? current_state_from_displacement(*linearization) : reference_state();
+
+    // Internal force away from q0 is continued affinely:
+    //
+    //     f(q) ~= f(q0) + K_T(q0) (q - q0).
     const bool affine_force          = with_force && displacement != linearization;
     const bool need_complete_tangent = with_tangent || affine_force;
     const bool need_B                = with_force || need_complete_tangent || with_geometric;
     const bool need_G                = need_complete_tangent || with_geometric;
     const bool need_resultants       = with_force || need_complete_tangent || with_geometric;
 
-    const CurrentState state = current_state_from_displacement(*linearization);
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        need_B,
-        need_G,
-        need_resultants,
-        update_state
-    );
+    EvaluationData data = init_evaluation(state, true, need_B, need_G, need_resultants, update_state);
 
     Vec6N force = Vec6N::Zero();
     if (with_force) {
         assemble_internal_force(data, force);
     }
 
-    // Assemble the complete tangent at u0. Its geometric part uses the
-    // generalized resultants already present at the base state.
+    // The complete tangent at q0 contains
+    //
+    //     K_T(q0) = K_M(q0) + K_G(n0),
+    //
+    // where n0 are the exact generalized resultants at the base state.
     Mat6N complete  = Mat6N::Zero();
     Mat6N geometric = Mat6N::Zero();
 
     if (need_complete_tangent) {
         Mat6N material;
         Mat6N geometric_base;
+
         assemble_material_stiffness(data, material);
         assemble_geometric_stiffness(data, geometric_base);
         complete = material + geometric_base;
 
-        assemble_drill_stabilization(
-            data,
-            &complete,
-            with_force ? &force : nullptr
-        );
+        assemble_drill_stabilization(data, &complete, with_force ? &force : nullptr);
     } else if (with_force) {
         assemble_drill_stabilization(data, nullptr, &force);
     }
 
-    // The separate geometric operator is generated only by the linearized
-    // generalized resultant increment
+    // -------------------------------------------------------------------------
+    // linear continuation from u0 to u
+    // -------------------------------------------------------------------------
+
+    // Linearization about q0 gives
     //
-    //     Delta n = H0 B0 (u - u0).
+    //     Delta epsilon = B0 Delta q,
+    //     Delta n       = H0 Delta epsilon.
     //
-    // The strain Hessians themselves are evaluated at u0.
+    // Reference thermal free strain is treated as an additional negative
+    // generalized strain increment.
+    Vec6N thermal_force = Vec6N::Zero();
+    thread_local std::vector<Vec8> resultant_increment;
+
     if (with_geometric) {
-        thread_local std::vector<Vec8> resultant_increment;
         resultant_increment.resize(reference_data().ip_points.size());
+    }
 
-        for (Index ip = 0; ip < static_cast<Index>(resultant_increment.size()); ++ip) {
+    if (with_geometric || (with_force && thermal_free_strain)) {
+        const auto& points = reference_data().ip_points;
+
+        for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
             const std::size_t id = static_cast<std::size_t>(ip);
-            resultant_increment[id] = data.ip_tangent[id] * (data.ip_B[id] * delta);
-        }
+            const ReferencePoint& point = points[id];
 
+            Vec8 increment = data.ip_tangent[id] * (data.ip_B[id] * delta);
+
+            if (thermal_free_strain) {
+                const Precision free_strain      = thermal_free_strain_at(thermal_free_strain, point.r, point.s);
+                const Vec8 thermal_strain        = thermal_generalized_strain(point, free_strain);
+                const Vec8 thermal_resultant     = data.ip_tangent[id] * thermal_strain;
+
+                increment -= thermal_resultant;
+
+                if (with_force) {
+                    thermal_force.noalias() += (point.w * point.detJ) * data.ip_B[id].transpose() * thermal_resultant;
+                }
+            }
+
+            if (with_geometric) {
+                resultant_increment[id] = increment;
+            }
+        }
+    }
+
+    // The separate geometric operator contains only the perturbation resultants
+    // Delta n. Base resultants n0 are already contained in K_T(q0).
+    if (with_geometric) {
         EvaluationData geometric_data = data;
         geometric_data.ip_resultants   = Span<Vec8>(resultant_increment);
         geometric_data.with_resultants = true;
@@ -932,11 +829,11 @@ MapMatrix FRTShell<N>::evaluate(
     if (affine_force) {
         force.noalias() += complete * delta;
     }
+    if (with_force && thermal_free_strain) {
+        force.noalias() -= thermal_force;
+    }
 
     if (with_force) {
-        logging::error(internal_force_output->components >= dofs_per_node,
-            "FRTShell: internal force requires six nodal components");
-
         for (Index node = 0; node < num_nodes; ++node) {
             const Index node_id = static_cast<Index>(this->node_ids[node]);
             for (Index dof = 0; dof < dofs_per_node; ++dof) {
@@ -950,12 +847,8 @@ MapMatrix FRTShell<N>::evaluate(
         mapped = complete;
     }
 
-    if (with_tangent) {
-        return MapMatrix(tangent_buffer, num_dofs, num_dofs);
-    }
-    if (with_geometric) {
-        return MapMatrix(geometric_tangent_buffer, num_dofs, num_dofs);
-    }
+    if (with_tangent) return MapMatrix(tangent_buffer, num_dofs, num_dofs);
+    if (with_geometric) return MapMatrix(geometric_tangent_buffer, num_dofs, num_dofs);
     return MapMatrix(nullptr, 0, 0);
 }
 
