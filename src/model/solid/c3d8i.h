@@ -214,6 +214,13 @@ private:
     // stiffness blocks; nonlinear assembly additionally forms residual and
     // stress-dependent geometric contributions for the supplied alpha state.
     EnhancedSystem assemble_linear_system();
+    EnhancedSystem assemble_small_strain_system(
+        const Vector24&        displacement,
+        const Vector13&        alpha,
+        const StaticVector<N>* thermal_free_strain,
+        bool                   write_material_state,
+        bool                   assemble_global_blocks
+    );
     NonlinearPoints nonlinear_points(
         const StaticMatrix<N, D>& reference_coords,
         const StaticMatrix<N, D>& current_coords
@@ -230,6 +237,10 @@ private:
     // Solve the stationary local enhanced state for linearized or finite-strain
     // kinematics without introducing any global degrees of freedom.
     Vector13 solve_linear_modes(
+        const Vector24&        displacement,
+        const StaticVector<N>* thermal_free_strain = nullptr
+    );
+    Vector13 solve_small_strain_modes(
         const Vector24&        displacement,
         const StaticVector<N>* thermal_free_strain = nullptr
     );
