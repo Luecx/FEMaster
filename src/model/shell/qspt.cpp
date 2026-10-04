@@ -169,7 +169,6 @@ Precision QSPT::effective_shear_modulus() {
         old_state,
         nullptr,
         this->_model_data->material_state_old->components,
-        false,
         zero_resultants,
         tangent
     );

@@ -155,7 +155,7 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
 ) {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(system_dof_ids.rows() == _data->positions->rows,
+    logging::error(static_cast<Index>(system_dof_ids.rows()) == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.cols() == 1,
         "Model: thermal DOF map must contain exactly one component");
@@ -266,7 +266,7 @@ SparseMatrix Model::build_thermal_boundary_matrix(
 ) {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(system_dof_ids.rows() == _data->positions->rows,
+    logging::error(static_cast<Index>(system_dof_ids.rows()) == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.cols() == 1,
         "Model: thermal DOF map must contain exactly one component");
