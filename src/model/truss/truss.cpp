@@ -253,213 +253,238 @@ Precision T3::volume() {
 }
 
 /**
- * Assembles the linear axial stiffness in the reference configuration.
+ * Evaluates the truss mechanical response at a selected linearization state.
  *
- * For the linearized axial material tangent `C`, reference area `A0`, reference
- * length `L0` and reference direction `n0`, the translational block is
+ * With `linearization == nullptr` the element uses infinitesimal axial strain
+ * on the reference axis. The supplied displacement, when present, determines
+ * the small-strain material state used for stress, tangent and internal force.
  *
- *     k = A0 C / L0 (n0 n0^T).
+ * With a non-null linearization the element evaluates the Total-Lagrangian
+ * response at that deformation. The complete tangent contains the material and
+ * stress-dependent geometric parts. If internal force is requested at a
+ * different displacement, the force is returned as the first-order residual
+ * approximation
  *
- * The material tangent is required by this operator and is therefore requested
- * explicitly through a non-null tangent pointer. Constitutive state remains
- * state-neutral because no output state is supplied.
+ *     f(u) = f(u_L) + K_T(u_L) (u - u_L).
  *
- * @param buffer Caller-provided six-by-six element-matrix storage.
- * @return Mapped linear stiffness matrix.
+ * Trial constitutive history may only be written at the physical evaluation
+ * state itself, never while extrapolating away from the linearization point.
  */
-MapMatrix T3::stiffness(Precision* buffer) {
-    // Collect reference geometry used by the complete linear operator.
+MapMatrix T3::evaluate(
+    Precision*   tangent,
+    Precision*   geometric_tangent,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
+) {
+    (void) thermal_free_strain;
+
+    const bool with_tangent   = tangent != nullptr;
+    const bool with_geometric = geometric_tangent != nullptr;
+    const bool with_force     = internal_force != nullptr;
+
+    if (!with_tangent && !with_geometric && !with_force) {
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    logging::error(!update_state || displacement != nullptr,
+        "T3: material-state update requires a displacement state");
+    logging::error(!with_force || displacement != nullptr,
+        "T3: internal force evaluation requires displacement");
+
     const Precision A0 = get_section()->area_;
     const Precision L0 = length_reference();
-    const Vec3      n0 = direction_reference();
-
     logging::error(L0 > Precision(0),
-        "T3: zero reference length in stiffness for element ", this->elem_id);
-
-    // Evaluate the material tangent at zero infinitesimal strain. Stress is an
-    // unavoidable output of the common constitutive interface but is not used by
-    // this purely material stiffness operator.
-    const AxialStrainLinearized axial_strain(Precision(0));
-    AxialStressCauchy           axial_stress;
-    Precision                   material_tangent = Precision(0);
+        "T3: zero reference length for element ", this->elem_id);
 
     auto elasticity = get_elasticity();
-    logging::error(elasticity->supports_axial_linearized(),
-        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
-
     const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    const Precision* old_state =
+        &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision* new_state = update_state
+        ? &(*this->_model_data->material_state_new)(state_row, 0)
+        : nullptr;
 
-    elasticity->evaluate(
-        axial_strain,
-        old_state,
-        nullptr,
-        axial_stress,
-        &material_tangent
-    );
+    // -------------------------------------------------------------------------
+    // Reference/small-strain formulation.
+    // -------------------------------------------------------------------------
+    if (linearization == nullptr) {
+        logging::error(elasticity->supports_axial_linearized(),
+            "T3: material does not support linearized axial evaluation for element ",
+            this->elem_id);
 
-    // Embed the scalar axial stiffness into the three translational directions.
-    const Mat3 k = (A0 * material_tangent / L0) * (n0 * n0.transpose());
+        Vec3 u0 = Vec3::Zero();
+        Vec3 u1 = Vec3::Zero();
+        if (displacement != nullptr) {
+            u0 = displacement->row_vec3(static_cast<Index>(node_ids[0]));
+            u1 = displacement->row_vec3(static_cast<Index>(node_ids[1]));
+        }
 
-    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
-    K.block(0, 0, 3, 3) =  k;
-    K.block(0, 3, 3, 3) = -k;
-    K.block(3, 0, 3, 3) = -k;
-    K.block(3, 3, 3, 3) =  k;
+        const Vec3 n0 = direction_reference();
+        const AxialStrainLinearized strain((u1 - u0).dot(n0) / L0);
 
-    MapMatrix result(buffer, N * 3, N * 3);
-    result = K;
-    return result;
-}
+        AxialStressCauchy stress;
+        Precision         material_tangent = Precision(0);
+        elasticity->evaluate(
+            strain,
+            old_state,
+            new_state,
+            stress,
+            with_tangent ? &material_tangent : nullptr
+        );
 
-/**
- * Assembles the geometric stiffness associated with a supplied displacement
- * state without modifying persistent material history.
- *
- * The displacement difference is projected onto the reference truss axis to
- * obtain infinitesimal axial strain. Only the resulting Cauchy stress is needed:
- *
- *     K_geo = A0 sigma / L0 I.
- *
- * The material tangent is therefore deliberately omitted from this constitutive
- * call.
- *
- * @param buffer Caller-provided six-by-six element-matrix storage.
- * @param displacement Global nodal displacement field defining the prestress.
- * @return Mapped geometric stiffness matrix.
- */
-MapMatrix T3::stiffness_geom(Precision* buffer, const Field& displacement) {
-    const Precision L0 = length_reference();
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in stiffness_geom for element ", this->elem_id);
+        if (with_force) {
+            const Vec3 force  = A0 * stress.value() * n0;
+            const Index node0 = static_cast<Index>(node_ids[0]);
+            const Index node1 = static_cast<Index>(node_ids[1]);
 
-    // Reconstruct axial prestress from the supplied displacement state.
-    const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+            for (Dim d = 0; d < 3; ++d) {
+                (*internal_force)(node0, d) -= force(d);
+                (*internal_force)(node1, d) += force(d);
+            }
+        }
 
-    const AxialStrainLinearized axial_strain((u1 - u0).dot(direction_reference()) / L0);
-    AxialStressCauchy           axial_stress;
+        if (with_tangent) {
+            const Mat3 block =
+                (A0 * material_tangent / L0) * (n0 * n0.transpose());
 
-    auto elasticity = get_elasticity();
-    logging::error(elasticity->supports_axial_linearized(),
-        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
+            StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
+            K.block(0, 0, 3, 3) =  block;
+            K.block(0, 3, 3, 3) = -block;
+            K.block(3, 0, 3, 3) = -block;
+            K.block(3, 3, 3, 3) =  block;
 
-    // Prestress assembly needs sigma but not d sigma/d epsilon.
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    elasticity->evaluate(axial_strain, old_state, nullptr, axial_stress, nullptr);
+            MapMatrix mapped(tangent, N * 3, N * 3);
+            mapped = K;
+        }
 
-    // The stress contribution multiplies the three-dimensional identity block.
-    const Mat3 k = (get_section()->area_ * axial_stress.value() / L0) * Mat3::Identity();
+        if (with_geometric) {
+            const Mat3 block =
+                (A0 * stress.value() / L0) * Mat3::Identity();
 
-    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
-    K.block(0, 0, 3, 3) =  k;
-    K.block(0, 3, 3, 3) = -k;
-    K.block(3, 0, 3, 3) = -k;
-    K.block(3, 3, 3, 3) =  k;
+            StaticMatrix<N * 3, N * 3> Kg = StaticMatrix<N * 3, N * 3>::Zero();
+            Kg.block(0, 0, 3, 3) =  block;
+            Kg.block(0, 3, 3, 3) = -block;
+            Kg.block(3, 0, 3, 3) = -block;
+            Kg.block(3, 3, 3, 3) =  block;
 
-    MapMatrix result(buffer, N * 3, N * 3);
-    result = K;
-    return result;
-}
+            MapMatrix mapped(geometric_tangent, N * 3, N * 3);
+            mapped = Kg;
+        }
 
-/**
- * Evaluates nonlinear Total-Lagrangian equilibrium and optionally assembles the
- * consistent truss tangent from one axial constitutive update.
- *
- * Green-Lagrange strain follows from the current stretch. The material reads the
- * committed state and writes the physical trial state. The PK2 stress produces
- *
- *     f_int = A0 lambda S n.
- *
- * If matrix storage is supplied, the same constitutive candidate additionally
- * provides the consistent scalar derivative and the tangent blocks
- *
- *     K_mat = A0 C_alg lambda^2 / L0 (n n^T)
- *     K_geo = A0 S / L0 I.
- *
- * For `buffer == nullptr`, the material receives `tangent == nullptr`; stress and
- * trial state are still updated identically, but no constitutive tangent is
- * constructed.
- *
- * @param buffer Optional six-by-six tangent storage; null requests force only.
- * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial displacement field; current positions already carry
- *                     the configuration used by the truss kinematics.
- * @return Mapped tangent matrix, or an empty map for residual-only evaluation.
- */
-MapMatrix T3::stiffness_tangent(Precision*   buffer,
-                                NodeData&    nodal_forces,
-                                const Field& displacement) {
-    (void) displacement;
+        if (with_tangent) {
+            return MapMatrix(tangent, N * 3, N * 3);
+        }
+        if (with_geometric) {
+            return MapMatrix(geometric_tangent, N * 3, N * 3);
+        }
+        return MapMatrix(nullptr, 0, 0);
+    }
 
-    logging::error(nodal_forces.components >= 3,
-        "T3: nonlinear internal force requires at least three nodal components");
+    // -------------------------------------------------------------------------
+    // Finite-deformation Total-Lagrangian formulation at u_L.
+    // -------------------------------------------------------------------------
+    logging::error(elasticity->supports_axial_green_lagrange(),
+        "T3: material does not support Green-Lagrange axial evaluation for element ",
+        this->elem_id);
+    logging::error(!update_state || displacement == linearization,
+        "T3: material state cannot be updated away from the linearization state");
 
-    // Evaluate current kinematics in the Total-Lagrangian formulation.
-    const Precision A0     = get_section()->area_;
-    const Precision L0     = length_reference();
-    const Precision lambda = stretch();
+    const Vec3 X0 = node_position_reference(0);
+    const Vec3 X1 = node_position_reference(1);
+    const Vec3 uL0 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
+    const Vec3 uL1 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
+    const Vec3 axis = (X1 + uL1) - (X0 + uL0);
+    const Precision length = axis.norm();
 
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in nonlinear tangent for element ", this->elem_id);
+    logging::error(length > Precision(0),
+        "T3: zero current length in element ", this->elem_id);
 
+    const Precision lambda = length / L0;
+    const Vec3      n      = axis / length;
     const AxialStrainGreenLagrange strain =
         AxialStrainGreenLagrange::from_stretch(lambda);
+
+    const bool extrapolate_force =
+        with_force && displacement != linearization;
+    const bool need_complete_tangent = with_tangent || extrapolate_force;
+
     AxialStressPK2 stress;
     Precision      material_tangent = Precision(0);
-
-    auto elasticity = get_elasticity();
-    logging::error(elasticity->supports_axial_green_lagrange(),
-        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-
-    // Perform one committed -> trial constitutive update. Tangent construction is
-    // tied directly to whether the element matrix itself is requested.
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-
     elasticity->evaluate(
         strain,
         old_state,
         new_state,
         stress,
-        buffer != nullptr ? &material_tangent : nullptr
+        need_complete_tangent ? &material_tangent : nullptr
     );
 
-    // Scatter equal and opposite current-direction internal forces.
-    const Vec3  n      = direction_current();
-    const Vec3  force  = A0 * lambda * stress.value() * n;
-    const Index node_0 = static_cast<Index>(node_ids[0]);
-    const Index node_1 = static_cast<Index>(node_ids[1]);
-
-    for (Dim d = 0; d < 3; ++d) {
-        nodal_forces(node_0, d) -= force(d);
-        nodal_forces(node_1, d) += force(d);
+    // Build the material tangent only for stiffness or force extrapolation
+    Mat3 material_block = Mat3::Zero();
+    if (need_complete_tangent) {
+        material_block = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
     }
-
-    // Residual-only evaluation ends after the complete physical material update.
-    if (buffer == nullptr) {
-        return MapMatrix(nullptr, 0, 0);
-    }
-
-    // Assemble material and geometric contributions from the same stress/tangent
-    // pair that produced the internal force.
-    const Mat3 material_block =
-        (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
     const Mat3 geometric_block =
         (A0 * stress.value() / L0) * Mat3::Identity();
-    const Mat3 block = material_block + geometric_block;
 
-    StaticMatrix<N * 3, N * 3> tangent = StaticMatrix<N * 3, N * 3>::Zero();
-    tangent.block(0, 0, 3, 3) =  block;
-    tangent.block(0, 3, 3, 3) = -block;
-    tangent.block(3, 0, 3, 3) = -block;
-    tangent.block(3, 3, 3, 3) =  block;
+    StaticMatrix<N * 3, N * 3> Kt = StaticMatrix<N * 3, N * 3>::Zero();
+    if (need_complete_tangent) {
+        const Mat3 block = material_block + geometric_block;
+        Kt.block(0, 0, 3, 3) =  block;
+        Kt.block(0, 3, 3, 3) = -block;
+        Kt.block(3, 0, 3, 3) = -block;
+        Kt.block(3, 3, 3, 3) =  block;
+    }
 
-    MapMatrix mapped(buffer, N * 3, N * 3);
-    mapped = tangent;
-    return mapped;
+    if (with_geometric) {
+        StaticMatrix<N * 3, N * 3> Kg = StaticMatrix<N * 3, N * 3>::Zero();
+        Kg.block(0, 0, 3, 3) =  geometric_block;
+        Kg.block(0, 3, 3, 3) = -geometric_block;
+        Kg.block(3, 0, 3, 3) = -geometric_block;
+        Kg.block(3, 3, 3, 3) =  geometric_block;
+
+        MapMatrix mapped(geometric_tangent, N * 3, N * 3);
+        mapped = Kg;
+    }
+
+    if (with_tangent) {
+        MapMatrix mapped(tangent, N * 3, N * 3);
+        mapped = Kt;
+    }
+
+    if (with_force) {
+        StaticVector<N * 3> force = StaticVector<N * 3>::Zero();
+        const Vec3 axial_force = A0 * lambda * stress.value() * n;
+        force.template segment<3>(0) = -axial_force;
+        force.template segment<3>(3) =  axial_force;
+
+        if (extrapolate_force) {
+            const Vec3 u0 = displacement->row_vec3(static_cast<Index>(node_ids[0]));
+            const Vec3 u1 = displacement->row_vec3(static_cast<Index>(node_ids[1]));
+
+            StaticVector<N * 3> delta = StaticVector<N * 3>::Zero();
+            delta.template segment<3>(0) = u0 - uL0;
+            delta.template segment<3>(3) = u1 - uL1;
+            force.noalias() += Kt * delta;
+        }
+
+        const Index node0 = static_cast<Index>(node_ids[0]);
+        const Index node1 = static_cast<Index>(node_ids[1]);
+        for (Dim d = 0; d < 3; ++d) {
+            (*internal_force)(node0, d) += force(d);
+            (*internal_force)(node1, d) += force(3 + d);
+        }
+    }
+
+    if (with_tangent) {
+        return MapMatrix(tangent, N * 3, N * 3);
+    }
+    if (with_geometric) {
+        return MapMatrix(geometric_tangent, N * 3, N * 3);
+    }
+    return MapMatrix(nullptr, 0, 0);
 }
 
 /**
@@ -744,7 +769,7 @@ bool T3::compute_peeq(Field& peeq, int offset) {
  */
 void T3::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[N * 3 * N * 3] {};
-    MapMatrix K = stiffness(buffer);
+    MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     StaticVector<N * 3> u;
     for (Index i = 0; i < N; ++i) {

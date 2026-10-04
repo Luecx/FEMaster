@@ -55,7 +55,7 @@ namespace model {
  *
  * The currently available beam formulations are linear structural elements with
  * an additional prestress operator for linear buckling. They do not provide a
- * finite-rotation nonlinear equilibrium formulation; `stiffness_tangent()`
+ * finite-rotation nonlinear equilibrium formulation; the common mechanical evaluation
  * therefore reports that nonlinear beam equilibrium is not implemented instead
  * of manufacturing a tangent inconsistent with the internal force.
  *
@@ -128,19 +128,17 @@ struct BeamElement : StructuralElement {
     StaticMatrix<N * 6, N * 6> transformation();
     StaticMatrix<N * 6, N * 6> transformation_base();
 
-    // Structural matrix adapters. stiffness() returns the ordinary linear beam
-    // operator. stiffness_geom() derives prestress from the supplied nodal
-    // displacement state. Nonlinear tangent evaluation remains unsupported by
-    // the current beam formulations and fails explicitly when requested.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    // Common mechanical evaluation. Reference-state tangent and prestress
+    // geometric stiffness are supported; finite-rotation/nonlinear equilibrium
+    // remains unsupported by the current beam formulations.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
 

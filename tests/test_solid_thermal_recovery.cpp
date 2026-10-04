@@ -94,7 +94,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
 
     Precision kg_storage[24 * 24] {};
     const DynamicMatrix Kg_free =
-        element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+        element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
     EXPECT_LT(Kg_free.norm(), 1e-8);
 
     displacement.set_zero();
@@ -113,7 +113,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     }
 
     const DynamicMatrix Kg_restrained =
-        element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+        element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
     EXPECT_GT(Kg_restrained.norm(), 1e-6);
 
     model.step_end();

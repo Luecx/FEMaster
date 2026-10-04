@@ -59,7 +59,7 @@ namespace fem::model {
  *
  * Material history follows the common structural-element contract. Auxiliary
  * stiffness, prestress and recovery paths read only committed material state.
- * Only stiffness_tangent() writes the converged constitutive trial state.
+ * Only evaluate() writes the converged constitutive trial state.
  *
  * No enhanced parameter is stored persistently in the element object; every
  * evaluation reconstructs the local stationary state from the supplied nodal
@@ -141,19 +141,16 @@ public:
     ElementPtr copy() const override { return std::make_shared<C3D8I>(elem_id, node_ids); }
     std::string type_name() const override;
 
-    // Linear and geometrically nonlinear element operators. Enhanced parameters
-    // are eliminated locally before the resulting 24 x 24 matrix is returned.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement,
-        const Field* thermal_free_strain
+    // Common mechanical response with local elimination of all thirteen
+    // enhanced parameters before exposing nodal operators to the global solver.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
 
     // Thermal equivalent loading uses the same local static condensation as the
@@ -189,6 +186,16 @@ public:
     ) override;
 
 private:
+    // Reference/small-strain EAS operators retained as formulation-local helpers
+    // for the corresponding branch of the common mechanical evaluation.
+    MapMatrix stiffness(Precision* buffer);
+    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement);
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement,
+        const Field* thermal_free_strain
+    );
+
     // Enhanced deformation-gradient basis and its linearized or finite-strain
     // work-conjugate strain matrices.
     EnhancedModes enhanced_gradient_modes(
@@ -207,6 +214,13 @@ private:
     // stiffness blocks; nonlinear assembly additionally forms residual and
     // stress-dependent geometric contributions for the supplied alpha state.
     EnhancedSystem assemble_linear_system();
+    EnhancedSystem assemble_small_strain_system(
+        const Vector24&        displacement,
+        const Vector13&        alpha,
+        const StaticVector<N>* thermal_free_strain,
+        bool                   write_material_state,
+        bool                   assemble_global_blocks
+    );
     NonlinearPoints nonlinear_points(
         const StaticMatrix<N, D>& reference_coords,
         const StaticMatrix<N, D>& current_coords
@@ -216,12 +230,17 @@ private:
         const Vector13&        alpha,
         bool                   write_material_state,
         bool                   assemble_global_blocks,
-        bool                   assemble_tangent
+        bool                   assemble_tangent,
+        bool                   include_geometric = true
     );
 
     // Solve the stationary local enhanced state for linearized or finite-strain
     // kinematics without introducing any global degrees of freedom.
     Vector13 solve_linear_modes(
+        const Vector24&        displacement,
+        const StaticVector<N>* thermal_free_strain = nullptr
+    );
+    Vector13 solve_small_strain_modes(
         const Vector24&        displacement,
         const StaticVector<N>* thermal_free_strain = nullptr
     );

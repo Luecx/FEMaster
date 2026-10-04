@@ -303,56 +303,217 @@ bool SolidElement<N>::compute_peeq(Field& peeq, int offset) {
 }
 
 /**
- * Assembles Total-Lagrangian internal force and, when requested, the complete
- * consistent solid tangent from one constitutive trial evaluation per material
- * point.
+ * Evaluates solid force and tangent operators at a selected linearization state.
  *
- * The supplied displacement field defines the trial current coordinates
- * directly as `x = X + u`; persistent model positions are therefore not needed
- * by this solver-facing evaluation. At every stiffness integration point,
- * Green-Lagrange strain is evaluated from the deformation gradient and the
- * constitutive law maps
+ * A null `linearization` selects reference-configuration infinitesimal
+ * kinematics. The supplied displacement, when present, defines the small-strain
+ * material state. The complete tangent is then the material derivative
  *
- *     (E_trial, state_committed) -> (S_trial, C_alg, state_trial).
+ *     K = integral B0^T C B0 dV0,
  *
- * The resulting PK2 stress is an element-local intermediate used immediately for
- * the internal-force contribution
+ * while the separately requested geometric operator contracts the same Cauchy
+ * prestress with the reference shape gradients.
  *
- *     f_int = integral B^T S dV0.
+ * A non-null `linearization` selects the Total-Lagrangian formulation. Green-
+ * Lagrange strain, PK2 stress and the consistent material tangent are evaluated
+ * at u_L. The complete tangent is
  *
- * When `buffer != nullptr`, the same stress and tangent additionally form
+ *     K_T = K_M + K_G.
  *
- *     K_mat = integral B^T C_alg B dV0,
+ * When internal force is requested at another displacement u, the element
+ * returns the first-order residual approximation
  *
- * and the Total-Lagrangian geometric tangent assembled from
- * `grad(N_a)^T S grad(N_b)`. When `buffer == nullptr`, the constitutive tangent
- * itself is not requested; the physical stress/state update remains identical.
+ *     f_int(u) = f_int(u_L) + K_T(u_L) (u - u_L).
  *
- * @param buffer Optional dense tangent storage; null requests residual only.
- * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial global nodal displacement field.
- * @return Mapped complete tangent, or an empty map for residual-only evaluation.
+ * Constitutive trial history is written only when `update_state` is true and
+ * the requested displacement is exactly the linearization state.
  */
 template<Index N>
-MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
-                                             NodeData&    nodal_forces,
-                                             const Field& displacement) {
-    logging::error(nodal_forces.components >= D,
-        "SolidElement: nonlinear internal force requires at least three nodal components");
+MapMatrix SolidElement<N>::evaluate(
+    Precision*   tangent_buffer,
+    Precision*   geometric_tangent_buffer,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
+) {
+    const bool with_tangent   = tangent_buffer != nullptr;
+    const bool with_geometric = geometric_tangent_buffer != nullptr;
+    const bool with_force     = internal_force != nullptr;
 
-    const StaticMatrix<N, D> reference_coords   = this->node_coords_reference();
-    const StaticMatrix<N, D> local_displacement = this->nodal_data<D>(displacement);
-    const StaticMatrix<N, D> current_coords     = reference_coords + local_displacement;
-    const auto& scheme                          = this->integration_scheme_stiffness();
+    if (!with_tangent && !with_geometric && !with_force) {
+        return MapMatrix(nullptr, 0, 0);
+    }
 
-    StaticMatrix<D * N, D * N> tangent = StaticMatrix<D * N, D * N>::Zero();
+    logging::error(!with_force || displacement != nullptr,
+        "SolidElement: internal force evaluation requires displacement");
+    logging::error(!update_state || displacement != nullptr,
+        "SolidElement: material-state update requires displacement");
 
-    // Every quadrature point performs exactly one physical constitutive update
-    // from committed history into the corresponding persistent trial row.
+    if (thermal_free_strain != nullptr) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                       && thermal_free_strain->components == 1,
+            "SolidElement: thermal free strain must be scalar ELEMENT_NODAL data");
+    }
+
+    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    const auto&              scheme           = this->integration_scheme_stiffness();
+
+    // -------------------------------------------------------------------------
+    // Reference/small-strain evaluation.
+    // -------------------------------------------------------------------------
+    if (linearization == nullptr) {
+        StaticMatrix<N, D> local_displacement = StaticMatrix<N, D>::Zero();
+        if (displacement != nullptr) {
+            local_displacement = this->nodal_data<D>(*displacement);
+        }
+
+        const StaticMatrix<D, N> local_disp_mat(local_displacement.transpose());
+        const auto local_u =
+            Eigen::Map<const StaticVector<D * N>>(local_disp_mat.data(), D * N);
+
+        StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+        if (thermal_free_strain != nullptr) {
+            for (Index node = 0; node < N; ++node) {
+                nodal_thermal_strain(node) =
+                    (*thermal_free_strain)(
+                        static_cast<Index>(this->elem_nodal_offset) + node,
+                        0
+                    );
+            }
+        }
+
+        StaticMatrix<D * N, D * N> tangent =
+            StaticMatrix<D * N, D * N>::Zero();
+        StaticMatrix<D * N, D * N> geometric =
+            StaticMatrix<D * N, D * N>::Zero();
+        StaticVector<D * N> force = StaticVector<D * N>::Zero();
+
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto point = scheme.get_point(ip);
+
+            Precision det0 = Precision(0);
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
+                reference_coords, point.r, point.s, point.t, det0);
+            const StaticMatrix<n_strain, D * N> B =
+                this->strain_displacement(dN_dX);
+
+            Vec6 strain_values = B * local_u;
+            if (thermal_free_strain != nullptr) {
+                const Precision free_strain =
+                    this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
+                strain_values(0) -= free_strain;
+                strain_values(1) -= free_strain;
+                strain_values(2) -= free_strain;
+            }
+
+            const VolumeStrainLinearized strain(strain_values);
+            const Index      state_row = this->mp_index(ip);
+            const Precision* old_state =
+                &(*this->_model_data->material_state_old)(state_row, 0);
+            Precision* new_state = update_state
+                ? &(*this->_model_data->material_state_new)(state_row, 0)
+                : nullptr;
+
+            VolumeStressCauchy stress;
+            Mat6               material_tangent;
+            evaluate_material(
+                point.r, point.s, point.t,
+                strain, old_state, new_state,
+                stress, material_tangent);
+
+            const Precision measure = point.w * det0;
+
+            if (with_force) {
+                force.noalias() += measure * B.transpose() * stress.voigt();
+            }
+
+            if (with_tangent) {
+                tangent.noalias() +=
+                    measure * B.transpose() * material_tangent * B;
+            }
+
+            if (with_geometric) {
+                const Mat3 sigma = stress.tensor();
+
+                for (Index a = 0; a < N; ++a) {
+                    const Vec3 dNa = dN_dX.row(a).transpose();
+
+                    for (Index b = 0; b < N; ++b) {
+                        const Vec3 dNb = dN_dX.row(b).transpose();
+                        const Precision coefficient =
+                            dNa.dot(sigma * dNb) * measure;
+
+                        for (Dim d = 0; d < D; ++d) {
+                            geometric(D * a + d, D * b + d) += coefficient;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (with_force) {
+            logging::error(internal_force->components >= D,
+                "SolidElement: internal force requires at least three nodal components");
+
+            for (Index a = 0; a < N; ++a) {
+                const Index node_id = static_cast<Index>(node_ids[a]);
+                for (Dim d = 0; d < D; ++d) {
+                    (*internal_force)(node_id, d) += force(D * a + d);
+                }
+            }
+        }
+
+        if (with_tangent) {
+            tangent = Precision(0.5) * (tangent + tangent.transpose());
+            MapMatrix mapped(tangent_buffer, D * N, D * N);
+            mapped = tangent;
+        }
+
+        if (with_geometric) {
+            geometric = Precision(0.5) * (geometric + geometric.transpose());
+            MapMatrix mapped(geometric_tangent_buffer, D * N, D * N);
+            mapped = geometric;
+        }
+
+        if (with_tangent) {
+            return MapMatrix(tangent_buffer, D * N, D * N);
+        }
+        if (with_geometric) {
+            return MapMatrix(geometric_tangent_buffer, D * N, D * N);
+        }
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Total-Lagrangian evaluation about the supplied finite-deformation state.
+    // -------------------------------------------------------------------------
+    logging::error(thermal_free_strain == nullptr,
+        "SolidElement: finite-deformation thermal free strain is not implemented");
+    logging::error(!update_state || displacement == linearization,
+        "SolidElement: material state cannot be updated away from the linearization state");
+
+    const StaticMatrix<N, D> local_linearization =
+        this->nodal_data<D>(*linearization);
+    const StaticMatrix<N, D> current_coords =
+        reference_coords + local_linearization;
+
+    const bool extrapolate_force =
+        with_force && displacement != linearization;
+    const bool need_complete_tangent =
+        with_tangent || extrapolate_force;
+
+    StaticMatrix<D * N, D * N> tangent =
+        StaticMatrix<D * N, D * N>::Zero();
+    StaticMatrix<D * N, D * N> geometric =
+        StaticMatrix<D * N, D * N>::Zero();
+    StaticVector<D * N> force = StaticVector<D * N>::Zero();
+
     for (Index ip = 0; ip < scheme.count(); ++ip) {
         const auto point = scheme.get_point(ip);
 
-        Precision det0;
+        Precision det0 = Precision(0);
         const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
             reference_coords, point.r, point.s, point.t, det0);
         const Mat3 F = this->deformation_gradient(
@@ -363,8 +524,11 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
         const Index      state_row = this->mp_index(ip);
-        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+        const Precision* old_state =
+            &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision* new_state = update_state
+            ? &(*this->_model_data->material_state_new)(state_row, 0)
+            : nullptr;
 
         VolumeStressPK2 stress;
         Mat6            material_tangent;
@@ -376,59 +540,86 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
             old_state,
             new_state,
             stress,
-            buffer != nullptr ? &material_tangent : nullptr
+            need_complete_tangent ? &material_tangent : nullptr
         );
 
         const Precision measure = point.w * det0;
 
-        // Internal force always comes from the same freshly evaluated PK2 stress.
-        // No global integration-point stress scratch field is created or updated.
-        const StaticVector<D * N> local_force = B.transpose() * stress.voigt() * measure;
-        for (Index a = 0; a < N; ++a) {
-            const Index node_id = static_cast<Index>(node_ids[a]);
-            for (Dim d = 0; d < D; ++d) {
-                nodal_forces(node_id, d) += local_force(D * a + d);
-            }
+        if (with_force) {
+            force.noalias() += measure * B.transpose() * stress.voigt();
         }
 
-        // Residual-only evaluations already performed the complete physical
-        // material update above but never requested a constitutive tangent.
-        if (buffer == nullptr) {
-            continue;
+        if (need_complete_tangent) {
+            tangent.noalias() +=
+                measure * B.transpose() * material_tangent * B;
         }
 
-        // Material contribution from the consistent algorithmic constitutive
-        // tangent evaluated in the same trial state as the internal force.
-        tangent.noalias() += measure * B.transpose() * material_tangent * B;
+        if (need_complete_tangent || with_geometric) {
+            const Mat3 S = stress.tensor();
 
-        // Total-Lagrangian geometric contribution generated by the local PK2
-        // stress. Each scalar node-pair coefficient multiplies the 3x3 identity.
-        const Mat3 S = stress.tensor();
-        for (Index a = 0; a < N; ++a) {
-            const Vec3 dNa = dN_dX.row(a).transpose();
+            for (Index a = 0; a < N; ++a) {
+                const Vec3 dNa = dN_dX.row(a).transpose();
 
-            for (Index b = 0; b < N; ++b) {
-                const Vec3 dNb = dN_dX.row(b).transpose();
-                const Precision stress_coefficient = dNa.dot(S * dNb) * measure;
+                for (Index b = 0; b < N; ++b) {
+                    const Vec3 dNb = dN_dX.row(b).transpose();
+                    const Precision coefficient =
+                        dNa.dot(S * dNb) * measure;
 
-                for (Dim d = 0; d < D; ++d) {
-                    tangent(D * a + d, D * b + d) += stress_coefficient;
+                    for (Dim d = 0; d < D; ++d) {
+                        if (need_complete_tangent) {
+                            tangent(D * a + d, D * b + d) += coefficient;
+                        }
+                        if (with_geometric) {
+                            geometric(D * a + d, D * b + d) += coefficient;
+                        }
+                    }
                 }
             }
         }
     }
 
-    if (buffer == nullptr) {
-        return MapMatrix(nullptr, 0, 0);
+    if (extrapolate_force) {
+        const StaticMatrix<N, D> local_displacement =
+            this->nodal_data<D>(*displacement);
+        const StaticMatrix<N, D> local_delta =
+            local_displacement - local_linearization;
+        const StaticMatrix<D, N> local_delta_mat(local_delta.transpose());
+        const auto delta =
+            Eigen::Map<const StaticVector<D * N>>(local_delta_mat.data(), D * N);
+
+        force.noalias() += tangent * delta;
     }
 
-    // Preserve the constitutive tangent exactly. Most elastic/hyperelastic laws
-    // are major-symmetric, but finite J2 with a true/Cauchy hardening table uses
-    // a J-dependent conversion to Mandel/Kirchhoff yield stress and can therefore
-    // produce a genuinely nonsymmetric consistent tangent.
-    MapMatrix mapped{buffer, D * N, D * N};
-    mapped = tangent;
-    return mapped;
+    if (with_force) {
+        logging::error(internal_force->components >= D,
+            "SolidElement: internal force requires at least three nodal components");
+
+        for (Index a = 0; a < N; ++a) {
+            const Index node_id = static_cast<Index>(node_ids[a]);
+            for (Dim d = 0; d < D; ++d) {
+                (*internal_force)(node_id, d) += force(D * a + d);
+            }
+        }
+    }
+
+    if (with_tangent) {
+        MapMatrix mapped(tangent_buffer, D * N, D * N);
+        mapped = tangent;
+    }
+
+    if (with_geometric) {
+        geometric = Precision(0.5) * (geometric + geometric.transpose());
+        MapMatrix mapped(geometric_tangent_buffer, D * N, D * N);
+        mapped = geometric;
+    }
+
+    if (with_tangent) {
+        return MapMatrix(tangent_buffer, D * N, D * N);
+    }
+    if (with_geometric) {
+        return MapMatrix(geometric_tangent_buffer, D * N, D * N);
+    }
+    return MapMatrix(nullptr, 0, 0);
 }
 
 /**
@@ -542,7 +733,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
 template<Index N>
 void SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[D * N * D * N];
-    auto K = stiffness(buffer);
+    auto K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);

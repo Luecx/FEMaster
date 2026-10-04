@@ -29,10 +29,9 @@ namespace fem::model {
  * @brief Common structural shell base with fixed midsurface connectivity.
  *
  * The base provides section/material access and generic shell geometry. Derived
- * formulations implement the mechanical operators required by
- * `StructuralElement`: linear stiffness, geometric stiffness evaluated from a
- * supplied nodal displacement state, and the physical nonlinear tangent path
- * that also assembles matching internal force.
+ * formulations implement the common state-based mechanical evaluation required
+ * by `StructuralElement`, independently exposing complete tangent, geometric
+ * tangent and matching internal force.
  *
  * @tparam N Number of shell midsurface nodes.
  */
@@ -89,19 +88,18 @@ struct ShellElement : StructuralElement {
         return density_available ? material->get_density() : Precision(0);
     }
 
-    // Formulation-specific mechanical operators. Geometric stiffness derives
-    // its stress resultants internally from the supplied displacement state.
+    // Formulation-specific mechanical response through the common structural
+    // state evaluation and the independent inertial operator.
     SurfacePtr surface(ID surface_id) override = 0;
     Precision  volume() override = 0;
-    MapMatrix  stiffness(Precision* buffer) override = 0;
-    MapMatrix  stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override = 0;
-    MapMatrix  stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    MapMatrix  evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override = 0;
     MapMatrix  mass(Precision* buffer) override = 0;
     bool       is_shell() const override { return true; }
@@ -207,7 +205,9 @@ struct ShellElement : StructuralElement {
     void compute_compliance(Field& displacement, Field& result) override {
         // Elementsteifigkeit (global gedreht) holen
         Precision buffer[6 * N * 6 * N];
-        MapMatrix Ke = stiffness(buffer); // 6N × 6N
+        MapMatrix Ke = evaluate(
+            buffer, nullptr, nullptr,
+            nullptr, nullptr, nullptr, false); // 6N × 6N
 
         // Element-Verschiebungsvektor (global) aufbauen: [ux,uy,uz,rx,ry,rz] je Knoten
         // nodal_data<6>(...) liefert dir genau diese 6 DOFs pro Knoten in globalen Achsen

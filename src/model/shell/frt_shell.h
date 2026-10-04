@@ -85,7 +85,7 @@ namespace fem::model {
  * Constitutive history follows the structural-element ownership contract:
  * state-neutral stiffness, geometric-stiffness and recovery paths read the
  * committed material state and pass no writable target state. Only
- * `stiffness_tangent()` performs the physical committed-to-trial update.
+ * `evaluate()` performs the physical committed-to-trial update.
  *
  * @tparam N Number of shell midsurface nodes.
  */
@@ -585,28 +585,17 @@ struct FRTShell : ShellElement<N> {
         Vec6&                 stress_out
     ) const;
 
-    // Structural stiffness interface.
-    // stiffness() is the state-neutral linear/reference shell operator.
-    // stiffness_geom() evaluates current local resultants from the supplied
-    // displacement state and immediately contracts them into the geometric
-    // tangent without exposing an integration-point scratch field.
-    // stiffness_tangent() performs the physical nonlinear constitutive update,
-    // always assembles internal force and assembles the tangent only when a
-    // matrix buffer is supplied.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement,
-        const Field* thermal_free_strain
-    ) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    // Common structural evaluation. Nullable outputs preserve the shell's
+    // selective work: resultants, material tangents and exact second rotation
+    // derivatives are prepared only when the requested operator needs them.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
 
     // Convert one scalar midsurface temperature per node into consistent

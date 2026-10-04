@@ -57,7 +57,7 @@ namespace model {
  * contribution to the consistent nonlinear tangent.
  *
  * The nonlinear equilibrium operator follows one physical constitutive path.
- * `stiffness_tangent()` always evaluates the internal force for the supplied
+ * the common mechanical evaluation always evaluates the internal force for the supplied
  * trial configuration. A non-null matrix buffer additionally requests material
  * and geometric tangent assembly; a null buffer performs an internal-force-only
  * evaluation. Both variants read committed material history and write the
@@ -120,21 +120,18 @@ struct T3 : StructuralElement {
     Precision length();
     Vec3      direction();
 
-    // Mechanical operators. `stiffness()` returns the material/linear operator.
-    // `stiffness_geom()` derives the stress required for the geometric operator
-    // directly from the supplied displacement field without modifying persistent
-    // trial history. `stiffness_tangent()` evaluates the nonlinear internal force
-    // and assembles the consistent tangent only when `buffer` is non-null.
+    // Mechanical response through the common state-based interface. A null
+    // linearization uses reference-axis infinitesimal kinematics; a non-null
+    // state evaluates the Total-Lagrangian truss tangent about that deformation.
     Precision volume() override;
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
 

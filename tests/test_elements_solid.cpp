@@ -110,6 +110,135 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
 }
 
 
+TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
+    model::Model model;
+
+    const std::array<Vec3, 8> coords{
+        Vec3(0.0, 0.0, 0.0),
+        Vec3(1.0, 0.0, 0.0),
+        Vec3(1.0, 1.0, 0.0),
+        Vec3(0.0, 1.0, 0.0),
+        Vec3(0.0, 0.0, 1.0),
+        Vec3(1.0, 0.0, 1.0),
+        Vec3(1.0, 1.0, 1.0),
+        Vec3(0.0, 1.0, 1.0)
+    };
+
+    for (Index node = 0; node < 8; ++node) {
+        model.set_node(node, coords[node].x(), coords[node].y(), coords[node].z());
+    }
+    model.set_element<model::C3D8>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::NeoHookeElasticity>(100.0, 0.01);
+    model.add_material(material);
+
+    auto section = std::make_shared<SolidSection>();
+    section->material_ = material;
+    section->region_   = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(section);
+
+    model.compile();
+    model.step_begin();
+
+    auto* element = model._data->elements[0]->as<model::C3D8>();
+    ASSERT_NE(element, nullptr);
+
+    model::Field linearization("U_LINEARIZATION", model::FieldDomain::NODE, 8, 6);
+    linearization.set_zero();
+
+    for (Index node = 0; node < 8; ++node) {
+        const Vec3 u(
+            Precision(0.12) * coords[node].x(),
+            Precision(-0.04) * coords[node].y(),
+            Precision(0.06) * coords[node].z()
+        );
+        linearization(node, 0) = u(0);
+        linearization(node, 1) = u(1);
+        linearization(node, 2) = u(2);
+    }
+
+    model::NodeData base_force("F_BASE", model::FieldDomain::NODE, 8, 6);
+    base_force.set_zero();
+
+    Precision tangent_storage[24 * 24] {};
+    Precision geometric_storage[24 * 24] {};
+    const DynamicMatrix tangent = element->evaluate(
+        tangent_storage,
+        geometric_storage,
+        &base_force,
+        &linearization,
+        &linearization,
+        nullptr,
+        false
+    );
+    const DynamicMatrix geometric =
+        Eigen::Map<DynamicMatrix>(geometric_storage, 24, 24);
+
+    EXPECT_TRUE(tangent.allFinite());
+    EXPECT_TRUE(geometric.allFinite());
+    EXPECT_GT(geometric.norm(), Precision(1e-8));
+
+    // Requesting only K_G must reproduce the geometric part without requiring
+    // internal force or the complete material tangent as an output.
+    Precision geometric_only_storage[24 * 24] {};
+    const DynamicMatrix geometric_only = element->evaluate(
+        nullptr,
+        geometric_only_storage,
+        nullptr,
+        nullptr,
+        &linearization,
+        nullptr,
+        false
+    );
+    EXPECT_LT(
+        (geometric_only - geometric).norm(),
+        Precision(1e-12) * (Precision(1) + geometric.norm())
+    );
+
+    // A target state different from u_L must use the first-order residual
+    // f(u_L) + K_T(u_L) (u-u_L).
+    model::Field target("U_TARGET", model::FieldDomain::NODE, 8, 6);
+    target.values = linearization.values;
+    target(6, 0) += Precision(2e-4);
+    target(6, 1) -= Precision(1e-4);
+    target(5, 2) += Precision(1.5e-4);
+
+    model::NodeData target_force("F_TARGET", model::FieldDomain::NODE, 8, 6);
+    target_force.set_zero();
+    element->evaluate(
+        nullptr,
+        nullptr,
+        &target_force,
+        &target,
+        &linearization,
+        nullptr,
+        false
+    );
+
+    StaticVector<24> f_base   = StaticVector<24>::Zero();
+    StaticVector<24> f_target = StaticVector<24>::Zero();
+    StaticVector<24> delta    = StaticVector<24>::Zero();
+
+    for (Index node = 0; node < 8; ++node) {
+        for (Dim dof = 0; dof < 3; ++dof) {
+            const Index local = 3 * node + dof;
+            f_base(local) = base_force(node, dof);
+            f_target(local) = target_force(node, dof);
+            delta(local) = target(node, dof) - linearization(node, dof);
+        }
+    }
+
+    const StaticVector<24> expected = f_base + tangent * delta;
+    EXPECT_LT(
+        (f_target - expected).norm(),
+        Precision(1e-11) * (Precision(1) + expected.norm())
+    );
+
+    model.step_end();
+}
+
+
 TEST(Elements_C3D8I, AffinePatchMatchesC3D8OnDistortedHex) {
     model::Model model;
 
@@ -152,8 +281,8 @@ TEST(Elements_C3D8I, AffinePatchMatchesC3D8OnDistortedHex) {
 
     Precision c3d8_storage[24 * 24] {};
     Precision c3d8i_storage[24 * 24] {};
-    const DynamicMatrix K = c3d8->stiffness(c3d8_storage);
-    const DynamicMatrix KI = c3d8i->stiffness(c3d8i_storage);
+    const DynamicMatrix K = c3d8->evaluate(c3d8_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    const DynamicMatrix KI = c3d8i->evaluate(c3d8i_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     const Mat3 A = (Mat3() <<
         0.03,  0.01, -0.02,
@@ -186,7 +315,7 @@ TEST(Elements_C3D8I, AffinePatchMatchesC3D8OnDistortedHex) {
     }
 
     Precision kg_storage[24 * 24] {};
-    const DynamicMatrix Kg = c3d8i->stiffness_geom(kg_storage, displacement);
+    const DynamicMatrix Kg = c3d8i->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, nullptr, false);
     EXPECT_TRUE(Kg.allFinite());
     EXPECT_LT((Kg - Kg.transpose()).norm(), Precision(1e-10) * (Precision(1) + Kg.norm()));
 
@@ -247,14 +376,31 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
     Precision storage[24 * 24] {};
     const DynamicMatrix tangent =
-        element->stiffness_tangent(storage, internal, displacement);
+        element->evaluate(storage, nullptr, &internal, &displacement, &displacement, nullptr, true);
+
+    Precision geometric_storage[24 * 24] {};
+    const DynamicMatrix geometric = element->evaluate(
+        nullptr,
+        geometric_storage,
+        nullptr,
+        nullptr,
+        &displacement,
+        nullptr,
+        false
+    );
+    EXPECT_TRUE(geometric.allFinite());
+    EXPECT_GT(geometric.norm(), Precision(1e-8));
+    EXPECT_LT(
+        (geometric - geometric.transpose()).norm(),
+        Precision(1e-10) * (Precision(1) + geometric.norm())
+    );
 
     auto internal_force = [&](const model::Field& u) {
         model::NodeData force{
             "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
         };
         force.set_zero();
-        element->stiffness_tangent(nullptr, force, u);
+        element->evaluate(nullptr, nullptr, &force, &u, &u, nullptr, true);
 
         StaticVector<24> result = StaticVector<24>::Zero();
         for (Index node = 0; node < 8; ++node) {
@@ -320,10 +466,14 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
     Precision rotated_storage[24 * 24] {};
     const DynamicMatrix rotated_tangent =
-        element->stiffness_tangent(
+        element->evaluate(
             rotated_storage,
-            rotated_internal,
-            rotated_displacement
+            nullptr,
+            &rotated_internal,
+            &rotated_displacement,
+            &rotated_displacement,
+            nullptr,
+            true
         );
 
     StaticVector<24> base_force    = StaticVector<24>::Zero();
@@ -419,7 +569,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                 auto internal_force = [&](const model::Field& displacement) {
                     model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
                     forces.set_zero();
-                    element->stiffness_tangent(nullptr, forces, displacement);
+                    element->evaluate(nullptr, nullptr, &forces, &displacement, &displacement, nullptr, true);
 
                     StaticVector<24> result;
                     for (Index node = 0; node < 8; ++node) {
@@ -448,7 +598,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                     model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
                     forces.set_zero();
                     Precision storage[24 * 24] {};
-                    const DynamicMatrix tangent = element->stiffness_tangent(storage, forces, displacement);
+                    const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);
                     EXPECT_LT((tangent - tangent.transpose()).norm(), Precision(1e-10) * tangent.norm());
 
                     // Difference every independent translational degree of freedom
@@ -479,7 +629,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                         rotation.block<3, 3>(3 * node, 3 * node) = Q;
                     }
                     forces.set_zero();
-                    const DynamicMatrix rotated_tangent = element->stiffness_tangent(storage, forces, rotated);
+                    const DynamicMatrix rotated_tangent = element->evaluate(storage, nullptr, &forces, &rotated, &rotated, nullptr, true);
                     const auto base_force    = internal_force(displacement);
                     const auto rotated_force = internal_force(rotated);
                     const Precision force_error = (rotated_force - rotation * base_force).norm()
@@ -535,8 +685,8 @@ TEST(Elements_C3D8I, LinearLimitAndSixRigidBodyModes) {
         displacement.set_zero();
         forces.set_zero();
         Precision storage[24 * 24] {};
-        const DynamicMatrix linear    = element->stiffness(storage);
-        const DynamicMatrix nonlinear = element->stiffness_tangent(storage, forces, displacement);
+        const DynamicMatrix linear    = element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+        const DynamicMatrix nonlinear = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);
         EXPECT_LT((linear - nonlinear).norm(), Precision(1e-12) * linear.norm());
         EXPECT_LT((linear - linear.transpose()).norm(), Precision(1e-14) * linear.norm());
 
@@ -600,16 +750,16 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
         model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
         forces.set_zero();
         Precision storage[24 * 24] {};
-        const DynamicMatrix tangent = element->stiffness_tangent(storage, forces, displacement);
+        const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);
         const model::Field trial = *model._data->material_state_new;
         const model::Field original_force = forces;
         forces.set_zero();
-        element->stiffness_tangent(nullptr, forces, displacement);
+        element->evaluate(nullptr, nullptr, &forces, &displacement, &displacement, nullptr, true);
         EXPECT_TRUE(tangent.allFinite());
 
         // Auxiliary paths may reconstruct local parameters but must not commit history
-        element->stiffness(storage);
-        element->stiffness_geom(storage, displacement);
+        element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+        element->evaluate(nullptr, storage, nullptr, &displacement, nullptr, nullptr, false);
         EXPECT_NO_THROW(model.compute_stress_nodal(displacement, true));
         EXPECT_NO_THROW(model.compute_stress_nodal(displacement, false));
         for (Index row = 0; row < trial.rows; ++row) {

@@ -211,7 +211,8 @@ struct Model {
         SystemDofIds& indices,
         const Field& displacement,
         const Field* stiffness_scalar = nullptr,
-        const Field* thermal_free_strain = nullptr);
+        const Field* thermal_free_strain = nullptr,
+        const Field* linearization = nullptr);
     void build_internal_force_nonlinear(
         SystemDofIds& indices,
         NodeData& nodal_forces,

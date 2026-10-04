@@ -38,9 +38,9 @@ namespace fem::model {
  * The element has no geometric integration measure and no constitutive state.
  * Its section directly defines diagonal mass/inertia and ground-stiffness
  * coefficients. Missing sections are permitted and leave the topology entirely
- * inactive. Nonlinear equilibrium remains identical to the linear spring law,
- * so `stiffness_tangent()` evaluates the internal force directly and optionally
- * returns the same constant tangent as `stiffness()`.
+ * inactive. Mechanical evaluation remains identical to the linear spring law:
+ * the same call can provide its constant tangent, zero geometric tangent and
+ * matching nodal internal force without any constitutive history.
  */
 struct PointElement : StructuralElement {
     static constexpr Index N = 1;
@@ -81,8 +81,51 @@ struct PointElement : StructuralElement {
 
     Precision volume() override { return Precision(0); }
 
-    MapMatrix stiffness(Precision* buffer) override {
-        MapMatrix result(buffer, 6, 6);
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
+    ) override {
+        (void) linearization;
+        (void) thermal_free_strain;
+        (void) update_state;
+
+        if (internal_force != nullptr) {
+            logging::error(displacement != nullptr,
+                "PointElement: internal force evaluation requires displacement");
+
+            if (_section) {
+                const auto* section = _section->as<PointMassSection>();
+                logging::error(section != nullptr,
+                    "PointElement: section is not a PointMassSection for element ", elem_id);
+
+                const Index node = static_cast<Index>(node_ids[0]);
+                for (Index dof = 0; dof < 3; ++dof) {
+                    (*internal_force)(node, dof) +=
+                        section->spring_constants_(dof) * (*displacement)(node, dof);
+                    (*internal_force)(node, dof + 3) +=
+                        section->rotary_spring_constants_(dof) * (*displacement)(node, dof + 3);
+                }
+            }
+        }
+
+        if (geometric_tangent != nullptr) {
+            MapMatrix geometric(geometric_tangent, 6, 6);
+            geometric.setZero();
+        }
+
+        if (tangent == nullptr) {
+            if (geometric_tangent != nullptr) {
+                return MapMatrix(geometric_tangent, 6, 6);
+            }
+            return MapMatrix(nullptr, 0, 0);
+        }
+
+        MapMatrix result(tangent, 6, 6);
         result.setZero();
         if (!_section) return result;
 
@@ -97,34 +140,6 @@ struct PointElement : StructuralElement {
         result(4, 4) = section->rotary_spring_constants_(1);
         result(5, 5) = section->rotary_spring_constants_(2);
         return result;
-    }
-
-    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) override {
-        (void) displacement;
-        MapMatrix result(buffer, 6, 6);
-        result.setZero();
-        return result;
-    }
-
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
-    ) override {
-        if (_section) {
-            const auto* section = _section->as<PointMassSection>();
-            logging::error(section != nullptr,
-                "PointElement: section is not a PointMassSection for element ", elem_id);
-
-            const Index node = static_cast<Index>(node_ids[0]);
-            for (Index dof = 0; dof < 3; ++dof) {
-                nodal_forces(node, dof) += section->spring_constants_(dof) * displacement(node, dof);
-                nodal_forces(node, dof + 3) += section->rotary_spring_constants_(dof) * displacement(node, dof + 3);
-            }
-        }
-
-        if (!buffer) return MapMatrix(nullptr, 0, 0);
-        return stiffness(buffer);
     }
 
     MapMatrix mass(Precision* buffer) override {

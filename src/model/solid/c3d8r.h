@@ -27,7 +27,7 @@ namespace fem::model {
  *
  * with matching force `f_hg = K_hg u_e`. Auxiliary zero-strain evaluation of
  * the hourglass modulus is state-neutral; the physical center-point material
- * state is advanced only by the continuum `stiffness_tangent()` evaluation.
+ * state is advanced only by the continuum `evaluate()` evaluation.
  */
 class C3D8R final : public C3D8 {
 public:
@@ -55,12 +55,15 @@ public:
     const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
     RowMatrix stress_strain_nodal_rst() override;
 
-    // Continuum plus hourglass stiffness/tangent and matching nonlinear force.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    // Common continuum response plus reference hourglass stabilization.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
 
 protected:

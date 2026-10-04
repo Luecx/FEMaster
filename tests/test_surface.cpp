@@ -1,3 +1,12 @@
+/**
+ * @file test_surface.cpp
+ * @brief Checks geometry and projection of three-node triangular surfaces.
+ *
+ * The tests exercise the Surface3 interpolation and physical integration used
+ * by surface loads and constraints. Projection checks distinguish unrestricted
+ * projection onto the supporting plane from clipping to the triangle boundary.
+ */
+
 #include "../src/model/geometry/surface/surface3.h"  // Include path relative to the src folder
 #include <gtest/gtest.h>
 #include <cstdlib>
@@ -77,9 +86,10 @@ TEST_F(Surface3Test, ProjectionWithoutClipping) {
         auto            local_coords = surface.global_to_local(point, node_coords, false);
         auto            projected = surface.local_to_global(local_coords, node_coords);
         auto            diff = point - projected;
-        auto diff_p1 = projected - node_coords.row_vec3(0);
-        auto diff_p2 = projected - node_coords.row_vec3(1);
-        auto diff_p3 = projected - node_coords.row_vec3(2);
+        // Materialize the differences before the temporary row vectors expire
+        const Vec3 diff_p1 = projected - node_coords.row_vec3(0);
+        const Vec3 diff_p2 = projected - node_coords.row_vec3(1);
+        const Vec3 diff_p3 = projected - node_coords.row_vec3(2);
 
         Precision proj_1 = diff.dot(diff_p1);
         Precision proj_2 = diff.dot(diff_p2);

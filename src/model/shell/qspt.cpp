@@ -246,60 +246,65 @@ QSPT::MassMatrix QSPT::mass_impl() {
 }
 
 /**
- * Maps the linear shear-panel stiffness into caller-owned storage.
- */
-MapMatrix QSPT::stiffness(Precision* buffer) {
-    MapMatrix mapped(buffer, 12, 12);
-    mapped = stiffness_impl();
-    return mapped;
-}
-
-/**
- * Returns the QSPT geometric stiffness.
+ * Evaluates the linear QSPT response through the common structural interface.
  *
- * QSPT has no separate stress-stiffness contribution, so the operator is zero
- * for every supplied displacement state.
+ * QSPT has one constant mechanical stiffness and no stress-dependent geometric
+ * contribution or constitutive history. Requested internal force is therefore
+ * exactly K u for the supplied displacement, independent of the optional
+ * linearization state.
  */
-MapMatrix QSPT::stiffness_geom(Precision* buffer, const Field& displacement) {
-    (void) displacement;
-    MapMatrix mapped(buffer, 12, 12);
-    mapped.setZero();
-    return mapped;
-}
-
-/**
- * Evaluates QSPT through the common nonlinear structural callback.
- *
- * QSPT itself is linear. Its exact residual is therefore `f_int = K u` and its
- * exact tangent is the same constant matrix `K`. Internal force is always
- * scattered; matrix assembly is skipped for residual-only calls.
- */
-MapMatrix QSPT::stiffness_tangent(
-    Precision*   buffer,
-    NodeData&    nodal_forces,
-    const Field& displacement
+MapMatrix QSPT::evaluate(
+    Precision*   tangent,
+    Precision*   geometric_tangent,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
 ) {
-    logging::error(nodal_forces.components >= 3,
-        "QSPT: internal force requires at least three nodal components");
+    (void) linearization;
+    (void) thermal_free_strain;
+    (void) update_state;
 
-    const StiffnessMatrix K = stiffness_impl();
-    const StaticVector<12> u = displacement_vector(displacement);
-    const StaticVector<12> force = K * u;
+    const bool need_stiffness = tangent != nullptr || internal_force != nullptr;
+    StiffnessMatrix K = StiffnessMatrix::Zero();
+    if (need_stiffness) {
+        K = stiffness_impl();
+    }
 
-    for (Index node = 0; node < 4; ++node) {
-        const Index node_id = static_cast<Index>(node_ids[node]);
-        for (Dim dof = 0; dof < 3; ++dof) {
-            nodal_forces(node_id, dof) += force(3 * node + dof);
+    if (internal_force != nullptr) {
+        logging::error(displacement != nullptr,
+            "QSPT: internal force evaluation requires displacement");
+        logging::error(internal_force->components >= 3,
+            "QSPT: internal force requires at least three nodal components");
+
+        const StaticVector<12> u     = displacement_vector(*displacement);
+        const StaticVector<12> force = K * u;
+
+        for (Index node = 0; node < 4; ++node) {
+            const Index node_id = static_cast<Index>(node_ids[node]);
+            for (Dim dof = 0; dof < 3; ++dof) {
+                (*internal_force)(node_id, dof) += force(3 * node + dof);
+            }
         }
     }
 
-    if (buffer == nullptr) {
-        return MapMatrix(nullptr, 0, 0);
+    if (geometric_tangent != nullptr) {
+        MapMatrix geometric(geometric_tangent, 12, 12);
+        geometric.setZero();
     }
 
-    MapMatrix mapped(buffer, 12, 12);
-    mapped = K;
-    return mapped;
+    if (tangent != nullptr) {
+        MapMatrix mapped(tangent, 12, 12);
+        mapped = K;
+        return mapped;
+    }
+
+    if (geometric_tangent != nullptr) {
+        return MapMatrix(geometric_tangent, 12, 12);
+    }
+
+    return MapMatrix(nullptr, 0, 0);
 }
 
 MapMatrix QSPT::mass(Precision* buffer) {
