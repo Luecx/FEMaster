@@ -863,7 +863,8 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
     const Vector13&        alpha,
     bool                   write_material_state,
     bool                   assemble_global_blocks,
-    bool                   assemble_tangent
+    bool                   assemble_tangent,
+    bool                   include_geometric
 ) {
     EnhancedSystem system;
 
@@ -948,6 +949,12 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
             system.kuu.noalias() += Bu.transpose() * CBu;
             system.kua.noalias() += Bu.transpose() * CBa;
             system.kau.noalias() += Ba.transpose() * CBu;
+        }
+
+        // Material-only assembly is used when separating the condensed
+        // geometric contribution from the complete finite-deformation tangent.
+        if (!include_geometric) {
+            continue;
         }
 
         // Add the enhanced-enhanced geometric tangent from
@@ -1075,59 +1082,177 @@ void C3D8I::assemble_local_force(Field& node_forces, const Vector24& local_force
 }
 
 /**
- * Evaluates the nonlinear C3D8I internal force and consistent condensed tangent.
+ * Evaluates the C3D8I response through the common mechanical interface.
  *
- * The nodal trial configuration first defines the compatible deformation. A
- * local Newton solve enforces r_alpha = 0 for the thirteen enhanced parameters.
- * The converged state is then re-evaluated with writable constitutive trial
- * history, after which the local tangent is reduced by
+ * Reference-state requests reuse the existing condensed linear EAS operators.
+ * Finite-deformation requests solve the thirteen local stationarity equations at
+ * the supplied linearization state and condense the complete nodal tangent.
  *
- *     K = Kuu - Kua Kaa^-1 Kau.
+ * For a requested finite geometric tangent the same stationary enhanced state is
+ * assembled twice: once with the complete material-plus-geometric local tangent
+ * and once with geometric Hessian terms disabled. Their condensed difference is
+ * the stress-dependent contribution exposed to the caller. This preserves
  *
- * The internal force is already stationary with respect to alpha and is
- * scattered directly into the global nodal accumulator.
+ *     K_T = K_M + K_G
  *
- * @param buffer Optional caller-owned storage for the 24 x 24 tangent. A null
- *               pointer requests internal force only.
- * @param nodal_forces Global nodal internal-force accumulator.
- * @param displacement Global nodal displacement field of the current trial state.
- * @return Map onto the condensed tangent, or an empty map when buffer is null.
+ * after local EAS condensation.
  */
-MapMatrix C3D8I::stiffness_tangent(
-    Precision*   buffer,
-    NodeData&    nodal_forces,
-    const Field& displacement
+MapMatrix C3D8I::evaluate(
+    Precision*   tangent_buffer,
+    Precision*   geometric_tangent_buffer,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
 ) {
-    // Construct the compatible current geometry from the global displacement field
-    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-    const StaticMatrix<N, D> local_u          = this->nodal_data<D>(displacement);
-    const StaticMatrix<N, D> current_coords   = reference_coords + local_u;
+    const bool with_tangent   = tangent_buffer != nullptr;
+    const bool with_geometric = geometric_tangent_buffer != nullptr;
+    const bool with_force     = internal_force != nullptr;
 
-    // Enforce stationarity of the element-local enhanced parameters
-    const NonlinearPoints points = nonlinear_points(reference_coords, current_coords);
-    const Vector13        alpha  = solve_nonlinear_modes(points);
-
-    // Re-evaluate the converged state and write exactly this constitutive trial state
-    const EnhancedSystem system = assemble_nonlinear_system(
-        points, alpha, true, true, buffer != nullptr);
-
-    // Scatter the stationary nodal internal force before optional tangent assembly
-    assemble_local_force(nodal_forces, system.ru);
-
-    if (buffer == nullptr) {
+    if (!with_tangent && !with_geometric && !with_force) {
         return MapMatrix(nullptr, 0, 0);
     }
 
-    Eigen::FullPivLU<Matrix13> solver(system.kaa);
-    logging::error(solver.isInvertible(),
-        "C3D8I: singular converged local EAS tangent in element ", elem_id);
+    logging::error(!with_force || displacement != nullptr,
+        "C3D8I: internal force evaluation requires displacement");
 
-    // Condense the local enhanced unknowns from the global Newton tangent
-    const Matrix24 condensed = system.kuu - system.kua * solver.solve(system.kau);
+    // -------------------------------------------------------------------------
+    // Reference/small-strain EAS evaluation.
+    // -------------------------------------------------------------------------
+    if (linearization == nullptr) {
+        logging::error(!update_state,
+            "C3D8I: small-strain constitutive state updates are not implemented");
 
-    MapMatrix mapped{buffer, ndof, ndof};
-    mapped = condensed;
-    return mapped;
+        Matrix24 linear = Matrix24::Zero();
+
+        if (with_tangent || with_force) {
+            Precision storage[ndof * ndof];
+            Precision* target = with_tangent ? tangent_buffer : storage;
+            stiffness(target);
+
+            if (with_force) {
+                const Vector24 u = local_displacement(*displacement);
+                const Eigen::Map<const Matrix24> K(target);
+                assemble_local_force(*internal_force, K * u);
+            }
+
+            if (!with_tangent) {
+                linear = Eigen::Map<const Matrix24>(target);
+            }
+        }
+
+        if (with_geometric) {
+            logging::error(displacement != nullptr,
+                "C3D8I: geometric stiffness requires prestress displacement");
+            stiffness_geom(
+                geometric_tangent_buffer,
+                *displacement,
+                thermal_free_strain
+            );
+        }
+
+        if (with_tangent) {
+            return MapMatrix(tangent_buffer, ndof, ndof);
+        }
+        if (with_geometric) {
+            return MapMatrix(geometric_tangent_buffer, ndof, ndof);
+        }
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Finite-deformation EAS evaluation at u_L.
+    // -------------------------------------------------------------------------
+    logging::error(thermal_free_strain == nullptr,
+        "C3D8I: finite-deformation thermal free strain is not implemented");
+    logging::error(!update_state || displacement == linearization,
+        "C3D8I: material state cannot be updated away from the linearization state");
+
+    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    const Vector24           u_linearization  = local_displacement(*linearization);
+
+    StaticMatrix<N, D> local_u;
+    for (Index node = 0; node < N; ++node) {
+        local_u.row(node) =
+            u_linearization.template segment<3>(D * node).transpose();
+    }
+    const StaticMatrix<N, D> current_coords = reference_coords + local_u;
+
+    const NonlinearPoints points = nonlinear_points(reference_coords, current_coords);
+    const Vector13        alpha  = solve_nonlinear_modes(points);
+
+    const bool extrapolate_force =
+        with_force && displacement != linearization;
+    const bool need_complete_tangent =
+        with_tangent || with_geometric || extrapolate_force;
+
+    const EnhancedSystem system = assemble_nonlinear_system(
+        points,
+        alpha,
+        update_state,
+        true,
+        need_complete_tangent,
+        true
+    );
+
+    Matrix24 complete = Matrix24::Zero();
+    if (need_complete_tangent) {
+        Eigen::FullPivLU<Matrix13> solver(system.kaa);
+        logging::error(solver.isInvertible(),
+            "C3D8I: singular converged local EAS tangent in element ", elem_id);
+        complete = system.kuu - system.kua * solver.solve(system.kau);
+    }
+
+    if (with_geometric) {
+        const EnhancedSystem material = assemble_nonlinear_system(
+            points,
+            alpha,
+            false,
+            true,
+            true,
+            false
+        );
+
+        Eigen::FullPivLU<Matrix13> material_solver(material.kaa);
+        logging::error(material_solver.isInvertible(),
+            "C3D8I: singular material-only local EAS tangent in element ", elem_id);
+
+        const Matrix24 material_condensed =
+            material.kuu
+            - material.kua * material_solver.solve(material.kau);
+
+        Matrix24 geometric = complete - material_condensed;
+        geometric =
+            (Precision(0.5) * (geometric + geometric.transpose())).eval();
+
+        MapMatrix mapped(geometric_tangent_buffer, ndof, ndof);
+        mapped = geometric;
+    }
+
+    if (with_tangent) {
+        MapMatrix mapped(tangent_buffer, ndof, ndof);
+        mapped = complete;
+    }
+
+    if (with_force) {
+        Vector24 force = system.ru;
+
+        if (extrapolate_force) {
+            const Vector24 u = local_displacement(*displacement);
+            force.noalias() += complete * (u - u_linearization);
+        }
+
+        assemble_local_force(*internal_force, force);
+    }
+
+    if (with_tangent) {
+        return MapMatrix(tangent_buffer, ndof, ndof);
+    }
+    if (with_geometric) {
+        return MapMatrix(geometric_tangent_buffer, ndof, ndof);
+    }
+    return MapMatrix(nullptr, 0, 0);
 }
 
 void C3D8I::compute_stress_strain(
