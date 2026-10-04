@@ -5,8 +5,6 @@
 #include "../src/material/isotropic_j2_elasticity.h"
 #include "../src/material/strain/axial_strain_green_lagrange.h"
 #include "../src/material/strain/volume_strain_green_lagrange.h"
-#include "../src/material/strain/volume_strain_linearized.h"
-#include "../src/material/stress/volume_stress_cauchy.h"
 #include "../src/material/stress/axial_stress_pk2.h"
 #include "../src/material/stress/volume_stress_pk2.h"
 #include "../src/model/model.h"
