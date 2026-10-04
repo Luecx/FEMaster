@@ -1,86 +1,3 @@
-/**
- * @file orthotropic_elasticity.cpp
- * @brief Implements homogeneous orthotropic linear elasticity.
- *
- * The implementation constructs the three-dimensional engineering compliance
- * directly from `E1`, `E2`, `E3`, `nu12`, `nu13`, `nu23`, `G12`, `G13` and
- * `G23`. Symmetry supplies the reciprocal Poisson ratios implicitly through the
- * off-diagonal compliance terms. The compliance is inverted to obtain the
- * volume tangent.
- *
- * Shell calls use the corresponding orthotropic plane-stress reduction and the
- * prescribed transverse shear moduli `G13` and `G23`.
- *
- * @see OrthotropicElasticity
- *
- * @author Finn Eggers
- * @date 07.08.2026
- */
-
-#include "orthotropic_elasticity.h"
-
-#include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/shell_material_strain_linearized.h"
-#include "strain/volume_strain_green_lagrange.h"
-#include "strain/volume_strain_linearized.h"
-#include "stress/shell_material_stress_cauchy.h"
-#include "stress/shell_material_stress_pk2.h"
-#include "stress/volume_stress_cauchy.h"
-#include "stress/volume_stress_pk2.h"
-
-#include <Eigen/LU>
-
-namespace fem::material {
-
-/**
- * Constructs orthotropic elasticity from conventional engineering constants.
- *
- * The supplied Poisson ratios are the major ratios `nu12`, `nu13` and `nu23`.
- * Reciprocal ratios are not stored independently because symmetry requires
- * `nu21/E2 = nu12/E1`, `nu31/E3 = nu13/E1` and
- * `nu32/E3 = nu23/E2`.
- *
- * @param E1 Young's modulus along material direction 1.
- * @param E2 Young's modulus along material direction 2.
- * @param E3 Young's modulus along material direction 3.
- * @param nu12 Poisson ratio for loading in direction 1 and contraction in 2.
- * @param nu13 Poisson ratio for loading in direction 1 and contraction in 3.
- * @param nu23 Poisson ratio for loading in direction 2 and contraction in 3.
- * @param G12 Engineering shear modulus in the 1-2 plane.
- * @param G13 Engineering shear modulus in the 1-3 plane.
- * @param G23 Engineering shear modulus in the 2-3 plane.
- */
-OrthotropicElasticity::OrthotropicElasticity(Precision E1,
-                                             Precision E2,
-                                             Precision E3,
-                                             Precision nu12,
-                                             Precision nu13,
-                                             Precision nu23,
-                                             Precision G12,
-                                             Precision G13,
-                                             Precision G23)
-    : E1  (E1),
-      E2  (E2),
-      E3  (E3),
-      nu12(nu12),
-      nu13(nu13),
-      nu23(nu23),
-      G12 (G12),
-      G13 (G13),
-      G23 (G23) {}
-
-bool OrthotropicElasticity::supports_volume_linearized() const {
-    return true;
-}
-
-bool OrthotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool OrthotropicElasticity::supports_shell_integration_linearized() const {
-    return true;
-}
-
 bool OrthotropicElasticity::supports_shell_integration_green_lagrange() const {
     return true;
 }
@@ -141,34 +58,6 @@ Mat6 OrthotropicElasticity::volume_tangent() const {
 }
 
 /**
- * Evaluates linearized orthotropic Cauchy stress in material coordinates.
- *
- * The constant orthotropic operator is required to obtain the stress itself. It
- * is therefore built once and copied to the output tangent only when requested.
- *
- * @param strain Infinitesimal engineering strain vector.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Optional orthotropic volume tangent.
- */
-void OrthotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                     const Precision*              old_state,
-                                     Precision*                    new_state,
-                                     VolumeStressCauchy&           stress,
-                                     Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = volume_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
  * Evaluates orthotropic PK2 stress from Green-Lagrange strain.
  *
  * @param strain Green-Lagrange engineering strain vector.
@@ -187,31 +76,6 @@ void OrthotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 
     const Mat6 material_tangent = volume_tangent();
     stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
- * Evaluates linearized orthotropic shell Cauchy stress under plane stress.
- *
- * @param strain Five-component shell material strain.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Shell Cauchy stress in material ordering.
- * @param tangent Optional reduced orthotropic shell tangent.
- */
-void OrthotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                     const Precision*                     old_state,
-                                     Precision*                           new_state,
-                                     ShellMaterialStressCauchy&            stress,
-                                     Mat5*                                tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat5 material_tangent = shell_material_tangent();
-    stress.values() = material_tangent * strain.values();
 
     if (tangent != nullptr) {
         *tangent = material_tangent;
