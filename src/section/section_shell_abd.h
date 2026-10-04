@@ -56,8 +56,7 @@ struct ABDShellSection : ShellSection {
     // is rotated into the prescribed section basis and resultants/tangent are
     // returned in the geometric shell basis. The formulation has no history:
     // the state rows and material_state_stride are accepted for interface
-    // uniformity but never read or modified, and the strain-measure selector
-    // does not alter the linear generalized law.
+    // uniformity but never read or modified.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
