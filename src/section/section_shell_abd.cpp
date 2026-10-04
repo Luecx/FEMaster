@@ -98,8 +98,8 @@ ABDShellSection::ABDShellSection(
  * element assembly.
  *
  * The formulation is linear elastic and contains no material-point history.
- * Consequently, the state rows, their stride and the kinematic strain-measure
- * selector do not change the prescribed response.
+ * Consequently, the state rows and their stride do not change the prescribed
+ * response.
  *
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
@@ -107,7 +107,6 @@ ABDShellSection::ABDShellSection(
  * @param old_material_state Unused input state row.
  * @param new_material_state Unused output state row.
  * @param material_state_stride Unused state-row stride.
- * @param use_green_lagrange Unused strain-measure selector for this linear law.
  * @param resultants_shell Generalized resultants in the geometric shell basis.
  * @param tangent_shell Constant generalized tangent in the geometric shell basis.
  */
@@ -118,7 +117,6 @@ void ABDShellSection::evaluate(
     const Precision*              old_material_state,
     Precision*                    new_material_state,
     Index                         material_state_stride,
-    bool                          use_green_lagrange,
     ShellStressResultants&        resultants_shell,
     Mat8&                         tangent_shell
 ) const {
@@ -126,7 +124,6 @@ void ABDShellSection::evaluate(
     (void) old_material_state;
     (void) new_material_state;
     (void) material_state_stride;
-    (void) use_green_lagrange;
 
     // Without an orientation the prescribed matrices already act in the
     // geometric shell basis. Otherwise construct the projected section basis.
@@ -191,135 +188,14 @@ void ABDShellSection::evaluate(
 }
 
 /**
- * Reconstructs an equivalent physical Cauchy stress through the shell thickness.
- *
- * A prescribed ABD section has no layerwise material model. Its generalized
- * resultants are therefore interpreted as those of one equivalent homogeneous
- * layer through
- *
- *     sigma(z) = N / h + 12 z M / h^3,
- *     tau(z)   = Q / h.
- *
- * Linearized recovery returns this tensor directly. For Green-Lagrange shell
- * kinematics the reconstructed tensor is treated as PK2 stress in the reference
- * recovery basis and pushed forward with the supplied deformation gradient.
- * Output components are global without an orientation and section-local with
- * one. No material state is read or modified.
- *
- * @param position_reference Physical reference position of the shell point.
- * @param shell_basis_global Geometric shell basis in global coordinates.
- * @param strain_shell Generalized strain in the geometric shell basis.
- * @param old_material_state Unused input state row.
- * @param new_material_state Unused output state row.
- * @param material_state_stride Unused state-row stride.
- * @param z Physical thickness coordinate measured from the midsurface.
- * @param use_green_lagrange Select PK2-to-Cauchy push-forward for nonlinear output.
- * @param deformation_gradient Three-dimensional deformation gradient at `z`.
- * @return Equivalent Cauchy stress in the configured output basis.
- */
-VolumeStressCauchy ABDShellSection::evaluate_output_stress(
-    const Vec3&                   position_reference,
-    const Mat3&                   shell_basis_global,
-    const ShellGeneralizedStrain& strain_shell,
-    const Precision*              old_material_state,
-    Precision*                    new_material_state,
-    Index                         material_state_stride,
-    Precision                     z,
-    bool                          use_green_lagrange,
-    const Mat3&                   deformation_gradient
-) const {
-    // The prescribed ABD reconstruction does not contain constitutive history.
-    (void) old_material_state;
-    (void) new_material_state;
-    (void) material_state_stride;
-
-    const Precision h = thickness_;
-
-    // Physical stress components are global without an orientation and section-
-    // local with an orientation.
-    const Mat3 output_basis_global =
-        stress_basis(position_reference, shell_basis_global);
-
-    // The equivalent stress distribution must be reconstructed in a tangential
-    // basis in which the prescribed matrices are defined.
-    const Mat3 recovery_basis_global = orientation_
-        ? output_basis_global
-        : shell_basis_global;
-
-    // Rotate generalized strains into the recovery basis.
-    const Mat2 recovery_axes_in_shell =
-        shell_basis_global.template block<3, 2>(0, 0).transpose()
-        * recovery_basis_global.template block<3, 2>(0, 0);
-
-    const ShellGeneralizedStrain strain_recovery =
-        strain_shell.transformed(recovery_axes_in_shell);
-
-    // Assemble and apply the prescribed generalized tangent directly in the
-    // recovery basis. This deliberately avoids the nodal resultant-output basis,
-    // which is a separate post-processing convention.
-    const Index membrane_row = static_cast<Index>(ShellStressResultants::Component::NXX);
-    const Index membrane_col = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
-    const Index shear_row    = static_cast<Index>(ShellStressResultants::Component::QX);
-    const Index shear_col    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
-
-    Mat8 tangent_recovery = Mat8::Zero();
-    tangent_recovery.template block<6, 6>(membrane_row, membrane_col) = abd_;
-    tangent_recovery.template block<2, 2>(shear_row, shear_col)       = shear_;
-
-    const ShellStressResultants resultants_recovery(
-        tangent_recovery * strain_recovery.values()
-    );
-
-    // Interpret the resultants as one homogeneous equivalent layer:
-    //
-    //     sigma(z) = N/h + 12 z M/h^3,
-    //     tau(z)   = Q/h.
-    const Vec3 plane_stress = resultants_recovery.membrane() / h
-        + z * (Precision(12) / (h * h * h)) * resultants_recovery.moments();
-    const Vec2 shear_stress = resultants_recovery.transverse_shear() / h;
-
-    VolumeStressCauchy stress_recovery;
-    stress_recovery[VolumeStress::Component::XX] = plane_stress(0);
-    stress_recovery[VolumeStress::Component::YY] = plane_stress(1);
-    stress_recovery[VolumeStress::Component::ZZ] = Precision(0);
-    stress_recovery[VolumeStress::Component::YZ] = shear_stress(1);
-    stress_recovery[VolumeStress::Component::XZ] = shear_stress(0);
-    stress_recovery[VolumeStress::Component::XY] = plane_stress(2);
-
-    // Linearized recovery already represents Cauchy stress. Transform it from
-    // the tangential recovery basis into the configured output basis.
-    if (!use_green_lagrange) {
-        return stress_recovery.transformed(recovery_basis_global, output_basis_global);
-    }
-
-    // For finite-strain recovery, treat the equivalent reconstructed tensor as
-    // PK2 stress in the reference recovery basis and push it forward.
-    const Precision J = deformation_gradient.determinant();
-    logging::error(J > Precision(0) && std::isfinite(J),
-        "ABDShellSection: invalid deformation gradient during stress recovery, J = ", J);
-
-    const Mat3 second_pk_global = recovery_basis_global
-        * stress_recovery.tensor()
-        * recovery_basis_global.transpose();
-    const Mat3 cauchy_global =
-        (deformation_gradient * second_pk_global * deformation_gradient.transpose()) / J;
-
-    // Express the final global Cauchy tensor in the configured stress basis.
-    return VolumeStressCauchy(cauchy_global).transformed(
-        Mat3::Identity(),
-        output_basis_global
-    );
-}
-
-/**
- * Linearizes the equivalent homogeneous-layer Cauchy stress about a finite
- * base state.
+ * Recovers equivalent physical Cauchy stress from an exact base state followed
+ * by one affine perturbation.
  *
  * The prescribed ABD law is linear in generalized strain, so the PK2 base
  * stress and PK2 increment are reconstructed directly. The nonlinear
- * PK2-to-Cauchy push-forward is then differentiated analytically at F0.
+ * PK2-to-Cauchy push-forward is differentiated analytically at F0.
  */
-VolumeStressCauchy ABDShellSection::evaluate_output_stress_linearized(
+VolumeStressCauchy ABDShellSection::recover_stress(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_base,
