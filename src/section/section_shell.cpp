@@ -3,8 +3,8 @@
  * @brief Implements common shell section construction and output-basis handling.
  *
  * The abstract base class contains no constitutive shell law. This translation
- * unit implements only validation, common output transformation, basis
- * construction and diagnostic output shared by every concrete section.
+ * unit implements validation, physical-stress basis construction and
+ * diagnostic output shared by every concrete section.
  *
  * @see ShellSection
  *
@@ -60,71 +60,6 @@ ShellSection::ShellSection(
     // Store the associations inherited from the generic Section base class.
     material_ = std::move(material);
     region_   = std::move(region);
-}
-
-/**
- * Evaluates generalized shell resultants and rotates them into the configured
- * output basis.
- *
- * The concrete section receives generalized strain, material-point state and
- * state stride in the element's pointwise geometric shell basis. Its returned
- * membrane forces, bending moments and transverse shear forces are then
- * transformed into the deterministic resultant basis used for nodal averaging
- * and result output. The material state is updated only by the concrete
- * constitutive evaluation; the output rotation itself is state-neutral.
- *
- * @param position_reference Physical reference position of the shell point.
- * @param shell_basis_global Geometric shell basis expressed in global coordinates.
- * @param strain_shell Generalized strain in the geometric shell basis.
- * @param old_material_state First material-point input state row at this shell point.
- * @param new_material_state First material-point output state row at this shell point.
- * @param material_state_stride Scalar distance between consecutive state rows.
- * @param use_green_lagrange Select finite-strain constitutive evaluation.
- * @return Generalized resultants in the configured output basis.
- */
-ShellStressResultants ShellSection::evaluate_output_resultants(
-    const Vec3&                   position_reference,
-    const Mat3&                   shell_basis_global,
-    const ShellGeneralizedStrain& strain_shell,
-    const Precision*              old_material_state,
-    Precision*                    new_material_state,
-    Index                         material_state_stride,
-    bool                          use_green_lagrange
-) const {
-    // Every concrete section returns the element-facing response in the
-    // geometric shell basis. Keeping this call in the base class avoids a
-    // duplicate resultant-output implementation in every section type.
-    ShellStressResultants resultants_shell;
-    Mat8                  tangent_shell;
-
-    evaluate(
-        position_reference,
-        shell_basis_global,
-        strain_shell,
-        old_material_state,
-        new_material_state,
-        material_state_stride,
-        use_green_lagrange,
-        resultants_shell,
-        tangent_shell
-    );
-
-    // Construct the basis used for the stored membrane-force, moment and
-    // transverse-shear components.
-    const Mat3 result_basis_global =
-        stress_resultant_basis(position_reference, shell_basis_global);
-
-    // Express the two result axes in geometric shell coordinates:
-    //
-    //     R = Q_shell^T Q_result.
-    //
-    // The columns of R are the target axes written in the current basis.
-    const Mat2 result_axes_in_shell =
-        shell_basis_global.template block<3, 2>(0, 0).transpose()
-        * result_basis_global.template block<3, 2>(0, 0);
-
-    // Rotate the physical resultant components into the configured output basis.
-    return resultants_shell.transformed(result_axes_in_shell);
 }
 
 /**
@@ -185,62 +120,6 @@ Mat3 ShellSection::stress_basis(
     Mat3 basis;
     basis.col(0) = stress_e1;
     basis.col(1) = stress_e2;
-    basis.col(2) = normal;
-
-    return basis;
-}
-
-/**
- * Constructs the generalized stress-resultant output basis at one shell point.
- *
- * An explicit section orientation uses the same projected basis as physical
- * stress output. Without one, global X is projected into the shell tangent
- * plane to obtain a deterministic direction for component-wise nodal averaging;
- * global Y is used only when the shell normal is parallel to global X. The
- * resulting two tangent axes and shell normal form a right-handed basis.
- *
- * @param position_reference Physical reference position of the shell point.
- * @param shell_basis_global Orthonormal geometric shell basis in global coordinates.
- * @return Generalized-resultant component basis expressed in global coordinates.
- */
-Mat3 ShellSection::stress_resultant_basis(
-    const Vec3& position_reference,
-    const Mat3& shell_basis_global
-) const {
-    // One explicit orientation defines both physical stress and generalized
-    // stress-resultant components.
-    if (orientation_) {
-        return stress_basis(position_reference, shell_basis_global);
-    }
-
-    const Precision projection_tolerance = Precision(1e-6);
-    const Vec3      normal               = shell_basis_global.col(2).normalized();
-
-    // Resultants are stored in local membrane, moment and transverse-shear
-    // blocks. A deterministic tangent basis is therefore required before
-    // neighboring element contributions can be averaged component-wise.
-    Vec3 source_axis  = Vec3::UnitX();
-    Vec3 resultant_e1 = source_axis - normal * source_axis.dot(normal);
-
-    // Global Y is only an automatic output fallback. Explicit user orientations
-    // never fall back silently.
-    if (resultant_e1.norm() <= projection_tolerance) {
-        source_axis  = Vec3::UnitY();
-        resultant_e1 = source_axis - normal * source_axis.dot(normal);
-    }
-
-    // Valid three-dimensional shell geometry cannot make both global X and Y
-    // parallel to the same normal. This check catches invalid/non-finite bases.
-    logging::error(resultant_e1.norm() > projection_tolerance,
-        "ShellSection: global X and Y cannot define a tangential stress-resultant basis");
-
-    resultant_e1.normalize();
-
-    const Vec3 resultant_e2 = normal.cross(resultant_e1).normalized();
-
-    Mat3 basis;
-    basis.col(0) = resultant_e1;
-    basis.col(1) = resultant_e2;
     basis.col(2) = normal;
 
     return basis;
