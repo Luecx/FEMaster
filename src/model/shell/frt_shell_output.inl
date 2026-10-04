@@ -598,16 +598,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         const Vec3 position    = reference_position(r, s);
         const Mat3 shell_basis = reference_basis_global(r, s);
 
-        section->evaluate(
-            position,
-            shell_basis,
-            ShellGeneralizedStrain(strain_base),
-            old_state,
-            nullptr,
-            this->_model_data->material_state_old->components,
-            resultants_base,
-            tangent_base
-        );
+        section->evaluate(position, shell_basis, ShellGeneralizedStrain(strain_base), old_state, nullptr, this->_model_data->material_state_old->components, resultants_base, tangent_base);
 
         ShellStressResultants resultants_shell(
             resultants_base.values() + tangent_base * strain_increment
