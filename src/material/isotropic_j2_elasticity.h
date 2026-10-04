@@ -2,8 +2,8 @@
  * @file isotropic_j2_elasticity.h
  * @brief Declares isotropic associative J2 elastoplasticity.
  *
- * The material supports both infinitesimal and finite-strain kinematics. The
- * persistent constitutive history contains only physical state variables:
+ * The material uses finite-strain Green-Lagrange/PK2 kinematics. The persistent
+ * constitutive history contains only physical state variables:
  *
  *     [Cp11, Cp22, Cp33, Cp23, Cp13, Cp12, eqp]
  *
@@ -43,8 +43,7 @@ namespace fem::material {
  * interpolated. Beyond the final point the final yield stress is continued, so
  * the material becomes perfectly plastic after the tabulated range.
  *
- * The small-strain model uses the classical associative radial return. The
- * finite-strain model uses the multiplicative split
+ * The finite-strain model uses the multiplicative split
  *
  *     F = Fe Fp
  *
@@ -103,26 +102,18 @@ struct IsotropicJ2Elasticity : Elasticity {
     void  initialize_state(Precision* state) const override;
     Precision equivalent_plastic_strain(const Precision* state) const;
 
-    // Axial reductions enforce zero transverse stress through the corresponding
-    // three-dimensional constitutive law. The external scalar tangent is optional,
-    // although the finite/local reduction may require derivatives internally.
     void evaluate(const AxialStrainGreenLagrange& strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
                   Precision*                      tangent = nullptr) const override;
 
-    // Three-dimensional material response. A null tangent preserves the complete
-    // stress/state update while omitting construction of the algorithmic matrix.
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6*                            tangent = nullptr) const override;
 
-    // Integrated-shell material response under the local plane-stress condition
-    // S33 = 0. Tangent output is optional; the thickness solve itself uses the
-    // three-dimensional algorithmic tangent for its Newton update.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
