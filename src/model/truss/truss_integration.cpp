@@ -28,8 +28,9 @@ namespace {
  * location required.
  */
 Vec3 midpoint(T3& element) {
-    return Precision(0.5)
-         * (element.node_position_current(0) + element.node_position_current(1));
+    return Precision(0.5) *
+        (element.node_position_current(0)
+       + element.node_position_current(1));
 }
 
 /**
@@ -39,14 +40,12 @@ Vec3 midpoint(T3& element) {
  * current volume measure by the assigned density rho.
  */
 Precision density_scale(T3& element, bool scale_by_density) {
-    if (!scale_by_density) {
+    if (!scale_by_density)
         return Precision(1);
-    }
 
     auto material = element.get_material();
-    logging::error(material && material->has_density(),
-        "T3: material density is required when scale_by_density=true for element ",
-        element.elem_id);
+    logging::error(material->has_density(),
+       "T3: material density is required when scale_by_density=true for element ", element.elem_id);
 
     return material->get_density();
 }
@@ -82,8 +81,7 @@ MapMatrix T3::mass(Precision* buffer) {
         const Precision m   = rho * A0 * L0;
 
         for (Index node = 0; node < N; ++node) {
-            mass_matrix.block(node * 3, node * 3, 3, 3) =
-                Precision(0.5) * m * Mat3::Identity();
+            mass_matrix.block(node * 3, node * 3, 3, 3) = Precision(0.5) * m * Mat3::Identity();
         }
     }
 

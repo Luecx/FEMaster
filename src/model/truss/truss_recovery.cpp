@@ -85,121 +85,122 @@ void T3::compute_stress_strain(
 ) {
     (void) thermal_free_strain;
 
+    const Vec3 X1 = node_position_reference(0);
+    const Vec3 X2 = node_position_reference(1);
+    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+    const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+    Vec3 u01 = Vec3::Zero();
+    Vec3 u02 = Vec3::Zero();
+
+    if (linearization) {
+        u01 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
+        u02 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
+    }
+
+    const Vec3      reference_axis = X2 - X1;
+    const Precision L0             = reference_axis.norm();
+    const Vec3      axis_base      = (X2 + u02) - (X1 + u01);
+    const Precision length_base    = axis_base.norm();
+
+    auto elasticity = get_elasticity();
+
+    // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
         "T3: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 1,
         "T3: stress/strain coordinates require at least one natural coordinate");
-    logging::error(linearization == nullptr || linearization == &displacement,
-        "T3: intermediate recovery expansion points are not supported");
-
-    const Precision L0 = length_reference();
     logging::error(L0 > Precision(0),
         "T3: zero reference length in compute_stress_strain for element ", this->elem_id);
+    logging::error(length_base > Precision(0),
+        "T3: zero length at the linearization state for element ", this->elem_id);
+    logging::error(elasticity->supports_axial_green_lagrange(),
+        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
+
+    // -------------------------------------------------------------------------
+    // exact state at the linearization point u0
+    // -------------------------------------------------------------------------
+
+    // The exact configuration at u0 is described by
+    //
+    //     r0      = (X2 + u02) - (X1 + u01),
+    //     lambda0 = ||r0|| / L0,
+    //     n0      = r0 / ||r0||.
+    //
+    // The corresponding Green-Lagrange strain is
+    //
+    //     E0 = 1/2 (lambda0^2 - 1).
+    const Precision lambda0 = length_base / L0;
+    const Vec3      n0      = axis_base / length_base;
+
+    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
+    AxialStressPK2                 stress_base;
+    Precision                      material_tangent = Precision(0);
 
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    auto             elasticity = get_elasticity();
 
-    Precision strain_value = Precision(0);
-    Precision stress_value = Precision(0);
+    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
 
-    if (linearization == nullptr) {
-        // ---------------------------------------------------------------------
-        // infinitesimal reference recovery
-        // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // linear continuation from u0 to u
+    // -------------------------------------------------------------------------
 
-        logging::error(elasticity->supports_axial_linearized(),
-            "T3: material does not support linearized axial evaluation for element ",
-            this->elem_id);
+    // The displacement perturbation is
+    //
+    //     Delta u = u - u0
+    //
+    // and therefore
+    //
+    //     Delta r = Delta u2 - Delta u1.
+    const Vec3 delta_axis = (u2 - u02) - (u1 - u01);
 
-        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-        const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-        const Vec3 N0 = direction_reference();
+    // Linearizing the stretch and Green-Lagrange strain about u0 gives
+    //
+    //     Delta lambda = n0 . Delta r / L0,
+    //
+    //     Delta E      = lambda0 Delta lambda
+    //                  = lambda0 n0 . Delta r / L0.
+    const Precision delta_lambda = n0.dot(delta_axis) / L0;
+    const Precision delta_strain = lambda0 * delta_lambda;
 
-        // Project the relative displacement onto the reference axis:
-        //
-        //     epsilon = N0 . (u2 - u1) / L0.
-        const AxialStrainLinearized axial_strain(N0.dot(u2 - u1) / L0);
-        AxialStressCauchy           axial_stress;
+    // Continue strain and PK2 stress linearly from the exact base state:
+    //
+    //     E ~= E0 + Delta E,
+    //
+    //     S ~= S0 + C0 Delta E.
+    const Precision strain_value    = strain_base.value() + delta_strain;
+    const Precision stress_increment = material_tangent * delta_strain;
 
-        elasticity->evaluate(
-            axial_strain,
-            old_state,
-            nullptr,
-            axial_stress,
-            nullptr
-        );
+    // Physical axial stress is
+    //
+    //     sigma = lambda S.
+    //
+    // Its first-order expansion about u0 is therefore
+    //
+    //     sigma ~= lambda0 S0
+    //            + S0 Delta lambda
+    //            + lambda0 Delta S.
+    //
+    // The product Delta lambda Delta S is second order and is deliberately
+    // omitted.
+    const Precision stress_value = lambda0 * stress_base.value()
+                                 + stress_base.value() * delta_lambda
+                                 + lambda0 * stress_increment;
 
-        strain_value = axial_strain.value();
-        stress_value = axial_stress.value();
-
-    } else {
-        // ---------------------------------------------------------------------
-        // exact Total-Lagrangian recovery
-        // ---------------------------------------------------------------------
-
-        logging::error(elasticity->supports_axial_green_lagrange(),
-            "T3: material does not support Green-Lagrange axial evaluation for element ",
-            this->elem_id);
-
-        const Vec3 X1 = node_position_reference(0);
-        const Vec3 X2 = node_position_reference(1);
-        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-        const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-
-        // Build the exact requested configuration rather than relying on the
-        // model's current POSITION field:
-        //
-        //     r = (X2 + u2) - (X1 + u1).
-        const Vec3      axis   = (X2 + u2) - (X1 + u1);
-        const Precision length = axis.norm();
-
-        logging::error(length > Precision(0),
-            "T3: zero length in exact stress recovery for element ", this->elem_id);
-
-        const Precision lambda = length / L0;
-
-        // The Green-Lagrange strain is constant over a two-node truss:
-        //
-        //     E = 1/2 (lambda^2 - 1).
-        const AxialStrainGreenLagrange axial_strain =
-            AxialStrainGreenLagrange::from_stretch(lambda);
-        AxialStressPK2 axial_stress;
-
-        elasticity->evaluate(
-            axial_strain,
-            old_state,
-            nullptr,
-            axial_stress,
-            nullptr
-        );
-
-        strain_value = axial_strain.value();
-
-        // For the adopted truss force measure,
-        //
-        //     N = A0 lambda S = A0 sigma,
-        //
-        // so the physical axial stress written to output is sigma = lambda S.
-        stress_value = lambda * axial_stress.value();
-    }
-
-    // The axial strain/stress state is constant over the element. Replicate it
-    // to every requested recovery coordinate and clear unsupported components.
+    // The axial strain and stress are constant over the two-node truss.
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
         const Index row = static_cast<Index>(offset) + i;
 
         if (strain) {
-            for (Index component = 0; component < strain->components; ++component) {
+            for (Index component = 0; component < strain->components; ++component)
                 (*strain)(row, component) = Precision(0);
-            }
             (*strain)(row, 0) = strain_value;
         }
 
         if (stress) {
-            for (Index component = 0; component < stress->components; ++component) {
+            for (Index component = 0; component < stress->components; ++component)
                 (*stress)(row, component) = Precision(0);
-            }
             (*stress)(row, 0) = stress_value;
         }
     }
@@ -217,26 +218,29 @@ bool T3::compute_peeq(Field& peeq, int offset) {
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "T3: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
+    // Equivalent plastic strain is available only for the J2 material model.
+    // Other elasticities simply do not contribute a PEEQ result.
     auto material = get_material();
-    if (!material || !material->has_elasticity()) {
-        return false;
-    }
+    if (!material->has_elasticity()) return false;
 
     const auto* j2 = material->elasticity()->as<material::IsotropicJ2Elasticity>();
-    if (!j2) {
-        return false;
-    }
+    if (!j2) return false;
 
+    // T3 has one constitutive material point. Read the accumulated equivalent
+    // plastic strain directly from the committed material history.
     Precision value = Precision(0);
-
     const auto& state = this->_model_data->material_state_old;
+
     if (state && state->components >= j2->state_size()) {
         const Precision* old_state = &(*state)(this->mp_index(0), 0);
         value = j2->equivalent_plastic_strain(old_state);
     }
 
+    // The material-point value is constant over the truss and is therefore
+    // written to both element-nodal result rows.
     peeq(static_cast<Index>(offset) + 0, 0) = value;
     peeq(static_cast<Index>(offset) + 1, 0) = value;
+
     return true;
 }
 
@@ -250,15 +254,25 @@ bool T3::compute_peeq(Field& peeq, int offset) {
  * consistent with the linear topology-optimization operator.
  */
 void T3::compute_compliance(Field& displacement, Field& result) {
+    // The compliance contribution of one linear truss element is
+    //
+    //     J_e = u_e^T K_0 u_e,
+    //
+    // where K_0 is the tangent evaluated at the reference state u0 = 0.
     Precision buffer[N * 3 * N * 3] {};
-    MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    const MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
+    // Gather the six translational element DOFs in local node-major ordering:
+    //
+    //     u_e = [u1_x, u1_y, u1_z, u2_x, u2_y, u2_z]^T.
     StaticVector<N * 3> u;
     for (Index node = 0; node < N; ++node) {
-        u.template segment<3>(3 * node) =
-            displacement.row_vec3(static_cast<Index>(node_ids[node]));
+        u.template segment<3>(3 * node) = displacement.row_vec3(static_cast<Index>(node_ids[node]));
     }
 
+    // Store the scalar element contribution
+    //
+    //     J_e = u_e^T K_0 u_e.
     result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);
 }
 
@@ -280,38 +294,50 @@ bool T3::compute_beam_section_forces(
     const Field& displacement,
     int          offset
 ) {
-    const Precision L0 = length_reference();
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in compute_beam_section_forces for element ",
-        this->elem_id);
+    // Gather the reference geometry and constitutive model required for the
+    // complete section-force recovery.
+    const Vec3 X1 = node_position_reference(0);
+    const Vec3 X2 = node_position_reference(1);
+    const Vec3 R0 = X2 - X1;
 
+    const Precision L0 = R0.norm();
+    auto elasticity    = get_elasticity();
+
+    // Validate all requirements before starting the actual recovery.
+    logging::error(L0 > Precision(0),
+        "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
+    logging::error(elasticity->supports_axial_linearized(),
+        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
+
+    // The reference unit direction is
+    //
+    //     N0 = (X2 - X1) / L0.
+    //
+    // The infinitesimal axial strain follows from the projection of the relative
+    // nodal displacement onto this axis:
+    //
+    //     epsilon = N0 . (u2 - u1) / L0.
+    const Vec3 N0 = R0 / L0;
     const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
     const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-    const Vec3 N0 = direction_reference();
 
     const AxialStrainLinearized axial_strain(N0.dot(u2 - u1) / L0);
     AxialStressCauchy           axial_stress;
 
-    auto elasticity = get_elasticity();
-    logging::error(elasticity->supports_axial_linearized(),
-        "T3: material does not support linearized axial evaluation for element ",
-        this->elem_id);
-
+    // Section-force recovery is state-neutral. The constitutive law reads the
+    // committed material state but neither updates history nor returns a tangent.
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    elasticity->evaluate(
-        axial_strain,
-        old_state,
-        nullptr,
-        axial_stress,
-        nullptr
-    );
+    elasticity->evaluate(axial_strain, old_state, nullptr, axial_stress, nullptr);
 
+    // T3 carries only the constant axial resultant
+    //
+    //     N = A0 sigma.
+    //
+    // Bending, shear and torsional resultants are zero by construction.
     const Precision axial_force = get_section()->area_ * axial_stress.value();
 
-    // T3 carries only one constant axial resultant. All bending, shear and
-    // torsional resultants are zero by construction.
     for (Index node = 0; node < N; ++node) {
         const Index row = static_cast<Index>(offset) + node;
 
