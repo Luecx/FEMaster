@@ -59,7 +59,7 @@ namespace fem::model {
  *
  * Material history follows the common structural-element contract. Auxiliary
  * stiffness, prestress and recovery paths read only committed material state.
- * Only stiffness_tangent() writes the converged constitutive trial state.
+ * Only evaluate() writes the converged constitutive trial state.
  *
  * No enhanced parameter is stored persistently in the element object; every
  * evaluation reconstructs the local stationary state from the supplied nodal
