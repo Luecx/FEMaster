@@ -38,8 +38,8 @@ namespace fem::material {
  * The volume tangent is obtained by inverting the symmetric engineering
  * compliance. Shell response uses an in-plane orthotropic plane-stress tangent
  * together with the independent `G13` and `G23` transverse shear moduli.
- * Linearized evaluation returns Cauchy stress; Green-Lagrange evaluation returns
- * second Piola-Kirchhoff stress.
+ * Constitutive evaluation uses Green-Lagrange strain and second Piola-Kirchhoff
+ * stress.
  */
 struct OrthotropicElasticity : Elasticity {
     // Young's moduli along the principal material directions
@@ -69,8 +69,8 @@ struct OrthotropicElasticity : Elasticity {
                           Precision G13,
                           Precision G23);
 
-    // Advertise three-dimensional and shell response for both infinitesimal and
-    // Green-Lagrange strain measures. Axial and beam reductions are unsupported.
+    // Advertise three-dimensional and shell Green-Lagrange response. Axial and
+    // beam reductions are unsupported.
     bool supports_volume_green_lagrange() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
