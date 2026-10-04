@@ -8,9 +8,8 @@
  * section tangent.
  *
  * `ShellSection` does not implement a constitutive law itself. It owns only the
- * data and output conventions shared by every shell section: thickness,
- * optional orientation, selected coordinate-system axis and the bases used for
- * physical stress and generalized stress-resultant output.
+ * data shared by every shell section: thickness, optional orientation and the
+ * selected coordinate-system axis used for constitutive and physical-stress recovery.
  *
  * The element-facing `evaluate()` contract is identical for every section:
  * input strains, output resultants and the tangent are all expressed in the
@@ -46,7 +45,7 @@ namespace fem {
  * is independent of the constitutive formulation. It intentionally contains no
  * default generalized response and no intermediate virtual `evaluate_material`
  * hook. Every concrete section implements `evaluate()` and physical stress
- * recovery directly.
+ * recovery directly through recover_stress().
  *
  * An optional coordinate system defines both material and local output axes.
  * `csys_axis_` selects the zero-based coordinate-system axis projected into the
@@ -83,49 +82,15 @@ struct ShellSection : Section {
         const Precision*              old_material_state,
         Precision*                    new_material_state,
         Index                         material_state_stride,
-        bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
     ) const = 0;
 
-    // Recover generalized resultants for output. The concrete section is first
-    // evaluated with the same state rows, stride and strain-measure contract
-    // as evaluate(). The base then rotates physical membrane, moment and shear
-    // components from the geometric shell basis into stress_resultant_basis().
-    // Constitutive history updates are written only to the new state rows.
-    [[nodiscard]] ShellStressResultants evaluate_output_resultants(
-        const Vec3&                   position_reference,
-        const Mat3&                   shell_basis_global,
-        const ShellGeneralizedStrain& strain_shell,
-        const Precision*              old_material_state,
-        Precision*                    new_material_state,
-        Index                         material_state_stride,
-        bool                          use_green_lagrange
-    ) const;
-
-    // Recover physical Cauchy stress at thickness coordinate z measured from
-    // the midsurface. Linearized sections return Cauchy stress directly;
-    // finite-strain sections use deformation_gradient to push their PK2 material
-    // response forward. Components are global without an orientation and
-    // section-local with one. Both state pointers identify the first row at the
-    // parent shell IP and the concrete formulation chooses the relevant MP.
-    [[nodiscard]] virtual VolumeStressCauchy evaluate_output_stress(
-        const Vec3&                   position_reference,
-        const Mat3&                   shell_basis_global,
-        const ShellGeneralizedStrain& strain_shell,
-        const Precision*              old_material_state,
-        Precision*                    new_material_state,
-        Index                         material_state_stride,
-        Precision                     z,
-        bool                          use_green_lagrange,
-        const Mat3&                   deformation_gradient = Mat3::Identity()
-    ) const = 0;
-
-    // Recover Cauchy stress from an exact finite-strain base state followed by
+    // Recover physical Cauchy stress from an exact base state followed by
     // one affine perturbation. strain_increment is the mechanical generalized
-    // strain increment from the base state. deformation_gradient_increment is
-    // the matching first variation of F. Constitutive history remains read-only.
-    [[nodiscard]] virtual VolumeStressCauchy evaluate_output_stress_linearized(
+    // strain increment from the base state and deformation_gradient_increment
+    // is the matching first variation of F. Constitutive history remains read-only.
+    [[nodiscard]] virtual VolumeStressCauchy recover_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_base,
@@ -171,14 +136,6 @@ protected:
         const Mat3& shell_basis_global
     ) const;
 
-    // Build the generalized-resultant output basis in global coordinates. An
-    // explicit orientation uses the physical-stress basis. Without one, global
-    // X, or global Y as a geometric fallback, defines a deterministic tangent
-    // axis for component-wise averaging of neighboring shell resultants.
-    [[nodiscard]] Mat3 stress_resultant_basis(
-        const Vec3& position_reference,
-        const Mat3& shell_basis_global
-    ) const;
 };
 
 } // namespace fem
