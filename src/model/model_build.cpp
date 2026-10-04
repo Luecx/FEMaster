@@ -5,9 +5,9 @@
  * The routines operate on the dense assembly created by `Model::compile()`.
  * They bind sections to compiled elements, construct shared shell reference
  * normals, enumerate active generalized DOFs, assemble loads and constraint
- * equations, and combine regular elements, post-compile point elements, contact
- * and generic feature contributions into global sparse operators and nodal
- * internal-force fields.
+ * equations, and combine regular elements, post-compile point elements and
+ * contact contributions into global sparse operators and nodal internal-force
+ * fields.
  *
  * FEMaster `POINTMASS` commands create auxiliary `PointElement` objects after
  * compilation because they target compiled NSETs. Those point elements are kept
@@ -224,9 +224,9 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  * Enumerates every unconstrained generalized DOF required by the model.
  *
  * Dense elements and post-compile point elements activate the components used by
- * their formulations. Generic non-element features, couplings and connectors may
- * additionally activate generalized nodal directions. The final boolean mask is
- * converted to contiguous zero-based system indices.
+ * their formulations. Couplings and connectors may additionally activate
+ * generalized nodal directions. The final boolean mask is converted to contiguous
+ * zero-based system indices.
  *
  * @return Node-by-six matrix of global unconstrained system DOF identifiers.
  */
@@ -261,11 +261,6 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
                 mask(node_id, dof) |= dofs(0, dof);
             }
         }
-    }
-
-    // Activate generalized components carrying other non-element feature data
-    for (const auto& feature : _data->features) {
-        if (feature) feature->activate_dofs(mask);
     }
 
     // Add master-node components required to represent coupling kinematics
@@ -564,14 +559,6 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
         matrix += mattools::assemble_matrix(_data->point_elements, indices, point_lambda);
     }
 
-    if (!_data->features.empty()) {
-        TripletList triplets;
-        for (const auto& feature : _data->features) {
-            if (feature) feature->assemble_stiffness(indices, triplets);
-        }
-        if (!triplets.empty()) matrix.insertFromTriplets(triplets.begin(), triplets.end());
-    }
-
     return matrix;
 }
 
@@ -672,16 +659,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         SparseMatrix contact_matrix(global_matrix.rows(), global_matrix.cols());
         contact_matrix.insertFromTriplets(contact_triplets.begin(), contact_triplets.end());
         global_matrix += contact_matrix;
-    }
-
-    if (!_data->features.empty()) {
-        TripletList feature_triplets;
-        for (const auto& feature : _data->features) {
-            if (feature) feature->assemble_stiffness(indices, feature_triplets);
-        }
-        if (!feature_triplets.empty()) {
-            global_matrix.insertFromTriplets(feature_triplets.begin(), feature_triplets.end());
-        }
     }
 
     nodal_forces.check_finite("Internal force");
@@ -813,8 +790,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
  *
  * Regular structural elements and post-compile native point elements both
  * provide local translational/rotational mass matrices through the common sparse
- * assembly path. Other generic features may still append independent mass
- * triplets afterwards.
+ * assembly path.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @return Assembled sparse lumped mass matrix.
@@ -833,14 +809,6 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
 
     if (!_data->point_elements.empty()) {
         matrix += mattools::assemble_matrix(_data->point_elements, indices, lambda);
-    }
-
-    if (!_data->features.empty()) {
-        TripletList triplets;
-        for (const auto& feature : _data->features) {
-            if (feature) feature->assemble_mass(indices, triplets);
-        }
-        if (!triplets.empty()) matrix.insertFromTriplets(triplets.begin(), triplets.end());
     }
 
     return matrix;
