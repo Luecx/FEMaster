@@ -144,7 +144,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
 
     ShellMaterialStrainGreenLagrange strain;
     ShellMaterialStressPK2             stress;
-    Mat5                          tangent;
+    Mat5                               tangent;
     Precision old_state = Precision(0);
     Precision new_state = Precision(0);
     ortho.evaluate(strain, &old_state, &new_state, stress, &tangent);
