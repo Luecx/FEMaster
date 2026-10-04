@@ -554,17 +554,15 @@ struct FRTShell : ShellElement<N> {
     // stress and strain vectors.
     Vec8 generalized_strain_at(
         const EvaluationData& data,
-        const Vec6N&          q,
+        const Vec6N&          displacement_increment,
         Precision             r,
-        Precision             s,
-        bool                  nonlinear
+        Precision             s
     ) const;
     Vec8 generalized_resultant_at(
         const EvaluationData& data,
-        const Vec6N&          q,
+        const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s,
-        bool                  nonlinear,
         Vec8*                 strain_out = nullptr
     ) const;
     Mat3 deformation_gradient_at(
@@ -573,13 +571,19 @@ struct FRTShell : ShellElement<N> {
         Precision           s,
         Precision           z
     ) const;
+    Mat3 deformation_gradient_increment_at(
+        const EvaluationData& data,
+        const Vec6N&          displacement_increment,
+        Precision             r,
+        Precision             s,
+        Precision             z
+    ) const;
     void physical_stress_strain_at(
         const EvaluationData& data,
-        const Vec6N&          q,
+        const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s,
         Precision             zeta,
-        bool                  nonlinear,
         const Field*          thermal_free_strain,
         Vec6&                 strain_out,
         Vec6&                 stress_out
