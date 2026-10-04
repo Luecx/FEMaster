@@ -37,12 +37,9 @@ namespace fem::model {
  *
  * Concrete solid elements provide topology-specific interpolation and
  * quadrature. The base implements geometry transformations, constitutive
- * evaluation and the common structural operators. `stiffness()` is the linear
- * small-strain operator in the reference configuration. `stiffness_geom()`
- * derives prestress directly from the supplied displacement field without
- * modifying persistent material history. `stiffness_tangent()` performs the
- * physical Total-Lagrangian trial evaluation, assembling internal force in all
- * cases and the complete tangent only when matrix storage is requested.
+ * evaluation and the common structural operators. `evaluate()` selects reference/small-strain or Total-Lagrangian kinematics from
+ * the optional linearization state and independently assembles requested force,
+ * complete tangent and geometric tangent outputs.
  *
  * Stress is kept local to the element evaluation. No global integration-point
  * stress scratch field is required for geometric stiffness or nonlinear force
@@ -190,24 +187,17 @@ public:
         bool                      check_det = true
     );
 
-    // Mechanical operators. Linear and prestress operators are state-neutral.
-    // The nonlinear tangent performs one physical constitutive trial update per
-    // stiffness quadrature point and reuses the local PK2 stress for residual and
-    // geometric stiffness assembly.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement,
-        const Field* thermal_free_strain
-    ) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    // Mechanical state evaluation. Reference/small-strain and
+    // Total-Lagrangian response share one integration path and independently
+    // expose the complete tangent, geometric tangent and internal force.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
 
