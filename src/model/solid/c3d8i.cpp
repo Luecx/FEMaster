@@ -671,16 +671,21 @@ MapMatrix C3D8I::stiffness_geom(
         }
     }
 
-    // Recover the stationary enhanced preload state and elastic condensation blocks
-    const Vector13 alpha = solve_linear_modes(
+    // Recover the stationary constitutive EAS state and its material tangent
+    const StaticVector<N>* thermal_state =
+        thermal_free_strain != nullptr ? &nodal_thermal_strain : nullptr;
+    const Vector13 alpha = solve_small_strain_modes(u, thermal_state);
+    const EnhancedSystem material = assemble_small_strain_system(
         u,
-        thermal_free_strain != nullptr ? &nodal_thermal_strain : nullptr
+        alpha,
+        thermal_state,
+        false,
+        true
     );
-    const EnhancedSystem elastic = assemble_linear_system();
 
-    Eigen::FullPivLU<Matrix13> solver(elastic.kaa);
+    Eigen::FullPivLU<Matrix13> solver(material.kaa);
     logging::error(solver.isInvertible(),
-        "C3D8I: singular incompatible-mode stiffness in element ", elem_id);
+        "C3D8I: singular incompatible-mode material tangent in element ", elem_id);
 
     // Initial-stress blocks before condensation
     Matrix24    guu = Matrix24::Zero();
@@ -786,13 +791,13 @@ MapMatrix C3D8I::stiffness_geom(
 
     // Differentiate the elastic Schur complement with respect to prestress.
     // The first solve is the enhanced response to an arbitrary nodal perturbation.
-    const Matrix13x24 alpha_u = solver.solve(elastic.kau);
+    const Matrix13x24 alpha_u = solver.solve(material.kau);
 
     Matrix24 geometric =
         guu
         - gua * alpha_u
-        - elastic.kua * solver.solve(gau)
-        + elastic.kua * solver.solve(gaa * alpha_u);
+        - material.kua * solver.solve(gau)
+        + material.kua * solver.solve(gaa * alpha_u);
 
     // The exact operator is symmetric for a conservative material formulation
     geometric = (Precision(0.5) * (geometric + geometric.transpose())).eval();
@@ -1248,25 +1253,68 @@ MapMatrix C3D8I::evaluate(
 
     logging::error(!with_force || displacement != nullptr,
         "C3D8I: internal force evaluation requires displacement");
+    logging::error(!update_state || displacement != nullptr,
+        "C3D8I: material-state update requires displacement");
 
     // -------------------------------------------------------------------------
     // Reference/small-strain EAS evaluation.
     // -------------------------------------------------------------------------
     if (linearization == nullptr) {
-        logging::error(!update_state,
-            "C3D8I: small-strain constitutive state updates are not implemented");
+        Vector24 u = Vector24::Zero();
+        if (displacement != nullptr) {
+            u = local_displacement(*displacement);
+        }
 
-        if (with_tangent || with_force) {
-            Precision storage[ndof * ndof];
-            Precision* target = with_tangent ? tangent_buffer : storage;
-            stiffness(target);
+        StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+        if (thermal_free_strain != nullptr) {
+            logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                           && thermal_free_strain->components == 1,
+                "C3D8I: thermal free strain must be scalar ELEMENT_NODAL data");
 
-            if (with_force) {
-                const Vector24 u = local_displacement(*displacement);
-                const Eigen::Map<const Matrix24> K(target);
-                assemble_local_force(*internal_force, K * u);
+            for (Index node = 0; node < N; ++node) {
+                nodal_thermal_strain(node) =
+                    (*thermal_free_strain)(
+                        static_cast<Index>(this->elem_nodal_offset) + node,
+                        0
+                    );
+            }
+        }
+
+        const StaticVector<N>* thermal_state =
+            thermal_free_strain != nullptr ? &nodal_thermal_strain : nullptr;
+
+        // Material nonlinearity makes the local EAS problem nonlinear even with
+        // infinitesimal element kinematics. Solve r_alpha = 0 from committed
+        // history and evaluate the physical candidate only after convergence.
+        const Vector13 alpha = solve_small_strain_modes(u, thermal_state);
+
+        if (with_tangent || with_force || update_state) {
+            const EnhancedSystem system = assemble_small_strain_system(
+                u,
+                alpha,
+                thermal_state,
+                update_state,
+                true
+            );
+
+            if (with_tangent) {
+                Eigen::FullPivLU<Matrix13> solver(system.kaa);
+                logging::error(solver.isInvertible(),
+                    "C3D8I: singular small-strain local EAS tangent in element ",
+                    elem_id);
+
+                Matrix24 condensed =
+                    system.kuu - system.kua * solver.solve(system.kau);
+                condensed =
+                    (Precision(0.5) * (condensed + condensed.transpose())).eval();
+
+                MapMatrix mapped(tangent_buffer, ndof, ndof);
+                mapped = condensed;
             }
 
+            if (with_force) {
+                assemble_local_force(*internal_force, system.ru);
+            }
         }
 
         if (with_geometric) {
