@@ -46,8 +46,8 @@ struct IntegratedShellSection : ShellSection {
     // points and integrate stress into membrane forces, moments and corrected
     // transverse shear forces. The state pointers identify the first old/new MP
     // rows and material_state_stride advances through their four following rows.
-    // Each pair is passed to the selected material evaluation, and the
-    // consistent tangent is integrated by the same rule.
+    // Each pair is evaluated with the Green-Lagrange/PK2 material response,
+    // and the consistent tangent is integrated by the same rule.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
