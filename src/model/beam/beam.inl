@@ -194,63 +194,52 @@ StaticMatrix<N * 6, N * 6> BeamElement<N>::transformation_base() {
 }
 
 /**
- * Maps the formulation-specific linear beam stiffness into caller-owned storage.
+ * Evaluates the currently supported beam operators through one mechanical entry.
  *
- * @param buffer Caller-provided dense element-matrix storage.
- * @return Mapped linear beam stiffness.
+ * The existing beam formulations are linear. With a null linearization the
+ * routine can return the ordinary elastic tangent and/or the displacement-based
+ * prestress geometric stiffness independently. A non-null linearization or an
+ * internal-force request would require the missing finite-rotation beam
+ * residual/tangent formulation and therefore remains explicitly unsupported.
  */
 template<Index N>
-MapMatrix BeamElement<N>::stiffness(Precision* buffer) {
-    MapMatrix result(buffer, N * 6, N * 6);
-    result = stiffness_impl();
-    return result;
-}
-
-/**
- * Evaluates the beam geometric stiffness from a supplied nodal displacement state.
- *
- * The concrete beam formulation derives its axial prestress directly from the
- * displacement field. No integration-point stress scratch field is created or
- * consumed by the beam element.
- *
- * @param buffer Caller-provided dense element-matrix storage.
- * @param displacement Global nodal displacement field defining the prestress.
- * @return Mapped geometric stiffness.
- */
-template<Index N>
-MapMatrix BeamElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
-    MapMatrix result(buffer, N * 6, N * 6);
-    result = stiffness_geom_impl(displacement);
-    return result;
-}
-
-/**
- * Rejects nonlinear beam equilibrium for formulations that do not provide a
- * consistent finite-rotation residual and tangent.
- *
- * Linear beam stiffness and displacement-based prestress stiffness are exposed
- * separately through `stiffness()` and `stiffness_geom()`. Returning either as
- * a nonlinear tangent would be inconsistent with the missing nonlinear internal
- * force, so this path fails explicitly instead.
- *
- * @param buffer Optional tangent storage.
- * @param nodal_forces Global nodal internal-force accumulator.
- * @param displacement Trial displacement field.
- * @return Empty map after the diagnostic path.
- */
-template<Index N>
-MapMatrix BeamElement<N>::stiffness_tangent(
-    Precision*   buffer,
-    NodeData&    nodal_forces,
-    const Field& displacement
+MapMatrix BeamElement<N>::evaluate(
+    Precision*   tangent,
+    Precision*   geometric_tangent,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
 ) {
-    (void) buffer;
-    (void) nodal_forces;
-    (void) displacement;
+    (void) thermal_free_strain;
+    (void) update_state;
 
-    logging::error(false,
-        "BeamElement: nonlinear tangent/internal-force evaluation is not implemented yet for element ",
+    logging::error(linearization == nullptr,
+        "BeamElement: finite-rotation linearization is not implemented yet for element ",
         this->elem_id);
+    logging::error(internal_force == nullptr,
+        "BeamElement: nonlinear/internal-force evaluation is not implemented yet for element ",
+        this->elem_id);
+
+    if (tangent != nullptr) {
+        MapMatrix mapped(tangent, N * 6, N * 6);
+        mapped = stiffness_impl();
+    }
+
+    if (geometric_tangent != nullptr) {
+        logging::error(displacement != nullptr,
+            "BeamElement: geometric stiffness requires a prestress displacement");
+        MapMatrix mapped(geometric_tangent, N * 6, N * 6);
+        mapped = stiffness_geom_impl(*displacement);
+    }
+
+    if (tangent != nullptr) {
+        return MapMatrix(tangent, N * 6, N * 6);
+    }
+    if (geometric_tangent != nullptr) {
+        return MapMatrix(geometric_tangent, N * 6, N * 6);
+    }
     return MapMatrix(nullptr, 0, 0);
 }
 
