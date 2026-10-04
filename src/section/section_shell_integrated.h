@@ -55,7 +55,6 @@ struct IntegratedShellSection : ShellSection {
         const Precision*              old_material_state,
         Precision*                    new_material_state,
         Index                         material_state_stride,
-        bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
     ) const override;
@@ -73,13 +72,13 @@ struct IntegratedShellSection : ShellSection {
         Precision*                    new_material_state,
         Index                         material_state_stride,
         Precision                     z,
-        bool                          use_green_lagrange,
+        bool                          ,
         const Mat3&                   deformation_gradient
     ) const override;
 
-    // Linearize the finite-strain physical stress recovery about an exact base
-    // generalized strain and deformation gradient.
-    [[nodiscard]] VolumeStressCauchy evaluate_output_stress_linearized(
+    // Recover physical Cauchy stress from an exact base generalized strain and
+    // deformation gradient followed by one affine perturbation.
+    [[nodiscard]] VolumeStressCauchy recover_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_base,
