@@ -311,4 +311,88 @@ VolumeStressCauchy ABDShellSection::evaluate_output_stress(
     );
 }
 
+/**
+ * Linearizes the equivalent homogeneous-layer Cauchy stress about a finite
+ * base state.
+ *
+ * The prescribed ABD law is linear in generalized strain, so the PK2 base
+ * stress and PK2 increment are reconstructed directly. The nonlinear
+ * PK2-to-Cauchy push-forward is then differentiated analytically at F0.
+ */
+VolumeStressCauchy ABDShellSection::evaluate_output_stress_linearized(
+    const Vec3&                   position_reference,
+    const Mat3&                   shell_basis_global,
+    const ShellGeneralizedStrain& strain_base,
+    const ShellGeneralizedStrain& strain_increment,
+    const Precision*              old_material_state,
+    Index                         material_state_stride,
+    Precision                     z,
+    const Mat3&                   deformation_gradient_base,
+    const Mat3&                   deformation_gradient_increment
+) const {
+    (void) old_material_state;
+    (void) material_state_stride;
+
+    const Precision h = thickness_;
+
+    const Mat3 output_basis_global   = stress_basis(position_reference, shell_basis_global);
+    const Mat3 recovery_basis_global = orientation_ ? output_basis_global : shell_basis_global;
+
+    const Mat2 recovery_axes_in_shell =
+        shell_basis_global.template block<3, 2>(0, 0).transpose()
+        * recovery_basis_global.template block<3, 2>(0, 0);
+
+    const ShellGeneralizedStrain base_recovery      = strain_base.transformed(recovery_axes_in_shell);
+    const ShellGeneralizedStrain increment_recovery = strain_increment.transformed(recovery_axes_in_shell);
+
+    const Index membrane_row = static_cast<Index>(ShellStressResultants::Component::NXX);
+    const Index membrane_col = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
+    const Index shear_row    = static_cast<Index>(ShellStressResultants::Component::QX);
+    const Index shear_col    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
+
+    Mat8 tangent_recovery = Mat8::Zero();
+    tangent_recovery.template block<6, 6>(membrane_row, membrane_col) = abd_;
+    tangent_recovery.template block<2, 2>(shear_row, shear_col)       = shear_;
+
+    const ShellStressResultants resultants_base(tangent_recovery * base_recovery.values());
+    const ShellStressResultants resultants_increment(tangent_recovery * increment_recovery.values());
+
+    const auto stress_tensor = [h, z](const ShellStressResultants& resultants) {
+        const Vec3 plane_stress = resultants.membrane() / h
+            + z * (Precision(12) / (h * h * h)) * resultants.moments();
+        const Vec2 shear_stress = resultants.transverse_shear() / h;
+
+        Mat3 tensor = Mat3::Zero();
+        tensor(0, 0) = plane_stress(0);
+        tensor(1, 1) = plane_stress(1);
+        tensor(0, 1) = plane_stress(2);
+        tensor(1, 0) = plane_stress(2);
+        tensor(0, 2) = shear_stress(0);
+        tensor(2, 0) = shear_stress(0);
+        tensor(1, 2) = shear_stress(1);
+        tensor(2, 1) = shear_stress(1);
+        return tensor;
+    };
+
+    const Mat3 second_pk_base_global =
+        recovery_basis_global * stress_tensor(resultants_base) * recovery_basis_global.transpose();
+    const Mat3 second_pk_increment_global =
+        recovery_basis_global * stress_tensor(resultants_increment) * recovery_basis_global.transpose();
+
+    const Precision J0 = deformation_gradient_base.determinant();
+    logging::error(J0 > Precision(0) && std::isfinite(J0),
+        "ABDShellSection: invalid base deformation gradient during stress linearization, J = ", J0);
+
+    const Mat3 sigma_base =
+        deformation_gradient_base * second_pk_base_global * deformation_gradient_base.transpose() / J0;
+
+    const Mat3 sigma_increment =
+        (deformation_gradient_increment * second_pk_base_global * deformation_gradient_base.transpose()
+       + deformation_gradient_base * second_pk_increment_global * deformation_gradient_base.transpose()
+       + deformation_gradient_base * second_pk_base_global * deformation_gradient_increment.transpose()) / J0
+       - (deformation_gradient_base.inverse() * deformation_gradient_increment).trace() * sigma_base;
+
+    return VolumeStressCauchy(sigma_base + sigma_increment).transformed(Mat3::Identity(), output_basis_global);
+}
+
 } // namespace fem
