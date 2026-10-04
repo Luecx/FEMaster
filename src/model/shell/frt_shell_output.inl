@@ -134,7 +134,6 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
         old_state,
         nullptr,
         this->_model_data->material_state_old->components,
-        true,
         resultants_base,
         tangent_base
     );
@@ -337,7 +336,7 @@ void FRTShell<N>::physical_stress_strain_at(
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress_linearized(
+    const VolumeStressCauchy cauchy_stress = this->get_section()->recover_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_base),
@@ -548,46 +547,40 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
                                                const Field& displacement,
                                                const Field* thermal_free_strain) {
     logging::error(resultants.components >= num_strains,
-                   "FRTShell: shell section forces require eight components "
-                   "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
+        "FRTShell: shell section forces require eight components [N11,N22,N12,M11,M22,M12,Q13,Q23]");
+    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
+        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
-    const RowMatrix rst = this->stress_strain_nodal_rst();
-    const CurrentState state = reference_state();
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        true,
-        false,
-        false
-    );
-    const Vec6N q = element_displacement_vector(displacement);
-    ShellSection* section = shell_section();
-    const Precision scale = topology_stiffness_scale();
-    const auto& points = reference_data().ip_points;
+    const RowMatrix      rst     = this->stress_strain_nodal_rst();
+    const CurrentState   state   = reference_state();
+    const EvaluationData data    = init_evaluation(state, true, true, false, false);
+    const Vec6N          q       = element_displacement_vector(displacement);
+    ShellSection*        section = shell_section();
+    const Precision      scale   = topology_stiffness_scale();
+    const auto&          points  = reference_data().ip_points;
 
     // Recover one generalized resultant vector at every natural element node.
+    //
+    // The reference state q0 = 0 is evaluated exactly and the requested linear
+    // displacement state is continued affinely:
+    //
+    //     n(q) ~= n0 + H0 Delta epsilon.
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision r = rst(node, 0);
         const Precision s = rst(node, 1);
 
-        Vec8 strain_values = generalized_strain_at(
-            data,
-            q,
-            r,
-            s
-        );
-        if (thermal_free_strain) {
-            const ReferencePoint* cached = cached_reference_point(r, s);
-            const ReferencePoint temporary =
-                cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-            const ReferencePoint& point = cached ? *cached : temporary;
-            strain_values -= thermal_generalized_strain(
-                point, thermal_free_strain_at(thermal_free_strain, r, s));
-        }
-        const ShellGeneralizedStrain strain(strain_values);
+        const Vec8 strain_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
+        Vec8 strain_increment  = generalized_strain_at(data, q, r, s) - strain_base;
 
-        // Select the closest constitutive IP because natural nodal points own no
-        // independent through-thickness material history.
+        if (thermal_free_strain) {
+            const ReferencePoint* cached    = cached_reference_point(r, s);
+            const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+            const ReferencePoint& point     = cached ? *cached : temporary;
+            strain_increment -= thermal_generalized_strain(point, thermal_free_strain_at(thermal_free_strain, r, s));
+        }
+
+        // Natural nodal output points own no independent constitutive history.
+        // Reuse the committed block of the closest in-plane integration point.
         Index state_ip = 0;
         Precision state_distance =
             (r - points[0].r) * (r - points[0].r)
@@ -598,6 +591,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             const Precision distance =
                 (r - point.r) * (r - point.r)
                 + (s - point.s) * (s - point.s);
+
             if (distance < state_distance) {
                 state_ip       = ip;
                 state_distance = distance;
@@ -605,22 +599,70 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         }
 
         const Index      state_row = this->mp_index(state_ip, 0);
-        const Precision* old_material_state =
-            &(*this->_model_data->material_state_old)(state_row, 0);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-        const ShellStressResultants output_resultants = section->evaluate_output_resultants(
-            reference_position(r, s),
-            reference_basis_global(r, s),
-            strain,
-            old_material_state,
+        ShellStressResultants resultants_base;
+        Mat8                  tangent_base;
+
+        const Vec3 position    = reference_position(r, s);
+        const Mat3 shell_basis = reference_basis_global(r, s);
+
+        section->evaluate(
+            position,
+            shell_basis,
+            ShellGeneralizedStrain(strain_base),
+            old_state,
             nullptr,
             this->_model_data->material_state_old->components,
-            false
+            resultants_base,
+            tangent_base
         );
-        const Vec8 values = scale * output_resultants.values();
+
+        ShellStressResultants resultants_shell(
+            resultants_base.values() + tangent_base * strain_increment
+        );
+
+        // Resultants from neighboring shells must be expressed in one
+        // deterministic tangential basis before component-wise nodal averaging.
+        // This is an element-output convention, not a constitutive section task.
+        const Precision projection_tolerance = Precision(1e-6);
+        const Vec3      normal               = shell_basis.col(2).normalized();
+
+        Vec3 source_axis;
+        if (section->orientation_) {
+            const Vec3 point_local      = section->orientation_->to_local(position);
+            const Mat3 orientation_axes = section->orientation_->get_axes(point_local);
+            source_axis = orientation_axes.col(section->csys_axis_);
+        } else {
+            source_axis = Vec3::UnitX();
+        }
+
+        Vec3 resultant_e1 = source_axis - normal * source_axis.dot(normal);
+
+        if (!section->orientation_ && resultant_e1.norm() <= projection_tolerance) {
+            source_axis  = Vec3::UnitY();
+            resultant_e1 = source_axis - normal * source_axis.dot(normal);
+        }
+
+        logging::error(resultant_e1.norm() > projection_tolerance,
+            "FRTShell: selected output axis cannot define a tangential resultant basis for element ", this->elem_id);
+
+        resultant_e1.normalize();
+        const Vec3 resultant_e2 = normal.cross(resultant_e1).normalized();
+
+        Mat3 result_basis;
+        result_basis.col(0) = resultant_e1;
+        result_basis.col(1) = resultant_e2;
+        result_basis.col(2) = normal;
+
+        const Mat2 result_axes_in_shell =
+            shell_basis.template block<3, 2>(0, 0).transpose()
+            * result_basis.template block<3, 2>(0, 0);
+
+        resultants_shell = resultants_shell.transformed(result_axes_in_shell);
+        const Vec8 values = scale * resultants_shell.values();
 
         const Index node_id = static_cast<Index>(this->node_ids[node]);
-
         for (Index component = 0; component < num_strains; ++component) {
             resultants(node_id, component) += values(component);
         }
