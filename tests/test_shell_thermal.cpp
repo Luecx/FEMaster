@@ -89,7 +89,7 @@ void check_uniform_thermal_load(
     // Comparing with K*u checks all six DOFs, correct sign, thickness factor,
     // topology-specific MITC B, and (for ABD) coupled nodal thermal moments.
     Precision matrix_storage[6 * N * 6 * N] {};
-    const DynamicMatrix K = element->stiffness(matrix_storage);
+    const DynamicMatrix K = element->evaluate(matrix_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     StaticVector<6 * N> free_expansion = StaticVector<6 * N>::Zero();
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         free_expansion(6 * node + 0) = 0.2 * coords[node].x();
@@ -163,12 +163,12 @@ void check_uniform_thermal_load(
 
         Precision kg_storage[6 * N * 6 * N] {};
         const DynamicMatrix Kg_free =
-            element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+            element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
         EXPECT_LT(Kg_free.norm(), 1e-8);
 
         displacement.set_zero();
         const DynamicMatrix Kg_restrained =
-            element->stiffness_geom(kg_storage, displacement, &thermal_free_strain);
+            element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
         EXPECT_GT(Kg_restrained.norm(), 1e-6);
     }
 
