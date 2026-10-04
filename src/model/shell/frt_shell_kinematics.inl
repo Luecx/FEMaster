@@ -676,7 +676,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                     old_material_state,
                     nullptr,
                     state_stride,
-                                        zero_resultants,
+                    zero_resultants,
                     H0
                 );
 
