@@ -141,19 +141,16 @@ public:
     ElementPtr copy() const override { return std::make_shared<C3D8I>(elem_id, node_ids); }
     std::string type_name() const override;
 
-    // Linear and geometrically nonlinear element operators. Enhanced parameters
-    // are eliminated locally before the resulting 24 x 24 matrix is returned.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
-    ) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) override;
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement,
-        const Field* thermal_free_strain
+    // Common mechanical response with local elimination of all thirteen
+    // enhanced parameters before exposing nodal operators to the global solver.
+    MapMatrix evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
 
     // Thermal equivalent loading uses the same local static condensation as the
@@ -189,6 +186,16 @@ public:
     ) override;
 
 private:
+    // Reference/small-strain EAS operators retained as formulation-local helpers
+    // for the corresponding branch of the common mechanical evaluation.
+    MapMatrix stiffness(Precision* buffer);
+    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement);
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement,
+        const Field* thermal_free_strain
+    );
+
     // Enhanced deformation-gradient basis and its linearized or finite-strain
     // work-conjugate strain matrices.
     EnhancedModes enhanced_gradient_modes(
@@ -216,7 +223,8 @@ private:
         const Vector13&        alpha,
         bool                   write_material_state,
         bool                   assemble_global_blocks,
-        bool                   assemble_tangent
+        bool                   assemble_tangent,
+        bool                   include_geometric = true
     );
 
     // Solve the stationary local enhanced state for linearized or finite-strain
