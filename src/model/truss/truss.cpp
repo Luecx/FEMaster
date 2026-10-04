@@ -421,9 +421,11 @@ MapMatrix T3::evaluate(
         need_complete_tangent ? &material_tangent : nullptr
     );
 
-    const Mat3 material_block = need_complete_tangent
-        ? (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose())
-        : Mat3::Zero();
+    // Build the material tangent only for stiffness or force extrapolation
+    Mat3 material_block = Mat3::Zero();
+    if (need_complete_tangent) {
+        material_block = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
+    }
     const Mat3 geometric_block =
         (A0 * stress.value() / L0) * Mat3::Identity();
 

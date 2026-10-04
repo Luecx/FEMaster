@@ -507,22 +507,68 @@ void FRTShell<N>::assemble_drill_stabilization(
     }
 }
 
+/**
+ * Maps isotropic thermal free expansion into the assumed shell strain space.
+ *
+ * Unit midsurface dilation u_i = X_i with unchanged nodal directors gives the
+ * compatible reference metric and curvature increments. Deskewing and applying
+ * the topology-specific MITC operator must match the mechanical strain path:
+ * on curved MITC8 elements its assumed field differs from the pointwise field.
+ * The same initial strain is used for loads, stress recovery and prestress.
+ *
+ * The supplied scalar retains the existing pointwise temperature interpolation.
+ * This models constant-through-thickness expansion and introduces no thermal
+ * director rotations or material-state updates.
+ *
+ * @param point Reference geometry at the target integration or recovery point.
+ * @param free_strain Interpolated isotropic expansion alpha times DeltaT.
+ * @return Thermal generalized strain in the local orthonormal reference basis.
+ */
 template<Index N>
 typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
     const ReferencePoint& point,
     Precision             free_strain
 ) const {
-    Vec8 thermal_strain = Vec8::Zero();
-    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX)) = free_strain;
-    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonYY)) = free_strain;
-    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX)) =
-        free_strain * point.X_ab.col(0).dot(point.D_ab.col(0));
-    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaYY)) =
-        free_strain * point.X_ab.col(1).dot(point.D_ab.col(1));
-    thermal_strain(static_cast<Index>(ShellGeneralizedStrain::Component::KappaXY)) =
-        free_strain * (point.X_ab.col(0).dot(point.D_ab.col(1))
-                     + point.X_ab.col(1).dot(point.D_ab.col(0)));
-    return thermal_strain;
+    // Reference-temperature points have no thermal initial strain
+    if (free_strain == Precision(0)) {
+        return Vec8::Zero();
+    }
+
+    // Uniform reference dilation changes the metric and curvature, while the
+    // nodal directors retain their orientation. The raw covariant shear change
+    // is removed by the same reference-director deskew used mechanically.
+    const auto compatible_dilation = [&](const ReferencePoint& sample) {
+        Vec8 strain = Vec8::Zero();
+        strain(0) = sample.X_rs.col(0).squaredNorm();
+        strain(1) = sample.X_rs.col(1).squaredNorm();
+        strain(2) = Precision(2) * sample.X_rs.col(0).dot(sample.X_rs.col(1));
+        strain(3) = sample.X_rs.col(0).dot(sample.D_rs.col(0));
+        strain(4) = sample.X_rs.col(1).dot(sample.D_rs.col(1));
+        strain(5) = sample.X_rs.col(0).dot(sample.D_rs.col(1))
+                  + sample.X_rs.col(1).dot(sample.D_rs.col(0));
+        strain(6) = sample.X_rs.col(0).dot(sample.D);
+        strain(7) = sample.X_rs.col(1).dot(sample.D);
+        return (director_deskew_natural_transform(sample) * strain).eval();
+    };
+
+    // Keep tying values in local storage so result recovery cannot invalidate
+    // the active mechanical evaluation's thread-local workspace.
+    const auto& tying_points = reference_data().tying_points;
+    std::vector<Vec8> tying_strain(tying_points.size());
+    for (std::size_t tying = 0; tying < tying_points.size(); ++tying) {
+        tying_strain[tying] = compatible_dilation(tying_points[tying]);
+    }
+
+    EvaluationData thermal_data;
+    thermal_data.with_strain      = true;
+    thermal_data.tying_strain_nat = Span<Vec8>(tying_strain);
+
+    // Apply the identical assumed-strain interpolation and local basis mapping
+    // before scaling by the temperature-induced expansion.
+    Vec8 thermal_strain = compatible_dilation(point);
+    apply_mitc_natural(thermal_data, point, thermal_strain, nullptr);
+    transform_strain_to_local(point, thermal_strain, nullptr);
+    return free_strain * thermal_strain;
 }
 
 /**
@@ -538,7 +584,8 @@ typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
  * complete section tangent (including ABD coupling) yields generalized thermal
  * membrane forces and bending moments. The reference MITC B matrix and the
  * linear-stiffness integration weights map these resultants into consistent
- * forces and moments at all six nodal DOFs.
+ * forces and moments at all six nodal DOFs. Thermal metric and curvature
+ * increments pass through the same MITC operator as mechanical strains.
  *
  * This is the linear/reference thermal RHS, not a constitutive update. It does
  * not modify material state; nonlinear constitutive stress recovery and
