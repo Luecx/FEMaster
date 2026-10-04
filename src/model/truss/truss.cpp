@@ -767,7 +767,7 @@ bool T3::compute_peeq(Field& peeq, int offset) {
  */
 void T3::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[N * 3 * N * 3] {};
-    MapMatrix K = stiffness(buffer);
+    MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     StaticVector<N * 3> u;
     for (Index i = 0; i < N; ++i) {
