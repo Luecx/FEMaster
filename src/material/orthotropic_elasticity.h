@@ -1,3 +1,87 @@
+/**
+ * @file orthotropic_elasticity.h
+ * @brief Declares homogeneous orthotropic linear elasticity.
+ *
+ * The material is defined by the nine conventional engineering constants
+ * `E1`, `E2`, `E3`, `nu12`, `nu13`, `nu23`, `G12`, `G13` and `G23` in its local
+ * material basis. This parameterization matches the standard orthotropic
+ * engineering-constants representation used by Abaqus and avoids storing
+ * reciprocal Poisson ratios as independent material data.
+ *
+ * Solid and shell sections supply the coordinate transformation between the
+ * local material basis and the element basis. The three-dimensional material
+ * tangent is recovered from the symmetric engineering compliance, while shell
+ * response uses the corresponding orthotropic plane-stress reduction.
+ *
+ * @see Elasticity
+ * @see SolidSection
+ * @see IntegratedShellSection
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#pragma once
+
+#include "elasticity.h"
+
+namespace fem::material {
+
+/**
+ * @brief Stateless orthotropic Hooke elasticity for solid and shell response.
+ *
+ * The stored material parameters are the three directional Young's moduli,
+ * three major Poisson ratios and three engineering shear moduli in principal
+ * material directions. Reciprocal Poisson ratios follow from symmetry of the
+ * compliance matrix and are therefore derived rather than stored.
+ *
+ * The volume tangent is obtained by inverting the symmetric engineering
+ * compliance. Shell response uses an in-plane orthotropic plane-stress tangent
+ * together with the independent `G13` and `G23` transverse shear moduli.
+ * Linearized evaluation returns Cauchy stress; Green-Lagrange evaluation returns
+ * second Piola-Kirchhoff stress.
+ */
+struct OrthotropicElasticity : Elasticity {
+    // Young's moduli along the principal material directions
+    Precision E1;
+    Precision E2;
+    Precision E3;
+
+    // Major Poisson ratios nu_ij: transverse strain in j for loading in i
+    Precision nu12;
+    Precision nu13;
+    Precision nu23;
+
+    // Engineering shear moduli in the principal material planes
+    Precision G12;
+    Precision G13;
+    Precision G23;
+
+    // Construct the material directly from conventional orthotropic engineering
+    // constants. Reciprocal Poisson ratios are derived from material symmetry.
+    OrthotropicElasticity(Precision E1,
+                          Precision E2,
+                          Precision E3,
+                          Precision nu12,
+                          Precision nu13,
+                          Precision nu23,
+                          Precision G12,
+                          Precision G13,
+                          Precision G23);
+
+    // Advertise three-dimensional and shell response for both infinitesimal and
+    // Green-Lagrange strain measures. Axial and beam reductions are unsupported.
+    bool supports_volume_green_lagrange() const override;
+    bool supports_shell_integration_green_lagrange() const override;
+
+    // Total-Lagrangian orthotropic response using the same constant material
+    // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
+                  VolumeStressPK2&                 stress,
+                  Mat6*                            tangent = nullptr) const override;
+
     // Finite-strain shell response returning PK2 components work-conjugate to
     // the five supplied Green-Lagrange strain components. State remains unchanged.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
