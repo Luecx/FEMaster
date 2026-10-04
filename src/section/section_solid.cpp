@@ -192,8 +192,8 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     // use a stress-only constitutive query because C_material is the differentiated
     // operator's central factor.
     VolumeStrainGreenLagrange zero_strain;
-    VolumeStressPK2                 zero_stress;
-    Mat6                   tangent_material;
+    VolumeStressPK2            zero_stress;
+    Mat6                       tangent_material;
 
     elasticity->evaluate(
         zero_strain,
