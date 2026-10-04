@@ -499,4 +499,136 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         .transformed(Mat3::Identity(), output_basis_global);
 }
 
+/**
+ * Linearizes physical Cauchy stress about one exact finite-strain shell material
+ * state.
+ *
+ * The material is evaluated once at the Green-Lagrange base strain to obtain
+ * S0 and the consistent reduced tangent C0. The mechanical strain increment
+ * produces Delta S = C0 Delta E. The PK2-to-Cauchy push-forward is then
+ * differentiated with respect to both Delta S and Delta F.
+ */
+VolumeStressCauchy IntegratedShellSection::evaluate_output_stress_linearized(
+    const Vec3&                   position_reference,
+    const Mat3&                   shell_basis_global,
+    const ShellGeneralizedStrain& strain_base,
+    const ShellGeneralizedStrain& strain_increment,
+    const Precision*              old_material_state,
+    Index                         material_state_stride,
+    Precision                     z,
+    const Mat3&                   deformation_gradient_base,
+    const Mat3&                   deformation_gradient_increment
+) const {
+    using GeneralizedStrainComponent = ShellGeneralizedStrain::Component;
+    using MaterialStrainComponent    = ShellMaterialStrain::Component;
+    using MaterialStressComponent    = ShellMaterialStress::Component;
+
+    constexpr GeneralizedStrainComponent EXX = GeneralizedStrainComponent::EpsilonXX;
+    constexpr GeneralizedStrainComponent EYY = GeneralizedStrainComponent::EpsilonYY;
+    constexpr GeneralizedStrainComponent GXY = GeneralizedStrainComponent::GammaXY;
+    constexpr GeneralizedStrainComponent KXX = GeneralizedStrainComponent::KappaXX;
+    constexpr GeneralizedStrainComponent KYY = GeneralizedStrainComponent::KappaYY;
+    constexpr GeneralizedStrainComponent KXY = GeneralizedStrainComponent::KappaXY;
+    constexpr GeneralizedStrainComponent GXZ = GeneralizedStrainComponent::GammaXZ;
+    constexpr GeneralizedStrainComponent GYZ = GeneralizedStrainComponent::GammaYZ;
+
+    constexpr MaterialStrainComponent MXX = MaterialStrainComponent::XX;
+    constexpr MaterialStrainComponent MYY = MaterialStrainComponent::YY;
+    constexpr MaterialStrainComponent MXY = MaterialStrainComponent::GammaXY;
+    constexpr MaterialStrainComponent MXZ = MaterialStrainComponent::GammaXZ;
+    constexpr MaterialStrainComponent MYZ = MaterialStrainComponent::GammaYZ;
+
+    constexpr MaterialStressComponent SXX = MaterialStressComponent::XX;
+    constexpr MaterialStressComponent SYY = MaterialStressComponent::YY;
+    constexpr MaterialStressComponent SXY = MaterialStressComponent::XY;
+    constexpr MaterialStressComponent SXZ = MaterialStressComponent::XZ;
+    constexpr MaterialStressComponent SYZ = MaterialStressComponent::YZ;
+
+    logging::error(material_ && material_->has_elasticity(),
+        "IntegratedShellSection requires a material with elasticity");
+
+    const auto elasticity = material_->elasticity();
+    logging::error(elasticity->supports_shell_integration_green_lagrange(),
+        "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
+
+    const Mat3 output_basis_global   = stress_basis(position_reference, shell_basis_global);
+    const Mat3 recovery_basis_global = orientation_ ? output_basis_global : shell_basis_global;
+
+    const Mat2 recovery_axes_in_shell =
+        shell_basis_global.template block<3, 2>(0, 0).transpose()
+        * recovery_basis_global.template block<3, 2>(0, 0);
+
+    const ShellGeneralizedStrain base_material      = strain_base.transformed(recovery_axes_in_shell);
+    const ShellGeneralizedStrain increment_material = strain_increment.transformed(recovery_axes_in_shell);
+
+    ShellMaterialStrain material_strain_base;
+    material_strain_base[MXX] = base_material[EXX] + z * base_material[KXX];
+    material_strain_base[MYY] = base_material[EYY] + z * base_material[KYY];
+    material_strain_base[MXY] = base_material[GXY] + z * base_material[KXY];
+    material_strain_base[MXZ] = base_material[GXZ];
+    material_strain_base[MYZ] = base_material[GYZ];
+
+    ShellMaterialStrain material_strain_increment;
+    material_strain_increment[MXX] = increment_material[EXX] + z * increment_material[KXX];
+    material_strain_increment[MYY] = increment_material[EYY] + z * increment_material[KYY];
+    material_strain_increment[MXY] = increment_material[GXY] + z * increment_material[KXY];
+    material_strain_increment[MXZ] = increment_material[GXZ];
+    material_strain_increment[MYZ] = increment_material[GYZ];
+
+    Index state_mp = 0;
+    Precision state_distance = std::abs(z - Precision(0.5) * thickness_ * simpson_points[0]);
+
+    for (Index mp = 1; mp < 5; ++mp) {
+        const Precision z_mp     = Precision(0.5) * thickness_ * simpson_points[mp];
+        const Precision distance = std::abs(z - z_mp);
+        if (distance < state_distance) {
+            state_mp       = mp;
+            state_distance = distance;
+        }
+    }
+
+    const Precision* old_state = old_material_state + state_mp * material_state_stride;
+
+    const ShellMaterialStrainGreenLagrange strain_gl(material_strain_base.values());
+    ShellMaterialStressPK2                 stress_base;
+    Mat5                                   material_tangent;
+
+    elasticity->evaluate(strain_gl, old_state, nullptr, stress_base, &material_tangent);
+
+    const ShellMaterialStressPK2 stress_increment(Vec5(material_tangent * material_strain_increment.values()));
+
+    const auto shell_stress_tensor = [=](const ShellMaterialStress& stress) {
+        Mat3 tensor = Mat3::Zero();
+        tensor(0, 0) = stress[SXX];
+        tensor(1, 1) = stress[SYY];
+        tensor(0, 1) = stress[SXY];
+        tensor(1, 0) = stress[SXY];
+        tensor(0, 2) = stress[SXZ];
+        tensor(2, 0) = stress[SXZ];
+        tensor(1, 2) = stress[SYZ];
+        tensor(2, 1) = stress[SYZ];
+        return tensor;
+    };
+
+    const Mat3 second_pk_base_global =
+        recovery_basis_global * shell_stress_tensor(stress_base) * recovery_basis_global.transpose();
+    const Mat3 second_pk_increment_global =
+        recovery_basis_global * shell_stress_tensor(stress_increment) * recovery_basis_global.transpose();
+
+    const Precision J0 = deformation_gradient_base.determinant();
+    logging::error(J0 > Precision(0) && std::isfinite(J0),
+        "IntegratedShellSection: invalid base deformation gradient during stress linearization, J = ", J0);
+
+    const Mat3 sigma_base =
+        deformation_gradient_base * second_pk_base_global * deformation_gradient_base.transpose() / J0;
+
+    const Mat3 sigma_increment =
+        (deformation_gradient_increment * second_pk_base_global * deformation_gradient_base.transpose()
+       + deformation_gradient_base * second_pk_increment_global * deformation_gradient_base.transpose()
+       + deformation_gradient_base * second_pk_base_global * deformation_gradient_increment.transpose()) / J0
+       - (deformation_gradient_base.inverse() * deformation_gradient_increment).trace() * sigma_base;
+
+    return VolumeStressCauchy(sigma_base + sigma_increment).transformed(Mat3::Identity(), output_basis_global);
+}
+
 } // namespace fem
