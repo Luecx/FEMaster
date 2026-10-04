@@ -121,6 +121,22 @@ struct ShellSection : Section {
         const Mat3&                   deformation_gradient = Mat3::Identity()
     ) const = 0;
 
+    // Recover Cauchy stress from an exact finite-strain base state followed by
+    // one affine perturbation. strain_increment is the mechanical generalized
+    // strain increment from the base state. deformation_gradient_increment is
+    // the matching first variation of F. Constitutive history remains read-only.
+    [[nodiscard]] virtual VolumeStressCauchy evaluate_output_stress_linearized(
+        const Vec3&                   position_reference,
+        const Mat3&                   shell_basis_global,
+        const ShellGeneralizedStrain& strain_base,
+        const ShellGeneralizedStrain& strain_increment,
+        const Precision*              old_material_state,
+        Index                         material_state_stride,
+        Precision                     z,
+        const Mat3&                   deformation_gradient_base,
+        const Mat3&                   deformation_gradient_increment
+    ) const = 0;
+
     // Return the fixed number of constitutive material points stored for every
     // in-plane shell integration point. Element MP enumeration uses this count
     // to allocate a contiguous state-row block before any constitutive call.
