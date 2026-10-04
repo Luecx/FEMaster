@@ -255,57 +255,55 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
 }
 
 /**
- * Assembles the one-point linear stiffness with reference hourglass
- * stabilization.
+ * Evaluates the reduced-integration continuum response and adds hourglass control.
  *
- * The inherited solid stiffness uses this element's virtual one-point rule and
- * remains entirely state-neutral. The auxiliary hourglass tangent is likewise
- * evaluated from committed material history without writing trial state.
- *
- * @param buffer Caller-provided dense 24-by-24 storage.
- * @return Mapped symmetric continuum-plus-hourglass stiffness.
+ * The common solid evaluation supplies all requested continuum quantities. The
+ * reference hourglass operator is linear and state-neutral, so it contributes to
+ * the complete tangent and to the internal force at the requested displacement,
+ * but never to the stress-dependent geometric tangent.
  */
-MapMatrix C3D8R::stiffness(Precision* buffer) {
-    MapMatrix mapped{buffer, ndof, ndof};
+MapMatrix C3D8R::evaluate(
+    Precision*   tangent,
+    Precision*   geometric_tangent,
+    NodeData*    internal_force,
+    const Field* displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain,
+    bool         update_state
+) {
+    MapMatrix mapped = SolidElement<N>::evaluate(
+        tangent,
+        geometric_tangent,
+        internal_force,
+        displacement,
+        linearization,
+        thermal_free_strain,
+        update_state
+    );
 
-    C3D8::stiffness(buffer);
-    mapped += hourglass_stiffness();
-    mapped  = Precision(0.5) * (mapped + mapped.transpose());
-
-    return mapped;
-}
-
-/**
- * Assembles the one-point continuum residual/tangent and matching hourglass
- * contribution from the same supplied trial displacement.
- *
- * The common solid tangent performs the physical center-point constitutive
- * update exactly once. The auxiliary hourglass stiffness is state-neutral and
- * its matching linear force `f_hg = K_hg u_e` is always added to the internal
- * force. For residual-only evaluations (`buffer == nullptr`) no hourglass or
- * continuum matrix is assembled into caller storage.
- *
- * @param buffer Optional dense 24-by-24 tangent storage; null requests residual only.
- * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial displacement defining both continuum and hourglass response.
- * @return Mapped continuum-plus-hourglass tangent, or an empty map for residual only.
- */
-MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
-                                   NodeData&    nodal_forces,
-                                   const Field& displacement) {
-    const Matrix24 hourglass = hourglass_stiffness();
-
-    MapMatrix mapped = SolidElement<N>::stiffness_tangent(buffer, nodal_forces, displacement);
-
-    // The hourglass force is part of the residual for both full Newton and
-    // residual-only evaluations and must use the same trial displacement.
-    assemble_local_force(nodal_forces, hourglass * local_displacement(displacement));
-
-    if (buffer == nullptr) {
+    const bool need_hourglass =
+        tangent != nullptr || internal_force != nullptr;
+    if (!need_hourglass) {
         return mapped;
     }
 
-    mapped += hourglass;
+    const Matrix24 hourglass = hourglass_stiffness();
+
+    if (internal_force != nullptr) {
+        logging::error(displacement != nullptr,
+            "C3D8R: hourglass force requires displacement");
+        assemble_local_force(
+            *internal_force,
+            hourglass * local_displacement(*displacement)
+        );
+    }
+
+    if (tangent != nullptr) {
+        MapMatrix full_tangent(tangent, ndof, ndof);
+        full_tangent += hourglass;
+        return full_tangent;
+    }
+
     return mapped;
 }
 
