@@ -51,7 +51,7 @@ TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
     ASSERT_NE(elem, nullptr);
 
     fem::Precision k_storage[12 * 12] {};
-    fem::DynamicMatrix K = elem->stiffness(k_storage);
+    fem::DynamicMatrix K = elem->evaluate(k_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     EXPECT_TRUE(K.isApprox(K.transpose(), 1e-12));
 
     fem::StaticVector<12> u = fem::StaticVector<12>::Zero();
@@ -125,7 +125,7 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     ASSERT_NE(elem, nullptr);
 
     fem::Precision k_storage[24 * 24] {};
-    fem::DynamicMatrix K = elem->stiffness(k_storage);
+    fem::DynamicMatrix K = elem->evaluate(k_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     EXPECT_TRUE(K.isApprox(K.transpose(), 1e-12));
 
     fem::Precision m_storage[24 * 24] {};
@@ -258,7 +258,7 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
     EXPECT_NEAR(elem->get_section()->area_, 2.0, 1e-12);
 
     fem::Precision k_storage[6 * 6] {};
-    fem::DynamicMatrix K = elem->stiffness(k_storage);
+    fem::DynamicMatrix K = elem->evaluate(k_storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     EXPECT_NEAR(K(0, 0), 12.0, 1e-12);
     EXPECT_NEAR(K(0, 3), -12.0, 1e-12);
     EXPECT_NEAR(K(3, 0), -12.0, 1e-12);
