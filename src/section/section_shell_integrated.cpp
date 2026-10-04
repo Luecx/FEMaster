@@ -628,7 +628,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress_linearized(
        + deformation_gradient_base * second_pk_base_global * deformation_gradient_increment.transpose()) / J0
        - (deformation_gradient_base.inverse() * deformation_gradient_increment).trace() * sigma_base;
 
-    return VolumeStressCauchy(sigma_base + sigma_increment).transformed(Mat3::Identity(), output_basis_global);
+    const Mat3 sigma = sigma_base + sigma_increment;
+    return VolumeStressCauchy(sigma).transformed(Mat3::Identity(), output_basis_global);
 }
 
 } // namespace fem

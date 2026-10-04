@@ -155,6 +155,7 @@ MapMatrix T3::evaluate(
 
     const Vec3      reference_axis = X2 - X1;
     const Precision L0             = reference_axis.norm();
+    const Precision A0             = get_section()->area_;
 
     // Exact geometry at u0:
     //

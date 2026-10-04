@@ -574,8 +574,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             data,
             q,
             r,
-            s,
-            false
+            s
         );
         if (thermal_free_strain) {
             const ReferencePoint* cached = cached_reference_point(r, s);
