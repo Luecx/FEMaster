@@ -69,7 +69,6 @@ struct StructuralElement : ElementInterface {
     // about u0. Null output pointers deliberately skip work that the caller does
     // not need. Persistent constitutive history is written only when update_state
     // is true.
-    virtual Precision volume() = 0;
     virtual MapMatrix evaluate(
         Precision*   tangent,
         Precision*   geometric_tangent,
@@ -81,6 +80,7 @@ struct StructuralElement : ElementInterface {
     ) = 0;
 
     // Inertial operator and formulation classification
+    virtual Precision volume() = 0;
     virtual MapMatrix mass(Precision* buffer) = 0;
     virtual bool      is_shell() const { return false; }
     virtual bool      is_solid() const { return false; }

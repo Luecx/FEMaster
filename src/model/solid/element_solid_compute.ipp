@@ -491,8 +491,6 @@ MapMatrix SolidElement<N>::evaluate(
         }
 
         const Mat3 stress_geometric = VolumeStressPK2(stress_increment).tensor();
-
-
         // Integrate the geometric contributions over the reference volume.
         if (need_tangent || with_geometric) {
             for (Index a = 0; a < N; ++a) {
