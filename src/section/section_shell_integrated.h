@@ -59,23 +59,6 @@ struct IntegratedShellSection : ShellSection {
         Mat8&                         tangent_shell
     ) const override;
 
-    // Recover physical Cauchy stress at arbitrary z using the closest stored
-    // Simpson material point as its history state. Strain is reconstructed in
-    // the section material basis. PK2 output from Green-Lagrange evaluation is
-    // pushed forward with deformation_gradient; linearized output is already
-    // Cauchy stress. The final components follow the common output-basis convention.
-    [[nodiscard]] VolumeStressCauchy evaluate_output_stress(
-        const Vec3&                   position_reference,
-        const Mat3&                   shell_basis_global,
-        const ShellGeneralizedStrain& strain_shell,
-        const Precision*              old_material_state,
-        Precision*                    new_material_state,
-        Index                         material_state_stride,
-        Precision                     z,
-        bool                          ,
-        const Mat3&                   deformation_gradient
-    ) const override;
-
     // Recover physical Cauchy stress from an exact base generalized strain and
     // deformation gradient followed by one affine perturbation.
     [[nodiscard]] VolumeStressCauchy recover_stress(
