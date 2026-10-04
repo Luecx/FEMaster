@@ -1,3 +1,56 @@
+/**
+ * @file isotropic_elasticity.cpp
+ * @brief Implements homogeneous isotropic linear elasticity.
+ *
+ * The implementation constructs constant axial, plane-stress shell and
+ * three-dimensional Hooke tangents. The same material operator is paired with
+ * Cauchy stress for linearized kinematics and second Piola-Kirchhoff stress for
+ * Green-Lagrange kinematics.
+ *
+ * @see IsotropicElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#include "isotropic_elasticity.h"
+
+#include "../core/logging.h"
+#include "strain/axial_strain_green_lagrange.h"
+#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/volume_strain_green_lagrange.h"
+#include "stress/axial_stress_cauchy.h"
+#include "stress/axial_stress_pk2.h"
+#include "stress/shell_material_stress_cauchy.h"
+#include "stress/shell_material_stress_pk2.h"
+#include "stress/volume_stress_cauchy.h"
+#include "stress/volume_stress_pk2.h"
+
+namespace fem::material {
+
+/**
+ * Constructs an isotropic Hooke material and derives its shear modulus.
+ *
+ * Positive Young's modulus and the open stability interval `-1 < nu < 0.5`
+ * ensure finite positive shear and bulk stiffness.
+ *
+ * @param youngs_in Young's modulus.
+ * @param poisson_in Poisson's ratio.
+ */
+IsotropicElasticity::IsotropicElasticity(Precision youngs_in, Precision poisson_in)
+    : youngs (youngs_in),
+      poisson(poisson_in),
+      shear  (youngs_in / (Precision(2) * (Precision(1) + poisson_in))) {
+    logging::error(youngs > Precision(0),
+        "ISOTROPIC: Young's modulus must be positive");
+    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
+        "ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
+}
+
+bool IsotropicElasticity::supports_axial_green_lagrange() const {
+    return true;
+}
+
 bool IsotropicElasticity::supports_volume_green_lagrange() const {
     return true;
 }
