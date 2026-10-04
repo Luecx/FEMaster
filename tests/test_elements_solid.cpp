@@ -320,10 +320,14 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
     Precision rotated_storage[24 * 24] {};
     const DynamicMatrix rotated_tangent =
-        element->stiffness_tangent(
+        element->evaluate(
             rotated_storage,
-            rotated_internal,
-            rotated_displacement
+            nullptr,
+            &rotated_internal,
+            &rotated_displacement,
+            &rotated_displacement,
+            nullptr,
+            true
         );
 
     StaticVector<24> base_force    = StaticVector<24>::Zero();
