@@ -1,3 +1,76 @@
+/**
+ * @file orthotropic_elasticity.cpp
+ * @brief Implements homogeneous orthotropic linear elasticity.
+ *
+ * The implementation constructs the three-dimensional engineering compliance
+ * directly from `E1`, `E2`, `E3`, `nu12`, `nu13`, `nu23`, `G12`, `G13` and
+ * `G23`. Symmetry supplies the reciprocal Poisson ratios implicitly through the
+ * off-diagonal compliance terms. The compliance is inverted to obtain the
+ * volume tangent.
+ *
+ * Shell calls use the corresponding orthotropic plane-stress reduction and the
+ * prescribed transverse shear moduli `G13` and `G23`.
+ *
+ * @see OrthotropicElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#include "orthotropic_elasticity.h"
+
+#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/volume_strain_green_lagrange.h"
+#include "stress/shell_material_stress_cauchy.h"
+#include "stress/shell_material_stress_pk2.h"
+#include "stress/volume_stress_cauchy.h"
+#include "stress/volume_stress_pk2.h"
+
+#include <Eigen/LU>
+
+namespace fem::material {
+
+/**
+ * Constructs orthotropic elasticity from conventional engineering constants.
+ *
+ * The supplied Poisson ratios are the major ratios `nu12`, `nu13` and `nu23`.
+ * Reciprocal ratios are not stored independently because symmetry requires
+ * `nu21/E2 = nu12/E1`, `nu31/E3 = nu13/E1` and
+ * `nu32/E3 = nu23/E2`.
+ *
+ * @param E1 Young's modulus along material direction 1.
+ * @param E2 Young's modulus along material direction 2.
+ * @param E3 Young's modulus along material direction 3.
+ * @param nu12 Poisson ratio for loading in direction 1 and contraction in 2.
+ * @param nu13 Poisson ratio for loading in direction 1 and contraction in 3.
+ * @param nu23 Poisson ratio for loading in direction 2 and contraction in 3.
+ * @param G12 Engineering shear modulus in the 1-2 plane.
+ * @param G13 Engineering shear modulus in the 1-3 plane.
+ * @param G23 Engineering shear modulus in the 2-3 plane.
+ */
+OrthotropicElasticity::OrthotropicElasticity(Precision E1,
+                                             Precision E2,
+                                             Precision E3,
+                                             Precision nu12,
+                                             Precision nu13,
+                                             Precision nu23,
+                                             Precision G12,
+                                             Precision G13,
+                                             Precision G23)
+    : E1  (E1),
+      E2  (E2),
+      E3  (E3),
+      nu12(nu12),
+      nu13(nu13),
+      nu23(nu23),
+      G12 (G12),
+      G13 (G13),
+      G23 (G23) {}
+
+bool OrthotropicElasticity::supports_volume_green_lagrange() const {
+    return true;
+}
+
 bool OrthotropicElasticity::supports_shell_integration_green_lagrange() const {
     return true;
 }
