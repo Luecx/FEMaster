@@ -378,6 +378,23 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     const DynamicMatrix tangent =
         element->evaluate(storage, nullptr, &internal, &displacement, &displacement, nullptr, true);
 
+    Precision geometric_storage[24 * 24] {};
+    const DynamicMatrix geometric = element->evaluate(
+        nullptr,
+        geometric_storage,
+        nullptr,
+        nullptr,
+        &displacement,
+        nullptr,
+        false
+    );
+    EXPECT_TRUE(geometric.allFinite());
+    EXPECT_GT(geometric.norm(), Precision(1e-8));
+    EXPECT_LT(
+        (geometric - geometric.transpose()).norm(),
+        Precision(1e-10) * (Precision(1) + geometric.norm())
+    );
+
     auto internal_force = [&](const model::Field& u) {
         model::NodeData force{
             "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
