@@ -48,13 +48,12 @@ namespace model {
  * assigned `TrussSection`, the section reference area and the associated
  * material law.
  *
- * The nonlinear kinematics use the reference length `L0`, the current length
- * `l` and the stretch `lambda = l / L0`. Green-Lagrange axial strain is obtained
- * from the stretch, while PK2 stress is evaluated by the constitutive model in
- * the Total-Lagrangian material description. The resulting axial stress drives
- * both the internal force and the geometric part of the tangent matrix. The
- * material tangent from the same constitutive evaluation supplies the material
- * contribution to the consistent nonlinear tangent.
+ * The nonlinear kinematics use the reference length `L0` and the length `l0`
+ * of the supplied linearization configuration, with `lambda0 = l0 / L0`.
+ * Green-Lagrange axial strain follows from this stretch and PK2 stress is
+ * evaluated by the constitutive model in the Total-Lagrangian material
+ * description. The base stress supplies the geometric part of the complete
+ * tangent, while the constitutive tangent supplies its material part.
  *
  * The common mechanical evaluation is expressed about a base state u0. The
  * complete tangent is evaluated at u0, while force at a different state u is
@@ -62,17 +61,15 @@ namespace model {
  * requested geometric stiffness is generated only by the linearized stress
  * increment from u0 to u.
  *
- * State-neutral stiffness, perturbation-geometric evaluation and result-recovery
- * routines read committed material history without modifying the persistent trial
- * history. They read committed history when required by the constitutive model
- * but pass no target state, so no material-state update is stored. Stress values
- * and constitutive tangents needed only during an element operation remain local
- * to that operation.
+ * State-neutral stiffness, perturbation-geometric evaluation and result recovery
+ * read committed material history without providing a writable target state.
+ * Temporary stresses and constitutive tangents remain local to the operation
+ * that requires them.
  *
- * Reference and current geometry are accessed through the model data bound to
- * the element. The reference axis is used by linearized strain recovery, while
- * the current axis defines the direction of nonlinear axial force and tangent
- * contributions.
+ * Mechanical evaluation constructs its state explicitly from the reference
+ * geometry and the supplied displacement fields. The model's current POSITION
+ * field is used only by geometry-based utilities such as volume and distributed
+ * field integration.
  */
 struct T3 : StructuralElement {
     static constexpr Index N = 2;
