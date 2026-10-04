@@ -96,36 +96,6 @@ typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
 }
 
 /**
- * Constructs the current nodal shell state from the model POSITION field.
- *
- * The total nodal axis-angle vector is converted to one SO(3) rotation matrix
- * and applied to the corresponding reference director.
- *
- * @return Current nodal positions, directors and total rotations.
- */
-template<Index N>
-typename FRTShell<N>::CurrentState FRTShell<N>::current_state() const {
-    const auto& ref       = reference_data();
-    const MatN6 positions = node_coords_current_6();
-
-    CurrentState state;
-
-    // Construct the physical nodal position and director at every shell node
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Vec3 x     = positions.template block<1, 3>(node, 0).transpose();
-        const Vec3 theta = positions.template block<1, 3>(node, 3).transpose();
-        const Vec3 d0    = ref.d0.row(node).transpose();
-        const Mat3 R     = math::so3::rotation_matrix(theta);
-
-        state.x.row(node)     = x.transpose();
-        state.d.row(node)     = (R * d0).transpose();
-        state.theta.row(node) = theta.transpose();
-    }
-
-    return state;
-}
-
-/**
  * Constructs the undeformed nodal state used by linear shell evaluation.
  *
  * @return Reference positions and directors with zero total rotations.

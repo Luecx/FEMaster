@@ -472,7 +472,6 @@ struct FRTShell : ShellElement<N> {
     // is compact nodal data; derivative workspaces are filled later only when an
     // evaluation explicitly requests them.
     MatN6 node_coords_current_6() const;
-    CurrentState current_state() const;
     CurrentState reference_state() const;
     CurrentState current_state_from_displacement(const Field& displacement) const;
     Vec6N element_displacement_vector(const Field& displacement) const;
@@ -557,13 +556,6 @@ struct FRTShell : ShellElement<N> {
         const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s
-    ) const;
-    Vec8 generalized_resultant_at(
-        const EvaluationData& data,
-        const Vec6N&          displacement_increment,
-        Precision             r,
-        Precision             s,
-        Vec8*                 strain_out = nullptr
     ) const;
     Mat3 deformation_gradient_at(
         const CurrentState& state,

@@ -87,52 +87,6 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
 }
 
 /**
- * Evaluates generalized shell resultants from the exact base section response
- * followed by one constitutive linearization:
- *
- *     n ~= n0 + H0 Delta epsilon.
- */
-template<Index N>
-typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
-    const EvaluationData& data,
-    const Vec6N&          displacement_increment,
-    Precision             r,
-    Precision             s,
-    Vec8*                 strain_out
-) const {
-    const Vec8 strain_base      = generalized_strain_at(data, Vec6N::Zero(), r, s);
-    const Vec8 strain_value     = generalized_strain_at(data, displacement_increment, r, s);
-    const Vec8 strain_increment = strain_value - strain_base;
-
-    if (strain_out) {
-        *strain_out = strain_value;
-    }
-
-    ShellStressResultants resultants_base;
-    Mat8                  tangent_base;
-
-    const auto& points = reference_data().ip_points;
-    Index state_ip = 0;
-    Precision state_distance = (r - points[0].r) * (r - points[0].r) + (s - points[0].s) * (s - points[0].s);
-
-    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
-        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
-        const Precision distance = (r - point.r) * (r - point.r) + (s - point.s) * (s - point.s);
-        if (distance < state_distance) {
-            state_ip       = ip;
-            state_distance = distance;
-        }
-    }
-
-    const Index      state_row = this->mp_index(state_ip, 0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-
-    shell_section()->evaluate(reference_position(r, s), reference_basis_global(r, s), ShellGeneralizedStrain(strain_base), old_state, nullptr, this->_model_data->material_state_old->components, resultants_base, tangent_base);
-
-    return topology_stiffness_scale() * (resultants_base.values() + tangent_base * strain_increment);
-}
-
-/**
  * Evaluates the shell deformation gradient at one through-thickness point.
  *
  * The reference and current covariant bases include the linear director
