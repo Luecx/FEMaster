@@ -87,6 +87,20 @@ struct ABDShellSection : ShellSection {
         const Mat3&                   deformation_gradient
     ) const override;
 
+    // Linearize the finite-strain physical stress recovery about an exact base
+    // generalized strain and deformation gradient.
+    [[nodiscard]] VolumeStressCauchy evaluate_output_stress_linearized(
+        const Vec3&                   position_reference,
+        const Mat3&                   shell_basis_global,
+        const ShellGeneralizedStrain& strain_base,
+        const ShellGeneralizedStrain& strain_increment,
+        const Precision*              old_material_state,
+        Index                         material_state_stride,
+        Precision                     z,
+        const Mat3&                   deformation_gradient_base,
+        const Mat3&                   deformation_gradient_increment
+    ) const override;
+
     // Reserve one state row per shell IP so element material-point addressing is
     // uniform across section types. The prescribed ABD formulation does not use it.
     [[nodiscard]] Index num_mp_per_ip() const override { return 1; }
