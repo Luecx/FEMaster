@@ -209,14 +209,16 @@ struct PointElement : StructuralElement {
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
     ) override {
         (void) strain;
         (void) stress;
         (void) displacement;
         (void) rst;
         (void) offset;
-        (void) use_green_lagrange_nl;
+        (void) linearization;
+        (void) thermal_free_strain;
     }
 };
 

@@ -366,27 +366,24 @@ void FRTShell<N>::physical_stress_strain_at(
  * @param displacement Global nodal displacement field.
  * @param rst Requested natural and normalized thickness coordinates.
  * @param offset First output row belonging to this element.
- * @param use_green_lagrange_nl Select nonlinear or linearized recovery.
+ * @param linearization Null for reference recovery, displacement for exact recovery.
+ * @param thermal_free_strain Optional reference thermal free strain.
  */
 template<Index N>
-void FRTShell<N>::compute_stress_strain(Field*           strain,
-                                        Field*           stress,
-                                        const Field&     displacement,
-                                        const RowMatrix& rst,
-                                        int              offset,
-                                        bool             use_green_lagrange_nl) {
-    compute_stress_strain(
-        strain, stress, displacement, rst, offset, use_green_lagrange_nl, nullptr);
-}
+void FRTShell<N>::compute_stress_strain(
+    Field*           strain,
+    Field*           stress,
+    const Field&     displacement,
+    const RowMatrix& rst,
+    int              offset,
+    const Field*     linearization,
+    const Field*     thermal_free_strain
+) {
+    // Preserve reference and exact shell recovery while exposing the common state contract
+    logging::error(linearization == nullptr || linearization == &displacement,
+        "FRTShell: intermediate recovery expansion points are not supported");
+    const bool use_green_lagrange_nl = linearization != nullptr;
 
-template<Index N>
-void FRTShell<N>::compute_stress_strain(Field*           strain,
-                                        Field*           stress,
-                                        const Field&     displacement,
-                                        const RowMatrix& rst,
-                                        int              offset,
-                                        bool             use_green_lagrange_nl,
-                                        const Field*     thermal_free_strain) {
     logging::error(strain != nullptr || stress != nullptr,
                    "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,

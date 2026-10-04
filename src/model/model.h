@@ -223,12 +223,20 @@ struct Model {
     // quantities retain their established integration-point, element-nodal or
     // nodal domains. Heat flux is recovered element-nodally by each thermal
     // formulation and projected to a unique global NODE field before output.
-    Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false,
-                               const Field* thermal_free_strain = nullptr);
-    std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false,
-                                                  const Field* thermal_free_strain = nullptr);
-    std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false,
-                                                    const Field* thermal_free_strain = nullptr);
+    // Null denotes zero displacement. Passing displacement itself selects the
+    // exact response; solids also support affine recovery about arbitrary states.
+    Field compute_stress_state(
+        Field&       displacement,
+        const Field* linearization       = nullptr,
+        const Field* thermal_free_strain = nullptr);
+    std::tuple<Field, Field> compute_stress_nodal(
+        Field&       displacement,
+        const Field* linearization       = nullptr,
+        const Field* thermal_free_strain = nullptr);
+    std::tuple<Field, Field> compute_stress_top_bot(
+        Field&       displacement,
+        const Field* linearization       = nullptr,
+        const Field* thermal_free_strain = nullptr);
     Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);

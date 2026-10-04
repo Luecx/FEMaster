@@ -270,9 +270,10 @@ void OutputRequestHandler::compute(OutputField field) {
     switch (field) {
         case OutputField::STRESS:
         case OutputField::STRAIN: {
+            auto& displacement = resolve(OutputField::DISPLACEMENT);
             auto [stress, strain] = model_->compute_stress_nodal(
-                resolve(OutputField::DISPLACEMENT),
-                nonlinear_,
+                displacement,
+                nonlinear_ ? &displacement : nullptr,
                 thermal_free_strain());
 
             computed_[index(OutputField::STRESS)] = std::move(stress);
@@ -282,9 +283,10 @@ void OutputRequestHandler::compute(OutputField field) {
 
         case OutputField::STRESS_TOP:
         case OutputField::STRESS_BOT: {
+            auto& displacement = resolve(OutputField::DISPLACEMENT);
             auto [top, bot] = model_->compute_stress_top_bot(
-                resolve(OutputField::DISPLACEMENT),
-                nonlinear_,
+                displacement,
+                nonlinear_ ? &displacement : nullptr,
                 thermal_free_strain());
 
             computed_[index(OutputField::STRESS_TOP)] = std::move(top);
@@ -335,7 +337,7 @@ void OutputRequestHandler::compute(OutputField field) {
         case OutputField::STRAIN_REAL: {
             auto [stress, strain] = model_->compute_stress_nodal(
                 resolve(OutputField::DISPLACEMENT_REAL),
-                false,
+                nullptr,
                 thermal_free_strain());
 
             computed_[index(OutputField::STRESS_REAL)] = std::move(stress);
@@ -347,7 +349,7 @@ void OutputRequestHandler::compute(OutputField field) {
         case OutputField::STRAIN_IMAG: {
             auto [stress, strain] = model_->compute_stress_nodal(
                 resolve(OutputField::DISPLACEMENT_IMAG),
-                false,
+                nullptr,
                 thermal_free_strain());
 
             computed_[index(OutputField::STRESS_IMAG)] = std::move(stress);

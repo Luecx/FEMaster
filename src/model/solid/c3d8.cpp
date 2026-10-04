@@ -136,28 +136,22 @@ StaticMatrix<8, 3> C3D8::node_coords_local() {
  *
  * @param surface_id Face id in the range `1 ... 6`.
  * @return Surface representation of the requested face, or `nullptr` for an
- *         invalid id.
+ * invalid id.
  */
 SurfacePtr C3D8::surface(ID surface_id) {
     switch (surface_id) {
         case 1:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
         case 2:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
         case 3:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[5], node_ids[4]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[5], node_ids[4]});
         case 4:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[1], node_ids[2], node_ids[6], node_ids[5]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[1], node_ids[2], node_ids[6], node_ids[5]});
         case 5:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[2], node_ids[3], node_ids[7], node_ids[6]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[2], node_ids[3], node_ids[7], node_ids[6]});
         case 6:
-            return std::make_shared<Surface4>(
-                std::array<ID, 4> {node_ids[3], node_ids[0], node_ids[4], node_ids[7]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[3], node_ids[0], node_ids[4], node_ids[7]});
         default:
             return nullptr;
     }

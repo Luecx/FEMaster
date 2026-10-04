@@ -24,6 +24,14 @@ std::string C3D8R::type_name() const {
     return "C3D8R";
 }
 
+/**
+ * Returns the static quadrature used by constitutive integration.
+ *
+ * The point ordering defines material-state rows and integration-point output.
+ * This rule may contain fewer points than the topology volume quadrature.
+ *
+ * @return Shared immutable material quadrature.
+ */
 const math::quadrature::Quadrature& C3D8R::integration_scheme_stiffness() const {
     // One-point hexahedral integration at r = s = t = 0 with weight eight.
     static const math::quadrature::Quadrature quadrature{
@@ -73,7 +81,7 @@ C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
  * A full two-by-two-by-two rule integrates the ordinary C3D8 gradients over the
  * undeformed element:
  *
- *     D_bar = (1 / V0) integral_A0 D dV0.
+ * D_bar = (1 / V0) integral_A0 D dV0.
  *
  * Positive finite point determinants and total reference volume are required.
  * The result depends only on reference geometry and is independent of the
@@ -99,27 +107,19 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
     for (Index q = 0; q < full_quadrature.count(); ++q) {
         const auto point = full_quadrature.get_point(q);
 
-        Precision det0 = Precision(0);
-        const auto gradient = shape_derivatives_reference(
-            reference_coords,
-            point.r,
-            point.s,
-            point.t,
-            det0
-        );
+        Precision det0      = Precision(0);
+        const auto gradient = shape_derivatives_reference(reference_coords, point.r, point.s, point.t, det0);
 
         logging::error(std::isfinite(det0) && det0 > Precision(0),
-            "C3D8R: invalid reference determinant in element ", elem_id,
-            "\ndet(J0): ", det0);
+            "C3D8R: invalid reference determinant in element ", elem_id, "\ndet(J0): ", det0);
 
         const Precision measure = det0 * point.w;
-        integrated_gradient += gradient * measure;
-        reference_volume     += measure;
+        integrated_gradient     += gradient * measure;
+        reference_volume        += measure;
     }
 
     logging::error(std::isfinite(reference_volume) && reference_volume > Precision(0),
-        "C3D8R: invalid reference volume in element ", elem_id,
-        "\nvolume: ", reference_volume);
+        "C3D8R: invalid reference volume in element ", elem_id, "\nvolume: ", reference_volume);
 
     return integrated_gradient / reference_volume;
 }
@@ -145,8 +145,7 @@ Precision C3D8R::hourglass_material_scale() {
         (material_tangent(3, 3) + material_tangent(4, 4) + material_tangent(5, 5)) / Precision(3);
 
     logging::error(std::isfinite(shear_scale) && shear_scale > Precision(0),
-        "C3D8R: invalid initial mean shear stiffness in element ", elem_id,
-        "\nscale: ", shear_scale);
+        "C3D8R: invalid initial mean shear stiffness in element ", elem_id, "\nscale: ", shear_scale);
 
     return shear_scale;
 }
@@ -158,7 +157,7 @@ Precision C3D8R::hourglass_material_scale() {
  * fields remain unstabilized. Their scalar stiffness uses the initial mean
  * constitutive shear diagonal, reference volume and mean-gradient norm:
  *
- *     k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
+ * k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
  *
  * The scalar nodal matrix `k_hg G G^T` is expanded independently into all three
  * translational directions. The final matrix is symmetrized only to remove
@@ -169,30 +168,27 @@ Precision C3D8R::hourglass_material_scale() {
 C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     const auto reference_coords = node_coords_reference();
 
-    Precision reference_volume = Precision(0);
+    Precision reference_volume         = Precision(0);
     const GradientMatrix mean_gradient = mean_reference_gradient(reference_volume);
 
     // Flanagan-Belytschko projection against the affine coordinate field:
     //
     //     G = (I - D_bar X^T) gamma.
-    const StaticMatrix<N, N> projector =
-        StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
-    const HourglassModes modes = projector * primitive_hourglass_modes();
+    const StaticMatrix<N, N> projector = StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
+    const HourglassModes modes         = projector * primitive_hourglass_modes();
 
     // Reference stabilization scale
     //
     //     k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
-    const Precision material_scale  = hourglass_material_scale();
-    const Precision gradient_scale  = mean_gradient.array().square().sum();
+    const Precision material_scale = hourglass_material_scale();
+    const Precision gradient_scale = mean_gradient.array().square().sum();
     const Precision hourglass_scale =
         default_hourglass_coefficient * material_scale * reference_volume * gradient_scale;
 
     logging::error(std::isfinite(hourglass_scale) && hourglass_scale > Precision(0),
-        "C3D8R: invalid hourglass stiffness in element ", elem_id,
-        "\nscale: ", hourglass_scale);
+        "C3D8R: invalid hourglass stiffness in element ", elem_id, "\nscale: ", hourglass_scale);
 
-    const StaticMatrix<N, N> scalar_stiffness =
-        hourglass_scale * modes * modes.transpose();
+    const StaticMatrix<N, N> scalar_stiffness = hourglass_scale * modes * modes.transpose();
 
     Matrix24 stiffness = Matrix24::Zero();
 
@@ -200,8 +196,7 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     for (Index node_a = 0; node_a < N; ++node_a) {
         for (Index node_b = 0; node_b < N; ++node_b) {
             for (Dim dof = 0; dof < D; ++dof) {
-                stiffness(D * node_a + dof, D * node_b + dof) =
-                    scalar_stiffness(node_a, node_b);
+                stiffness(D * node_a + dof, D * node_b + dof) = scalar_stiffness(node_a, node_b);
             }
         }
     }
@@ -221,7 +216,7 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
  */
 C3D8R::Vector24 C3D8R::local_displacement(const Field& displacement) {
     const GradientMatrix local = this->nodal_data<D>(displacement);
-    Vector24 result = Vector24::Zero();
+    Vector24 result            = Vector24::Zero();
 
     for (Index node = 0; node < N; ++node) {
         for (Dim dof = 0; dof < D; ++dof) {
@@ -281,8 +276,7 @@ MapMatrix C3D8R::evaluate(
         update_state
     );
 
-    const bool need_hourglass =
-        tangent != nullptr || internal_force != nullptr;
+    const bool need_hourglass = tangent != nullptr || internal_force != nullptr;
     if (!need_hourglass) {
         return mapped;
     }
@@ -292,10 +286,7 @@ MapMatrix C3D8R::evaluate(
     if (internal_force != nullptr) {
         logging::error(displacement != nullptr,
             "C3D8R: hourglass force requires displacement");
-        assemble_local_force(
-            *internal_force,
-            hourglass * local_displacement(*displacement)
-        );
+        assemble_local_force(*internal_force, hourglass * local_displacement(*displacement));
     }
 
     if (tangent != nullptr) {

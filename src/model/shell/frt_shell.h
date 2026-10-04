@@ -632,22 +632,15 @@ struct FRTShell : ShellElement<N> {
     // Result and compatibility callbacks from the structural interface.
     // Recovery remains independent of local resultants used during matrix
     // assembly and does not modify persistent trial material history.
+    // Reference or exact recovery; intermediate expansion points are unsupported.
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl
-    ) override;
-    void compute_stress_strain(
-        Field*           strain,
-        Field*           stress,
-        const Field&     displacement,
-        const RowMatrix& rst,
-        int              offset,
-        bool             use_green_lagrange_nl,
-        const Field*     thermal_free_strain
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
     ) override;
     bool compute_peeq(
         Field& peeq,

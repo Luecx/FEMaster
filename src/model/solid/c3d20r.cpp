@@ -1,6 +1,14 @@
-//
-// Created by Luecx on 12.06.2023.
-//
+/**
+ * @file c3d20r.cpp
+ * @brief Implements the reduced-integration twenty-node hexahedral solid geometry.
+ *
+ * Natural-coordinate shape functions, derivatives, node positions and
+ * boundary surfaces define the topology used by SolidElement. The element
+ * integration rules supply volume quadrature; material response and
+ * mechanical assembly remain in the common solid evaluate() path.
+ *
+ * @see SolidElement
+ */
 
 #include "c3d20r.h"
 #include "../geometry/surface/surface8.h"
@@ -10,14 +18,39 @@ namespace model {
 
 C3D20R::C3D20R(ID p_elem_id, const std::array<ID, 20>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
+/**
+ * Returns the static natural-domain volume integration rule.
+ *
+ * Mass, volume, distributed fields and thermal operators use this rule. The
+ * stiffness rule may be selected separately for constitutive integration.
+ *
+ * @return Shared immutable topology quadrature.
+ */
 const math::quadrature::Quadrature& C3D20R::integration_scheme() const {
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_HEX, math::quadrature::ORDER_QUARTIC};
     return quad;
 }
+/**
+ * Returns the static quadrature used by constitutive integration.
+ *
+ * The point ordering defines material-state rows and integration-point output.
+ * This rule may contain fewer points than the topology volume quadrature.
+ *
+ * @return Shared immutable material quadrature.
+ */
 const math::quadrature::Quadrature& C3D20R::integration_scheme_stiffness() const {
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_HEX, math::quadrature::ORDER_QUADRATIC};
     return quad;
 }
+/**
+ * Extracts a boundary face using the topology-specific face numbering.
+ *
+ * The surface shares global node identifiers with the solid and provides its
+ * own interpolation and geometric integration for loads and constraints.
+ *
+ * @param surface_id One-based face identifier.
+ * @return Requested face, or nullptr when the identifier is invalid.
+ */
 SurfacePtr C3D20R::surface(ID surface_id) {
     switch (surface_id) {
         case 1:
@@ -78,6 +111,19 @@ SurfacePtr C3D20R::surface(ID surface_id) {
     }
 }
 
+/**
+ * Evaluates the reduced-integration twenty-node hexahedral shape functions in natural coordinates.
+ *
+ * Serendipity interpolation uses eight corner and twelve edge nodes.
+ * Material response uses eight integration points; volume integration retains
+ * the higher-order rule.
+ * Values follow the fixed connectivity ordering used by nodal interpolation.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return One interpolation weight per element node.
+ */
 StaticMatrix<20, 1> C3D20R::shape_function(Precision r, Precision s, Precision t) {
     StaticMatrix<20, 1>  res {};
 
@@ -100,9 +146,9 @@ StaticMatrix<20, 1> C3D20R::shape_function(Precision r, Precision s, Precision t
 
         Precision sum_1   = 2 + r * sign_r2 + s * sign_s2 + t * sign_t2;
 
-        Precision sum_r   = (((i + 1) / 2) % 2 == 0 ? rm : rp);
-        Precision sum_s   = ((i / 2) % 2 == 0 ? sm : sp);
-        Precision sum_t   = ((i / 4) % 2 == 0 ? tm : tp);
+        Precision sum_r = (((i + 1) / 2) % 2 == 0 ? rm : rp);
+        Precision sum_s = ((i / 2) % 2 == 0 ? sm : sp);
+        Precision sum_t = ((i / 4) % 2 == 0 ? tm : tp);
 
         res(i)         = (Precision) -1.0 / (Precision) 8.0 * sum_r * sum_s * sum_t * sum_1;
     }
@@ -120,10 +166,21 @@ StaticMatrix<20, 1> C3D20R::shape_function(Precision r, Precision s, Precision t
     return res;
 }
 
+/**
+ * Evaluates natural derivatives of the reduced-integration twenty-node hexahedral interpolation.
+ *
+ * Rows follow connectivity; columns contain dN/dr, dN/ds and dN/dt. The
+ * common solid Jacobian transforms these derivatives into global gradients.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return Natural shape-function derivative matrix.
+ */
 StaticMatrix<20, 3> C3D20R::shape_derivative(Precision r, Precision s, Precision t) {
     Precision g = r;
     Precision h = s;
-    r = t;
+    r           = t;
 
     Precision gp = 1 + g;
     Precision hp = 1 + h;
@@ -179,7 +236,6 @@ StaticMatrix<20, 3> C3D20R::shape_derivative(Precision r, Precision s, Precision
     der(18,2) = 1.0 / 4.0 * (gp * hp) * ( 1 * rm - 1 * rp );
     der(19,2) = 1.0 / 4.0 * (gm * hp) * ( 1 * rm - 1 * rp );
 
-
     // those were g comes twice
     der(8 ,1) = 1.0 / 4.0 * (-1 * rm) * (gm * gp);
     der(10,1) = 1.0 / 4.0 * ( 1 * rm) * (gm * gp);
@@ -210,55 +266,17 @@ StaticMatrix<20, 3> C3D20R::shape_derivative(Precision r, Precision s, Precision
     der(18,1) = 1.0 / 4.0 * ( 1 * gp) * (rm * rp);
     der(19,1) = 1.0 / 4.0 * ( 1 * gm) * (rm * rp);
 
-
-//    // first 8 nodes
-//    for (int i = 0; i < 8; i++) {
-//        Precision sign_r1 = (Precision) (((i + 1) / 2) % 2 == 0 ? -1 : 1);
-//        Precision sign_s1 = (Precision) ((i / 2) % 2 == 0 ? -1 : 1);
-//        Precision sign_t1 = (Precision) ((i / 4) % 2 == 0 ? -1 : 1);
-//
-//        Precision sign_r2 = -sign_r1;
-//        Precision sign_s2 = -sign_s1;
-//        Precision sign_t2 = -sign_t1;
-//
-//        Precision sum_1   = 2 + r * sign_r2 + s * sign_s2 + t * sign_t2;
-//
-//        Precision sum_r   = (((i + 1) / 2) % 2 == 0 ? rm : rp);
-//        Precision sum_s   = ((i / 2) % 2 == 0 ? sm : sp);
-//        Precision sum_t   = ((i / 4) % 2 == 0 ? tm : tp);
-//
-//        local_shape_derivative(i, 0) =
-//            -(Precision)1.0 / (Precision)8.0 * sum_s * sum_t * (sign_r1 * sum_1 + sign_r2 * sum_r);
-//        local_shape_derivative(i, 1) =
-//            -(Precision)1.0 / (Precision)8.0 * sum_r * sum_t * (sign_s1 * sum_1 + sign_s2 * sum_s);
-//        local_shape_derivative(i, 2) =
-//            -(Precision)1.0 / (Precision)8.0 * sum_r * sum_s * (sign_t1 * sum_1 + sign_t2 * sum_t);
-//    }
-//
-//    // remaining 12 nodes
-//    for (int i = 8; i < 20; i++) {
-//        Precision r1      = (((i + 1) / 2) % 2 == 0 ? rm : rp);
-//        Precision r2      = (((i % 2 == 0 && i < 16 ? (i % 4 == 0 ? rp : rm) : 1)));
-//        Precision s1      = (((i) / 2) % 2 == 0 ? sm : sp);
-//        Precision s2      = (((i % 2 == 1 && i < 16 ? (i % 4 == 1 ? sp : sm) : 1)));
-//        Precision t1      = (((i) / 4) % 2 == 0 ? tm : tp);
-//        Precision t2      = (i < 16 ? 1 : tp);
-//
-//        Precision sign_r1 = (Precision)(((i + 1) / 2) % 2 == 0 ? -1 : +1);
-//        Precision sign_r2 = (Precision)(((i % 2 == 0 && i < 16 ? (i % 4 == 0 ? +1 : -1) : 0)));
-//        Precision sign_s1 = (Precision)(((i) / 2) % 2 == 0 ? -1 : +1);
-//        Precision sign_s2 = (Precision)(((i % 2 == 1 && i < 16 ? (i % 4 == 1 ? +1 : -1) : 0)));
-//        Precision sign_t1 = (Precision)(((i) / 4) % 2 == 0 ? -1 : +1);
-//        Precision sign_t2 = (Precision)(i < 16 ? 0 : +1);
-//
-//        local_shape_derivative(i, 0) = (Precision)1.0 / (Precision)4.0 * s1 * s2 * t1 * t2 * (r1 * sign_r2 + r2 * sign_r1);
-//        local_shape_derivative(i, 1) = (Precision)1.0 / (Precision)4.0 * r1 * r2 * t1 * t2 * (s1 * sign_s2 + s2 * sign_s1);
-//        local_shape_derivative(i, 2) = (Precision)1.0 / (Precision)4.0 * r1 * r2 * s1 * s2 * (t1 * sign_t2 + t2 * sign_t1);
-//    }
-
     return der;
 }
 
+/**
+ * Returns natural node positions in the fixed interpolation order.
+ *
+ * The same ordering is used by shape functions, global connectivity and the
+ * constant integration-point extrapolation operator.
+ *
+ * @return One natural r, s, t coordinate row per node.
+ */
 StaticMatrix<20, 3> C3D20R::node_coords_local() {
     StaticMatrix<20, 3> res {};
     res.setZero();
@@ -267,9 +285,9 @@ StaticMatrix<20, 3> C3D20R::node_coords_local() {
         Precision s1 = ((n) / 2) % 2 == 0 ? -1 : 1;
         Precision t1 = n >= 4 ? 1 : -1;
 
-        res(n, 0)    = r1;
-        res(n, 1)    = s1;
-        res(n, 2)    = t1;
+        res(n, 0) = r1;
+        res(n, 1) = s1;
+        res(n, 2) = t1;
     }
 
     // Mid-edge nodes

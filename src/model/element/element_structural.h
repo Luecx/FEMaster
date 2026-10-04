@@ -120,29 +120,20 @@ struct StructuralElement : ElementInterface {
         (void) ref_temp;
     }
 
-    // Structural result recovery. These routines are independent of temporary
-    // stresses or resultants used during operator assembly and explicitly write
-    // user-visible result fields at requested natural-coordinate locations.
+    // State-neutral recovery about a displacement expansion point. Null denotes
+    // zero displacement; passing displacement itself recovers the exact state.
+    // Supporting formulations return the affine strain/stress approximation at
+    // other expansion points. Recovery writes result fields independently of
+    // temporary stresses used during operator assembly.
     virtual void compute_stress_strain(
         Field*           strain,
         Field*           stress,
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
     ) = 0;
-    virtual void compute_stress_strain(
-        Field*           strain,
-        Field*           stress,
-        const Field&     displacement,
-        const RowMatrix& rst,
-        int              offset,
-        bool             use_green_lagrange_nl,
-        const Field*     thermal_free_strain
-    ) {
-        (void) thermal_free_strain;
-        compute_stress_strain(strain, stress, displacement, rst, offset, use_green_lagrange_nl);
-    }
 
     // Recover accumulated equivalent plastic strain from committed material
     // history into this element's disjoint ELEMENT_NODAL row range. Unsupported

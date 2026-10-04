@@ -160,18 +160,22 @@ struct ShellElement : StructuralElement {
         (void) ref_temp;
     }
 
-    void compute_stress_strain(Field*           strain,
-                               Field*           stress,
-                               const Field&     displacement,
-                               const RowMatrix& rst,
-                               int              offset,
-                               bool             use_green_lagrange_nl) override {
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
+    ) override {
         (void) strain;
         (void) stress;
         (void) displacement;
         (void) rst;
         (void) offset;
-        (void) use_green_lagrange_nl;
+        (void) linearization;
+        (void) thermal_free_strain;
         logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
     }
 

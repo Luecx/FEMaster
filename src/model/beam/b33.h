@@ -157,13 +157,17 @@ struct B33 : BeamElement<2> {
         return rst;
     }
 
-    void compute_stress_strain(Field* strain,
-                               Field* stress,
-                               const Field& displacement,
-                               const RowMatrix& rst,
-                               int offset,
-                               bool use_green_lagrange_nl) override {
-        logging::error(!use_green_lagrange_nl,
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
+    ) override {
+        (void) thermal_free_strain;
+        logging::error(linearization == nullptr,
             "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress != nullptr,
             "B33: compute_stress_strain requires at least one output field");

@@ -45,13 +45,16 @@ namespace fem::model {
  * for geometric or nonlinear stiffness assembly.
  *
  * @param displacement Global nodal displacement field used for recovery.
- * @param use_green_lagrange_nl Enables the nonlinear Green-Lagrange strain path
- *                              in supporting element formulations.
+ * @param linearization Displacement expansion state; null denotes zero.
+ * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Integration-point stress field with the established eight-component
  *         FEMaster layout.
  */
-Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_nl,
-                                  const Field* thermal_free_strain) {
+Field Model::compute_stress_state(
+    Field&       displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain
+) {
     // Validate and access the compiled integration-point enumeration.
     logging::error(_data->element_ip_offsets != nullptr,
         "element IP offset field has not been initialized");
@@ -92,7 +95,7 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
                 displacement,
                 rst,
                 static_cast<int>(ip_offset),
-                use_green_lagrange_nl,
+                linearization,
                 thermal_free_strain
             );
         }
@@ -115,12 +118,15 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
  * Elements without nodal recovery coordinates do not participate.
  *
  * @param displacement Global nodal displacement field used for recovery.
- * @param use_green_lagrange_nl Enables Green-Lagrange strain recovery in
- *                              supporting nonlinear formulations.
+ * @param linearization Displacement expansion state; null denotes zero.
+ * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Pair containing the global nodal stress field followed by strain.
  */
-std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl,
-                                                     const Field* thermal_free_strain) {
+std::tuple<Field, Field> Model::compute_stress_nodal(
+    Field&       displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain
+) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
@@ -157,7 +163,7 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
                     displacement,
                     rst,
                     static_cast<int>(offset),
-                    use_green_lagrange_nl,
+                    linearization,
                     thermal_free_strain
                 );
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
@@ -235,12 +241,15 @@ Field Model::compute_peeq_nodal() {
  * global nodes using the same participation weighting as regular nodal stress.
  *
  * @param displacement Global nodal displacement field used for recovery.
- * @param use_green_lagrange_nl Enables Green-Lagrange strain kinematics while
- *                              evaluating the requested stress values.
+ * @param linearization Displacement expansion state; null denotes zero.
+ * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Pair containing global nodal top-face and bottom-face stress fields.
  */
-std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl,
-                                                       const Field* thermal_free_strain) {
+std::tuple<Field, Field> Model::compute_stress_top_bot(
+    Field&       displacement,
+    const Field* linearization,
+    const Field* thermal_free_strain
+) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
@@ -279,8 +288,8 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
                 }
 
                 const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl, thermal_free_strain);
-                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl, thermal_free_strain);
+                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), linearization, thermal_free_strain);
+                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), linearization, thermal_free_strain);
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }, Index(8));

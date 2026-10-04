@@ -1,4 +1,14 @@
-// Created by Finn on 19.10.2024
+/**
+ * @file c3d13.cpp
+ * @brief Implements the thirteen-node quadratic pyramid solid geometry.
+ *
+ * Rational interpolation maps the natural pyramid, including its collapsed
+ * apex. Boundary surface extraction is currently unavailable.
+ * The topology supplies natural interpolation, node ordering and quadrature
+ * to SolidElement; material response and assembly belong to the common base.
+ *
+ * @see SolidElement
+ */
 
 #include "c3d13.h"
 #include "../geometry/surface/surface4.h"
@@ -10,30 +20,59 @@ namespace model {
 C3D13::C3D13(ID p_elem_id, const std::array<ID, 13>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
+/**
+ * Returns the static natural-domain volume integration rule.
+ *
+ * Mass, volume, distributed fields and thermal operators use this rule. The
+ * stiffness rule may be selected separately for constitutive integration.
+ *
+ * @return Shared immutable topology quadrature.
+ */
 const math::quadrature::Quadrature& C3D13::integration_scheme() const {
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_PYRAMID, math::quadrature::ORDER_QUARTIC};
     return quad;
 }
+/**
+ * Returns no boundary surface for the quadratic pyramid.
+ *
+ * Surface extraction is not implemented for this topology. Volume mechanics
+ * remain available, but callers cannot obtain a boundary face through this API.
+ *
+ * @param surface_id Requested face identifier.
+ * @return nullptr for every face identifier.
+ */
 SurfacePtr C3D13::surface(ID surface_id) {
     // TODO: implement this
     (void) surface_id;
     return nullptr;
 }
 
+/**
+ * Evaluates the thirteen-node quadratic pyramid shape functions in natural coordinates.
+ *
+ * Rational interpolation maps the natural pyramid, including its collapsed
+ * apex. Boundary surface extraction is currently unavailable.
+ * Values follow the fixed connectivity ordering used by nodal interpolation.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return One interpolation weight per element node.
+ */
 StaticMatrix<13, 1> C3D13::shape_function(Precision r, Precision s, Precision t) {
     StaticMatrix<13, 1> res {};
 
     // Define shape functions as provided
-    res(0, 0) = 0.25 * (r + s - 1) * ((1 + r) * (1 + s) - t + (r * s * t) / (1 - t));
-    res(1, 0) = 0.25 * (-r + s - 1) * ((1 - r) * (1 + s) - t - (r * s * t) / (1 - t));
-    res(2, 0) = 0.25 * (-r - s - 1) * ((1 - r) * (1 - s) - t + (r * s * t) / (1 - t));
-    res(3, 0) = 0.25 * (r - s - 1) * ((1 + r) * (1 - s) - t - (r * s * t) / (1 - t));
-    res(4, 0) = t * (2 * t - 1);
-    res(5, 0) = ((1 + r - t) * (1 - r - t) * (1 + s - t)) / (2 * (1 - t));
-    res(6, 0) = ((1 + s - t) * (1 - s - t) * (1 - r - t)) / (2 * (1 - t));
-    res(7, 0) = ((1 + r - t) * (1 - r - t) * (1 - s - t)) / (2 * (1 - t));
-    res(8, 0) = ((1 + s - t) * (1 - s - t) * (1 + r - t)) / (2 * (1 - t));
-    res(9, 0) = t * (1 + r - t) * (1 + s - t) / (1 - t);
+    res(0, 0)  = 0.25 * (r + s - 1) * ((1 + r) * (1 + s) - t + (r * s * t) / (1 - t));
+    res(1, 0)  = 0.25 * (-r + s - 1) * ((1 - r) * (1 + s) - t - (r * s * t) / (1 - t));
+    res(2, 0)  = 0.25 * (-r - s - 1) * ((1 - r) * (1 - s) - t + (r * s * t) / (1 - t));
+    res(3, 0)  = 0.25 * (r - s - 1) * ((1 + r) * (1 - s) - t - (r * s * t) / (1 - t));
+    res(4, 0)  = t * (2 * t - 1);
+    res(5, 0)  = ((1 + r - t) * (1 - r - t) * (1 + s - t)) / (2 * (1 - t));
+    res(6, 0)  = ((1 + s - t) * (1 - s - t) * (1 - r - t)) / (2 * (1 - t));
+    res(7, 0)  = ((1 + r - t) * (1 - r - t) * (1 - s - t)) / (2 * (1 - t));
+    res(8, 0)  = ((1 + s - t) * (1 - s - t) * (1 + r - t)) / (2 * (1 - t));
+    res(9, 0)  = t * (1 + r - t) * (1 + s - t) / (1 - t);
     res(10, 0) = t * (1 - r - t) * (1 + s - t) / (1 - t);
     res(11, 0) = t * (1 - r - t) * (1 - s - t) / (1 - t);
     res(12, 0) = t * (1 + r - t) * (1 - s - t) / (1 - t);
@@ -41,6 +80,17 @@ StaticMatrix<13, 1> C3D13::shape_function(Precision r, Precision s, Precision t)
     return res;
 }
 
+/**
+ * Evaluates natural derivatives of the thirteen-node quadratic pyramid interpolation.
+ *
+ * Rows follow connectivity; columns contain dN/dr, dN/ds and dN/dt. The
+ * common solid Jacobian transforms these derivatives into global gradients.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return Natural shape-function derivative matrix.
+ */
 StaticMatrix<13, 3> C3D13::shape_derivative(Precision r, Precision s, Precision t) {
     StaticMatrix<13, 3> der {};
 
@@ -120,6 +170,14 @@ StaticMatrix<13, 3> C3D13::shape_derivative(Precision r, Precision s, Precision 
     return der;
 }
 
+/**
+ * Returns natural node positions in the fixed interpolation order.
+ *
+ * The same ordering is used by shape functions, global connectivity and the
+ * constant integration-point extrapolation operator.
+ *
+ * @return One natural r, s, t coordinate row per node.
+ */
 StaticMatrix<13, 3> C3D13::node_coords_local() {
     StaticMatrix<13, 3> res {};
     res <<   1  ,  1  , 0,

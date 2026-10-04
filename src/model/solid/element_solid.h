@@ -8,8 +8,8 @@
  *
  * Every constitutive integration point is associated with one globally
  * enumerated material-point row. State-neutral operators read the committed row
- * without producing a persistent target state. The physical nonlinear tangent
- * evaluation reads committed history and writes the corresponding trial row.
+ * without producing a persistent target state. Mechanical evaluations with
+ * update_state=true read committed history and write the corresponding trial row.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -18,9 +18,7 @@
 #pragma once
 
 #include "../../math/extrapolate.h"
-#include "../../math/interpolate.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
-#include "../../material/strain/volume_strain_linearized.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"
 #include "../element/element_structural.h"
@@ -37,8 +35,9 @@ namespace fem::model {
  *
  * Concrete solid elements provide topology-specific interpolation and
  * quadrature. The base implements geometry transformations, constitutive
- * evaluation and the common structural operators. `evaluate()` selects reference/small-strain or Total-Lagrangian kinematics from
- * the optional linearization state and independently assembles requested force,
+ * evaluation and the common structural operators. `evaluate()` always uses
+ * Total-Lagrangian kinematics at the supplied linearization state, with a null
+ * state denoting zero displacement, and independently assembles requested force,
  * complete tangent and geometric tangent outputs.
  *
  * Stress is kept local to the element evaluation. No global integration-point
@@ -48,22 +47,23 @@ namespace fem::model {
  */
 template<Index N>
 struct SolidElement : StructuralElement, ThermalElement{
+    // Spatial dimension and engineering-Voigt strain size
     static constexpr Dim D        = 3;
     static constexpr Dim n_strain = 6;
 
+    // Global connectivity in the topology shape-function order
     std::array<ID, N> node_ids {};
 
 protected:
-    friend math::quadrature::Quadrature;
-
     // Topology-specific reference-space recovery from constitutive integration
     // points to element nodes. Concrete solids cache this constant matrix.
     virtual const RowMatrix& extrapolation_matrix() = 0;
 
 public:
+    // Construct the persistent connectivity; the model supplies section and field bindings
     SolidElement(ID elem_id, std::array<ID, N> node_ids)
-        : StructuralElement(elem_id)
-        , node_ids(node_ids) {}
+        : StructuralElement(elem_id),
+          node_ids         (node_ids) {}
 
     ~SolidElement() override = default;
 
@@ -83,7 +83,7 @@ public:
     virtual StaticMatrix<N, D> node_coords_reference();
     virtual StaticMatrix<N, D> node_coords_current();
 
-    virtual StaticMatrix<N, 1> shape_function(Precision r, Precision s, Precision t) = 0;
+    virtual StaticMatrix<N, 1> shape_function(Precision r, Precision s, Precision t)   = 0;
     virtual StaticMatrix<N, D> shape_derivative(Precision r, Precision s, Precision t) = 0;
 
     virtual const math::quadrature::Quadrature& integration_scheme() const = 0;
@@ -101,71 +101,62 @@ public:
 
     // Evaluate the zero-Green-Lagrange material tangent at one natural point.
     // A null new_state requests a state-neutral auxiliary constitutive query.
-    Mat6 material_tangent_reference(Precision r, Precision s, Precision t,
-                                    const Precision* old_state, Precision* new_state);
+    Mat6 material_tangent_reference(
+        Precision        r,
+        Precision        s,
+        Precision        t,
+        const Precision* old_state,
+        Precision*       new_state);
 
-    // Evaluate linearized Cauchy stress and tangent in global coordinates. The
-    // selected old/new state pointers are forwarded directly through
-    // SolidSection, after which optional element stiffness scaling is applied.
-    void evaluate_material(Precision                     r,
-                           Precision                     s,
-                           Precision                     t,
-                           const VolumeStrainLinearized& global_strain,
-                           const Precision*              old_state,
-                           Precision*                    new_state,
-                           VolumeStressCauchy&           global_stress,
-                           Mat6&                         global_tangent);
+    // Evaluate Total-Lagrangian PK2 stress and optional dS/dE in global
+    // reference coordinates with the same state-pointer and scaling contract.
+    // A null tangent skips constitutive tangent construction when supported
+    // by the material, including residual-only assembly and recovery.
+    void evaluate_material(
+        Precision                        r,
+        Precision                        s,
+        Precision                        t,
+        const VolumeStrainGreenLagrange&  global_strain,
+        const Precision*                 old_state,
+        Precision*                       new_state,
+        VolumeStressPK2&                 global_stress,
+        Mat6*                            global_tangent);
 
-    // Evaluate Total-Lagrangian PK2 stress and dS/dE in global reference
-    // coordinates with the same direct state-pointer and topology-scaling contract.
-    void evaluate_material(Precision                        r,
-                           Precision                        s,
-                           Precision                        t,
-                           const VolumeStrainGreenLagrange& global_strain,
-                           const Precision*                 old_state,
-                           Precision*                       new_state,
-                           VolumeStressPK2&                 global_stress,
-                           Mat6&                            global_tangent);
-
-    // Optional-tangent finite-strain variant used by nonlinear residual-only
-    // assembly. Stress and trial history are always evaluated; a null tangent
-    // propagates through the section/material stack and skips constitutive
-    // tangent construction when supported by the material.
-    void evaluate_material(Precision                        r,
-                           Precision                        s,
-                           Precision                        t,
-                           const VolumeStrainGreenLagrange& global_strain,
-                           const Precision*                 old_state,
-                           Precision*                       new_state,
-                           VolumeStressPK2&                 global_stress,
-                           Mat6*                            global_tangent);
-
-    // Interpolation and geometry transformations
+    // Interpolate element-local nodal values at natural coordinates. The data
+    // rows use the same ordering as the topology shape functions.
     template<Dim K>
-    StaticVector<K> interpolate(StaticMatrix<N, K> data,
-                                Precision          r,
-                                Precision          s,
-                                Precision          t);
+    StaticVector<K> interpolate(
+        StaticMatrix<N, K> data,
+        Precision          r,
+        Precision          s,
+        Precision          t);
 
+    // Gather global nodal field components in connectivity order, optionally
+    // selecting a component offset and stride.
     template<Dim K>
-    StaticMatrix<N, K> nodal_data(const Field& full_data,
-                                  Index        offset = 0,
-                                  Index        stride = 1);
+    StaticMatrix<N, K> nodal_data(
+        const Field& full_data,
+        Index        offset = 0,
+        Index        stride = 1);
 
-    StaticMatrix<D, D> jacobian(const StaticMatrix<N, D>& node_coords,
-                                Precision                 r,
-                                Precision                 s,
-                                Precision                 t);
+    // Geometric mappings. Jacobian rows follow natural directions; F maps
+    // reference global vectors into the current global configuration.
+    StaticMatrix<D, D> jacobian(
+        const StaticMatrix<N, D>& node_coords,
+        Precision                 r,
+        Precision                 s,
+        Precision                 t);
 
-    Mat3 deformation_gradient(const StaticMatrix<N, D>& reference_coords,
-                              const StaticMatrix<N, D>& current_coords,
-                              Precision                 r,
-                              Precision                 s,
-                              Precision                 t);
+    Mat3 deformation_gradient(
+        const StaticMatrix<N, D>& reference_coords,
+        const StaticMatrix<N, D>& current_coords,
+        Precision                 r,
+        Precision                 s,
+        Precision                 t);
 
-    StaticMatrix<n_strain, D * N> strain_displacement(
-        const StaticMatrix<N, D>& shape_der_global
-    );
+    // Engineering-Voigt strain operators in node-major XYZ ordering. Reference
+    // gradients supply both infinitesimal and Total-Lagrangian kinematics.
+    StaticMatrix<n_strain, D * N> strain_displacement(const StaticMatrix<N, D>& shape_der_global);
     StaticMatrix<N, D> shape_derivatives_reference(
         const StaticMatrix<N, D>& reference_coords,
         Precision                 r,
@@ -178,18 +169,10 @@ public:
         const StaticMatrix<N, D>& dN_dX,
         const Mat3&               F
     );
-    StaticMatrix<n_strain, D * N> strain_displacements(
-        const StaticMatrix<N, D>& node_coords,
-        Precision                 r,
-        Precision                 s,
-        Precision                 t,
-        Precision&                det,
-        bool                      check_det = true
-    );
 
-    // Mechanical state evaluation. Reference/small-strain and
-    // Total-Lagrangian response share one integration path and independently
-    // expose the complete tangent, geometric tangent and internal force.
+    // Total-Lagrangian state evaluation. A null linearization denotes u_L = 0.
+    // The complete tangent supplies affine forces away from u_L; reference
+    // geometric requests use the linearly recovered prestress at displacement.
     MapMatrix evaluate(
         Precision*   tangent,
         Precision*   geometric_tangent,
@@ -201,50 +184,51 @@ public:
     ) override;
     MapMatrix mass(Precision* buffer) override;
 
-    // Thermal operators
+    // Scalar-temperature operators integrated in the reference configuration
     MapMatrix conductivity(Precision* buffer) override;
     MapMatrix capacity(Precision* buffer) override;
 
+    // Signed physical volume of the current model configuration
     Precision volume() override;
 
     // Stress/strain recovery coordinates
     RowMatrix stress_strain_nodal_rst() override;
     RowMatrix stress_strain_ip_rst() override;
 
-    // Distributed field integration
-    Precision integrate_scalar_field(bool               scale_by_density,
-                                     const ScalarField& field) override;
-    Vec3      integrate_vector_field(bool            scale_by_density,
-                                     const VecField& field) override;
-    void      integrate_vector_field(Field&          node_loads,
-                                     bool            scale_by_density,
-                                     const VecField& field) override;
-    Mat3      integrate_tensor_field(bool            scale_by_density,
-                                     const TenField& field) override;
+    // Integrate distributed fields over current model volume, optionally with
+    // density scaling. The force overload scatters consistent nodal contributions.
+    Precision integrate_scalar_field(
+        bool               scale_by_density,
+        const ScalarField& field) override;
+    Vec3      integrate_vector_field(
+        bool            scale_by_density,
+        const VecField& field) override;
+    void      integrate_vector_field(
+        Field&          node_loads,
+        bool            scale_by_density,
+        const VecField& field) override;
+    Mat3      integrate_tensor_field(
+        bool            scale_by_density,
+        const TenField& field) override;
 
+    // Convert prescribed temperatures into equivalent forces or scalar nodal
+    // free strain. Both paths retain committed constitutive history.
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
-    void apply_thermal_free_strain(Field& thermal_free_strain,
-                                   const Field& node_temp,
-                                   Precision ref_temp) override;
+    void apply_thermal_free_strain(Field& thermal_free_strain, const Field& node_temp, Precision ref_temp) override;
 
     // Stress/strain recovery is state-neutral. Constitutive response is evaluated
     // only at material integration points; nodal output is extrapolated from the
     // corresponding integration-point values in natural coordinates.
+    // Linearize strain and Cauchy stress about the supplied displacement state.
+    // Null denotes zero; passing displacement itself recovers the exact response.
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl) override;
-    void compute_stress_strain(
-        Field*           strain,
-        Field*           stress,
-        const Field&     displacement,
-        const RowMatrix& rst,
-        int              offset,
-        bool             use_green_lagrange_nl,
-        const Field*     thermal_free_strain) override;
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr) override;
     bool compute_peeq(
         Field& peeq,
         int    offset) override;
@@ -255,11 +239,8 @@ public:
         Field& displacement,
         Field& result) override;
     void compute_heat_flux(
-        Field& heat_flux,
+        Field&       heat_flux,
         const Field& temperature) override;
-
-    template<class ElementType>
-    static bool test_implementation(bool print = false);
 };
 
 } // namespace fem::model
@@ -268,4 +249,3 @@ public:
 #include "element_solid_load.ipp"
 #include "element_solid_.ipp"
 #include "element_solid.ipp"
-#include "element_solid_test.ipp"

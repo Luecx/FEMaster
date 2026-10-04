@@ -1,6 +1,14 @@
-//
-// Created by Luecx on 12.06.623.
-//
+/**
+ * @file c3d6.cpp
+ * @brief Implements the six-node linear wedge solid geometry.
+ *
+ * The natural triangular prism combines linear triangular interpolation with linear interpolation
+ * through its thickness.
+ * The topology supplies natural interpolation, node ordering and quadrature
+ * to SolidElement; material response and assembly belong to the common base.
+ *
+ * @see SolidElement
+ */
 
 #include "c3d6.h"
 
@@ -13,10 +21,27 @@ namespace model {
 C3D6::C3D6(ID p_elem_id, const std::array<ID, 6>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
+/**
+ * Returns the static natural-domain volume integration rule.
+ *
+ * Mass, volume, distributed fields and thermal operators use this rule. The
+ * stiffness rule may be selected separately for constitutive integration.
+ *
+ * @return Shared immutable topology quadrature.
+ */
 const math::quadrature::Quadrature& C3D6::integration_scheme() const {
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_WEDGE, math::quadrature::ORDER_SUPER_LINEAR};
     return quad;
 }
+/**
+ * Extracts a boundary face using the topology-specific face numbering.
+ *
+ * The surface shares global node identifiers with the solid and provides its
+ * own interpolation and geometric integration for loads and constraints.
+ *
+ * @param surface_id One-based face identifier.
+ * @return Requested face, or nullptr when the identifier is invalid.
+ */
 SurfacePtr C3D6::surface(ID surface_id) {
     // C3D6 (6-node wedge element): Triangular faces have 3 nodes, quadrilateral faces have 4 nodes
     switch (surface_id) {
@@ -39,6 +64,18 @@ SurfacePtr C3D6::surface(ID surface_id) {
     }
 }
 
+/**
+ * Evaluates the six-node linear wedge shape functions in natural coordinates.
+ *
+ * The natural triangular prism combines linear triangular interpolation with linear interpolation
+ * through its thickness.
+ * Values follow the fixed connectivity ordering used by nodal interpolation.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return One interpolation weight per element node.
+ */
 StaticMatrix<6, 1> C3D6::shape_function(Precision r, Precision s, Precision t) {
     StaticMatrix<6, 1> res {};
 
@@ -57,6 +94,17 @@ StaticMatrix<6, 1> C3D6::shape_function(Precision r, Precision s, Precision t) {
     return res;
 }
 
+/**
+ * Evaluates natural derivatives of the six-node linear wedge interpolation.
+ *
+ * Rows follow connectivity; columns contain dN/dr, dN/ds and dN/dt. The
+ * common solid Jacobian transforms these derivatives into global gradients.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @return Natural shape-function derivative matrix.
+ */
 StaticMatrix<6, 3> C3D6::shape_derivative(Precision r, Precision s, Precision t) {
     StaticMatrix<6, 3> res {};
     res.setZero();
@@ -88,6 +136,14 @@ StaticMatrix<6, 3> C3D6::shape_derivative(Precision r, Precision s, Precision t)
     return res;
 }
 
+/**
+ * Returns natural node positions in the fixed interpolation order.
+ *
+ * The same ordering is used by shape functions, global connectivity and the
+ * constant integration-point extrapolation operator.
+ *
+ * @return One natural r, s, t coordinate row per node.
+ */
 StaticMatrix<6, 3> C3D6::node_coords_local() {
     StaticMatrix<6, 3> res {};
     res.setZero();

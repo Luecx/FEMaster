@@ -646,14 +646,24 @@ void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_te
  * @param displacement Global nodal displacement field for linearized recovery.
  * @param rst Requested natural output coordinates.
  * @param offset First output row belonging to this element.
- * @param use_green_lagrange_nl Select finite-strain or linearized recovery.
+ * @param linearization Null for reference recovery, displacement for exact recovery.
+ * @param thermal_free_strain Unused; axial thermal recovery remains unchanged.
  */
-void T3::compute_stress_strain(Field*           strain,
-                               Field*           stress,
-                               const Field&     displacement,
-                               const RowMatrix& rst,
-                               int              offset,
-                               bool             use_green_lagrange_nl) {
+void T3::compute_stress_strain(
+    Field*           strain,
+    Field*           stress,
+    const Field&     displacement,
+    const RowMatrix& rst,
+    int              offset,
+    const Field*     linearization,
+    const Field*     thermal_free_strain
+) {
+    // This formulation supports reference and exact recovery states
+    logging::error(linearization == nullptr || linearization == &displacement,
+        "T3: intermediate recovery expansion points are not supported");
+    const bool use_green_lagrange_nl = linearization != nullptr;
+    (void) thermal_free_strain;
+
     logging::error(strain != nullptr || stress != nullptr,
         "T3: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 1,

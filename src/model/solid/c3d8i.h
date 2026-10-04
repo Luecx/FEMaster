@@ -7,11 +7,10 @@
  * topology, faces, mass integration and common solid utilities remain inherited
  * from C3D8.
  *
- * The enhanced parameters never become global degrees of freedom. Linear
- * mechanics eliminates them directly through static condensation. Finite-strain
- * mechanics applies the same modes through a right multiplicative reference
- * enhancement, solves their local stationarity equations and then condenses the
- * coupled nodal tangent by the same Schur-complement operation.
+ * The enhanced parameters never become global degrees of freedom. Every
+ * expansion point uses right multiplicative reference enhancement, a local
+ * stationarity solve and Schur-complement condensation of the coupled tangent.
+ * Linear mechanics evaluates the same formulation at zero nodal displacement.
  *
  * Stress recovery, thermal loading and geometric prestress stiffness use the
  * identical enhanced state so all element operators represent the same
@@ -29,6 +28,7 @@
 #include "c3d8.h"
 
 #include <array>
+#include <utility>
 
 namespace fem::model {
 
@@ -41,16 +41,16 @@ namespace fem::model {
  * low-order bending response and four scalar volumetric modes reduce excessive
  * volumetric constraint.
  *
- * The enhanced parameters are element-local unknowns. For linear mechanics the
- * element equations have the block form
+ * The enhanced parameters are element-local unknowns. The tangent equations at
+ * each expansion point have the block form
  *
- *     [ Kuu  Kua ] [ u     ] = [ fu ]
- *     [ Kau  Kaa ] [ alpha ]   [ fa ],
+ * [ Kuu  Kua ] [ u     ] = [ fu ]
+ * [ Kau  Kaa ] [ alpha ]   [ fa ],
  *
- * and alpha is eliminated locally. Geometrically nonlinear evaluation uses
+ * and enhanced increments are eliminated locally. Every evaluation uses
  * the objective kinematics
  *
- *     F_bar = F_c (I + sum_m alpha_m H_m)
+ * F_bar = F_c (I + sum_m alpha_m H_m)
  *
  * and the same block structure for the consistent Total-Lagrangian tangent
  * after a local Newton solve of the enhanced residual r_alpha = 0. The enhanced
@@ -91,19 +91,21 @@ public:
      * to nodal displacement u and enhanced parameters alpha; ru and ra are
      * their corresponding residual vectors.
      *
-     * Linear stiffness assembly uses only the four tangent blocks. Nonlinear
-     * assembly additionally fills the residuals and includes the material and
-     * geometric derivatives required by the local Newton solve and the global
-     * consistent tangent.
+     * The finite formulation fills the requested residual and tangent blocks,
+     * including material and geometric derivatives. Its reference evaluation
+     * also supplies linear stiffness through condensation of these same blocks.
      *
      * The structure owns no persistent element state. It exists only during one
      * element evaluation and is discarded after condensation.
      */
     struct EnhancedSystem {
+        // Coupled nodal/enhanced tangent blocks before static condensation
         Matrix24    kuu = Matrix24::Zero();
         Matrix24x13 kua = Matrix24x13::Zero();
         Matrix13x24 kau = Matrix13x24::Zero();
         Matrix13    kaa = Matrix13::Zero();
+
+        // Nodal and enhanced residuals evaluated at the current local candidate
         Vector24    ru  = Vector24::Zero();
         Vector13    ra  = Vector13::Zero();
     };
@@ -159,42 +161,22 @@ public:
 
     // Compliance orientation sensitivity uses the stationary enhanced strain
     // rather than the compatible C3D8 strain inherited by the common solid.
-    void compute_compliance_angle_derivative(
-        Field& displacement,
-        Field& result
-    ) override;
+    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
 
     // Stress and strain recovery reconstructs the stationary enhanced state
     // before evaluating the constitutive response at the requested locations.
-    using C3D8::compute_stress_strain;
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl
-    ) override;
-    void compute_stress_strain(
-        Field*           strain,
-        Field*           stress,
-        const Field&     displacement,
-        const RowMatrix& rst,
-        int              offset,
-        bool             use_green_lagrange_nl,
-        const Field*     thermal_free_strain
-    ) override;
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr) override;
 
 private:
-    // Reference/small-strain EAS operators retained as formulation-local helpers
-    // for the corresponding branch of the common mechanical evaluation.
-    MapMatrix stiffness(Precision* buffer);
-    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement);
-    MapMatrix stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement,
-        const Field* thermal_free_strain
-    );
+    // Condensed initial-stress operator for reference buckling requests.
+    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement, const Field* thermal_free_strain);
 
     // Enhanced deformation-gradient basis and its linearized or finite-strain
     // work-conjugate strain matrices.
@@ -204,23 +186,11 @@ private:
         Precision                 s,
         Precision                 t
     );
-    Matrix6x13 enhanced_strain_matrix(const EnhancedModes& modes);
-    Matrix6x13 enhanced_green_lagrange_matrix(
-        const Mat3&          deformation_gradient,
-        const EnhancedModes& modes
-    );
+    Matrix6x13 enhanced_green_lagrange_matrix(const Mat3& deformation_gradient, const EnhancedModes& modes);
 
-    // Local block-system assembly. Linear assembly produces the constant EAS
-    // stiffness blocks; nonlinear assembly additionally forms residual and
-    // stress-dependent geometric contributions for the supplied alpha state.
-    EnhancedSystem assemble_linear_system();
-    EnhancedSystem assemble_small_strain_system(
-        const Vector24&        displacement,
-        const Vector13&        alpha,
-        const StaticVector<N>* thermal_free_strain,
-        bool                   write_material_state,
-        bool                   assemble_global_blocks
-    );
+    // Finite block-system assembly at a stationary reference or supplied state.
+    // Requested residuals and tangents use the same enhanced kinematics.
+    EnhancedSystem assemble_reference_system();
     NonlinearPoints nonlinear_points(
         const StaticMatrix<N, D>& reference_coords,
         const StaticMatrix<N, D>& current_coords
@@ -234,17 +204,16 @@ private:
         bool                   include_geometric = true
     );
 
-    // Solve the stationary local enhanced state for linearized or finite-strain
-    // kinematics without introducing any global degrees of freedom.
-    Vector13 solve_linear_modes(
-        const Vector24&        displacement,
-        const StaticVector<N>* thermal_free_strain = nullptr
-    );
-    Vector13 solve_small_strain_modes(
-        const Vector24&        displacement,
-        const StaticVector<N>* thermal_free_strain = nullptr
-    );
+    // Solve finite local stationarity or its reference tangent increment without
+    // introducing any global degrees of freedom.
+    Vector13 solve_linear_modes(const Vector24& displacement);
     Vector13 solve_nonlinear_modes(const NonlinearPoints& points);
+
+    // Affine thermal source in the finite nodal/enhanced basis, before condensation
+    std::pair<Vector24, Vector13> thermal_force(
+        const NonlinearPoints& points,
+        const Vector13&        alpha,
+        const StaticVector<N>& free_strain);
 
     // Map between the common global nodal fields and the element-local
     // translational ordering [u1x,u1y,u1z,...,u8x,u8y,u8z].

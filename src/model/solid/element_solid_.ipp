@@ -1,66 +1,55 @@
 /**
- * @file element_solid.ipp
- * @brief Implementation of the SolidElement class template. This file contains
- * the definitions for methods declared in the SolidElement class, including
- * the computation of the strain-displacement matrix, Jacobian, stiffness and
- * mass matrices, and other element-level calculations.
+ * @file element_solid_.ipp
+ * @brief Implements solid topology metadata and natural recovery coordinates.
  *
- * @date Created on 12.06.2023
- * @author Finn Eggers
+ * These adapters expose translational DOFs, connectivity and constitutive
+ * point counts through ElementInterface. Recovery locations use topology node
+ * coordinates or the stiffness quadrature; geometry and material assembly
+ * remain in the other SolidElement implementation files.
+ *
+ * @see SolidElement
  */
 
 #pragma once
 
 namespace fem::model {
 
-
-//-----------------------------------------------------------------------------
-// dofs
-//-----------------------------------------------------------------------------
 template<Index N>
-ElDofs
-SolidElement<N>::dofs() const {
+ElDofs SolidElement<N>::dofs() const {
     return ElDofs {true, true, true, false, false, false};
 }
 
-//-----------------------------------------------------------------------------
-// dimensions
-//-----------------------------------------------------------------------------
 template<Index N>
-Dim
-SolidElement<N>::dimensions() const {
+Dim SolidElement<N>::dimensions() const {
     return D;
 }
 
-//-----------------------------------------------------------------------------
-// n_nodes
-//-----------------------------------------------------------------------------
 template<Index N>
-Dim
-SolidElement<N>::n_nodes() const {
+Dim SolidElement<N>::n_nodes() const {
     return node_ids.size();
 }
 
-//-----------------------------------------------------------------------------
-// nodes
-//-----------------------------------------------------------------------------
 template<Index N>
-const ID*
-SolidElement<N>::nodes() const {
+const ID* SolidElement<N>::nodes() const {
     return &node_ids[0];
 }
 
-//-----------------------------------------------------------------------------
-// num_ip
-//-----------------------------------------------------------------------------
 template<Index N>
-Dim
-SolidElement<N>::num_ip() const {
+Dim SolidElement<N>::num_ip() const {
     return integration_scheme_stiffness().count();
 }
 
+/**
+ * Provides natural nodal coordinates for element-nodal result recovery.
+ *
+ * Rows follow the element connectivity and columns contain r, s and t. Concrete
+ * reduced formulations may override these requested recovery locations.
+ *
+ * @return N-by-three matrix of natural output coordinates.
+ */
 template<Index N>
 RowMatrix SolidElement<N>::stress_strain_nodal_rst() {
+    // Preserve connectivity order when exposing natural nodal recovery locations
     auto local = this->node_coords_local();
     RowMatrix rst(static_cast<Index>(N), 3);
     for (Index i = 0; i < N; ++i) {
@@ -71,8 +60,17 @@ RowMatrix SolidElement<N>::stress_strain_nodal_rst() {
     return rst;
 }
 
+/**
+ * Provides natural coordinates of the constitutive integration points.
+ *
+ * The stiffness integration rule defines both these locations and the ordering
+ * of material-state rows used by mechanical assembly and result recovery.
+ *
+ * @return One r, s, t row per constitutive integration point.
+ */
 template<Index N>
 RowMatrix SolidElement<N>::stress_strain_ip_rst() {
+    // Use constitutive quadrature order to match integration-point state storage
     const auto& scheme = this->integration_scheme_stiffness();
     RowMatrix rst(scheme.count(), 3);
     for (Index i = 0; i < scheme.count(); ++i) {
@@ -82,6 +80,5 @@ RowMatrix SolidElement<N>::stress_strain_ip_rst() {
     }
     return rst;
 }
-
 
 }  // namespace fem::model

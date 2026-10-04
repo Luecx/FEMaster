@@ -23,7 +23,7 @@ namespace fem::model {
  * Hourglass stabilization acts independently in the three translational
  * directions through
  *
- *     K_hg = k_hg kron(G G^T, I_3),
+ * K_hg = k_hg kron(G G^T, I_3),
  *
  * with matching force `f_hg = K_hg u_e`. Auxiliary zero-strain evaluation of
  * the hourglass modulus is state-neutral; the physical center-point material

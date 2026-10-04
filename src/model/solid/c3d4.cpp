@@ -1,6 +1,13 @@
-//
-// Created by Finn Eggers on 27.08.2024.
-//
+/**
+ * @file c3d4.cpp
+ * @brief Implements the four-node linear tetrahedral solid geometry.
+ *
+ * The natural tetrahedron uses constant shape gradients and one material integration point.
+ * The topology supplies natural interpolation, node ordering and quadrature
+ * to SolidElement; material response and assembly belong to the common base.
+ *
+ * @see SolidElement
+ */
 
 #include "c3d4.h"
 #include "../geometry/surface/surface3.h"
@@ -8,9 +15,6 @@
 namespace fem {
 namespace model {
 
-//-----------------------------------------------------------------------------
-// C3D4 Constructor
-//-----------------------------------------------------------------------------
 /**
  * @brief Constructor that initializes the C3D4 element with an element ID
  * and the corresponding node IDs.
@@ -21,9 +25,6 @@ namespace model {
 C3D4::C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds)
     : SolidElement(pElemId, pNodeIds) {}
 
-//-----------------------------------------------------------------------------
-// Shape Function
-//-----------------------------------------------------------------------------
 /**
  * @brief Computes the shape functions for the 4-node tetrahedral element at
  * the given local coordinates (r, s, t).
@@ -52,9 +53,6 @@ StaticMatrix<4, 1> C3D4::shape_function(Precision r, Precision s, Precision t) {
     return res;
 }
 
-//-----------------------------------------------------------------------------
-// Shape Function Derivatives
-//-----------------------------------------------------------------------------
 /**
  * @brief Computes the derivatives of the shape functions with respect to the
  * local coordinates (r, s, t).
@@ -93,9 +91,6 @@ StaticMatrix<4, 3> C3D4::shape_derivative(Precision r, Precision s, Precision t)
     return local_shape_derivative;
 }
 
-//-----------------------------------------------------------------------------
-// Node Local Coordinates
-//-----------------------------------------------------------------------------
 /**
  * @brief Provides the local coordinates of the nodes for the C3D4 element.
  *
@@ -123,11 +118,28 @@ StaticMatrix<4, 3> C3D4::node_coords_local() {
     return res;
 }
 
+/**
+ * Returns the static natural-domain volume integration rule.
+ *
+ * Mass, volume, distributed fields and thermal operators use this rule. The
+ * stiffness rule may be selected separately for constitutive integration.
+ *
+ * @return Shared immutable topology quadrature.
+ */
 const math::quadrature::Quadrature& C3D4::integration_scheme() const {
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_LINEAR};
     return quad;
 }
 
+/**
+ * Extracts a boundary face using the topology-specific face numbering.
+ *
+ * The surface shares global node identifiers with the solid and provides its
+ * own interpolation and geometric integration for loads and constraints.
+ *
+ * @param surface_id One-based face identifier.
+ * @return Requested face, or nullptr when the identifier is invalid.
+ */
 SurfacePtr C3D4::surface(ID surface_id) {
     switch (surface_id) {
         case 1: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[0], node_ids[1], node_ids[2]});

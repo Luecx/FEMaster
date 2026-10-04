@@ -9,32 +9,32 @@
  * all rights reserved
  * @date Created on 27.08.2024
  *
+ *
+ * The topology declares natural interpolation, quadrature and recovery data.
+ * SolidElement owns the common kinematics, constitutive state interface,
+ * mechanical evaluation and thermal operators.
+ *
+ * @see SolidElement
  */
 
 #pragma once
 
 #include "element_solid.h"
 
-
 namespace fem { namespace model {
 
 /**
- * C3D4 class
- * This class defines a 4-node tetrahedral solid element used in finite
- * element analysis. It provides methods to compute shape functions, their
- * derivatives, and handle integration with a linear tetrahedral quadrature
- * scheme.
+ * @brief Four-node linear tetrahedral continuum element.
+ *
+ * The natural tetrahedron uses constant shape gradients and one material integration point.
+ * The element stores global node identifiers in interpolation order and
+ * inherits geometry transformations, constitutive state handling, thermal
+ * operators and mechanical evaluation from SolidElement. Concrete methods
+ * define shape functions, quadrature and topology-specific recovery. Copies
+ * retain connectivity; Model::compile() establishes model and section bindings.
  */
 struct C3D4 : public SolidElement<4> {
-    //-------------------------------------------------------------------------
-    // Constructor
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Constructs a C3D4 element with a given element ID and node IDs.
-     *
-     * @param pElemId The unique ID of the element.
-     * @param pNodeIds Array containing IDs of the 4 nodes.
-     */
+    // Construction and concrete element identity
     C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds);
 
     // Recreate only the persistent topology. Model::compile() rewires the
@@ -43,60 +43,22 @@ struct C3D4 : public SolidElement<4> {
 
     std::string type_name() const override { return "C3D4"; }
 
-    //-------------------------------------------------------------------------
-    // Shape Function
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Computes the shape functions of the C3D4 element at the given
-     * local coordinates (r, s, t).
-     *
-     * @param r The local coordinate in the r-direction.
-     * @param s The local coordinate in the s-direction.
-     * @param t The local coordinate in the t-direction.
-     * @return StaticMatrix<4, 1> The evaluated shape function values.
-     */
+    // Natural-coordinate interpolation. Node ordering matches connectivity
+    // and the columns of the mechanical strain-displacement operator.
     StaticMatrix<4, 1> shape_function(Precision r, Precision s, Precision t) override;
 
-    //-------------------------------------------------------------------------
-    // Shape Function Derivatives
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Computes the derivatives of the shape functions with respect to
-     * the local coordinates (r, s, t).
-     *
-     * @param r The local coordinate in the r-direction.
-     * @param s The local coordinate in the s-direction.
-     * @param t The local coordinate in the t-direction.
-     * @return StaticMatrix<4, 3> The derivatives of the shape functions with
-     * respect to (r, s, t).
-     */
     StaticMatrix<4, 3> shape_derivative(Precision r, Precision s, Precision t) override;
 
-    //-------------------------------------------------------------------------
-    // Node Local Coordinates
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Returns the local coordinates of the nodes of the C3D4 element.
-     *
-     * @return StaticMatrix<4, 3> The local coordinates of the element's nodes.
-     */
     StaticMatrix<4, 3> node_coords_local() override;
 
-    //-------------------------------------------------------------------------
-    // Integration Scheme
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Returns the quadrature integration scheme for the C3D4 element,
-     * which uses a linear tetrahedral quadrature rule.
-     *
-     * @return const math::quadrature::Quadrature& The quadrature rule to be used
-     * for integration over the element's domain.
-     */
+    // Volume quadrature; a separate stiffness rule defines material-point storage
     const math::quadrature::Quadrature& integration_scheme() const override;
 
+    // Boundary faces reuse the global connectivity for surface loads and constraints
     SurfacePtr surface(ID surface_id) override;
 
 protected:
+    // Constant natural-space recovery operator from constitutive points to nodes
     const RowMatrix& extrapolation_matrix() override {
         static const RowMatrix matrix = math::extrapolate(
             this->stress_strain_ip_rst(), this->node_coords_local(),

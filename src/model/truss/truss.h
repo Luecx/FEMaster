@@ -180,7 +180,8 @@ struct T3 : StructuralElement {
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        bool             use_green_lagrange_nl
+        const Field*     linearization,
+        const Field*     thermal_free_strain = nullptr
     ) override;
     bool compute_peeq(
         Field& peeq,

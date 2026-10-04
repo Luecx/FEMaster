@@ -38,17 +38,16 @@ namespace fem::model {
  * @param ref_temp Reference temperature for thermal strain and invalid values.
  */
 template<Index N>
-void
-SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    // Validate and collect the current geometry and scalar nodal temperatures
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
+void SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
+    // Validate and collect the reference geometry and scalar nodal temperatures
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
     logging::error(node_temp.domain == FieldDomain::NODE,
-                   "Temperature field '", node_temp.name, "' must be a node field");
+        "Temperature field '", node_temp.name, "' must be a node field");
     logging::error(node_temp.components == 1,
-                   "Temperature field '", node_temp.name, "' must have 1 component");
+        "Temperature field '", node_temp.name, "' must have 1 component");
     StaticMatrix<N, 1> node_temp_glob {};
     for (Index i = 0; i < N; ++i) {
-        const Index row = static_cast<Index>(node_ids[i]);
+        const Index row   = static_cast<Index>(node_ids[i]);
         node_temp_glob(i) = node_temp(row, 0);
     }
 
@@ -60,36 +59,40 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
     }
 
     // Validate all material data required by the thermal-stress construction
-    logging::error(material() != nullptr, "no material assigned to element ", elem_id);
-    logging::error(material()->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
-    logging::error(material()->has_thermal_expansion(), "material has no thermal expansion assigned at element ", elem_id);
+    logging::error(material() != nullptr,
+        "no material assigned to element ", elem_id);
+    logging::error(material()->has_elasticity(),
+        "material has no elasticity components assigned at element ", elem_id);
+    logging::error(material()->has_thermal_expansion(),
+        "material has no thermal expansion assigned at element ", elem_id);
 
     const auto& state_scheme = this->integration_scheme_stiffness();
 
     // Integrate the equivalent thermal-force density over the element volume
     std::function<StaticMatrix<D*N,1>(Precision, Precision, Precision)> func =
-        [this, node_coords_glob, &node_temp_glob, &ref_temp, &state_scheme](Precision r, Precision s, Precision t) -> StaticMatrix<D*N,1> {
+        [this, node_coords_glob, &node_temp_glob, &ref_temp, &state_scheme](
+            Precision r,
+            Precision s,
+            Precision t) -> StaticMatrix<D*N,1> {
 
         // Interpolate temperature and construct isotropic free thermal strain
         auto shape_func = shape_function(r, s, t);
-        Precision temp = shape_func.dot(node_temp_glob);
+        Precision temp  = shape_func.dot(node_temp_glob);
 
         Precision strain_value = material()->get_thermal_expansion() * (temp - ref_temp);
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
         // Associate auxiliary quadrature points with the nearest constitutive
         // integration point so the material receives a valid history state.
-        Index state_ip = 0;
-        auto  state_point = state_scheme.get_point(0);
-        Precision state_distance =
-            (r - state_point.r) * (r - state_point.r)
+        Index state_ip           = 0;
+        auto  state_point        = state_scheme.get_point(0);
+        Precision state_distance = (r - state_point.r) * (r - state_point.r)
             + (s - state_point.s) * (s - state_point.s)
             + (t - state_point.t) * (t - state_point.t);
 
         for (Index ip = 1; ip < state_scheme.count(); ++ip) {
-            state_point = state_scheme.get_point(ip);
-            const Precision distance =
-                (r - state_point.r) * (r - state_point.r)
+            state_point              = state_scheme.get_point(ip);
+            const Precision distance = (r - state_point.r) * (r - state_point.r)
                 + (s - state_point.s) * (s - state_point.s)
                 + (t - state_point.t) * (t - state_point.t);
             if (distance < state_distance) {
@@ -102,11 +105,12 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
         // Convert free thermal strain to stress using a state-neutral tangent query.
         auto mat_matrix = material_tangent_reference(r, s, t, old_state, nullptr);
-        auto stress = mat_matrix * strain;
+        auto stress     = mat_matrix * strain;
 
         // Map thermal stress to its element nodal-force contribution
         Precision det;
-        auto B = strain_displacements(node_coords_glob, r, s, t, det);
+        const StaticMatrix<N, D> shape_der_global = this->shape_derivatives_reference(node_coords_glob, r, s, t, det);
+        const StaticMatrix<n_strain, D * N> B     = this->strain_displacement(shape_der_global);
 
         auto res = B.transpose() * stress * det;
         return res;
@@ -124,65 +128,95 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
     }
 }
 
+/**
+ * Accumulates isotropic free thermal strain into element-nodal storage.
+ *
+ * Each nodal value is alpha (T - T_ref). Undefined temperatures use T_ref and
+ * therefore contribute zero strain. The scalar free strain is added to the three
+ * normal mechanical strain components during evaluation; shear remains unchanged.
+ *
+ * @param thermal_free_strain Scalar ELEMENT_NODAL accumulator.
+ * @param node_temp Scalar NODE temperature field.
+ * @param ref_temp Finite stress-free reference temperature.
+ */
+/**
+ * Accumulates isotropic free thermal strain into element-nodal storage.
+ *
+ * Nodal values are alpha (T - T_ref). Undefined temperatures use the finite
+ * reference temperature and contribute zero strain. Mechanical evaluation
+ * subtracts this scalar from each normal strain component.
+ *
+ * @param thermal_free_strain Scalar ELEMENT_NODAL accumulator.
+ * @param node_temp Scalar NODE temperature field.
+ * @param ref_temp Stress-free reference temperature.
+ */
 template<Index N>
-void SolidElement<N>::apply_thermal_free_strain(Field& thermal_free_strain,
-                                                const Field& node_temp,
-                                                Precision ref_temp) {
-    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
-                   && thermal_free_strain.components == 1,
-                   "SolidElement: thermal free strain requires scalar ELEMENT_NODAL storage");
+void SolidElement<N>::apply_thermal_free_strain(
+    Field&       thermal_free_strain,
+    const Field& node_temp,
+    Precision    ref_temp) {
+    // Validate element-nodal free-strain storage and the prescribed temperatures
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain.components == 1,
+        "SolidElement: thermal free strain requires scalar ELEMENT_NODAL storage");
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
-                   "SolidElement: thermal free strain requires a scalar nodal temperature field");
+        "SolidElement: thermal free strain requires a scalar nodal temperature field");
     logging::error(std::isfinite(ref_temp),
-                   "SolidElement: thermal reference temperature must be finite");
+        "SolidElement: thermal reference temperature must be finite");
 
     const auto material = this->material();
     logging::error(material->has_thermal_expansion(),
-                   "SolidElement: material has no thermal expansion at element ", this->elem_id);
+        "SolidElement: material has no thermal expansion at element ", this->elem_id);
 
+    // Add isotropic nodal free strain, replacing undefined temperatures by T_ref
     const Precision alpha = material->get_thermal_expansion();
     for (Index node = 0; node < N; ++node) {
         const Precision value = node_temp(static_cast<Index>(node_ids[node]), 0);
         const Precision temperature = std::isfinite(value) ? value : ref_temp;
-        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
-            alpha * (temperature - ref_temp);
+        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) += alpha * (temperature - ref_temp);
     }
 }
 
-
-//-----------------------------------------------------------------------------
-// integrate_scalar_field / integrate_vector_field / integrate_tensor_field
-//-----------------------------------------------------------------------------
+/**
+ * Integrates a scalar field over the current model volume.
+ *
+ * The topology volume rule evaluates the field at interpolated global positions
+ * and multiplies by the signed current Jacobian determinant. Optional density
+ * scaling requires an assigned material density. Constitutive history is not
+ * evaluated or modified.
+ *
+ * @param scale_by_density Multiply the volume measure by material density.
+ * @param field Callback evaluated at global current coordinates.
+ * @return Volume integral of the supplied field.
+ */
 template<Index N>
-Precision
-SolidElement<N>::integrate_scalar_field(bool scale_by_density,
-                                        const ScalarField& field)
-{
-    // Node coordinates
+Precision SolidElement<N>::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
+    // Gather current geometry for physical volume integration
     StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
-    // Optional density scaling
+    // Apply material density only when requested by the caller
     Precision rho = 1.0;
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
         rho = mat->get_density();
     }
 
-    Precision result = Precision(0);
+    Precision result   = Precision(0);
     const auto& scheme = this->integration_scheme();
+    // Evaluate field samples with the signed physical volume quadrature measure
     for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto pt = scheme.get_point(ip);
+        const auto pt     = scheme.get_point(ip);
         const Precision r = pt.r;
         const Precision s = pt.s;
         const Precision t = pt.t;
         const Precision w = pt.w;
 
-        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        StaticMatrix<N, 1> Nvals   = this->shape_function(r, s, t);
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
-        const Precision detJ = J.determinant();
+        const Precision detJ       = J.determinant();
 
+        // Interpolate the global sample position using current nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
@@ -191,35 +225,47 @@ SolidElement<N>::integrate_scalar_field(bool scale_by_density,
     return result;
 }
 
+/**
+ * Integrates a vector field over the current model volume.
+ *
+ * The topology volume rule evaluates the field at interpolated global positions
+ * and multiplies by the signed current Jacobian determinant. Optional density
+ * scaling requires an assigned material density. Constitutive history is not
+ * evaluated or modified.
+ *
+ * @param scale_by_density Multiply the volume measure by material density.
+ * @param field Callback evaluated at global current coordinates.
+ * @return Volume integral of the supplied field.
+ */
 template<Index N>
-Vec3
-SolidElement<N>::integrate_vector_field(bool scale_by_density,
-                                        const VecField& field)
-{
-    // Node coordinates
+Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecField& field) {
+    // Gather current geometry for physical volume integration
     StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
+    // Apply material density only when requested by the caller
     Precision rho = 1.0;
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
         rho = mat->get_density();
     }
 
-    Vec3 result = Vec3::Zero();
+    Vec3 result        = Vec3::Zero();
     const auto& scheme = this->integration_scheme();
+    // Evaluate field samples with the signed physical volume quadrature measure
     for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto pt = scheme.get_point(ip);
+        const auto pt     = scheme.get_point(ip);
         const Precision r = pt.r;
         const Precision s = pt.s;
         const Precision t = pt.t;
         const Precision w = pt.w;
 
-        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        StaticMatrix<N, 1> Nvals   = this->shape_function(r, s, t);
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
-        const Precision detJ = J.determinant();
+        const Precision detJ       = J.determinant();
 
+        // Interpolate the global sample position using current nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
@@ -228,44 +274,56 @@ SolidElement<N>::integrate_vector_field(bool scale_by_density,
     return result;
 }
 
+/**
+ * Integrates a distributed vector field into consistent nodal forces.
+ *
+ * The topology volume rule evaluates the field at interpolated global positions
+ * and multiplies by the signed current Jacobian determinant. Optional density
+ * scaling requires an assigned material density. Constitutive history is not
+ * evaluated or modified.
+ * Shape-function weights distribute each quadrature contribution to the global
+ * nodal translational accumulator.
+ *
+ * @param node_loads Global nodal force accumulator.
+ * @param scale_by_density Multiply the volume measure by material density.
+ * @param field Callback evaluated at global current coordinates.
+ */
 template<Index N>
-void
-SolidElement<N>::integrate_vector_field(Field& node_loads,
-                                        bool scale_by_density,
-                                        const VecField& field)
-{
-    // Node coordinates
+void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_density, const VecField& field) {
+    // Gather current geometry for physical volume integration
     StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
-    // Optional density scaling
+    // Apply material density only when requested by the caller
     Precision rho = 1.0;
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
         rho = mat->get_density();
     }
 
     const auto& scheme = this->integration_scheme();
+    // Evaluate field samples with the signed physical volume quadrature measure
     for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto pt = scheme.get_point(ip);
+        const auto pt     = scheme.get_point(ip);
         const Precision r = pt.r;
         const Precision s = pt.s;
         const Precision t = pt.t;
         const Precision w = pt.w;
 
-        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        StaticMatrix<N, 1> Nvals   = this->shape_function(r, s, t);
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
-        const Precision detJ = J.determinant();
+        const Precision detJ       = J.determinant();
 
+        // Interpolate the global sample position using current nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
         Vec3 f_ip = field(x_ip) * (rho * w * detJ);
 
         for (Index i = 0; i < N; ++i) {
-            const ID n_id = this->node_ids[i];
-            const Precision a = Nvals(i);
+            const ID n_id       = this->node_ids[i];
+            const Precision a   = Nvals(i);
             node_loads(n_id, 0) += a * f_ip(0);
             node_loads(n_id, 1) += a * f_ip(1);
             node_loads(n_id, 2) += a * f_ip(2);
@@ -273,35 +331,47 @@ SolidElement<N>::integrate_vector_field(Field& node_loads,
     }
 }
 
+/**
+ * Integrates a tensor field over the current model volume.
+ *
+ * The topology volume rule evaluates the field at interpolated global positions
+ * and multiplies by the signed current Jacobian determinant. Optional density
+ * scaling requires an assigned material density. Constitutive history is not
+ * evaluated or modified.
+ *
+ * @param scale_by_density Multiply the volume measure by material density.
+ * @param field Callback evaluated at global current coordinates.
+ * @return Volume integral of the supplied field.
+ */
 template<Index N>
-Mat3
-SolidElement<N>::integrate_tensor_field(bool scale_by_density,
-                                        const TenField& field)
-{
-    // Node coordinates
+Mat3 SolidElement<N>::integrate_tensor_field(bool scale_by_density, const TenField& field) {
+    // Gather current geometry for physical volume integration
     StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
+    // Apply material density only when requested by the caller
     Precision rho = 1.0;
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
         rho = mat->get_density();
     }
 
-    Mat3 result = Mat3::Zero();
+    Mat3 result        = Mat3::Zero();
     const auto& scheme = this->integration_scheme();
+    // Evaluate field samples with the signed physical volume quadrature measure
     for (Index ip = 0; ip < scheme.count(); ++ip) {
-        const auto pt = scheme.get_point(ip);
+        const auto pt     = scheme.get_point(ip);
         const Precision r = pt.r;
         const Precision s = pt.s;
         const Precision t = pt.t;
         const Precision w = pt.w;
 
-        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        StaticMatrix<N, 1> Nvals   = this->shape_function(r, s, t);
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
-        const Precision detJ = J.determinant();
+        const Precision detJ       = J.determinant();
 
+        // Interpolate the global sample position using current nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
