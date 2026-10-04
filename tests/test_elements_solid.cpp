@@ -98,7 +98,7 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
         displacement(node, 0) = (node >= 4) ? 1.0 : 0.0;
     }
 
-    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, false);
+    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, nullptr);
 
     ASSERT_EQ(stress_top.rows, stress_bot.rows);
     ASSERT_EQ(stress_top.components, stress_bot.components);
@@ -507,7 +507,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     // Model-level output uses the thermal-aware virtual overload even when no
     // thermal field is supplied; this call therefore also checks C3D8I recovery
     // dispatch through StructuralElement.
-    EXPECT_NO_THROW(model.compute_stress_nodal(displacement, true));
+    EXPECT_NO_THROW(model.compute_stress_nodal(displacement, &displacement));
 
     model.step_end();
 }
@@ -760,8 +760,8 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
         // Auxiliary paths may reconstruct local parameters but must not commit history
         element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
         element->evaluate(nullptr, storage, nullptr, &displacement, nullptr, nullptr, false);
-        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, true));
-        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, false));
+        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, &displacement));
+        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr));
         for (Index row = 0; row < trial.rows; ++row) {
             for (Dim component = 0; component < trial.components; ++component) {
                 EXPECT_DOUBLE_EQ((*model._data->material_state_old)(row, component), committed(row, component));

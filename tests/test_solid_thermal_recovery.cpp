@@ -75,7 +75,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     }
 
     auto stress_strain =
-        model.compute_stress_nodal(displacement, false, &thermal_free_strain);
+        model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
     const auto& stress = std::get<0>(stress_strain);
     const auto& strain = std::get<1>(stress_strain);
 
@@ -99,7 +99,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
 
     displacement.set_zero();
     stress_strain =
-        model.compute_stress_nodal(displacement, false, &thermal_free_strain);
+        model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
     const auto& restrained_stress = std::get<0>(stress_strain);
     const Precision expected = -1000.0 / (1.0 - 2.0 * 0.25) * 0.2;
 

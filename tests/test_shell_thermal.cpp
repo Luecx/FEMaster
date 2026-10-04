@@ -138,7 +138,7 @@ void check_uniform_thermal_load(
         }
 
         auto stress_strain =
-            model.compute_stress_nodal(displacement, false, &thermal_free_strain);
+            model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
         const auto& stress = std::get<0>(stress_strain);
         const auto& strain = std::get<1>(stress_strain);
 
@@ -179,7 +179,7 @@ void check_uniform_thermal_load(
         // sigma_x = sigma_y = -E * alpha * DeltaT / (1 - nu).
         if (planar_xy) {
             const auto restrained =
-                model.compute_stress_nodal(displacement, false, &thermal_free_strain);
+                model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
             const auto& restrained_stress = std::get<0>(restrained);
             for (Index node = 0; node < static_cast<Index>(N); ++node) {
                 EXPECT_NEAR(restrained_stress(node, 0), -1000.0 * free_strain / 0.75, 1e-8);
@@ -447,7 +447,7 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
                          model._data->field_rows(model::FieldDomain::ELEMENT_NODAL), 1};
     thermal.set_zero();
     load.apply_thermal_free_strain(*model._data, thermal);
-    const auto recovered = model.compute_stress_nodal(displacement, false, &thermal);
+    const auto recovered = model.compute_stress_nodal(displacement, nullptr, &thermal);
     const auto& stress = std::get<0>(recovered);
     for (Index node = 0; node < 8; ++node) {
         for (Index component = 0; component < 6; ++component) {
