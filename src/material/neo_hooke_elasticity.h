@@ -57,21 +57,12 @@ struct NeoHookeElasticity : Elasticity {
 
     // Advertise axial, full-volume and shell reductions for both infinitesimal
     // and Green-Lagrange kinematics.
-    bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
     // Infinitesimal axial response using the Young's modulus implied by the
     // Neo-Hookean parameters. Stress is Cauchy stress and state is unchanged.
-    void evaluate(const AxialStrainLinearized& strain,
-                  const Precision*             old_state,
-                  Precision*                   new_state,
-                  AxialStressCauchy&           stress,
-                  Precision*                   tangent = nullptr) const override;
-
     // Finite axial response reduced from the full three-dimensional potential.
     // The local traction-free solve requires a full tangent internally; the
     // condensed axial tangent is returned only when requested.
@@ -83,12 +74,6 @@ struct NeoHookeElasticity : Elasticity {
 
     // Infinitesimal three-dimensional response using the linearization of the
     // finite-strain potential at C = I. Output is Cauchy stress in material axes.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
-
     // Full finite-strain response. Green-Lagrange strain is mapped to C = I+2E;
     // the expensive analytic tangent is assembled only when requested.
     void evaluate(const VolumeStrainGreenLagrange& strain,
@@ -99,12 +84,6 @@ struct NeoHookeElasticity : Elasticity {
 
     // Infinitesimal shell response from the linearized plane-stress and
     // transverse-shear tangent implied by the three-dimensional parameters.
-    void evaluate(const ShellMaterialStrainLinearized& strain,
-                  const Precision*                     old_state,
-                  Precision*                           new_state,
-                  ShellMaterialStressCauchy&            stress,
-                  Mat5*                                tangent = nullptr) const override;
-
     // Finite-strain shell response. The thickness metric is solved so S33 = 0;
     // the condensed tangent is copied to the caller only when requested.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
@@ -122,10 +101,7 @@ private:
 
     // Linearize the full potential at the undeformed configuration in
     // three-dimensional engineering-Voigt ordering.
-    [[nodiscard]] Mat6 linear_tangent() const;
-
     // Build the infinitesimal five-component shell reduction used by linear shells.
-    [[nodiscard]] Mat5 linear_shell_tangent() const;
 };
 
 } // namespace fem::material
