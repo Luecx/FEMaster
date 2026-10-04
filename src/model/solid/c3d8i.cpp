@@ -1124,8 +1124,6 @@ MapMatrix C3D8I::evaluate(
         logging::error(!update_state,
             "C3D8I: small-strain constitutive state updates are not implemented");
 
-        Matrix24 linear = Matrix24::Zero();
-
         if (with_tangent || with_force) {
             Precision storage[ndof * ndof];
             Precision* target = with_tangent ? tangent_buffer : storage;
@@ -1137,9 +1135,6 @@ MapMatrix C3D8I::evaluate(
                 assemble_local_force(*internal_force, K * u);
             }
 
-            if (!with_tangent) {
-                linear = Eigen::Map<const Matrix24>(target);
-            }
         }
 
         if (with_geometric) {
