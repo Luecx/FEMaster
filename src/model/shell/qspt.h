@@ -49,15 +49,14 @@ struct QSPT : ShellElement<4> {
 
     SurfacePtr surface(ID surface_id) override;
     Precision  volume() override;
-    MapMatrix  stiffness(Precision* buffer) override;
-    MapMatrix  stiffness_geom(
-        Precision*   buffer,
-        const Field& displacement
-    ) override;
-    MapMatrix  stiffness_tangent(
-        Precision*   buffer,
-        NodeData&    nodal_forces,
-        const Field& displacement
+    MapMatrix  evaluate(
+        Precision*   tangent,
+        Precision*   geometric_tangent,
+        NodeData*    internal_force,
+        const Field* displacement,
+        const Field* linearization,
+        const Field* thermal_free_strain,
+        bool         update_state
     ) override;
     MapMatrix  mass(Precision* buffer) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
