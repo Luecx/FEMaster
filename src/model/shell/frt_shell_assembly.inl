@@ -695,7 +695,11 @@ MapMatrix FRTShell<N>::evaluate(
         ShellSection* section    = shell_section();
 
         const bool need_linear_response =
-            with_force || with_geometric || displacement != nullptr || update_state;
+            with_force
+            || with_geometric
+            || displacement != nullptr
+            || thermal_free_strain != nullptr
+            || update_state;
 
         thread_local std::vector<Vec8> linear_resultants;
         if (need_linear_response) {
