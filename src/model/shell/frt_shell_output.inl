@@ -127,16 +127,7 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    shell_section()->evaluate(
-        reference_position(r, s),
-        reference_basis_global(r, s),
-        ShellGeneralizedStrain(strain_base),
-        old_state,
-        nullptr,
-        this->_model_data->material_state_old->components,
-        resultants_base,
-        tangent_base
-    );
+    shell_section()->evaluate(reference_position(r, s), reference_basis_global(r, s), ShellGeneralizedStrain(strain_base), old_state, nullptr, this->_model_data->material_state_old->components, resultants_base, tangent_base);
 
     return topology_stiffness_scale() * (resultants_base.values() + tangent_base * strain_increment);
 }
