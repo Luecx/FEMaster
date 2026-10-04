@@ -1,3 +1,81 @@
+/**
+ * @file neo_hooke_elasticity.cpp
+ * @brief Implements compressible isotropic Neo-Hookean elasticity.
+ *
+ * The implementation evaluates the three-dimensional PK2 response from the
+ * right Cauchy-Green tensor and differentiates it analytically with respect to
+ * Green-Lagrange strain. Axial and shell plane-stress reductions determine the
+ * missing transverse deformation by Newton iteration and consistently condense
+ * the full material tangent.
+ *
+ * Tangent output is optional through the common `Elasticity` interface. A full
+ * three-dimensional stress-only query therefore skips tangent construction.
+ * Axial and shell reductions still form the three-dimensional tangent internally
+ * because their local Newton equations require the appropriate derivatives.
+ *
+ * All constitutive calls are state-neutral because the Neo-Hookean law contains
+ * no history variables; the state pointers are accepted only through the common
+ * `Elasticity` interface.
+ *
+ * @see NeoHookeElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#include "neo_hooke_elasticity.h"
+
+#include "../core/logging.h"
+#include "strain/axial_strain_green_lagrange.h"
+#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/volume_strain_green_lagrange.h"
+#include "stress/axial_stress_cauchy.h"
+#include "stress/axial_stress_pk2.h"
+#include "stress/shell_material_stress_cauchy.h"
+#include "stress/shell_material_stress_pk2.h"
+#include "stress/volume_stress_cauchy.h"
+#include "stress/volume_stress_pk2.h"
+
+#include <Eigen/LU>
+
+#include <array>
+#include <cmath>
+
+namespace fem::material {
+
+/**
+ * Constructs the compressible Neo-Hookean material and derives its infinitesimal
+ * elastic moduli.
+ *
+ * The potential parameters must be positive. They define
+ *
+ *     mu     = 2 C10
+ *     K      = 2 / D1
+ *     lambda = K - 2 mu / 3,
+ *
+ * which are reused by the linearized response and plane-stress initial guesses.
+ *
+ * @param c10_in Isochoric energy coefficient.
+ * @param d1_in Volumetric penalty parameter.
+ */
+NeoHookeElasticity::NeoHookeElasticity(Precision c10_in, Precision d1_in)
+    : c10(c10_in),
+      d1 (d1_in) {
+    logging::error(c10 > Precision(0),
+        "NEO_HOOKE: C10 must be positive");
+    logging::error(d1 > Precision(0),
+        "NEO_HOOKE: D1 must be positive");
+
+    // Derive the infinitesimal material constants once from the energy parameters.
+    mu          = Precision(2) * c10;
+    bulk        = Precision(2) / d1;
+    lame_lambda = bulk - Precision(2) * mu / Precision(3);
+}
+
+bool NeoHookeElasticity::supports_axial_green_lagrange() const {
+    return true;
+}
+
 bool NeoHookeElasticity::supports_volume_green_lagrange() const {
     return true;
 }
