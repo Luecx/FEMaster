@@ -1,79 +1,4 @@
-/**
- * @file generalised_isotropic_elasticity.cpp
- * @brief Implements generalized isotropic linear elasticity.
- *
- * Constant constitutive tangents combine isotropic normal coupling with the
- * independently prescribed engineering shear modulus. Linearized and
- * Green-Lagrange overloads differ only in their explicit work-conjugate stress
- * types because the underlying material law is linear in the supplied strain.
- *
- * @see GeneralisedIsotropicElasticity
- *
- * @author Finn Eggers
- * @date 07.08.2026
- */
-
-#include "generalised_isotropic_elasticity.h"
-
-#include "../core/logging.h"
-#include "strain/axial_strain_green_lagrange.h"
-#include "strain/axial_strain_linearized.h"
-#include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/shell_material_strain_linearized.h"
-#include "strain/volume_strain_green_lagrange.h"
-#include "strain/volume_strain_linearized.h"
-#include "stress/axial_stress_cauchy.h"
-#include "stress/axial_stress_pk2.h"
-#include "stress/shell_material_stress_cauchy.h"
-#include "stress/shell_material_stress_pk2.h"
-#include "stress/volume_stress_cauchy.h"
-#include "stress/volume_stress_pk2.h"
-
-namespace fem::material {
-
-/**
- * Constructs generalized isotropic elasticity from independent normal and
- * shear parameters.
- *
- * Young's modulus and Poisson's ratio satisfy the ordinary isotropic stability
- * interval, while the separately prescribed engineering shear modulus must be
- * positive.
- *
- * @param youngs_in Young's modulus controlling normal response.
- * @param poisson_in Poisson's ratio controlling normal coupling.
- * @param shear_in Independent engineering shear modulus.
- */
-GeneralisedIsotropicElasticity::GeneralisedIsotropicElasticity(Precision youngs_in,
-                                                               Precision poisson_in,
-                                                               Precision shear_in)
-    : youngs (youngs_in),
-      poisson(poisson_in),
-      shear  (shear_in) {
-    logging::error(youngs > Precision(0),
-        "GENERALISED_ISOTROPIC: Young's modulus must be positive");
-    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
-        "GENERALISED_ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
-    logging::error(shear > Precision(0),
-        "GENERALISED_ISOTROPIC: shear modulus must be positive");
-}
-
-bool GeneralisedIsotropicElasticity::supports_axial_linearized() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_volume_linearized() const {
-    return true;
-}
-
 bool GeneralisedIsotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_shell_integration_linearized() const {
     return true;
 }
 
@@ -136,32 +61,6 @@ Mat6 GeneralisedIsotropicElasticity::volume_tangent() const {
 }
 
 /**
- * Evaluates linearized axial Cauchy stress. The independent shear modulus does
- * not enter this one-dimensional response.
- *
- * @param strain Infinitesimal axial strain.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Axial Cauchy stress.
- * @param tangent Optional constant derivative equal to Young's modulus.
- */
-void GeneralisedIsotropicElasticity::evaluate(const AxialStrainLinearized& strain,
-                                              const Precision*             old_state,
-                                              Precision*                   new_state,
-                                              AxialStressCauchy&           stress,
-                                              Precision*                   tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    // The axial response depends only on Young's modulus.
-    stress.value() = youngs * strain.value();
-
-    if (tangent != nullptr) {
-        *tangent = youngs;
-    }
-}
-
-/**
  * Evaluates axial PK2 stress from Green-Lagrange strain.
  *
  * @param strain Axial Green-Lagrange strain.
@@ -186,34 +85,6 @@ void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& st
 }
 
 /**
- * Evaluates linearized three-dimensional Cauchy stress in material coordinates.
- *
- * The generalized-isotropic operator is required to compute stress, so it is
- * assembled once and copied to the optional tangent output only when requested.
- *
- * @param strain Infinitesimal engineering strain vector.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Optional generalized isotropic tangent.
- */
-void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                              const Precision*              old_state,
-                                              Precision*                    new_state,
-                                              VolumeStressCauchy&           stress,
-                                              Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = volume_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
  * Evaluates three-dimensional PK2 stress from Green-Lagrange strain.
  *
  * @param strain Green-Lagrange engineering strain vector.
@@ -232,31 +103,6 @@ void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& s
 
     const Mat6 material_tangent = volume_tangent();
     stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
- * Evaluates linearized shell Cauchy stress with independent shear response.
- *
- * @param strain Five-component shell material strain.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Shell Cauchy stress in material ordering.
- * @param tangent Optional reduced shell tangent.
- */
-void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                              const Precision*                     old_state,
-                                              Precision*                           new_state,
-                                              ShellMaterialStressCauchy&            stress,
-                                              Mat5*                                tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat5 material_tangent = shell_material_tangent();
-    stress.values() = material_tangent * strain.values();
 
     if (tangent != nullptr) {
         *tangent = material_tangent;
