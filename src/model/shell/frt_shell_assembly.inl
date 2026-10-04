@@ -86,8 +86,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
             old_state,
             new_state,
             state_stride,
-            true,
-            resultants,
+                        resultants,
             tangent
         );
 
