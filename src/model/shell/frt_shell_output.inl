@@ -55,104 +55,69 @@ Precision FRTShell<N>::thermal_free_strain_at(const Field* thermal_free_strain,
 }
 
 /**
- * Evaluates the generalized shell strain at an arbitrary natural point.
+ * Evaluates generalized shell strain at an arbitrary natural point by
+ * linearizing the exact finite shell kinematics about the state stored in data.
  *
- * In nonlinear mode the strain is evaluated directly from the supplied current
- * state. In linear mode the reference B matrix is evaluated at the point and
- * multiplied by the element displacement vector.
+ *     epsilon ~= epsilon0 + B0 Delta q.
  *
- * @param data Active evaluation data containing state and MITC tying values.
- * @param q Element displacement vector used by linear recovery.
- * @param r First natural output coordinate.
- * @param s Second natural output coordinate.
- * @param nonlinear Select direct nonlinear or linearized strain recovery.
- * @return Generalized local shell strain vector.
+ * Passing a zero increment therefore recovers the exact base strain.
  */
 template<Index N>
 typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
     const EvaluationData& data,
-    const Vec6N&          q,
+    const Vec6N&          displacement_increment,
     Precision             r,
-    Precision             s,
-    bool                  nonlinear
+    Precision             s
 ) const {
-    const ReferencePoint* cached = cached_reference_point(r, s);
+    logging::error(data.with_B,
+        "FRTShell: affine generalized strain recovery requires base-state B matrices");
+
+    const ReferencePoint* cached    = cached_reference_point(r, s);
     const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-    const ReferencePoint& point = cached ? *cached : temporary;
+    const ReferencePoint& point     = cached ? *cached : temporary;
 
-    Vec8     strain_nat;
-    Mat8x6N B_nat;
+    Vec8     strain;
+    Mat8x6N B;
 
-    if (nonlinear) {
-        compute_natural_strain(data, point, strain_nat);
-        apply_mitc_natural(data, point, strain_nat, nullptr);
-        transform_strain_to_local(point, strain_nat);
-        return strain_nat;
-    }
+    compute_natural_strain(data, point, strain, &B);
+    apply_mitc_natural(data, point, strain, &B);
+    transform_strain_to_local(point, strain, &B);
 
-    compute_natural_strain(data, point, strain_nat, &B_nat);
-    apply_mitc_natural(data, point, strain_nat, &B_nat);
-    transform_strain_to_local(point, strain_nat, &B_nat);
-    return B_nat * q;
+    return strain + B * displacement_increment;
 }
 
 /**
- * Evaluates generalized shell resultants at an arbitrary natural point.
+ * Evaluates generalized shell resultants from the exact base section response
+ * followed by one constitutive linearization:
  *
- * Nonlinear output calls the shell section with the recovered generalized
- * strain. Linear output multiplies the zero-strain local section tangent by the
- * linearized generalized strain.
- *
- * Arbitrary natural output coordinates do not own independent history. The
- * nonlinear path therefore selects the closest in-plane integration point and
- * reads the first committed state row of its through-thickness block. No target
- * state is supplied because result recovery must not advance material history.
- *
- * @param data Active evaluation data containing state and MITC tying values.
- * @param q Element displacement vector used by linear recovery.
- * @param r First natural output coordinate.
- * @param s Second natural output coordinate.
- * @param nonlinear Select nonlinear section evaluation or linear multiplication.
- * @param strain_out Optional generalized strain output.
- * @return Generalized local shell resultant vector.
+ *     n ~= n0 + H0 Delta epsilon.
  */
 template<Index N>
 typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
     const EvaluationData& data,
-    const Vec6N&          q,
+    const Vec6N&          displacement_increment,
     Precision             r,
     Precision             s,
-    bool                  nonlinear,
     Vec8*                 strain_out
 ) const {
-    const Vec8 strain_values = generalized_strain_at(data, q, r, s, nonlinear);
+    const Vec8 strain_base      = generalized_strain_at(data, Vec6N::Zero(), r, s);
+    const Vec8 strain_value     = generalized_strain_at(data, displacement_increment, r, s);
+    const Vec8 strain_increment = strain_value - strain_base;
 
     if (strain_out) {
-        *strain_out = strain_values;
+        *strain_out = strain_value;
     }
 
-    if (!nonlinear) {
-        return resultant_stiffness(r, s) * strain_values;
-    }
+    ShellStressResultants resultants_base;
+    Mat8                  tangent_base;
 
-    // Prepare generalized section output in the pointwise shell basis.
-    ShellGeneralizedStrain strain(strain_values);
-    ShellStressResultants  resultants;
-    Mat8                   tangent;
-
-    // Associate the arbitrary output coordinate with the nearest constitutive
-    // integration point in natural coordinates.
     const auto& points = reference_data().ip_points;
     Index state_ip = 0;
-    Precision state_distance =
-        (r - points[0].r) * (r - points[0].r)
-        + (s - points[0].s) * (s - points[0].s);
+    Precision state_distance = (r - points[0].r) * (r - points[0].r) + (s - points[0].s) * (s - points[0].s);
 
     for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
         const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
-        const Precision distance =
-            (r - point.r) * (r - point.r)
-            + (s - point.s) * (s - point.s);
+        const Precision distance = (r - point.r) * (r - point.r) + (s - point.s) * (s - point.s);
         if (distance < state_distance) {
             state_ip       = ip;
             state_distance = distance;
@@ -165,16 +130,16 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
-        strain,
+        ShellGeneralizedStrain(strain_base),
         old_state,
         nullptr,
         this->_model_data->material_state_old->components,
         true,
-        resultants,
-        tangent
+        resultants_base,
+        tangent_base
     );
 
-    return topology_stiffness_scale() * resultants.values();
+    return topology_stiffness_scale() * (resultants_base.values() + tangent_base * strain_increment);
 }
 
 /**
@@ -233,58 +198,101 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
 }
 
 /**
- * Reconstructs physical through-thickness strain and stress tensors.
+ * Returns the first variation of the three-dimensional shell deformation
+ * gradient about the base state stored in data.
  *
- * Membrane strain and curvature are combined linearly through the thickness.
- * Membrane resultants and moments are converted into the corresponding stress
- * distribution for a homogeneous shell section. Transverse shear is assumed
- * constant through the thickness, consistent with the Reissner-Mindlin model.
+ * Translational increments vary the midsurface tangents directly. Rotational
+ * increments use the exact first SO(3) derivatives at q0:
  *
- * The concrete section owns the physical recovery convention. The element
- * supplies the closest in-plane integration-point committed state block because
- * arbitrary output coordinates have no independent material history. Finite-
- * strain recovery additionally supplies the three-dimensional deformation
- * gradient so section PK2 stress can be pushed forward to Cauchy stress.
+ *     Delta d_i = sum_a dR_i/dtheta_a d0_i Delta theta_a.
+ */
+template<Index N>
+Mat3 FRTShell<N>::deformation_gradient_increment_at(
+    const EvaluationData& data,
+    const Vec6N&          displacement_increment,
+    Precision             r,
+    Precision             s,
+    Precision             z
+) const {
+    logging::error(data.rotations != nullptr,
+        "FRTShell: deformation-gradient linearization requires base-state rotation derivatives");
+
+    const ReferencePoint point = make_reference_point(r, s, Precision(0));
+    const auto& rotations = *data.rotations;
+    const auto& d0        = reference_data().d0;
+
+    Vec3 delta_x_a = Vec3::Zero();
+    Vec3 delta_x_b = Vec3::Zero();
+    Vec3 delta_d   = Vec3::Zero();
+    Vec3 delta_d_a = Vec3::Zero();
+    Vec3 delta_d_b = Vec3::Zero();
+
+    for (Index node = 0; node < num_nodes; ++node) {
+        const Vec3 delta_x     = displacement_increment.template segment<3>(dofs_per_node * node);
+        const Vec3 delta_theta = displacement_increment.template segment<3>(dofs_per_node * node + 3);
+        const Vec3 d0_i        = d0.row(node).transpose();
+
+        Vec3 delta_director = Vec3::Zero();
+        for (Index component = 0; component < 3; ++component) {
+            delta_director.noalias() += delta_theta(component) * (rotations[node].d1[component] * d0_i);
+        }
+
+        delta_x_a += point.shape_ab(node, 0) * delta_x;
+        delta_x_b += point.shape_ab(node, 1) * delta_x;
+
+        delta_d   += point.shape(node)       * delta_director;
+        delta_d_a += point.shape_ab(node, 0) * delta_director;
+        delta_d_b += point.shape_ab(node, 1) * delta_director;
+    }
+
+    Mat3 reference_covariant;
+    reference_covariant.col(0) = point.X_ab.col(0) + z * point.D_ab.col(0);
+    reference_covariant.col(1) = point.X_ab.col(1) + z * point.D_ab.col(1);
+    reference_covariant.col(2) = point.D;
+
+    const Precision reference_det = reference_covariant.determinant();
+    logging::error(std::abs(reference_det) > Precision(1e-14),
+        "FRTShell: singular reference shell basis during stress linearization in element ", this->elem_id);
+
+    Mat3 delta_covariant;
+    delta_covariant.col(0) = delta_x_a + z * delta_d_a;
+    delta_covariant.col(1) = delta_x_b + z * delta_d_b;
+    delta_covariant.col(2) = delta_d;
+
+    return delta_covariant * reference_covariant.inverse();
+}
+
+/**
+ * Reconstructs physical through-thickness strain and stress tensors from an
+ * exact base state followed by a first-order perturbation.
  *
- * @param data Active evaluation data and current nodal state.
- * @param q Element displacement vector used by linear recovery.
- * @param r First natural output coordinate.
- * @param s Second natural output coordinate.
- * @param zeta Normalized through-thickness coordinate in `[-1,1]`.
- * @param nonlinear Select nonlinear PK2-to-Cauchy transformation.
- * @param strain_out Reconstructed global Green-Lagrange strain vector.
- * @param stress_out Reconstructed Cauchy stress vector in the section-defined output convention.
+ * Generalized strain is continued as
+ *
+ *     epsilon ~= epsilon0 + B0 Delta q.
+ *
+ * The section evaluates PK2 stress and its tangent at epsilon0. Cauchy stress is
+ * then linearized consistently with respect to both Delta S and Delta F.
  */
 template<Index N>
 void FRTShell<N>::physical_stress_strain_at(
     const EvaluationData& data,
-    const Vec6N&          q,
+    const Vec6N&          displacement_increment,
     Precision             r,
     Precision             s,
     Precision             zeta,
-    bool                  nonlinear,
     const Field*          thermal_free_strain,
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
-    // Recover generalized strain in the pointwise shell basis and reconstruct
-    // the requested physical thickness coordinate.
-    const Vec8 generalized_strain = generalized_strain_at(
-        data,
-        q,
-        r,
-        s,
-        nonlinear
-    );
+    const Vec8 generalized_base   = generalized_strain_at(data, Vec6N::Zero(), r, s);
+    const Vec8 generalized_strain = generalized_strain_at(data, displacement_increment, r, s);
+    Vec8 generalized_increment    = generalized_strain - generalized_base;
 
-    Vec8 mechanical_generalized_strain = generalized_strain;
     if (thermal_free_strain) {
-        const ReferencePoint* cached = cached_reference_point(r, s);
-        const ReferencePoint temporary =
-            cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-        const ReferencePoint& point = cached ? *cached : temporary;
-        mechanical_generalized_strain -= thermal_generalized_strain(
-            point, thermal_free_strain_at(thermal_free_strain, r, s));
+        const ReferencePoint* cached    = cached_reference_point(r, s);
+        const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+        const ReferencePoint& point     = cached ? *cached : temporary;
+        generalized_increment -= thermal_generalized_strain(point, thermal_free_strain_at(thermal_free_strain, r, s));
     }
 
     const Precision h = this->get_section()->thickness_;
@@ -294,45 +302,32 @@ void FRTShell<N>::physical_stress_strain_at(
     const Index curvature_start       = static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX);
     const Index shear_strain_start    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
 
-    const Vec3 plane_strain =
-        generalized_strain.template segment<3>(membrane_strain_start)
-        + z * generalized_strain.template segment<3>(curvature_start);
+    const Vec3 plane_strain = generalized_strain.template segment<3>(membrane_strain_start)
+                            + z * generalized_strain.template segment<3>(curvature_start);
     const Vec2 shear_strain = generalized_strain.template segment<2>(shear_strain_start);
 
     VolumeStrainGreenLagrange strain_local;
-
     strain_local[VolumeStrain::Component::XX]      = plane_strain(0);
     strain_local[VolumeStrain::Component::YY]      = plane_strain(1);
     strain_local[VolumeStrain::Component::GammaYZ] = shear_strain(1);
     strain_local[VolumeStrain::Component::GammaXZ] = shear_strain(0);
     strain_local[VolumeStrain::Component::GammaXY] = plane_strain(2);
 
-    const Mat3 reference_basis = reference_basis_global(r, s);
-    const Mat3 green_lagrange_global = reference_basis
-                                     * strain_local.tensor()
-                                     * reference_basis.transpose();
-
+    const Mat3 reference_basis       = reference_basis_global(r, s);
+    const Mat3 green_lagrange_global = reference_basis * strain_local.tensor() * reference_basis.transpose();
     strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
 
-    // Let the section apply its stress-output convention. The element supplies
-    // the deformation gradient only for finite-strain PK2-to-Cauchy recovery.
-    const Mat3 deformation_gradient = nonlinear
-        ? deformation_gradient_at(data.state, r, s, z)
-        : Mat3::Identity();
+    const Mat3 deformation_gradient_base = deformation_gradient_at(data.state, r, s, z);
+    const Mat3 deformation_gradient_increment =
+        deformation_gradient_increment_at(data, displacement_increment, r, s, z);
 
-    // Associate the arbitrary natural output coordinate with the nearest
-    // in-plane constitutive integration point.
     const auto& points = reference_data().ip_points;
     Index state_ip = 0;
-    Precision state_distance =
-        (r - points[0].r) * (r - points[0].r)
-        + (s - points[0].s) * (s - points[0].s);
+    Precision state_distance = (r - points[0].r) * (r - points[0].r) + (s - points[0].s) * (s - points[0].s);
 
     for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
         const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
-        const Precision distance =
-            (r - point.r) * (r - point.r)
-            + (s - point.s) * (s - point.s);
+        const Precision distance = (r - point.r) * (r - point.r) + (s - point.s) * (s - point.s);
         if (distance < state_distance) {
             state_ip       = ip;
             state_distance = distance;
@@ -342,32 +337,27 @@ void FRTShell<N>::physical_stress_strain_at(
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
+    const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress_linearized(
         reference_position(r, s),
         reference_basis,
-        ShellGeneralizedStrain(mechanical_generalized_strain),
+        ShellGeneralizedStrain(generalized_base),
+        ShellGeneralizedStrain(generalized_increment),
         old_state,
-        nullptr,
         this->_model_data->material_state_old->components,
         z,
-        nonlinear,
-        deformation_gradient
+        deformation_gradient_base,
+        deformation_gradient_increment
     );
 
     stress_out = topology_stiffness_scale() * cauchy_stress.voigt();
 }
 
 /**
- * Computes physical stress and strain tensors at requested natural and
- * through-thickness coordinates without modifying trial material history.
+ * Computes physical stress and strain at displacement q by linearizing about
+ * the exact finite-rotation state q0 supplied through linearization.
  *
- * @param strain Optional physical strain output field.
- * @param stress Optional physical stress output field.
- * @param displacement Global nodal displacement field.
- * @param rst Requested natural and normalized thickness coordinates.
- * @param offset First output row belonging to this element.
- * @param linearization Null for reference recovery, displacement for exact recovery.
- * @param thermal_free_strain Optional reference thermal free strain.
+ * A null linearization denotes q0 = 0. Passing displacement itself recovers the
+ * exact nonlinear state because Delta q then vanishes.
  */
 template<Index N>
 void FRTShell<N>::compute_stress_strain(
@@ -379,63 +369,44 @@ void FRTShell<N>::compute_stress_strain(
     const Field*     linearization,
     const Field*     thermal_free_strain
 ) {
-    // Preserve reference and exact shell recovery while exposing the common state contract
-    logging::error(linearization == nullptr || linearization == &displacement,
-        "FRTShell: intermediate recovery expansion points are not supported");
-    const bool use_green_lagrange_nl = linearization != nullptr;
-
     logging::error(strain != nullptr || stress != nullptr,
-                   "FRTShell: compute_stress_strain requires at least one output field");
+        "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
-                   "FRTShell: stress/strain coordinates require r, s and t columns");
-    logging::error(!use_green_lagrange_nl || thermal_free_strain == nullptr,
-                   "FRTShell: thermal free strain recovery is supported only for linear kinematics");
+        "FRTShell: stress/strain coordinates require r, s and t columns");
+    logging::error(!thermal_free_strain || linearization == nullptr,
+        "FRTShell: finite-state thermal free strain recovery is not implemented");
+    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
+        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
-    const CurrentState state = use_green_lagrange_nl
-        ? current_state_from_displacement(displacement)
-        : reference_state();
+    const Vec6N q0 = linearization ? element_displacement_vector(*linearization) : Vec6N::Zero();
+    const Vec6N q  = element_displacement_vector(displacement);
+    const Vec6N delta = q - q0;
 
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        !use_green_lagrange_nl,
-        false,
-        false
-    );
+    const CurrentState state = linearization ? current_state_from_displacement(*linearization) : reference_state();
 
-    const Vec6N q = element_displacement_vector(displacement);
+    // Request B0 and the first SO(3) derivatives at the exact base state. The
+    // resultant request keeps section evaluation on the same Green-Lagrange
+    // constitutive path used by mechanical evaluation.
+    const EvaluationData data = init_evaluation(state, true, true, false, true, false);
 
     for (Eigen::Index point = 0; point < rst.rows(); ++point) {
         Vec6 strain_value;
         Vec6 stress_value;
 
-        physical_stress_strain_at(
-            data,
-            q,
-            rst(point, 0),
-            rst(point, 1),
-            rst(point, 2),
-            use_green_lagrange_nl,
-            thermal_free_strain,
-            strain_value,
-            stress_value
-        );
+        physical_stress_strain_at(data, delta, rst(point, 0), rst(point, 1), rst(point, 2),
+                                  thermal_free_strain, strain_value, stress_value);
 
         const Index row = static_cast<Index>(offset) + point;
 
         if (strain) {
             for (Index component = 0; component < strain->components; ++component) {
-                (*strain)(row, component) = component < 6
-                    ? strain_value(component)
-                    : Precision(0);
+                (*strain)(row, component) = component < 6 ? strain_value(component) : Precision(0);
             }
         }
 
         if (stress) {
             for (Index component = 0; component < stress->components; ++component) {
-                (*stress)(row, component) = component < 6
-                    ? stress_value(component)
-                    : Precision(0);
+                (*stress)(row, component) = component < 6 ? stress_value(component) : Precision(0);
             }
         }
     }
