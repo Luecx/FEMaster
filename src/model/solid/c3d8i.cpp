@@ -253,6 +253,93 @@ C3D8I::EnhancedSystem C3D8I::assemble_linear_system() {
 }
 
 /**
+ * Assembles the small-strain C3D8I residual and consistent material tangent.
+ *
+ * The compatible nodal strain and thirteen enhanced modes are evaluated in the
+ * reference configuration,
+ *
+ *     epsilon = B u + G alpha - epsilon_th.
+ *
+ * The constitutive law is evaluated at this actual strain from committed
+ * material history. The enhanced residual
+ *
+ *     r_alpha = integral G^T sigma dV0
+ *
+ * and its tangent Kaa define the local stationarity problem for alpha. When
+ * requested, the same stress/tangent pair also supplies the nodal residual and
+ * the remaining three tangent blocks required for static condensation.
+ *
+ * Local Newton iterations pass write_material_state=false, so rejected enhanced
+ * candidates never overwrite persistent trial history. Only the final physical
+ * evaluation may write material_state_new.
+ */
+C3D8I::EnhancedSystem C3D8I::assemble_small_strain_system(
+    const Vector24&        displacement,
+    const Vector13&        alpha,
+    const StaticVector<N>* thermal_free_strain,
+    bool                   write_material_state,
+    bool                   assemble_global_blocks
+) {
+    EnhancedSystem system;
+
+    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    const auto&              scheme           = this->integration_scheme_stiffness();
+
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
+
+        Precision det0 = Precision(0);
+        const auto dN_dX = this->shape_derivatives_reference(
+            reference_coords, point.r, point.s, point.t, det0);
+        const auto B = this->strain_displacement(dN_dX);
+        const EnhancedModes modes = enhanced_gradient_modes(
+            reference_coords, point.r, point.s, point.t);
+        const Matrix6x13 G = enhanced_strain_matrix(modes);
+
+        Vec6 strain_values = B * displacement + G * alpha;
+        if (thermal_free_strain != nullptr) {
+            const Precision free_value =
+                this->shape_function(point.r, point.s, point.t).dot(*thermal_free_strain);
+            strain_values(0) -= free_value;
+            strain_values(1) -= free_value;
+            strain_values(2) -= free_value;
+        }
+
+        const VolumeStrainLinearized strain(strain_values);
+        const Index      state_row = this->mp_index(ip);
+        const Precision* old_state =
+            &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision* new_state = write_material_state
+            ? &(*this->_model_data->material_state_new)(state_row, 0)
+            : nullptr;
+
+        VolumeStressCauchy stress;
+        Mat6               C;
+        evaluate_material(
+            point.r, point.s, point.t,
+            strain, old_state, new_state,
+            stress, C);
+
+        const Precision measure = point.w * det0;
+        const Vec6      stress_voigt = stress.voigt();
+
+        system.ra.noalias()  += measure * G.transpose() * stress_voigt;
+        system.kaa.noalias() += measure * G.transpose() * C * G;
+
+        if (!assemble_global_blocks) {
+            continue;
+        }
+
+        system.ru.noalias()  += measure * B.transpose() * stress_voigt;
+        system.kuu.noalias() += measure * B.transpose() * C * B;
+        system.kua.noalias() += measure * B.transpose() * C * G;
+        system.kau.noalias() += measure * G.transpose() * C * B;
+    }
+
+    return system;
+}
+
+/**
  * Solves the stationary enhanced parameters for a linearized displacement
  * state.
  *
@@ -323,6 +410,51 @@ C3D8I::Vector13 C3D8I::solve_linear_modes(
         "C3D8I: singular incompatible-mode stiffness in element ", elem_id);
 
     return -solver.solve(residual);
+}
+
+/**
+ * Solves the nonlinear small-strain enhanced stationarity equations.
+ *
+ * Material nonlinearity makes the local EAS equations nonlinear even though the
+ * element kinematics remain infinitesimal. Newton therefore evaluates the
+ * constitutive stress and algorithmic tangent at each candidate alpha while
+ * always reading the same committed material history.
+ */
+C3D8I::Vector13 C3D8I::solve_small_strain_modes(
+    const Vector24&        displacement,
+    const StaticVector<N>* thermal_free_strain
+) {
+    Vector13 alpha = solve_linear_modes(displacement, thermal_free_strain);
+
+    constexpr Index     max_iterations = 20;
+    constexpr Precision tolerance      = Precision(1e-10);
+
+    for (Index iteration = 0; iteration < max_iterations; ++iteration) {
+        const EnhancedSystem system = assemble_small_strain_system(
+            displacement,
+            alpha,
+            thermal_free_strain,
+            false,
+            false
+        );
+
+        Eigen::FullPivLU<Matrix13> solver(system.kaa);
+        logging::error(solver.isInvertible(),
+            "C3D8I: singular small-strain local EAS tangent in element ", elem_id);
+
+        const Vector13 delta = solver.solve(-system.ra);
+        alpha += delta;
+
+        const Precision scale = Precision(1) + alpha.cwiseAbs().maxCoeff();
+        if (delta.cwiseAbs().maxCoeff() <= tolerance * scale) {
+            return alpha;
+        }
+    }
+
+    logging::error(false,
+        "C3D8I: small-strain local incompatible-mode Newton did not converge in element ",
+        elem_id);
+    return alpha;
 }
 
 /**
