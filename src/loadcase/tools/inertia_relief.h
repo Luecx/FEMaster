@@ -25,7 +25,6 @@
  * - element state.
  *
  * @see bc::InertialLoad
- * @see feature::PointMass
  * @see model::StructuralElement
  *
  * @author Finn Eggers
