@@ -17,8 +17,8 @@
 #include "../src/io/reader/parser.h"
 #include "../src/bc/neumann/load_inertial.h"
 #include "../src/material/orthotropic_elasticity.h"
-#include "../src/material/strain/shell_material_strain_linearized.h"
-#include "../src/material/stress/shell_material_stress_cauchy.h"
+#include "../src/material/strain/shell_material_strain_green_lagrange.h"
+#include "../src/material/stress/shell_material_stress_pk2.h"
 #include "../src/model/model.h"
 
 #include <filesystem>
