@@ -1,3 +1,63 @@
+/**
+ * @file generalised_isotropic_elasticity.cpp
+ * @brief Implements generalized isotropic linear elasticity.
+ *
+ * Constant constitutive tangents combine isotropic normal coupling with the
+ * independently prescribed engineering shear modulus. Linearized and
+ * Green-Lagrange overloads differ only in their explicit work-conjugate stress
+ * types because the underlying material law is linear in the supplied strain.
+ *
+ * @see GeneralisedIsotropicElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
+#include "generalised_isotropic_elasticity.h"
+
+#include "../core/logging.h"
+#include "strain/axial_strain_green_lagrange.h"
+#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/volume_strain_green_lagrange.h"
+#include "stress/axial_stress_cauchy.h"
+#include "stress/axial_stress_pk2.h"
+#include "stress/shell_material_stress_cauchy.h"
+#include "stress/shell_material_stress_pk2.h"
+#include "stress/volume_stress_cauchy.h"
+#include "stress/volume_stress_pk2.h"
+
+namespace fem::material {
+
+/**
+ * Constructs generalized isotropic elasticity from independent normal and
+ * shear parameters.
+ *
+ * Young's modulus and Poisson's ratio satisfy the ordinary isotropic stability
+ * interval, while the separately prescribed engineering shear modulus must be
+ * positive.
+ *
+ * @param youngs_in Young's modulus controlling normal response.
+ * @param poisson_in Poisson's ratio controlling normal coupling.
+ * @param shear_in Independent engineering shear modulus.
+ */
+GeneralisedIsotropicElasticity::GeneralisedIsotropicElasticity(Precision youngs_in,
+                                                               Precision poisson_in,
+                                                               Precision shear_in)
+    : youngs (youngs_in),
+      poisson(poisson_in),
+      shear  (shear_in) {
+    logging::error(youngs > Precision(0),
+        "GENERALISED_ISOTROPIC: Young's modulus must be positive");
+    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
+        "GENERALISED_ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
+    logging::error(shear > Precision(0),
+        "GENERALISED_ISOTROPIC: shear modulus must be positive");
+}
+
+bool GeneralisedIsotropicElasticity::supports_axial_green_lagrange() const {
+    return true;
+}
+
 bool GeneralisedIsotropicElasticity::supports_volume_green_lagrange() const {
     return true;
 }
