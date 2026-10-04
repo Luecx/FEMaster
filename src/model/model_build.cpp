@@ -728,7 +728,9 @@ void Model::build_internal_force_nonlinear(
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->stiffness_tangent(nullptr, nodal_forces, displacement);
+        structural->evaluate(
+            nullptr, nullptr, &nodal_forces,
+            &displacement, &displacement, nullptr, true);
     }
 
     TripletList discarded_contact_triplets;
