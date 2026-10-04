@@ -255,7 +255,7 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
  * The common solid evaluation supplies all requested continuum quantities. The
  * reference hourglass operator is linear and state-neutral, so it contributes to
  * the complete tangent and to the internal force at the requested displacement,
- * but never to the stress-dependent geometric tangent.
+ * but never to the separate perturbation geometric stiffness.
  */
 MapMatrix C3D8R::evaluate(
     Precision*   tangent,
