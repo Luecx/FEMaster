@@ -35,8 +35,8 @@ namespace fem::model {
  * The report first describes reusable parts and their rigid instances before
  * presenting the dense compiled assembly. Compiled elements are grouped by
  * runtime type, and every named region and shared definition is listed in
- * alphabetical order. Sections, features, constraints and load/support
- * collectors complete the report.
+ * alphabetical order. Sections, constraints and load/support collectors
+ * complete the report.
  *
  * Logger indentation represents ownership and grouping relationships. Null
  * entries are identified explicitly so that partially populated model state
@@ -199,24 +199,15 @@ void Model::print_overview() const {
     print_definitions("Amplitudes",         model_data.amplitudes);
     logging::down();
 
-    // Report compiled section assignments and non-element operator features
+    // Report compiled section assignments.
     logging::info(true, "");
-    logging::info(true, "Sections and features");
+    logging::info(true, "Sections");
     logging::up();
     logging::info(true, "Sections (", model_data.sections.size(), ")");
     logging::up();
     for (const auto& section : model_data.sections) {
         logging::info(true, section ? section->str() : "Section: (null)");
     }
-    logging::down();
-    logging::info(true, "Features (", model_data.features.size(), ")");
-    logging::up();
-    const Index undefined_features = static_cast<Index>(std::count(
-        model_data.features.begin(),
-        model_data.features.end(),
-        nullptr
-    ));
-    logging::info(undefined_features > 0, "Undefined: ", undefined_features);
     logging::down();
     logging::down();
 
