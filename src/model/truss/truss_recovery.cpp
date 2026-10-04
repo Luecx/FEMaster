@@ -277,17 +277,17 @@ void T3::compute_compliance(Field& displacement, Field& result) {
 }
 
 /**
- * Recovers the linearized axial section force for beam-style output.
+ * Recovers the reference-linearized axial section force for beam-style output.
  *
- * The infinitesimal axial strain is
+ * The material is evaluated exactly at the undeformed base state E0 = 0. The
+ * displacement field supplies the first-order Green-Lagrange increment
  *
- *     epsilon = N0 . (u2 - u1) / L0,
+ *     Delta E = N0 . (u2 - u1) / L0,
  *
- * the material returns Cauchy stress sigma, and the constant axial resultant is
+ * and the PK2 stress is continued as S ~= S0 + C0 Delta E. At F0 = I the PK2
+ * and Cauchy measures coincide to first order, so the axial resultant is
  *
- *     N = A0 sigma.
- *
- * Only stress is required, so the constitutive tangent is intentionally omitted.
+ *     N = A0 (S0 + C0 Delta E).
  */
 bool T3::compute_beam_section_forces(
     Field&       section_forces,
@@ -306,8 +306,8 @@ bool T3::compute_beam_section_forces(
     // Validate all requirements before starting the actual recovery.
     logging::error(L0 > Precision(0),
         "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
-    logging::error(elasticity->supports_axial_linearized(),
-        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
+    logging::error(elasticity->supports_axial_green_lagrange(),
+        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
     // The reference unit direction is
     //
@@ -321,22 +321,24 @@ bool T3::compute_beam_section_forces(
     const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
     const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
-    const AxialStrainLinearized axial_strain(N0.dot(u2 - u1) / L0);
-    AxialStressCauchy           axial_stress;
+    const Precision delta_strain = N0.dot(u2 - u1) / L0;
 
-    // Section-force recovery is state-neutral. The constitutive law reads the
-    // committed material state but neither updates history nor returns a tangent.
+    // Evaluate the exact material base state and its tangent without advancing
+    // constitutive history. The requested linear response is the affine
+    // continuation from E0 = 0.
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    elasticity->evaluate(axial_strain, old_state, nullptr, axial_stress, nullptr);
+    AxialStrainGreenLagrange strain_base;
+    AxialStressPK2           stress_base;
+    Precision                material_tangent = Precision(0);
 
-    // T3 carries only the constant axial resultant
-    //
-    //     N = A0 sigma.
-    //
-    // Bending, shear and torsional resultants are zero by construction.
-    const Precision axial_force = get_section()->area_ * axial_stress.value();
+    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
+
+    // At the undeformed base state lambda0 = 1, hence PK2 and Cauchy stress
+    // coincide to first order.
+    const Precision axial_stress = stress_base.value() + material_tangent * delta_strain;
+    const Precision axial_force  = get_section()->area_ * axial_stress;
 
     for (Index node = 0; node < N; ++node) {
         const Index row = static_cast<Index>(offset) + node;
