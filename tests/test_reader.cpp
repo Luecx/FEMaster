@@ -142,8 +142,8 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
         12.0, 13.0, 23.0
     );
 
-    ShellMaterialStrainLinearized strain;
-    ShellMaterialStressCauchy     stress;
+    ShellMaterialStrainGreenLagrange strain;
+    ShellMaterialStressPK2             stress;
     Mat5                          tangent;
     Precision old_state = Precision(0);
     Precision new_state = Precision(0);
