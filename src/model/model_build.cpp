@@ -532,7 +532,9 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
 
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
         if (auto structural = element->as<StructuralElement>()) {
-            MapMatrix stiffness = structural->stiffness(storage);
+            MapMatrix stiffness = structural->evaluate(
+                storage, nullptr, nullptr,
+                nullptr, nullptr, nullptr, false);
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
                     "stiffness scale field must use ELEMENT domain");
@@ -552,7 +554,9 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
     if (!_data->point_elements.empty()) {
         auto point_lambda = [](const ElementPtr& element, Precision* storage) {
             if (auto structural = element->as<StructuralElement>()) {
-                return structural->stiffness(storage);
+                return structural->evaluate(
+                    storage, nullptr, nullptr,
+                    nullptr, nullptr, nullptr, false);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -575,7 +579,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
  * Assembles the nonlinear tangent and matching nodal internal-force vector.
  *
  * Every structural element performs one physical trial evaluation through
- * `stiffness_tangent()`. The same constitutive response supplies its internal
+ * `evaluate()`. The same constitutive response supplies its internal
  * force and, when matrix storage is present, its consistent tangent. No global
  * integration-point stress scratch field is allocated during assembly.
  *
@@ -611,10 +615,14 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             return matrix;
         }
 
-        MapMatrix tangent = structural->stiffness_tangent(
+        MapMatrix tangent = structural->evaluate(
             local_matrix_storage,
-            local_nodal_forces,
-            displacement
+            nullptr,
+            &local_nodal_forces,
+            &displacement,
+            &displacement,
+            nullptr,
+            true
         );
 
         if (stiffness_scalar) {
@@ -640,7 +648,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
                                 Precision*        storage,
                                 NodeData&         local_nodal_forces) -> MapMatrix {
             if (auto structural = element->as<StructuralElement>()) {
-                return structural->stiffness_tangent(storage, local_nodal_forces, displacement);
+                return structural->evaluate(
+                    storage, nullptr, &local_nodal_forces,
+                    &displacement, &displacement, nullptr, true);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -681,7 +691,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 /**
  * Evaluates nonlinear internal and contact forces without retaining a tangent.
  *
- * Structural elements use the same physical `stiffness_tangent()` path as full
+ * Structural elements use the same physical `evaluate()` path as full
  * Newton assembly, but receive a null matrix buffer. They therefore update trial
  * material state and assemble their matching internal force without constructing
  * tangent-only terms. Contact follows with tangent triplets discarded.
@@ -709,7 +719,9 @@ void Model::build_internal_force_nonlinear(
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->stiffness_tangent(nullptr, nodal_forces, displacement);
+        structural->evaluate(
+            nullptr, nullptr, &nodal_forces,
+            &displacement, &displacement, nullptr, true);
     }
 
     for (const auto& element : _data->point_elements) {
@@ -745,7 +757,8 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
     const Field&  displacement,
     const Field*  stiffness_scalar,
-    const Field*  thermal_free_strain
+    const Field*  thermal_free_strain,
+    const Field*  linearization
 ) {
     if (thermal_free_strain) {
         logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL,
@@ -757,8 +770,15 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     }
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
-            MapMatrix geometric_stiffness = structural->stiffness_geom(
-                storage, displacement, thermal_free_strain);
+            MapMatrix geometric_stiffness = structural->evaluate(
+                nullptr,
+                storage,
+                nullptr,
+                &displacement,
+                linearization,
+                thermal_free_strain,
+                false
+            );
 
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
