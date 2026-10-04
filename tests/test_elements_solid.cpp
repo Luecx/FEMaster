@@ -110,6 +110,135 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
 }
 
 
+TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
+    model::Model model;
+
+    const std::array<Vec3, 8> coords{
+        Vec3(0.0, 0.0, 0.0),
+        Vec3(1.0, 0.0, 0.0),
+        Vec3(1.0, 1.0, 0.0),
+        Vec3(0.0, 1.0, 0.0),
+        Vec3(0.0, 0.0, 1.0),
+        Vec3(1.0, 0.0, 1.0),
+        Vec3(1.0, 1.0, 1.0),
+        Vec3(0.0, 1.0, 1.0)
+    };
+
+    for (Index node = 0; node < 8; ++node) {
+        model.set_node(node, coords[node].x(), coords[node].y(), coords[node].z());
+    }
+    model.set_element<model::C3D8>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::NeoHookeElasticity>(100.0, 0.01);
+    model.add_material(material);
+
+    auto section = std::make_shared<SolidSection>();
+    section->material_ = material;
+    section->region_   = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(section);
+
+    model.compile();
+    model.step_begin();
+
+    auto* element = model._data->elements[0]->as<model::C3D8>();
+    ASSERT_NE(element, nullptr);
+
+    model::Field linearization("U_LINEARIZATION", model::FieldDomain::NODE, 8, 6);
+    linearization.set_zero();
+
+    for (Index node = 0; node < 8; ++node) {
+        const Vec3 u(
+            Precision(0.12) * coords[node].x(),
+            Precision(-0.04) * coords[node].y(),
+            Precision(0.06) * coords[node].z()
+        );
+        linearization(node, 0) = u(0);
+        linearization(node, 1) = u(1);
+        linearization(node, 2) = u(2);
+    }
+
+    model::NodeData base_force("F_BASE", model::FieldDomain::NODE, 8, 6);
+    base_force.set_zero();
+
+    Precision tangent_storage[24 * 24] {};
+    Precision geometric_storage[24 * 24] {};
+    const DynamicMatrix tangent = element->evaluate(
+        tangent_storage,
+        geometric_storage,
+        &base_force,
+        &linearization,
+        &linearization,
+        nullptr,
+        false
+    );
+    const DynamicMatrix geometric =
+        Eigen::Map<DynamicMatrix>(geometric_storage, 24, 24);
+
+    EXPECT_TRUE(tangent.allFinite());
+    EXPECT_TRUE(geometric.allFinite());
+    EXPECT_GT(geometric.norm(), Precision(1e-8));
+
+    // Requesting only K_G must reproduce the geometric part without requiring
+    // internal force or the complete material tangent as an output.
+    Precision geometric_only_storage[24 * 24] {};
+    const DynamicMatrix geometric_only = element->evaluate(
+        nullptr,
+        geometric_only_storage,
+        nullptr,
+        nullptr,
+        &linearization,
+        nullptr,
+        false
+    );
+    EXPECT_LT(
+        (geometric_only - geometric).norm(),
+        Precision(1e-12) * (Precision(1) + geometric.norm())
+    );
+
+    // A target state different from u_L must use the first-order residual
+    // f(u_L) + K_T(u_L) (u-u_L).
+    model::Field target("U_TARGET", model::FieldDomain::NODE, 8, 6);
+    target.values = linearization.values;
+    target(6, 0) += Precision(2e-4);
+    target(6, 1) -= Precision(1e-4);
+    target(5, 2) += Precision(1.5e-4);
+
+    model::NodeData target_force("F_TARGET", model::FieldDomain::NODE, 8, 6);
+    target_force.set_zero();
+    element->evaluate(
+        nullptr,
+        nullptr,
+        &target_force,
+        &target,
+        &linearization,
+        nullptr,
+        false
+    );
+
+    StaticVector<24> f_base   = StaticVector<24>::Zero();
+    StaticVector<24> f_target = StaticVector<24>::Zero();
+    StaticVector<24> delta    = StaticVector<24>::Zero();
+
+    for (Index node = 0; node < 8; ++node) {
+        for (Dim dof = 0; dof < 3; ++dof) {
+            const Index local = 3 * node + dof;
+            f_base(local) = base_force(node, dof);
+            f_target(local) = target_force(node, dof);
+            delta(local) = target(node, dof) - linearization(node, dof);
+        }
+    }
+
+    const StaticVector<24> expected = f_base + tangent * delta;
+    EXPECT_LT(
+        (f_target - expected).norm(),
+        Precision(1e-11) * (Precision(1) + expected.norm())
+    );
+
+    model.step_end();
+}
+
+
 TEST(Elements_C3D8I, AffinePatchMatchesC3D8OnDistortedHex) {
     model::Model model;
 
