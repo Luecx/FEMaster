@@ -145,18 +145,34 @@ void SolidElement<N>::compute_stress_strain(
         Precision det0;
         const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
             reference_coords, point.r, point.s, point.t, det0);
-        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, point.r, point.s, point.t);
-        const VolumeStrainGreenLagrange green = VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const Mat3 F = this->deformation_gradient(
+            reference_coords, current_coords, point.r, point.s, point.t);
+        const VolumeStrainGreenLagrange green =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+
+        Precision free = Precision(0);
+        if (thermal_free_strain) {
+            free = this->shape_function(point.r, point.s, point.t)
+                .dot(nodal_thermal_strain);
+        }
+
+        Vec6 constitutive_strain_values = green.voigt();
+        if (exact_state && thermal_free_strain) {
+            constitutive_strain_values.head<3>().array() -= free;
+        }
+        const VolumeStrainGreenLagrange constitutive_strain(
+            constitutive_strain_values);
+
         VolumeStressPK2 second_pk;
         Mat6            material_tangent;
         evaluate_material(
-            point.r, point.s, point.t, green, old_state, nullptr, second_pk,
+            point.r, point.s, point.t,
+            constitutive_strain,
+            old_state, nullptr, second_pk,
             (exact_state && !thermal_free_strain) ? nullptr : &material_tangent);
 
         Vec6 thermal_stress = Vec6::Zero();
-        if (thermal_free_strain) {
-            const Precision free =
-                this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
+        if (thermal_free_strain && !exact_state) {
             thermal_stress =
                 material_tangent * Vec6(free, free, free, 0, 0, 0);
         }
