@@ -157,7 +157,7 @@ public:
 
     // Thermal equivalent loading uses the same local static condensation as the
     // mechanical linear stiffness.
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+    void apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) override;
 
     // Compliance orientation sensitivity uses the stationary enhanced strain
     // rather than the compatible C3D8 strain inherited by the common solid.
