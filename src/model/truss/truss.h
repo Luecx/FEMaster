@@ -157,11 +157,14 @@ struct T3 : StructuralElement {
         const TenField& field
     ) override;
 
-    // Equivalent nodal loading caused by a prescribed temperature field
-    void apply_tload(
+    // Thermal expansion from the current nodal temperature state.
+    void apply_thermal_expansion_load(
         Field&       node_loads,
-        const Field& node_temp,
-        Precision    ref_temp
+        const Field& node_temp
+    ) override;
+    void apply_thermal_free_strain(
+        Field&       thermal_free_strain,
+        const Field& node_temp
     ) override;
 
     // Recover axial strain and physical stress at requested output positions.
