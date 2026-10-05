@@ -384,8 +384,32 @@ bool BeamElement<N>::compute_beam_section_forces(
 
     const auto K_global = stiffness_impl();
     const auto T_out    = transformation_base();
-    const auto f_global = K_global * u_global;
-    const auto q_local  = T_out * f_global;
+    auto f_global       = K_global * u_global;
+
+    auto material = get_material();
+    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision alpha = material->get_thermal_expansion();
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            const Precision value =
+                (*this->_model_data->temperature)(
+                    static_cast<Index>(node_ids[node]), 0);
+            temperature += std::isfinite(value) ? value : zero;
+        }
+        temperature /= static_cast<Precision>(N);
+
+        const Precision axial_force =
+            get_elasticity()->youngs * get_profile()->area_
+            * alpha * (temperature - zero);
+
+        StaticVector<N * 6> local_thermal = StaticVector<N * 6>::Zero();
+        local_thermal(0)           = -axial_force;
+        local_thermal((N - 1) * 6) =  axial_force;
+        f_global -= transformation().transpose() * local_thermal;
+    }
+
+    const auto q_local = T_out * f_global;
 
     for (Index i = 0; i < N; ++i) {
         for (Index d = 0; d < 6; ++d) {
