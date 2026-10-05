@@ -52,7 +52,7 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 const auto t_start = T[0];
                                 const auto t_end   = T[1];
                                 const auto dt      = T[2];
@@ -84,7 +84,7 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 const auto t_end = T[0];
                                 const auto dt    = T[1];
                                 lc->set_time(dt, 0.0, t_end);

@@ -65,7 +65,7 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "WRITE EVERY must appear inside *LOADCASE.");
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 if (*type == "TIME") {
                                     lc->set_write_every_time(static_cast<double>(value));
                                 } else {

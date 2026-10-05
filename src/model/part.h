@@ -24,7 +24,7 @@
 
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
-#include "../data/namable.h"
+#include "../core/namable.h"
 #include "../data/region.h"
 #include "../data/sets.h"
 #include "../section/section.h"
@@ -53,7 +53,7 @@ namespace fem::model {
  * coordinate transformation and dense enumeration are responsibilities of
  * `Model::compile()`.
  */
-struct Part : public Namable {
+struct Part : public fem::Namable {
     // Shared ownership type used by the model dictionary and by every instance
     // that embeds this part into the assembled model.
     using Ptr = std::shared_ptr<Part>;
@@ -86,7 +86,7 @@ struct Part : public Namable {
     // populated by the parser or public model interface before the one-way model
     // compilation pass.
     explicit Part(std::string name)
-        : Namable(std::move(name)) {}
+        : fem::Namable(std::move(name)) {}
 };
 
 } // namespace fem::model

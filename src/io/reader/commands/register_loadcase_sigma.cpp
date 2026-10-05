@@ -35,7 +35,8 @@ void register_loadcase_sigma(fem::io::dsl::Registry& registry, Parser& parser) {
                     .one<fem::Precision>().name("SIGMA").desc("Shift parameter")
                 )
                 .bind([&parser](fem::Precision sigma) {
-                    auto* lc = dynamic_cast<loadcase::LinearBuckling*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* lc = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearBuckling>() : nullptr;
                     logging::error(lc != nullptr,
                         "SIGMA only valid for LINEARBUCKLING loadcases");
                     lc->sigma = sigma;

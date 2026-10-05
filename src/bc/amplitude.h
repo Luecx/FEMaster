@@ -19,7 +19,7 @@
 #pragma once
 
 #include "../core/types_num.h"
-#include "../data/namable.h"
+#include "../core/namable.h"
 
 #include <memory>
 #include <string>
@@ -58,7 +58,7 @@ enum class Interpolation {
  * multiplier `1.0`, allowing optional amplitudes to be used without special
  * handling in every load implementation.
  */
-struct Amplitude : Namable {
+struct Amplitude : fem::Namable {
     // Shared ownership type used by loads and input-data collectors. Multiple
     // boundary conditions may intentionally reference the same time history.
     using Ptr = std::shared_ptr<Amplitude>;

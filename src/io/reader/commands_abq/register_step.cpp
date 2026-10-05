@@ -170,7 +170,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
                 .bind([&parser](const std::array<Precision, 8>& data) {
-                    auto* loadcase = dynamic_cast<loadcase::NonlinearStatic*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::NonlinearStatic>() : nullptr;
                     logging::error(loadcase != nullptr,
                         "STATIC, RIKS did not create a nonlinear load case");
                     logging::error(std::isnan(data[4]) && std::isnan(data[5])
@@ -227,7 +228,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         ? period : data[3];
 
                     parser.abaqus_state().step_period = period;
-                    if (auto* loadcase = dynamic_cast<loadcase::NonlinearStatic*>(parser.active_loadcase())) {
+                    auto* active_loadcase = parser.active_loadcase();
+                    if (auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::NonlinearStatic>() : nullptr) {
                         loadcase->initial_increment = initial / period;
                         loadcase->minimum_increment = minimum / period;
                         loadcase->maximum_increment = maximum / period;
@@ -271,7 +273,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .bind([&parser](int count, const std::array<Precision, 5>&) {
                     logging::error(count > 0,
                         "FREQUENCY requires a positive eigenvalue count");
-                    auto* loadcase = dynamic_cast<loadcase::LinearEigenfrequency*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearEigenfrequency>() : nullptr;
                     loadcase->num_eigenvalues = count;
                 })
             )
@@ -313,7 +316,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .bind([&parser](int count, const std::array<Precision, 4>&) {
                     logging::error(count > 0,
                         "BUCKLE requires a positive eigenvalue count");
-                    auto* loadcase = dynamic_cast<loadcase::LinearBuckling*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearBuckling>() : nullptr;
                     loadcase->num_eigenvalues = count;
                 })
             )
@@ -363,7 +367,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                                 && !std::isnan(data[1]) && data[1] > Precision(0),
                         "DYNAMIC, DIRECT requires positive increment and step period");
 
-                    auto* loadcase = dynamic_cast<loadcase::Transient*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::Transient>() : nullptr;
                     loadcase->dt      = data[0];
                     loadcase->t_start = Precision(0);
                     loadcase->t_end   = data[1];
@@ -417,7 +422,8 @@ void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
                 .bind([&parser, frequency_scale](const std::array<Precision, 5>& data) {
-                    auto* loadcase = dynamic_cast<loadcase::LinearHarmonic*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearHarmonic>() : nullptr;
                     logging::error(loadcase != nullptr && !std::isnan(data[0]) && data[0] >= Precision(0),
                         "STEADY STATE DYNAMICS requires a non-negative lower frequency");
 

@@ -44,7 +44,7 @@ void register_loadcase_inertiarelief(fem::io::dsl::Registry& registry, Parser& p
             logging::error(base != nullptr,
                 "INERTIARELIEF must appear inside *LOADCASE");
 
-            auto* lc = dynamic_cast<loadcase::LinearStatic*>(base);
+            auto* lc = base->as<loadcase::LinearStatic>();
             logging::error(lc != nullptr,
                 "INERTIARELIEF is only supported for LINEARSTATIC load cases");
             lc->inertia_relief = true;

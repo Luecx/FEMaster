@@ -58,31 +58,31 @@ void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser
                     logging::error(base != nullptr,
                         "SUPPORTS must appear inside *LOADCASE");
 
-                    if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearBuckling>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::LinearStaticTopo*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearStaticTopo>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearStatic>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                    if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearHarmonic>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
+                    if (auto* lc = base->as<loadcase::Transient>()) {
                         append_tokens(names, lc->supps);
                         return;
                     }

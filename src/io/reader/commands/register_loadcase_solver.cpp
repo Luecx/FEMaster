@@ -69,12 +69,12 @@ void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) 
                 return true;
             };
 
-            if (configure(dynamic_cast<loadcase::LinearBuckling*>(base))) return;
-            if (configure(dynamic_cast<loadcase::LinearStaticTopo*>(base))) return;
-            if (configure(dynamic_cast<loadcase::LinearStatic*>(base))) return;
-            if (configure(dynamic_cast<loadcase::NonlinearStatic*>(base))) return;
-            if (configure(dynamic_cast<loadcase::LinearHarmonic*>(base))) return;
-            if (configure(dynamic_cast<loadcase::Transient*>(base))) return;
+            if (configure(base->as<loadcase::LinearBuckling>())) return;
+            if (configure(base->as<loadcase::LinearStaticTopo>())) return;
+            if (configure(base->as<loadcase::LinearStatic>())) return;
+            if (configure(base->as<loadcase::NonlinearStatic>())) return;
+            if (configure(base->as<loadcase::LinearHarmonic>())) return;
+            if (configure(base->as<loadcase::Transient>())) return;
 
             logging::error(false,
                 "SOLVER not supported for loadcase type ", base->type_name());

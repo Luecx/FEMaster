@@ -24,7 +24,7 @@ namespace material {
  * @copydoc Material::Material
  */
 Material::Material(std::string name)
-    : Namable(std::move(name)) {}
+    : fem::Namable(std::move(name)) {}
 
 /**
  * @copydoc Material::has_elasticity

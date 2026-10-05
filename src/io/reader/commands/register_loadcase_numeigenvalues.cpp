@@ -47,11 +47,11 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
                     logging::error(base != nullptr,
                         "NUMEIGENVALUES must appear inside *LOADCASE");
 
-                    if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearBuckling>()) {
                         lc->num_eigenvalues = count;
                         return;
                     }
-                    if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
+                    if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
                         lc->num_eigenvalues = count;
                         lc->use_eigenvalue_range = false;
                         return;
@@ -79,7 +79,7 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
                     logging::error(base != nullptr,
                         "EIGENVALUERANGE must appear inside *LOADCASE");
 
-                    auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base);
+                    auto* lc = base->as<loadcase::LinearEigenfrequency>();
                     logging::error(lc != nullptr,
                         "EIGENVALUERANGE not supported for loadcase type ", base->type_name());
                     logging::error(std::isfinite(bounds[0]) && std::isfinite(bounds[1]) && bounds[0] < bounds[1],

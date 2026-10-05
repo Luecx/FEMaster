@@ -46,7 +46,7 @@ void request_tokens(Parser& parser, const std::array<std::string, 32>& tokens) {
         // separate primary fields. Standard Abaqus/CalculiX U/S/E requests
         // therefore expand to both component outputs instead of introducing a
         // synthetic generic displacement/stress/strain source.
-        if (dynamic_cast<loadcase::LinearHarmonic*>(loadcase) != nullptr) {
+        if (loadcase->as<loadcase::LinearHarmonic>() != nullptr) {
             switch (*field) {
                 case io::writer::OutputField::DISPLACEMENT:
                     loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL);

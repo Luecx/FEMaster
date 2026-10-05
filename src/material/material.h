@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "../data/namable.h"
+#include "../core/namable.h"
 #include "elasticity.h"
 
 #include <memory>
@@ -27,7 +27,7 @@ namespace material {
  * @struct Material
  * @brief Holds scalar material data and an elasticity model.
  */
-struct Material : public Namable {
+struct Material : public fem::Namable {
     using Ptr = std::shared_ptr<Material>; ///< Shared pointer alias used across the codebase.
 
     /**

@@ -14,7 +14,7 @@
 #pragma once
 
 #include "../core/types_eig.h"
-#include "../data/namable.h"
+#include "../core/namable.h"
 
 #include <memory>
 #include <string>
@@ -24,7 +24,7 @@ namespace fem {
  * @struct Profile
  * @brief Beam cross-section constants used by beam elements.
  */
-struct Profile : public Namable {
+struct Profile : public fem::Namable {
     using Ptr = std::shared_ptr<Profile>; ///< Shared pointer alias for profile ownership.
 
     Precision area_              = 0; ///< Cross-section area.

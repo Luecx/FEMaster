@@ -38,7 +38,8 @@ void register_loadcase_topodensity(fem::io::dsl::Registry& registry, Parser& par
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto* lc = dynamic_cast<loadcase::LinearStaticTopo*>(parser.active_loadcase());
+            auto* active_loadcase = parser.active_loadcase();
+            auto* lc = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearStaticTopo>() : nullptr;
             logging::error(lc != nullptr,
                 "TOPODENSITY only valid for LINEARSTATICTOPO loadcases");
 

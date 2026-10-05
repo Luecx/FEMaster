@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include "../core/castable.h"
 #include "../core/core.h"
 
 #include <memory>
@@ -51,6 +52,8 @@ namespace material {
  * with work-conjugate second Piola-Kirchhoff stress. Unsupported dimensional
  * reductions are rejected by the corresponding base `evaluate()` overload.
  *
+ * Castable provides mutable and const runtime access to concrete implementations.
+ *
  * Material-point state is passed as non-owning input/output storage.
  * `state_size()` defines the required leading components, and
  * `initialize_state()` establishes their reference history. A size of zero
@@ -63,7 +66,7 @@ namespace material {
  * evaluations, where an expensive algorithmic tangent would otherwise be built
  * and immediately discarded.
  */
-struct Elasticity {
+struct Elasticity : public Castable {
     // Shared ownership used by material definitions
     using Ptr = std::shared_ptr<Elasticity>;
 
@@ -106,17 +109,6 @@ struct Elasticity {
                           Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,
                           Mat5*                                   tangent = nullptr) const;
-
-    // Runtime access to concrete constitutive implementations
-    template<typename T>
-    T* as() {
-        return dynamic_cast<T*>(this);
-    }
-
-    template<typename T>
-    const T* as() const {
-        return dynamic_cast<const T*>(this);
-    }
 };
 
 using ElasticityPtr = Elasticity::Ptr;
