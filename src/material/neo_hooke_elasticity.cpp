@@ -72,18 +72,6 @@ NeoHookeElasticity::NeoHookeElasticity(Precision c10_in, Precision d1_in)
     lame_lambda = bulk - Precision(2) * mu / Precision(3);
 }
 
-bool NeoHookeElasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool NeoHookeElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool NeoHookeElasticity::supports_shell_integration_green_lagrange() const {
-    return true;
-}
-
 /**
  * Evaluates the finite-strain uniaxial response with traction-free lateral
  * surfaces.
