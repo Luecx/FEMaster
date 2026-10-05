@@ -55,7 +55,18 @@ void register_expansion(fem::io::dsl::Registry& registry, model::Model& model) {
                         .optional("ISO")
                         .allowed({"ISO", "ISOTROPIC"})
                         .doc("Isotropic thermal-expansion form")
+                    .key("ZERO")
+                        .optional("0")
+                        .doc("Stress-free reference temperature")
             );
+
+            command.on_enter([&model, name](const fem::io::dsl::Keys& keys) {
+                auto material = model._data->materials.get();
+                logging::error(material != nullptr,
+                    name, " requires an active material context");
+                material->set_thermal_zero_temperature(
+                    keys.get<fem::Precision>("ZERO"));
+            });
 
             // Transfer alpha to the active material; the keyword has no load state.
             command.variant(fem::io::dsl::Variant::make()
