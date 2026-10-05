@@ -204,7 +204,8 @@ private:
         bool                   write_material_state,
         bool                   assemble_global_blocks,
         bool                   assemble_tangent,
-        bool                   include_geometric = true
+        bool                   include_geometric = true,
+        const StaticVector<N>* thermal_free_strain = nullptr
     );
     NonlinearPoints nonlinear_points(
         const StaticMatrix<N, D>& reference_coords,
@@ -214,7 +215,9 @@ private:
     // Solve finite local stationarity or its reference tangent increment without
     // introducing any global degrees of freedom.
     Vector13 solve_linear_modes(const Vector24& displacement);
-    Vector13 solve_nonlinear_modes(const NonlinearPoints& points);
+    Vector13 solve_nonlinear_modes(
+        const NonlinearPoints& points,
+        const StaticVector<N>* thermal_free_strain = nullptr);
 
     // Affine thermal source in the finite nodal/enhanced basis, before condensation
     std::pair<Vector24, Vector13> thermal_force(
