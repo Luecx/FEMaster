@@ -110,13 +110,16 @@ struct StructuralElement : ElementInterface {
     virtual Mat3      integrate_tensor_field(bool            scale_by_density,
                                              const TenField& field) = 0;
 
-    virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;
+    // Thermal expansion is driven exclusively by the current model temperature
+    // state. The positive equivalent load is used by linear solvers, while the
+    // element-nodal free-strain field is consumed by state-based internal-force
+    // and recovery paths.
+    virtual void apply_thermal_expansion_load(Field& node_loads,
+                                              const Field& node_temp) = 0;
     virtual void apply_thermal_free_strain(Field& thermal_free_strain,
-                                           const Field& node_temp,
-                                           Precision ref_temp) {
+                                           const Field& node_temp) {
         (void) thermal_free_strain;
         (void) node_temp;
-        (void) ref_temp;
     }
 
     // State-neutral recovery about a displacement expansion point. Null denotes
