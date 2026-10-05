@@ -67,12 +67,8 @@ public:
     ) override;
 
 protected:
-    const RowMatrix& extrapolation_matrix() override {
-        static const RowMatrix matrix = math::extrapolate(
-            this->stress_strain_ip_rst(), this->node_coords_local(),
-            {math::ExtrapolationBasis::F1});
-        return matrix;
-    }
+    // Constant natural-space recovery operator from constitutive points to nodes
+    const RowMatrix& extrapolation_matrix() override;
 
 private:
     // Hourglass modes, reference gradients and material scaling

@@ -7,10 +7,15 @@
  * integration rules supply volume quadrature; material response and
  * mechanical assembly remain in the common solid evaluate() path.
  *
+ * Natural-space polynomial recovery is cached in extrapolation_matrix();
+ * the common solid formulation applies it to integration-point output.
+ *
  * @see SolidElement
  */
 
 #include "c3d10.h"
+
+#include "../../math/extrapolate.h"
 #include "../geometry/surface/surface6.h"
 
 namespace fem {
@@ -205,5 +210,38 @@ const math::quadrature::Quadrature& C3D10::integration_scheme_stiffness() const 
     const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_QUADRATIC};
     return quad;
 }
+
+/**
+ * @brief Returns the cached natural-space integration-point-to-node recovery map.
+ *
+ * Rows of the operator correspond to node_coords_local() order; columns follow
+ * stress_strain_ip_rst() and therefore the constitutive quadrature/state order.
+ * For one scalar component q, nodal recovery is q_node = E * q_ip. Vector and
+ * tensor components use the same operator independently in their existing basis.
+ *
+ * The basis (1, r, s, t) reconstructs an affine field on the natural tetrahedron.
+ * math::extrapolate() fits coefficients through the source normal equations and
+ * evaluates the polynomial at the natural node locations. Point-count and solver
+ * validation are performed by that helper; no fallback is added here.
+ *
+ * Function-local static initialization builds the operator once from the fixed
+ * natural topology and constitutive rule. No physical geometry, material history
+ * or element runtime state is stored or changed by the recovery map.
+ *
+ * @return Shared immutable node-by-integration-point matrix in reference space.
+ */
+const RowMatrix& C3D10::extrapolation_matrix() {
+    // Fit the topology-selected polynomial basis at constitutive points and evaluate
+    // it at the natural node coordinates. The static operator is reused by all instances.
+    static const RowMatrix matrix = math::extrapolate(
+        this->stress_strain_ip_rst(), this->node_coords_local(),
+        {math::ExtrapolationBasis::F1,
+         math::ExtrapolationBasis::FR,
+         math::ExtrapolationBasis::FS,
+         math::ExtrapolationBasis::FT});
+    // Return the cached node-by-integration-point map without changing element state.
+    return matrix;
+}
+
 }    // namespace model
 }    // namespace fem

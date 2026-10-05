@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include "../../math/extrapolate.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"

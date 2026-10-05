@@ -6,10 +6,15 @@
  * The topology supplies natural interpolation, node ordering and quadrature
  * to SolidElement; material response and assembly belong to the common base.
  *
+ * Natural-space polynomial recovery is cached in extrapolation_matrix();
+ * the common solid formulation applies it to integration-point output.
+ *
  * @see SolidElement
  */
 
 #include "c3d4.h"
+
+#include "../../math/extrapolate.h"
 #include "../geometry/surface/surface3.h"
 
 namespace fem {
@@ -149,5 +154,35 @@ SurfacePtr C3D4::surface(ID surface_id) {
         default: return nullptr;    // Invalid surface ID
     }
 }
+
+/**
+ * @brief Returns the cached natural-space integration-point-to-node recovery map.
+ *
+ * Rows of the operator correspond to node_coords_local() order; columns follow
+ * stress_strain_ip_rst() and therefore the constitutive quadrature/state order.
+ * For one scalar component q, nodal recovery is q_node = E * q_ip. Vector and
+ * tensor components use the same operator independently in their existing basis.
+ *
+ * A constant basis replicates the single integration-point value at every node.
+ * math::extrapolate() fits coefficients through the source normal equations and
+ * evaluates the polynomial at the natural node locations. Point-count and solver
+ * validation are performed by that helper; no fallback is added here.
+ *
+ * Function-local static initialization builds the operator once from the fixed
+ * natural topology and constitutive rule. No physical geometry, material history
+ * or element runtime state is stored or changed by the recovery map.
+ *
+ * @return Shared immutable node-by-integration-point matrix in reference space.
+ */
+const RowMatrix& C3D4::extrapolation_matrix() {
+    // Fit the topology-selected polynomial basis at constitutive points and evaluate
+    // it at the natural node coordinates. The static operator is reused by all instances.
+    static const RowMatrix matrix = math::extrapolate(
+        this->stress_strain_ip_rst(), this->node_coords_local(),
+        {math::ExtrapolationBasis::F1});
+    // Return the cached node-by-integration-point map without changing element state.
+    return matrix;
+}
+
 }  // namespace model
 }  // namespace fem

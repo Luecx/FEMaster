@@ -52,18 +52,6 @@ struct C3D20R : public SolidElement<20> {
 
 protected:
     // Constant natural-space recovery operator from constitutive points to nodes
-    const RowMatrix& extrapolation_matrix() override {
-        static const RowMatrix matrix = math::extrapolate(
-            this->stress_strain_ip_rst(), this->node_coords_local(),
-            {math::ExtrapolationBasis::F1,
-             math::ExtrapolationBasis::FR,
-             math::ExtrapolationBasis::FS,
-             math::ExtrapolationBasis::FT,
-             math::ExtrapolationBasis::FRS,
-             math::ExtrapolationBasis::FRT,
-             math::ExtrapolationBasis::FST,
-             math::ExtrapolationBasis::FRST});
-        return matrix;
-    }
+    const RowMatrix& extrapolation_matrix() override;
 };
 } }

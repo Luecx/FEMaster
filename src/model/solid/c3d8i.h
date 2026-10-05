@@ -198,10 +198,6 @@ private:
     // Finite block-system assembly at a stationary reference or supplied state.
     // Requested residuals and tangents use the same enhanced kinematics.
     EnhancedSystem assemble_reference_system();
-    NonlinearPoints nonlinear_points(
-        const StaticMatrix<N, D>& reference_coords,
-        const StaticMatrix<N, D>& current_coords
-    );
     EnhancedSystem assemble_nonlinear_system(
         const NonlinearPoints& points,
         const Vector13&        alpha,
@@ -209,6 +205,10 @@ private:
         bool                   assemble_global_blocks,
         bool                   assemble_tangent,
         bool                   include_geometric = true
+    );
+    NonlinearPoints nonlinear_points(
+        const StaticMatrix<N, D>& reference_coords,
+        const StaticMatrix<N, D>& current_coords
     );
 
     // Solve finite local stationarity or its reference tangent increment without

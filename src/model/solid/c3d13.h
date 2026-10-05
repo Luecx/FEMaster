@@ -50,20 +50,6 @@ struct C3D13 : public SolidElement<13> {
 
 protected:
     // Constant natural-space recovery operator from constitutive points to nodes
-    const RowMatrix& extrapolation_matrix() override {
-        static const RowMatrix matrix = math::extrapolate(
-            this->stress_strain_ip_rst(), this->node_coords_local(),
-            {math::ExtrapolationBasis::F1,
-             math::ExtrapolationBasis::FR,
-             math::ExtrapolationBasis::FS,
-             math::ExtrapolationBasis::FT,
-             math::ExtrapolationBasis::FRR,
-             math::ExtrapolationBasis::FSS,
-             math::ExtrapolationBasis::FTT,
-             math::ExtrapolationBasis::FRS,
-             math::ExtrapolationBasis::FRT,
-             math::ExtrapolationBasis::FST});
-        return matrix;
-    }
+    const RowMatrix& extrapolation_matrix() override;
 };
 } }
