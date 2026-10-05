@@ -277,68 +277,85 @@ void T3::compute_compliance(Field& displacement, Field& result) {
 }
 
 /**
- * Recovers the reference-linearized axial section force for beam-style output.
+ * Recovers the axial section force from an exact base state followed by one
+ * affine perturbation.
  *
- * The material is evaluated exactly at the undeformed base state E0 = 0. The
- * displacement field supplies the first-order Green-Lagrange increment
+ * The optional linearization field defines the exact base configuration u0.
+ * Without one, u0 = 0 and the result is the ordinary reference-linearized
+ * section force. For nonlinear output the caller supplies linearization =
+ * displacement, so Delta u = 0 and the exact converged resultant is recovered.
  *
- *     Delta E = N0 . (u2 - u1) / L0,
+ * At the base state
  *
- * and the PK2 stress is continued as S ~= S0 + C0 Delta E. At F0 = I the PK2
- * and Cauchy measures coincide to first order, so the axial resultant is
+ *     lambda0 = l0 / L0,
+ *     E0      = 1/2 (lambda0^2 - 1),
+ *     S0      = S(E0),
  *
- *     N = A0 (S0 + C0 Delta E).
+ * while the displacement perturbation gives
+ *
+ *     Delta lambda = n0 . Delta r / L0,
+ *     Delta E      = lambda0 Delta lambda,
+ *     Delta S      = C0 Delta E.
+ *
+ * Linearizing N = A0 lambda S about the base state yields
+ *
+ *     N ~= A0 [lambda0 S0 + S0 Delta lambda + lambda0 Delta S].
  */
 bool T3::compute_beam_section_forces(
     Field&       section_forces,
     const Field& displacement,
-    int          offset
+    int          offset,
+    const Field* linearization
 ) {
-    // Gather the reference geometry and constitutive model required for the
-    // complete section-force recovery.
     const Vec3 X1 = node_position_reference(0);
     const Vec3 X2 = node_position_reference(1);
-    const Vec3 R0 = X2 - X1;
-
-    const Precision L0 = R0.norm();
-    auto elasticity    = get_elasticity();
-
-    // Validate all requirements before starting the actual recovery.
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
-    logging::error(elasticity->supports_axial_green_lagrange(),
-        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-
-    // The reference unit direction is
-    //
-    //     N0 = (X2 - X1) / L0.
-    //
-    // The infinitesimal axial strain follows from the projection of the relative
-    // nodal displacement onto this axis:
-    //
-    //     epsilon = N0 . (u2 - u1) / L0.
-    const Vec3 N0 = R0 / L0;
     const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
     const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
-    const Precision delta_strain = N0.dot(u2 - u1) / L0;
+    Vec3 u01 = Vec3::Zero();
+    Vec3 u02 = Vec3::Zero();
 
-    // Evaluate the exact material base state and its tangent without advancing
-    // constitutive history. The requested linear response is the affine
-    // continuation from E0 = 0.
+    if (linearization) {
+        u01 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
+        u02 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
+    }
+
+    const Vec3      reference_axis = X2 - X1;
+    const Precision L0             = reference_axis.norm();
+    const Vec3      axis_base      = (X2 + u02) - (X1 + u01);
+    const Precision length_base    = axis_base.norm();
+
+    auto elasticity = get_elasticity();
+
+    logging::error(L0 > Precision(0),
+        "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
+    logging::error(length_base > Precision(0),
+        "T3: zero length at the linearization state in compute_beam_section_forces for element ", this->elem_id);
+    logging::error(elasticity->supports_axial_green_lagrange(),
+        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
+
+    const Precision lambda0 = length_base / L0;
+    const Vec3      n0      = axis_base / length_base;
+
+    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
+    AxialStressPK2                 stress_base;
+    Precision                      material_tangent = Precision(0);
+
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    AxialStrainGreenLagrange strain_base;
-    AxialStressPK2           stress_base;
-    Precision                material_tangent = Precision(0);
-
     elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
 
-    // At the undeformed base state lambda0 = 1, hence PK2 and Cauchy stress
-    // coincide to first order.
-    const Precision axial_stress = stress_base.value() + material_tangent * delta_strain;
-    const Precision axial_force  = get_section()->area_ * axial_stress;
+    const Vec3      delta_axis   = (u2 - u02) - (u1 - u01);
+    const Precision delta_lambda = n0.dot(delta_axis) / L0;
+    const Precision delta_strain = lambda0 * delta_lambda;
+    const Precision delta_stress = material_tangent * delta_strain;
+
+    const Precision axial_force = get_section()->area_ * (
+        lambda0 * stress_base.value()
+        + stress_base.value() * delta_lambda
+        + lambda0 * delta_stress
+    );
 
     for (Index node = 0; node < N; ++node) {
         const Index row = static_cast<Index>(offset) + node;
