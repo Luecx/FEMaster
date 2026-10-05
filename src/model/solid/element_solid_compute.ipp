@@ -362,6 +362,9 @@ MapMatrix SolidElement<N>::evaluate(
     // -----------------------------------------------------------------------------
     // main loop
     // -----------------------------------------------------------------------------
+    const bool exact_thermal_state =
+        thermal_free_strain && linearization != nullptr && displacement == linearization;
+
     // Determine which quantities must be assembled internally.
     //
     // An affine force evaluation is required when the requested displacement u
@@ -418,8 +421,21 @@ MapMatrix SolidElement<N>::evaluate(
         // Evaluate the Green-Lagrange strain at the linearization state,
         //
         //     E0 = 1/2 (F^T F - I).
-        const VolumeStrainGreenLagrange strain = VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const VolumeStrainGreenLagrange strain =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
+        Precision thermal_strain_ip = Precision(0);
+        if (thermal_free_strain) {
+            thermal_strain_ip =
+                this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
+        }
+
+        Vec6 constitutive_strain_values = strain.voigt();
+        if (exact_thermal_state) {
+            constitutive_strain_values.head<3>().array() -= thermal_strain_ip;
+        }
+        const VolumeStrainGreenLagrange constitutive_strain(
+            constitutive_strain_values);
 
         // -----------------------------------------------------------------------------
         // material evaluation
@@ -438,8 +454,11 @@ MapMatrix SolidElement<N>::evaluate(
         // subsequent stiffness, thermal-stress, or geometric-stiffness calculations.
         VolumeStressPK2 stress;
         Mat6            material_tangent;
-        evaluate_material(point.r, point.s, point.t, strain, old_state, new_state, stress,
-                          need_material ? &material_tangent : nullptr);
+        evaluate_material(
+            point.r, point.s, point.t,
+            constitutive_strain,
+            old_state, new_state, stress,
+            need_material ? &material_tangent : nullptr);
 
         // -----------------------------------------------------------------------------
         // thermal stresses
@@ -456,9 +475,10 @@ MapMatrix SolidElement<N>::evaluate(
         //
         // and is subtracted from the mechanical stress contribution later on.
         Vec6 thermal_stress = Vec6::Zero();
-        if (thermal_free_strain) {
-            const Precision thermal_strain = this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
-            thermal_stress = material_tangent * Vec6(thermal_strain, thermal_strain, thermal_strain, 0, 0, 0);
+        if (thermal_free_strain && !exact_thermal_state) {
+            thermal_stress = material_tangent
+                           * Vec6(thermal_strain_ip, thermal_strain_ip, thermal_strain_ip,
+                                  0, 0, 0);
         }
 
         // -----------------------------------------------------------------------------
