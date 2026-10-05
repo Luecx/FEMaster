@@ -537,7 +537,7 @@ std::pair<C3D8I::Vector24, C3D8I::Vector13> C3D8I::thermal_force(
  * @param node_temp Scalar nodal temperature field.
  * @param ref_temp Stress-free reference temperature.
  */
-void C3D8I::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
+void C3D8I::apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) {
     // Validate temperatures and form scalar nodal free strain
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
         "C3D8I: thermal loading requires a scalar nodal temperature field");
@@ -924,8 +924,6 @@ MapMatrix C3D8I::evaluate(
         "C3D8I: internal force evaluation requires displacement");
     logging::error(!update_state || (linearization != nullptr && displacement == linearization),
         "C3D8I: material state requires an exact evaluation at the linearization state");
-    logging::error(!thermal_free_strain || (linearization == nullptr && !update_state),
-        "C3D8I: thermal free strain requires reference linearization");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "C3D8I: thermal free strain must be scalar ELEMENT_NODAL data");
 
