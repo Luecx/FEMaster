@@ -1061,8 +1061,6 @@ void C3D8I::compute_stress_strain(
         "C3D8I: stress/strain recovery requires at least one output field");
     logging::error(rst.cols() >= 3,
         "C3D8I: recovery coordinates require at least three columns");
-    logging::error((!exact_state && linearization == nullptr) || thermal_free_strain == nullptr,
-        "C3D8I: thermal recovery requires affine expansion at zero displacement");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "C3D8I: thermal free strain must be scalar ELEMENT_NODAL data");
     const auto& scheme = this->integration_scheme_stiffness();
@@ -1122,9 +1120,23 @@ void C3D8I::compute_stress_strain(
         Mat6 tangent;
         evaluate_material(
             point.natural(0), point.natural(1), point.natural(2), green, old_state, nullptr,
-            second_pk, exact_state ? nullptr : &tangent);
+            second_pk, (exact_state && !thermal_free_strain) ? nullptr : &tangent);
+
+        Vec6 thermal_stress = Vec6::Zero();
+        if (thermal_free_strain) {
+            const Precision free =
+                this->shape_function(
+                    point.natural(0), point.natural(1), point.natural(2))
+                    .dot(nodal_thermal_strain);
+            thermal_stress =
+                tangent * Vec6(free, free, free, 0, 0, 0);
+        }
+
+        const VolumeStressPK2 effective_pk(
+            Vec6(second_pk.voigt() - thermal_stress));
+
         Vec6 recovered_strain = green.voigt();
-        const Mat3 sigma = second_pk.to_cauchy(F).tensor();
+        const Mat3 sigma = effective_pk.to_cauchy(F).tensor();
         Mat3 recovered_stress = sigma;
         if (!exact_state) {
             // Include compatible and stationary enhanced variations in delta F
@@ -1133,14 +1145,10 @@ void C3D8I::compute_stress_strain(
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
             const Vec6 delta_strain = VolumeStrainGreenLagrange(delta_E).voigt();
             recovered_strain += delta_strain;
-            Vec6 mechanical_increment = delta_strain;
-            if (thermal_free_strain) {
-                const Precision free = this->shape_function(point.natural(0), point.natural(1), point.natural(2))
-                    .dot(nodal_thermal_strain);
-                mechanical_increment.head<3>().array() -= free;
-            }
-            const Mat3 S = second_pk.tensor();
-            const Mat3 delta_S = VolumeStressPK2(Vec6(tangent * mechanical_increment)).tensor();
+            const Vec6 mechanical_increment = delta_strain;
+            const Mat3 S = effective_pk.tensor();
+            const Mat3 delta_S =
+                VolumeStressPK2(Vec6(tangent * mechanical_increment)).tensor();
             recovered_stress += (delta_F * S * F.transpose() + F * delta_S * F.transpose()
                                + F * S * delta_F.transpose()) / F.determinant()
                               - (F.inverse() * delta_F).trace() * sigma;
