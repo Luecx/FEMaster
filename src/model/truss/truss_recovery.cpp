@@ -328,8 +328,6 @@ bool T3::compute_beam_section_forces(
         "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
     logging::error(length_base > Precision(0),
         "T3: zero length at the linearization state in compute_beam_section_forces for element ", this->elem_id);
-    logging::error(elasticity->supports_axial_green_lagrange(),
-        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
     const Precision lambda0 = length_base / L0;
     const Vec3      n0      = axis_base / length_base;
