@@ -114,9 +114,6 @@ void T3::compute_stress_strain(
         "T3: zero reference length in compute_stress_strain for element ", this->elem_id);
     logging::error(length_base > Precision(0),
         "T3: zero length at the linearization state for element ", this->elem_id);
-    logging::error(elasticity->supports_axial_green_lagrange(),
-        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-
     // -------------------------------------------------------------------------
     // exact state at the linearization point u0
     // -------------------------------------------------------------------------
