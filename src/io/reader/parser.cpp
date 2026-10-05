@@ -235,7 +235,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
     root.execute_children("PLOAD");
-    root.execute_children("TLOAD");
     root.execute_children("VLOAD");
     root.execute_children("INERTIALOAD");
 
@@ -254,7 +253,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
         assembly->execute_children("PLOAD");
-        assembly->execute_children("TLOAD");
         assembly->execute_children("VLOAD");
         assembly->execute_children("INERTIALOAD");
 
@@ -486,7 +484,6 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_cload(registry, mdl);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
-    commands::register_tload(registry, mdl);
     commands::register_vload(registry, mdl);
     commands::register_inertialload(registry, mdl);
     commands::register_initial_condition(registry, mdl);
