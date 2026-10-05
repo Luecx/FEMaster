@@ -62,7 +62,13 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
-        const Vec8& strain_values = data.ip_strain[id];
+        Vec8 strain_values = data.ip_strain[id];
+
+        if (data.thermal_free_strain) {
+            const Precision free =
+                thermal_free_strain_at(data.thermal_free_strain, point.r, point.s);
+            strain_values -= thermal_generalized_strain(point, free);
+        }
 
         ShellGeneralizedStrain strain(strain_values);
         ShellStressResultants  resultants;
@@ -731,7 +737,12 @@ MapMatrix FRTShell<N>::evaluate(
     const bool need_G                = need_complete_tangent || with_geometric;
     const bool need_resultants       = with_force || need_complete_tangent || with_geometric;
 
-    EvaluationData data = init_evaluation(state, true, need_B, need_G, need_resultants, update_state);
+    const bool exact_thermal_state =
+        thermal_free_strain && linearization != nullptr && displacement == linearization;
+
+    EvaluationData data = init_evaluation(
+        state, true, need_B, need_G, need_resultants, update_state,
+        exact_thermal_state ? thermal_free_strain : nullptr);
 
     Vec6N force = Vec6N::Zero();
     if (with_force) {
@@ -786,7 +797,7 @@ MapMatrix FRTShell<N>::evaluate(
 
             Vec8 increment = data.ip_tangent[id] * (data.ip_B[id] * delta);
 
-            if (thermal_free_strain) {
+            if (thermal_free_strain && !exact_thermal_state) {
                 const Precision free_strain      = thermal_free_strain_at(thermal_free_strain, point.r, point.s);
                 const Vec8 thermal_strain        = thermal_generalized_strain(point, free_strain);
                 const Vec8 thermal_resultant     = data.ip_tangent[id] * thermal_strain;
@@ -820,7 +831,7 @@ MapMatrix FRTShell<N>::evaluate(
     if (affine_force) {
         force.noalias() += complete * delta;
     }
-    if (with_force && thermal_free_strain) {
+    if (with_force && thermal_free_strain && !exact_thermal_state) {
         force.noalias() -= thermal_force;
     }
 
