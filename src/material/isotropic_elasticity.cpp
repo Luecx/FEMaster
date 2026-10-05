@@ -47,18 +47,6 @@ IsotropicElasticity::IsotropicElasticity(Precision youngs_in, Precision poisson_
         "ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
 }
 
-bool IsotropicElasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool IsotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool IsotropicElasticity::supports_shell_integration_green_lagrange() const {
-    return true;
-}
-
 /**
  * Builds the isotropic in-plane plane-stress tangent.
  *
