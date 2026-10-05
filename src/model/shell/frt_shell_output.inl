@@ -317,8 +317,6 @@ void FRTShell<N>::compute_stress_strain(
         "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
         "FRTShell: stress/strain coordinates require r, s and t columns");
-    logging::error(!thermal_free_strain || linearization == nullptr,
-        "FRTShell: finite-state thermal free strain recovery is not implemented");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
