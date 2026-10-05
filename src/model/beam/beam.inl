@@ -258,10 +258,80 @@ MapMatrix BeamElement<N>::mass(Precision* buffer) {
 }
 
 template<Index N>
-void BeamElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    (void) node_loads;
-    (void) node_temp;
-    (void) ref_temp;
+void BeamElement<N>::apply_thermal_expansion_load(
+    Field& node_loads,
+    const Field& node_temp
+) {
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+        "BeamElement: thermal expansion requires a scalar NODE temperature field");
+    logging::error(node_loads.domain == FieldDomain::NODE && node_loads.components >= 6,
+        "BeamElement: thermal expansion requires six nodal load components");
+
+    auto material = get_material();
+    if (!material->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision zero  = material->get_thermal_zero_temperature();
+    const Precision alpha = material->get_thermal_expansion();
+
+    Precision temperature = Precision(0);
+    for (Index node = 0; node < N; ++node) {
+        const Precision value =
+            node_temp(static_cast<Index>(node_ids[node]), 0);
+        temperature += std::isfinite(value) ? value : zero;
+    }
+    temperature /= static_cast<Precision>(N);
+
+    const Precision free_strain = alpha * (temperature - zero);
+    if (free_strain == Precision(0)) {
+        return;
+    }
+
+    const Precision axial_force =
+        get_elasticity()->youngs * get_profile()->area_ * free_strain;
+
+    StaticVector<N * 6> local_force = StaticVector<N * 6>::Zero();
+    local_force(0)             = -axial_force;
+    local_force((N - 1) * 6)   =  axial_force;
+
+    const StaticVector<N * 6> global_force =
+        transformation().transpose() * local_force;
+
+    for (Index node = 0; node < N; ++node) {
+        const Index node_id = static_cast<Index>(node_ids[node]);
+        for (Index dof = 0; dof < 6; ++dof) {
+            node_loads(node_id, dof) += global_force(6 * node + dof);
+        }
+    }
+}
+
+template<Index N>
+void BeamElement<N>::apply_thermal_free_strain(
+    Field& thermal_free_strain,
+    const Field& node_temp
+) {
+    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
+                && thermal_free_strain.components == 1,
+        "BeamElement: thermal free strain requires scalar ELEMENT_NODAL storage");
+    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
+        "BeamElement: thermal free strain requires a scalar NODE temperature field");
+
+    auto material = get_material();
+    if (!material->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision zero  = material->get_thermal_zero_temperature();
+    const Precision alpha = material->get_thermal_expansion();
+
+    for (Index node = 0; node < N; ++node) {
+        const Precision value =
+            node_temp(static_cast<Index>(node_ids[node]), 0);
+        const Precision temperature = std::isfinite(value) ? value : zero;
+        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
+            alpha * (temperature - zero);
+    }
 }
 
 template<Index N>
