@@ -250,5 +250,5 @@ public:
 
 #include "element_solid_compute.ipp"
 #include "element_solid_load.ipp"
-#include "element_solid_.ipp"
+#include "element_solid_metadata.ipp"
 #include "element_solid.ipp"
