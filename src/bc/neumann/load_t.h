@@ -1,11 +1,12 @@
 /**
  * @file load_t.h
- * @brief Defines structural equivalent loading from a prescribed temperature field.
+ * @brief Retains the legacy TLOAD input object during the temperature-state transition.
  *
- * `TLoad` is a structural load, not a thermal primary-variable boundary
- * condition. It references a scalar nodal temperature field and a stress-free
- * reference temperature, then delegates the conversion of thermal expansion to
- * equivalent nodal forces to each structural element formulation.
+ * Structural thermal expansion is no longer assembled through the external load
+ * path. The current model temperature is authoritative and element mechanics
+ * derive thermal strain from that state. TLoad is retained temporarily so
+ * existing decks remain parseable until step-wise temperature evolution is
+ * introduced.
  *
  * This condition belongs to the FEMaster Neumann category because its solver-
  * facing contribution is entirely an RHS term. Prescribed temperatures for a
@@ -62,12 +63,10 @@ struct TLoad : Neumann {
     TLoad() = default;
     ~TLoad() override = default;
 
-    // Validate the nodal temperature field and delegate equivalent thermal-force
-    // assembly to every structural element.
+    // Legacy TLOAD definitions deliberately contribute nothing to the external
+    // structural RHS. Temperature evolution will be handled separately.
     void apply(model::ModelData& model_data, model::Field& rhs,
                Precision time, bool ignore_amplitude = false) override;
-    void apply_thermal_free_strain(model::ModelData& model_data,
-                                   model::Field& thermal_free_strain) const;
 
     // Diagnostics
     std::string str() const override;
