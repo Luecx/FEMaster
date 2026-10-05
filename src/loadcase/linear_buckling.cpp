@@ -209,8 +209,13 @@ void LinearBuckling::run() {
     );
 
     auto thermal_free_strain = Timer::measure(
-        [&]() { return model->build_thermal_free_strain(loads); },
+        [&]() { return model->build_thermal_free_strain(); },
         "building thermal free strain field"
+    );
+
+    auto global_thermal_load_mat = Timer::measure(
+        [&]() { return model->build_thermal_expansion_load_matrix(); },
+        "building temperature-induced structural load"
     );
 
     // (4) Active stiffness K (n x n)
@@ -219,10 +224,14 @@ void LinearBuckling::run() {
         "constructing stiffness matrix K"
     );
 
-    // (5) Reduce global loads -> active RHS f (n x 1)
+    // (5) Reduce the effective preload RHS. Temperature remains model state,
+    // while its equivalent linear structural source participates in equilibrium.
+    auto global_rhs_mat = global_load_mat;
+    global_rhs_mat += global_thermal_load_mat;
+
     auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_rhs_mat); },
+        "reducing mechanical + thermal preload -> active RHS vector f"
     );
 
     // (6) Assemble constraints and build the null-space transformation
