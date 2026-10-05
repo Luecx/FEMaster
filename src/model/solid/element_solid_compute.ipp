@@ -322,8 +322,6 @@ MapMatrix SolidElement<N>::evaluate(
         "SolidElement: internal force requires at least three nodal components");
     logging::error(!update_state || (linearization != nullptr && displacement == linearization),
         "SolidElement: material state requires an exact evaluation at the linearization state");
-    logging::error(!thermal_free_strain || (linearization == nullptr && !update_state),
-        "SolidElement: thermal free strain is supported only for reference linearization");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "SolidElement: thermal free strain must be scalar ELEMENT_NODAL data");
 
