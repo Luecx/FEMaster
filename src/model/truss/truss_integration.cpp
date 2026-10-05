@@ -13,6 +13,7 @@
  */
 
 #include "truss.h"
+#include <cmath>
 
 namespace fem {
 namespace model {
