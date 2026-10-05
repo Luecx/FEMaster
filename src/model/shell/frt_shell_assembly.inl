@@ -582,18 +582,20 @@ typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
  * requires separate thermal state handling.
  */
 template<Index N>
-void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
+void FRTShell<N>::apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) {
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
                    "FRTShell: thermal loading requires a scalar nodal temperature field");
     logging::error(node_loads.domain == FieldDomain::NODE
                    && node_loads.components >= dofs_per_node,
                    "FRTShell: thermal loading requires six nodal load components");
-    logging::error(std::isfinite(ref_temp),
-                   "FRTShell: thermal reference temperature must be finite");
-
     const auto material = this->get_material();
-    logging::error(material->has_thermal_expansion(),
-                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
+    if (!material->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision ref_temp = material->get_thermal_zero_temperature();
+    logging::error(std::isfinite(ref_temp),
+                   "FRTShell: thermal zero temperature must be finite");
 
     VecN nodal_temperatures;
     for (Index node = 0; node < num_nodes; ++node) {
@@ -634,19 +636,20 @@ void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisi
 
 template<Index N>
 void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
-                                            const Field& node_temp,
-                                            Precision ref_temp) {
+                                            const Field& node_temp) {
     logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
                    && thermal_free_strain.components == 1,
                    "FRTShell: thermal free strain requires scalar ELEMENT_NODAL storage");
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
                    "FRTShell: thermal free strain requires a scalar nodal temperature field");
-    logging::error(std::isfinite(ref_temp),
-                   "FRTShell: thermal reference temperature must be finite");
-
     const auto material = this->get_material();
-    logging::error(material->has_thermal_expansion(),
-                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
+    if (!material->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision ref_temp = material->get_thermal_zero_temperature();
+    logging::error(std::isfinite(ref_temp),
+                   "FRTShell: thermal zero temperature must be finite");
 
     const Precision alpha = material->get_thermal_expansion();
     for (Index node = 0; node < num_nodes; ++node) {
@@ -703,8 +706,6 @@ MapMatrix FRTShell<N>::evaluate(
         "FRTShell: internal force requires six nodal components");
     logging::error(!update_state || (linearization != nullptr && displacement == linearization),
         "FRTShell: material state requires an exact evaluation at the linearization state");
-    logging::error(!thermal_free_strain || linearization == nullptr,
-        "FRTShell: finite-rotation thermal free strain is not implemented");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
