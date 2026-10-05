@@ -1,11 +1,17 @@
 /**
  * @file dict.cpp
- * @brief Hosts explicit instantiations for the `Dict` template.
+ * @brief Includes the model-data declarations for Dict.
  *
- * Currently this TU exists solely to satisfy IDE navigation expectations. The
- * actual template implementation resides entirely in the header.
+ * The model-data subsystem defines shared-object registration, named/indexed lookup and active selection
+ * in the accompanying header. This translation unit includes that interface and
+ * adds no implementation, state or explicit template instantiations. Domain
+ * interpretation and model compilation remain responsibilities of its consumers.
  *
- * @see src/data/dict.h
+ * @see Dict
+ * @see dict.h
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #include "dict.h"

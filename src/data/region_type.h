@@ -1,12 +1,17 @@
 /**
  * @file region_type.h
- * @brief Declares the enumeration that categorises region collections.
+ * @brief Defines compile-time categories for model identifier regions.
  *
- * Region types are used to distinguish node, element, and surface regions when
- * parsing and assembling model data.
+ * The model-data subsystem tags Region specializations with node, element,
+ * surface or line identity. The category determines which model entities an
+ * identifier collection denotes; it neither stores entities nor validates IDs.
+ * Collection and Region implement storage and diagnostics separately.
  *
- * @see src/data/region_type.cpp
- * @see src/data/region.h
+ * @see RegionTypes
+ * @see Region
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #pragma once
@@ -14,14 +19,24 @@
 namespace fem {
 namespace model {
 
-using RegionType = int; ///< Underlying type used by the `RegionTypes` enumeration.
+// Underlying representation for region-kind tags and numeric diagnostics.
+using RegionType = int;
 
-/// Enumerates supported region kinds recognised by the model.
+/**
+ * @brief Distinguishes the model entity kinds represented by typed regions.
+ *
+ * These tags are template arguments of Region and are independent of FieldDomain,
+ * which describes numerical field-row layouts rather than identifier collections.
+ */
 enum RegionTypes : RegionType {
-    NODE,    ///< Collection of node identifiers.
-    ELEMENT, ///< Collection of element identifiers.
-    SURFACE, ///< Collection of surface identifiers.
-    LINE     ///< Collection of line identifiers (1D geometry).
+    // Node identifiers.
+    NODE,
+    // Element identifiers.
+    ELEMENT,
+    // Surface identifiers.
+    SURFACE,
+    // Line identifiers for one-dimensional geometry.
+    LINE
 };
 } // namespace model
 } // namespace fem

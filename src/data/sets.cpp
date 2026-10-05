@@ -1,10 +1,18 @@
 /**
  * @file sets.cpp
- * @brief Translation unit companion for the `Sets` registry template.
+ * @brief Includes the model-data declarations for Sets.
  *
- * Provided for completeness; all behaviour remains defined in the header.
+ * The model-data subsystem defines named collection selection and optional aggregate
+ * propagation
+ * in the accompanying header. This translation unit includes that interface and
+ * adds no implementation, state or explicit template instantiations. Domain
+ * interpretation and model compilation remain responsibilities of its consumers.
  *
- * @see src/data/sets.h
+ * @see Sets
+ * @see sets.h
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #include "sets.h"

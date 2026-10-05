@@ -1,13 +1,21 @@
 /**
  * @file collection.h
- * @brief Declares a generic container that manages named collections of items.
+ * @brief Defines named value collections with ordering and parent propagation.
  *
- * The `Collection` template supplements `std::vector` with optional sorting,
- * duplicate handling, and parent propagation. It forms the basis for higher
- * level FEM sets such as node or element regions.
+ * The model-data subsystem uses Collection as the storage and insertion-policy
+ * base of typed regions. Values are owned in a vector; optional sorting and
+ * duplicate suppression operate on arithmetic and raw pointer types. Insertions
+ * can also propagate to a shared parent collection.
  *
- * @see src/data/collection.cpp
- * @see src/data/sets.h
+ * Entity interpretation, region registration and aggregate-set selection belong
+ * to Region and Sets. The template implementation is contained in this header.
+ *
+ * @see Collection
+ * @see Region
+ * @see Sets
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #pragma once
@@ -25,35 +33,47 @@ namespace fem {
 namespace model {
 
 /**
- * @class Collection
- * @brief Manages a list of items with optional sorting and duplicate control.
+ * @brief Owns named values and applies local insertion policies.
  *
- * @tparam T Value type stored inside the collection.
+ * Collection stores values by copy in a vector and owns its immutable name through
+ * fem::Namable. Arithmetic and raw pointer types support ascending order and
+ * duplicate suppression. Other types always use unsorted append operations and
+ * allow duplicates; pointer ordering does not compare pointed-to objects.
+ *
+ * Disabling duplicates enables sorting and removes repeated values. Disabling
+ * sorting enables duplicates. Mutable iterators and indexed references expose
+ * storage directly, so callers must preserve these policy invariants themselves.
+ * Indexed access is unchecked, and first()/last() require nonempty storage.
+ * Insertions and policy changes may invalidate vector iterators and references.
+ *
+ * An optional shared parent receives every requested insertion, even if the local
+ * collection suppresses it as a duplicate. Existing values are not propagated
+ * when a parent is attached. Parent links must be acyclic; the class neither
+ * checks cycles nor owns domain-specific entity objects beyond the stored T values.
+ * Derived regions supply entity meaning and diagnostics without changing storage.
+ *
+ * @tparam T Stored value type; sorting is enabled only for arithmetic/raw pointers.
  */
 template<typename T>
 class Collection : public fem::Namable {
     public:
-    using value_type = T;                                 ///< Value stored in the collection.
-    using Ptr        = std::shared_ptr<Collection<T>>;    ///< Shared pointer alias for derived collections.
+    // Stored value and shared collection ownership types.
+    using value_type = T;
+    using Ptr        = std::shared_ptr<Collection<T>>;
 
-    /**
-     * @brief Constructs a collection with the supplied name and policies.
-     *
-     * Sorting and duplicate removal are only available when `T` is sortable
-     * (either arithmetic or pointer types).
-     */
+    // Construction with ordering and duplicate policies supported by T.
     Collection(std::string p_name, bool p_duplicates = false, bool p_sorted = true)
         : fem::Namable(std::move(p_name))
         , _sorted(false)
         , _duplicates(false) {
+        // Establish ordering first, then enforce the requested duplicate policy.
         sorted(p_sorted);
         duplicates(p_duplicates);
     }
 
-    /**
-     * @brief Enables or disables automatic sorting of inserted items.
-     */
+    // Enable ascending order, or allow duplicates when switching to unsorted storage.
     Collection& sorted(bool p_sorted) {
+        // Select policy handling only when T supports the built-in ordering contract.
         if constexpr (is_sortable) {
             if (p_sorted == _sorted) {
                 return *this;
@@ -71,10 +91,9 @@ class Collection : public fem::Namable {
         return *this;
     }
 
-    /**
-     * @brief Configures whether the collection suppresses duplicates.
-     */
+    // Allow duplicates, or sort and deduplicate the existing storage when disabling them.
     Collection& duplicates(bool p_duplicates) {
+        // Select policy handling only when T supports the built-in ordering contract.
         if constexpr (is_sortable) {
             if (p_duplicates == _duplicates) {
                 return *this;
@@ -90,15 +109,14 @@ class Collection : public fem::Namable {
         return *this;
     }
 
-    /// Assigns a parent collection that mirrors insertions.
+    // Attach a shared parent for future insertions; existing values are not copied.
     void set_parent(Ptr p_parent) {
         _parent = std::move(p_parent);
     }
 
-    /**
-     * @brief Inserts a single item respecting the configured policies.
-     */
+    // Insert values according to local policies, then forward the request to the parent.
     void add(const T& item) {
+        // Select policy handling only when T supports the built-in ordering contract.
         if constexpr (is_sortable) {
             if (_sorted) {
                 add_sorted(item);
@@ -108,15 +126,15 @@ class Collection : public fem::Namable {
         } else {
             add_unsorted(item);
         }
+        // Forward the complete request even when the local insertion was suppressed.
         if (_parent) {
             _parent->add(item);
         }
     }
 
-    /**
-     * @brief Inserts all items from another collection.
-     */
+    // Insert another collection by value; source/target and parent storage must not alias.
     void add(const Collection<T>& items) {
+        // Select policy handling only when T supports the built-in ordering contract.
         if constexpr (is_sortable) {
             if (_sorted) {
                 add_sorted(items);
@@ -126,12 +144,13 @@ class Collection : public fem::Namable {
         } else {
             add_unsorted(items);
         }
+        // Forward the complete request even when the local insertion was suppressed.
         if (_parent) {
             _parent->add(items);
         }
     }
 
-    /// Iterator access to support range-based loops.
+    // Iterator access to support range-based loops.
     auto begin() {
         return _data.begin();
     }
@@ -145,79 +164,83 @@ class Collection : public fem::Namable {
         return _data.cend();
     }
 
-    /// Returns the internal storage for read-only access.
+    // Returns the internal storage for read-only access.
     const std::vector<T>& data() const {
         return _data;
     }
 
-    /// Returns the first element. Undefined when the collection is empty.
+    // Returns the first element. Undefined when the collection is empty.
     const T& first() const {
         return _data.front();
     }
 
-    /// Returns the last element. Undefined when the collection is empty.
+    // Returns the last element. Undefined when the collection is empty.
     const T& last() const {
         return _data.back();
     }
 
-    /// Returns the current number of stored items.
+    // Returns the current number of stored items.
     [[nodiscard]] size_t size() const {
         return _data.size();
     }
 
-    /// Mutable indexed access.
+    // Unchecked mutable indexed access; callers must preserve ordering/uniqueness.
     T& at(size_t index) {
         return _data[index];
     }
 
-    /// Const indexed access.
+    // Const indexed access returns a value copy; index must be less than size().
     T at(size_t index) const {
         return _data[index];
     }
 
-    /// Const subscript operator forwarding to `at`.
+    // Const subscript operator forwarding to `at`.
     T operator[](size_t index) const {
         return _data[index];
     }
 
-    /// Mutable subscript operator forwarding to `at`.
+    // Mutable subscript operator forwarding to `at`.
     T& operator[](size_t index) {
         return _data[index];
     }
 
-    /// Const call operator mirroring subscript semantics.
+    // Const call operator mirroring subscript semantics.
     T operator()(size_t index) const {
         return _data[index];
     }
 
-    /// Mutable call operator mirroring subscript semantics.
+    // Mutable call operator mirroring subscript semantics.
     T& operator()(size_t index) {
         return _data[index];
     }
 
     protected:
-    std::vector<T> _data;                ///< Backing container storing the items.
-    Ptr            _parent = nullptr;    ///< Optional parent that mirrors insertions.
+    // Owned value storage and shared parent receiving future insertion requests.
+    std::vector<T> _data;
+    Ptr            _parent = nullptr;
 
-    bool           _sorted;        ///< Indicates whether the collection maintains sorted order.
-    bool           _duplicates;    ///< Indicates whether duplicates are allowed.
+    // Effective insertion policies; uniqueness requires sorted storage.
+    bool           _sorted;
+    bool           _duplicates;
 
     private:
-    /// Inserts an item into the sorted storage while respecting duplicates.
+    // Inserts an item into the sorted storage while respecting duplicates.
     void add_sorted(const T& item) {
+        // Find the ordered insertion position and reject an equal value if uniqueness is required.
         auto it = std::lower_bound(_data.begin(), _data.end(), item);
         if (_duplicates || it == _data.end() || *it != item) {
             _data.insert(it, item);
         }
     }
 
-    /// Appends an item without sorting.
+    // Appends an item without sorting.
     void add_unsorted(const T& item) {
         _data.push_back(item);
     }
 
-    /// Inserts items into a sorted collection.
+    // Inserts items into a sorted collection.
     void add_sorted(const Collection<T>& items) {
+        // Reuse the advancing lower-bound position only for an ordered source sequence.
         if (items._sorted) {
             auto it = _data.begin();
             for (const auto& item : items._data) {
@@ -234,12 +257,12 @@ class Collection : public fem::Namable {
         }
     }
 
-    /// Appends items without sorting.
+    // Appends items without sorting.
     void add_unsorted(const Collection<T>& items) {
         _data.insert(_data.end(), items._data.begin(), items._data.end());
     }
 
-    /// Trait indicating whether sorting operations are available for `T`.
+    // Sorting and duplicate comparisons are instantiated only for these value types.
     static constexpr bool is_sortable = std::is_arithmetic_v<T> || std::is_pointer_v<T>;
 };
 }    // namespace model

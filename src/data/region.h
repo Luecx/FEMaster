@@ -1,13 +1,22 @@
 /**
  * @file region.h
- * @brief Declares generic region collections used by FEM models.
+ * @brief Defines typed named collections of model entity identifiers.
  *
- * A region groups identifiers (nodes, elements, surfaces) under a common name
- * and provides helper functions for logging and iteration.
+ * The model-data subsystem uses Region to group node, element, surface and line
+ * identifiers under an immutable name. Collection supplies storage, insertion
+ * policies and parent forwarding; the compile-time region kind supplies semantic
+ * identity and diagnostic output. Sets manages named registrations and aggregates.
  *
- * @see src/data/region.cpp
- * @see src/data/region_type.h
- * @see src/data/collection.h
+ * Identifier interpretation and remapping belong to the model and instance
+ * compilation. Region does not resolve or own the referenced entities.
+ *
+ * @see Region
+ * @see Collection
+ * @see Sets
+ * @see RegionTypes
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #pragma once
@@ -27,29 +36,33 @@ namespace fem {
 namespace model {
 
 /**
- * @struct Region
- * @brief Named collection of entity identifiers.
+ * @brief Names and categorizes a collection of model entity identifiers.
  *
- * @tparam RT Compile-time region type (`NODE`, `ELEMENT`, or `SURFACE`).
+ * The RegionTypes template argument fixes the entity kind without adding runtime
+ * storage. The inherited Collection<ID> owns the identifier values and immutable
+ * name. Construction preserves insertion order and allows repeated identifiers;
+ * consumers may change those inherited policies where their use requires it.
+ *
+ * Entity ownership, identifier validity and part-to-assembly remapping remain
+ * model responsibilities. Parent links and shared ownership follow Collection's
+ * contract. Diagnostics report the kind and size; info() prints at most four IDs,
+ * while the member stream operation emits metadata and an IDs label only.
+ *
+ * @tparam RT NODE, ELEMENT, SURFACE or LINE entity kind.
  */
 template<RegionTypes RT>
 struct Region : public Collection<ID> {
-    using Ptr = std::shared_ptr<Region<RT>>; ///< Shared pointer alias for region ownership.
+    // Shared ownership of this concrete entity-kind collection.
+    using Ptr = std::shared_ptr<Region<RT>>;
 
-    /**
-     * @brief Constructs a region with duplicate tracking but without sorting.
-     */
+    // Construction with insertion-order storage and permitted duplicates.
     explicit Region(std::string name)
         : Collection<ID>(std::move(name), true, false) {}
 
-    /**
-     * @brief Emits logging information about the region contents.
-     */
+    // Log region metadata and up to four stored identifiers.
     void info();
 
-    /**
-     * @brief Streams a textual representation into `os`.
-     */
+    // Append metadata and the IDs label to the stream; identifier values are omitted.
     std::ostream& operator<<(std::ostream& os) const {
         os << "Region: " << this->name;
         os << "   Type: " << RT;
@@ -60,10 +73,15 @@ struct Region : public Collection<ID> {
 };
 
 /**
- * @copydoc Region<RT>::info
+ * @brief Logs the region kind, size and a short identifier preview.
+ *
+ * Print the immutable name and numeric compile-time region kind, then report the
+ * stored size and at most the first four identifiers in the current storage
+ * order. This operation neither sorts nor changes the region or its parent.
  */
 template<RegionTypes RT>
 void Region<RT>::info() {
+    // Report metadata before limiting the identifier preview to four entries.
     logging::info(true, "Region: ", this->name);
     logging::info(true, "   Type: ", RT);
     logging::info(true, "   Size: ", this->size());
@@ -73,9 +91,10 @@ void Region<RT>::info() {
     }
 }
 
-using NodeRegion = Region<RegionTypes::NODE>;       ///< Region alias for nodes.
-using ElementRegion = Region<RegionTypes::ELEMENT>; ///< Region alias for elements.
-using SurfaceRegion = Region<RegionTypes::SURFACE>; ///< Region alias for surfaces.
-using LineRegion = Region<RegionTypes::LINE>;       ///< Region alias for lines (1D geometry).
+// Entity-kind aliases retain the same identifier storage and insertion policies.
+using NodeRegion = Region<RegionTypes::NODE>;
+using ElementRegion = Region<RegionTypes::ELEMENT>;
+using SurfaceRegion = Region<RegionTypes::SURFACE>;
+using LineRegion = Region<RegionTypes::LINE>;
 } // namespace model
 } // namespace fem

@@ -1,16 +1,24 @@
 /**
  * @file field.h
- * @brief Declares lightweight dense storage for model fields.
+ * @brief Defines owned dense numerical storage and model-domain field metadata.
  *
- * `Field` stores named scalar or vector-valued model data on nodes, elements,
- * integration points and other model domains. Values are stored contiguously
- * in row-major order as `rows x components`.
+ * The model-data subsystem stores field values in contiguous row-major order.
+ * FieldMatrix manages dimensions, scalar storage and bounds-checked access.
+ * Field adds a name, entity domain, row/component counts and componentwise
+ * arithmetic. Model compilation and result recovery determine row meaning,
+ * physical units, tensor conventions and coordinate bases.
  *
- * Field semantics remain intentionally external. The container only manages
- * metadata, dense storage and basic element-wise operations.
+ * FieldDomain identifies the association of each row; it does not perform
+ * identifier remapping. Field is independent of fem::Namable and owns mutable
+ * metadata together with its numerical storage.
  *
- * @see field.cpp
- * @see src/model/model_data.h
+ * @see FieldMatrix
+ * @see Field
+ * @see FieldDomain
+ * @see ModelData
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
  */
 
 #pragma once
@@ -26,17 +34,43 @@
 namespace fem {
 namespace model {
 
-// Identifies the model entity associated with each field row
+/**
+ * @brief Identifies the entity layout represented by numerical field rows.
+ *
+ * Domains distinguish nodes, elements and element-local nodes, integration points
+ * or material points. Dense row ordering and global offsets are assigned by model
+ * compilation; this tag alone does not identify the referenced entity or basis.
+ */
 enum class FieldDomain : std::uint8_t {
+    // Unspecified row association.
     UNKNOWN,
+    // One row per model node.
     NODE,
+    // One row per model element.
     ELEMENT,
+    // Rows for element-local nodes in the compiled offset layout.
     ELEMENT_NODAL,
+    // Rows for element integration points in the compiled offset layout.
     ELEMENT_IP,
+    // Rows for material points in the compiled offset layout.
     ELEMENT_MP
 };
 
-// Dense row-major storage with index layout row * cols + col
+/**
+ * @brief Owns a dense row-major matrix of Precision scalar values.
+ *
+ * Storage uses offset(row, col) = row * cols + col. Sized construction allocates
+ * zero-initialized values; the default object is an empty matrix. Dimensions use
+ * the unsigned Index type, and callers must ensure their product fits storage
+ * size and available memory. Indexing checks both upper bounds through logging.
+ *
+ * Copies own independent scalar vectors. data() exposes non-owning contiguous
+ * pointers whose lifetime follows the storage; assignment or object destruction
+ * can invalidate them. Fill operations modify only values, and finite-value
+ * queries distinguish empty/all-nonfinite storage from at least one finite value.
+ * Physical interpretation, entity layout and tensor operations belong to Field
+ * and its consumers rather than to this storage abstraction.
+ */
 class FieldMatrix {
 public:
     // Constructs an empty matrix
@@ -56,7 +90,7 @@ public:
     Precision& operator()(Index row, Index col);
     Precision  operator()(Index row, Index col) const;
 
-    // Returns the contiguous row-major storage
+    // Non-owning access to contiguous row-major values, valid while storage is retained.
     [[nodiscard]] Precision*       data();
     [[nodiscard]] const Precision* data() const;
 
@@ -72,21 +106,47 @@ private:
     // Converts a checked matrix index into a flat storage index
     [[nodiscard]] std::size_t offset(Index row, Index col) const;
 
+    // Persistent dimensions and owned contiguous row-major scalar storage.
     Index                  rows_{};
     Index                  cols_{};
     std::vector<Precision> data_{};
 };
 
-// Named dense field associated with a model domain
+/**
+ * @brief Owns named numerical values associated with a compiled model domain.
+ *
+ * Each row contains components scalar values in contiguous row-major order.
+ * Sized construction requires positive row and component counts and initializes
+ * values to zero. Default construction gives an empty field with UNKNOWN domain.
+ * The public rows/components metadata must remain consistent with values; public
+ * access does not enforce that invariant after construction. Copies deep-copy
+ * numerical storage, while Ptr supplies optional shared ownership of a Field.
+ *
+ * Domain and dimensions must agree for componentwise field arithmetic; names,
+ * units, component meaning and coordinate bases are not compared. Consumers own
+ * these physical conventions and row remapping. Multiplication/division are
+ * componentwise operations, not tensor products or matrix solves. Operations
+ * modify this field in place and retain its metadata. Division checks exact zero
+ * denominators; field division can update earlier entries before a later failure.
+ *
+ * Scalar access requires one component. row_vec3()/row_vec6() copy the leading
+ * components without reordering or changing basis. Despite its name, is_nan()
+ * reports all nonfinite values, including infinities. Raw data pointers expose
+ * storage without ownership and require the Field to remain alive.
+ */
 struct Field {
+    // Optional shared ownership of the complete field and its owned values.
     using Ptr = std::shared_ptr<Field>;
 
+    // Mutable identifier and semantic association of rows with model entities.
     std::string name{};
     FieldDomain domain{FieldDomain::UNKNOWN};
 
+    // Public dimensions; callers must preserve consistency with values dimensions.
     Index rows{};
     Index components{};
 
+    // Owned values with offset(row, component) = row * components + component.
     FieldMatrix values{};
 
     // Constructs an empty field
@@ -118,7 +178,7 @@ struct Field {
     // Returns whether at least one field value is finite
     [[nodiscard]] bool has_any_finite() const;
 
-    // Returns whether a field component is not finite
+    // Detect NaN or infinity at a checked row/component index.
     [[nodiscard]] bool is_nan(Index row, Index component) const;
 
     // Validates that every stored component is finite and identifies invalid
@@ -137,7 +197,8 @@ struct Field {
     Field& operator*=(Precision scalar);
     Field& operator/=(Precision scalar);
 
-    // Applies element-wise compound operations
+    // Apply componentwise operations after matching domains and dimensions.
+    // Names, physical units and coordinate bases remain caller responsibilities.
     Field& operator+=(const Field& other);
     Field& operator-=(const Field& other);
     Field& operator*=(const Field& other);
@@ -148,6 +209,7 @@ private:
     void validate_compatible(const Field& other, const char* operation) const;
 };
 
+// Legacy field spelling; the alias does not impose a NODE domain.
 using NodeData = Field;
 
 } // namespace model
