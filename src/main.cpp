@@ -27,6 +27,7 @@
 #include "core/config.h"
 #include "core/timer.h"
 #include "core/logging.h"
+#include "core/version.h"
 #include "io/reader/parser.h"
 #include "io/reader/parser_abq.h"
 
@@ -48,7 +49,11 @@ int main(int argc, char** argv) {
     auto timer = fem::Timer();
     timer.start();
 
-    argparse::ArgumentParser program("FEM Solver");
+    // Use the same solver version for --version and the startup banner.
+    const std::string version = std::to_string(VERSION_MAJOR) + "." +
+                                std::to_string(VERSION_MINOR) + "." +
+                                std::to_string(VERSION_PATCH);
+    argparse::ArgumentParser program("FEM Solver", version);
 
     // Optional input file (only required if not in doc mode)
     program.add_argument("input_file")
