@@ -67,14 +67,6 @@ OrthotropicElasticity::OrthotropicElasticity(Precision E1,
       G13 (G13),
       G23 (G23) {}
 
-bool OrthotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool OrthotropicElasticity::supports_shell_integration_green_lagrange() const {
-    return true;
-}
-
 /**
  * Builds the orthotropic in-plane plane-stress tangent.
  *
