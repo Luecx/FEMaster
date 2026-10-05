@@ -53,11 +53,6 @@ struct NeoHookeElasticity : Elasticity {
     // and reused by the finite-strain response and local initial guesses.
     NeoHookeElasticity(Precision c10_in, Precision d1_in);
 
-    // Advertise the supported axial, full-volume and shell reductions.
-    bool supports_axial_green_lagrange() const override;
-    bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_green_lagrange() const override;
-
     // Finite axial response reduced from the full three-dimensional potential.
     // The local traction-free solve requires a full tangent internally; the
     // condensed axial tangent is returned only when requested.

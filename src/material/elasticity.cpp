@@ -2,9 +2,8 @@
  * @file elasticity.cpp
  * @brief Implements default behavior of the elastic constitutive interface.
  *
- * The base implementation declares every constitutive formulation unsupported,
- * defines a stateless material-point layout and rejects overloads that a concrete
- * elasticity model has not implemented.
+ * The base implementation defines a stateless material-point layout and rejects
+ * constitutive overloads that a concrete elasticity model has not implemented.
  *
  * @see Elasticity
  *
@@ -15,34 +14,16 @@
 #include "elasticity.h"
 
 #include "strain/axial_strain_green_lagrange.h"
-#include "strain/beam_generalized_strain.h"
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/volume_strain_green_lagrange.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
-#include "stress/beam_stress_resultants.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
 #include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
 namespace fem::material {
-
-bool Elasticity::supports_axial_green_lagrange() const {
-    return false;
-}
-
-bool Elasticity::supports_volume_green_lagrange() const {
-    return false;
-}
-
-bool Elasticity::supports_beam_resultants() const {
-    return false;
-}
-
-bool Elasticity::supports_shell_integration_green_lagrange() const {
-    return false;
-}
 
 Index Elasticity::state_size() const {
     return 0;
@@ -80,21 +61,6 @@ void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 
     logging::error(false,
         "Elasticity model does not support Green-Lagrange volume evaluation");
-}
-
-void Elasticity::evaluate(const BeamGeneralizedStrain& strain,
-                          const Precision*             old_state,
-                          Precision*                   new_state,
-                          BeamStressResultants&        resultants,
-                          Mat6*                        tangent) const {
-    (void) strain;
-    (void) old_state;
-    (void) new_state;
-    (void) resultants;
-    (void) tangent;
-
-    logging::error(false,
-        "Elasticity model does not support beam-resultant evaluation");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,

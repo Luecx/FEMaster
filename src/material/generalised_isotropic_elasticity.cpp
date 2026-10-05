@@ -54,18 +54,6 @@ GeneralisedIsotropicElasticity::GeneralisedIsotropicElasticity(Precision youngs_
         "GENERALISED_ISOTROPIC: shear modulus must be positive");
 }
 
-bool GeneralisedIsotropicElasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_shell_integration_green_lagrange() const {
-    return true;
-}
-
 /**
  * Builds the in-plane plane-stress tangent from isotropic normal coupling and
  * the independent engineering shear modulus.

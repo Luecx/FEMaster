@@ -131,17 +131,6 @@ void SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Pre
 /**
  * Accumulates isotropic free thermal strain into element-nodal storage.
  *
- * Each nodal value is alpha (T - T_ref). Undefined temperatures use T_ref and
- * therefore contribute zero strain. The scalar free strain is added to the three
- * normal mechanical strain components during evaluation; shear remains unchanged.
- *
- * @param thermal_free_strain Scalar ELEMENT_NODAL accumulator.
- * @param node_temp Scalar NODE temperature field.
- * @param ref_temp Finite stress-free reference temperature.
- */
-/**
- * Accumulates isotropic free thermal strain into element-nodal storage.
- *
  * Nodal values are alpha (T - T_ref). Undefined temperatures use the finite
  * reference temperature and contribute zero strain. Mechanical evaluation
  * subtracts this scalar from each normal strain component.

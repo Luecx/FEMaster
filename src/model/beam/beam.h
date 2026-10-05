@@ -29,7 +29,6 @@
 
 #include "../../core/core.h"
 #include "../../material/isotropic_elasticity.h"
-#include "../../material/stress/beam_stress_resultants.h"
 #include "../../section/section_beam.h"
 #include "../element/element_structural.h"
 

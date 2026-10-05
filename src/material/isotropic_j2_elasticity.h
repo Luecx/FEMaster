@@ -91,11 +91,6 @@ struct IsotropicJ2Elasticity : Elasticity {
     void add_yield_point(Precision yield_stress, Precision equivalent_plastic_strain);
     [[nodiscard]] const std::vector<YieldPoint>& get_yield_points() const;
 
-    // Supported strain/stress-measure pairs
-    bool supports_axial_green_lagrange() const override;
-    bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_green_lagrange() const override;
-
     // Persistent material-point history. Seven scalars store the six independent
     // components of Cp = Fp^T Fp followed by accumulated equivalent plastic strain.
     Index state_size() const override;

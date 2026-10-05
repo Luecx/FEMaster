@@ -40,12 +40,6 @@ struct IsotropicElasticity : Elasticity {
     // rejected by the definition in the implementation.
     IsotropicElasticity(Precision youngs_in, Precision poisson_in);
 
-    // Advertise all axial, volume and shell strain measures implemented below.
-    // These flags allow the owning section to validate its requested kinematics.
-    bool supports_axial_green_lagrange() const override;
-    bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_green_lagrange() const override;
-
     // Total-Lagrangian axial Hooke response S = E E_GL. The optional tangent is
     // the constant derivative dS/dE = E.
     void evaluate(const AxialStrainGreenLagrange& strain,

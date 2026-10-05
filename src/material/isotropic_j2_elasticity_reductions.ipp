@@ -24,8 +24,6 @@
  * The shell input ordering is mapped explicitly inside this function so the
  * reduction can be understood without consulting another helper.
  *
- * @tparam Finite false for linearized/Cauchy response, true for
- *                Green-Lagrange/PK2 response.
  * @param shell_strain Five shell material strain components.
  * @param committed Seven-component committed J2 state.
  * @param converged_state Receives the state associated with the converged e33.
@@ -35,10 +33,9 @@
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
  * @param converged_tangent Receives the full three-dimensional tangent used by
- *                          the reduction. This is exact for finite strain.
+ *                          the reduction. This is the exact finite-strain tangent.
  * @return Converged full three-dimensional stress.
  */
-template<bool Finite>
 VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
                                       const State& committed,
                                       State& converged_state,
@@ -61,12 +58,12 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
     Precision e33 = -poisson / (Precision(1) - poisson)
                   * (shell_strain(0) + shell_strain(1));
 
-    if constexpr (Finite) {
+    
         // Green-Lagrange strain must satisfy C = I + 2 E > 0. The lower clamp is
         // only a safe initial guess; every subsequent candidate is checked by its
         // full metric eigenvalues before it is accepted.
         e33 = std::max(e33, Precision(-0.49));
-    }
+    
 
     const Precision tolerance = stress_tolerance(
         youngs, initial_yield_stress(yield_curve)
@@ -93,7 +90,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
         volume_strain.voigt()(4) = shell_strain(3);
         volume_strain.voigt()(5) = shell_strain(2);
 
-        if constexpr (Finite) {
+        
             // Finite-strain admissibility follows directly from
             //
             //     C = I + 2 E.
@@ -109,7 +106,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
             logging::error(solver.info() == Eigen::Success
                            && solver.eigenvalues().minCoeff() > Precision(1e-12),
                 "J2: shell plane-stress iterate left admissible Green-Lagrange domain");
-        }
+        
 
         // ---------------------------------------------------------------------
         // Every plane-stress Newton candidate must start from exactly the same
@@ -128,7 +125,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
 
         Mat6 candidate_tangent;
 
-        if constexpr (Finite) {
+        
             // Finite-strain candidate: Green-Lagrange strain -> PK2 stress.
             const FiniteResponse response = integrate_finite_strain(
                 volume_strain,
@@ -145,24 +142,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
                 bulk,
                 yield_curve
             );
-        } else {
-            // Small-strain candidate: infinitesimal strain -> Cauchy stress.
-            const SmallResponse response = integrate_small_strain(
-                volume_strain,
-                candidate_state,
-                shear,
-                bulk,
-                yield_curve
-            );
-
-            stress = response.stress;
-            candidate_tangent = tangent_small(
-                response,
-                shear,
-                bulk,
-                yield_curve
-            );
-        }
+        
 
         // ---------------------------------------------------------------------
         // Plane-stress residual and exact Newton derivative.
@@ -195,7 +175,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
 
         const Precision delta = -residual / derivative;
 
-        if constexpr (Finite) {
+        
             // -----------------------------------------------------------------
             // Keep the Newton correction inside the admissible Green-Lagrange
             // domain. Only kinematics are checked here; the constitutive residual
@@ -227,9 +207,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
 
             logging::error(accepted,
                 "J2: shell plane-stress Newton could not find admissible step");
-        } else {
-            e33 += delta;
-        }
+        
     }
 
     logging::error(converged,
@@ -247,7 +225,7 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
  *     S22 = 0
  *     S33 = 0.
  *
- * A two-dimensional Newton iteration is used. For finite strain its Jacobian is
+ * A two-dimensional Newton iteration is used. Its Jacobian is
  * the transverse block of the exact three-dimensional J2 tangent,
  *
  *            [ C2222  C2233 ]
@@ -257,8 +235,6 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
  * After convergence the scalar axial tangent is obtained outside this routine by
  * Schur condensation of the same three-dimensional tangent.
  *
- * @tparam Finite false for linearized/Cauchy response, true for
- *                Green-Lagrange/PK2 response.
  * @param axial_strain Prescribed axial strain e11.
  * @param committed Seven-component committed J2 state.
  * @param converged_state Receives the state associated with the converged
@@ -269,10 +245,9 @@ VolumeStress solve_shell_plane_stress(const Vec5& shell_strain,
  * @param bulk Elastic bulk modulus K.
  * @param yield_curve Piecewise-linear isotropic hardening law.
  * @param converged_tangent Receives the full three-dimensional tangent used by
- *                          the reduction. This is exact for finite strain.
+ *                          the reduction. This is the exact finite-strain tangent.
  * @return Converged full three-dimensional stress.
  */
-template<bool Finite>
 VolumeStress solve_axial_stress(Precision axial_strain,
                                 const State& committed,
                                 State& converged_state,
@@ -291,14 +266,14 @@ VolumeStress solve_axial_stress(Precision axial_strain,
     volume_strain.voigt()(1) = -poisson * axial_strain;
     volume_strain.voigt()(2) = -poisson * axial_strain;
 
-    if constexpr (Finite) {
+    
         volume_strain.voigt()(1) = std::max(
             volume_strain.voigt()(1), Precision(-0.49)
         );
         volume_strain.voigt()(2) = std::max(
             volume_strain.voigt()(2), Precision(-0.49)
         );
-    }
+    
 
     const Precision tolerance = stress_tolerance(
         youngs, initial_yield_stress(yield_curve)
@@ -308,7 +283,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
     bool converged = false;
 
     for (Index iteration = 0; iteration < 30; ++iteration) {
-        if constexpr (Finite) {
+        
             // Check the finite-strain kinematic domain C = I + 2 E > 0.
             const Mat3 C = Mat3::Identity()
                          + Precision(2) * volume_strain.tensor();
@@ -320,7 +295,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
             logging::error(solver.info() == Eigen::Success
                            && solver.eigenvalues().minCoeff() > Precision(1e-12),
                 "J2: axial constitutive iterate left admissible Green-Lagrange domain");
-        }
+        
 
         // ---------------------------------------------------------------------
         // Start every transverse Newton candidate from the same committed
@@ -339,7 +314,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
 
         Mat6 candidate_tangent;
 
-        if constexpr (Finite) {
+        
             const FiniteResponse response = integrate_finite_strain(
                 volume_strain,
                 candidate_state,
@@ -355,23 +330,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
                 bulk,
                 yield_curve
             );
-        } else {
-            const SmallResponse response = integrate_small_strain(
-                volume_strain,
-                candidate_state,
-                shear,
-                bulk,
-                yield_curve
-            );
-
-            stress = response.stress;
-            candidate_tangent = tangent_small(
-                response,
-                shear,
-                bulk,
-                yield_curve
-            );
-        }
+        
 
         // ---------------------------------------------------------------------
         // Residual of the uniaxial stress reduction.
@@ -408,7 +367,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
 
         const Eigen::Matrix<Precision, 2, 1> delta = lu.solve(-residual);
 
-        if constexpr (Finite) {
+        
             // Keep the transverse Newton correction in the admissible metric
             // domain before accepting the next constitutive candidate.
             Precision scale = Precision(1);
@@ -438,10 +397,7 @@ VolumeStress solve_axial_stress(Precision axial_strain,
 
             logging::error(accepted,
                 "J2: axial constitutive Newton could not find admissible step");
-        } else {
-            volume_strain.voigt()(1) += delta(0);
-            volume_strain.voigt()(2) += delta(1);
-        }
+        
     }
 
     logging::error(converged,

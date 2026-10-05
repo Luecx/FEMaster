@@ -43,12 +43,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
                                    Precision poisson_in,
                                    Precision shear_in);
 
-    // Advertise all axial, volume and shell strain measures implemented below.
-    // The law is linear in every supplied strain measure and contains no state.
-    bool supports_axial_green_lagrange() const override;
-    bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_green_lagrange() const override;
-
     // Total-Lagrangian axial response S = E E_GL with optional constant tangent E.
     void evaluate(const AxialStrainGreenLagrange& strain,
                   const Precision*                old_state,

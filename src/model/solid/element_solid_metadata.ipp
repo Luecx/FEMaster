@@ -1,5 +1,5 @@
 /**
- * @file element_solid_.ipp
+ * @file element_solid_metadata.ipp
  * @brief Implements solid topology metadata and natural recovery coordinates.
  *
  * These adapters expose translational DOFs, connectivity and constitutive

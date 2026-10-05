@@ -165,9 +165,6 @@ void IntegratedShellSection::evaluate(
     // any through-thickness constitutive state.
     logging::error(material_ && material_->has_elasticity(),
         "IntegratedShellSection requires a material with elasticity");
-    logging::error(material_->elasticity()->supports_shell_integration_green_lagrange(),
-        "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
-
     // Determine the material section basis. Without a prescribed orientation the
     // geometric shell basis itself is the material basis.
     const Mat3 section_basis_global = orientation_
@@ -347,9 +344,6 @@ VolumeStressCauchy IntegratedShellSection::recover_stress(
         "IntegratedShellSection requires a material with elasticity");
 
     const auto elasticity = material_->elasticity();
-    logging::error(elasticity->supports_shell_integration_green_lagrange(),
-        "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
-
     const Mat3 output_basis_global   = stress_basis(position_reference, shell_basis_global);
     const Mat3 recovery_basis_global = orientation_ ? output_basis_global : shell_basis_global;
 
