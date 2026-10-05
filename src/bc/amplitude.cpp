@@ -183,7 +183,7 @@ Precision evaluate_linear(const std::vector<Amplitude::Sample>& samples, Precisi
  * @param interpolation Rule used between stored support points.
  */
 Amplitude::Amplitude(const std::string& name, Interpolation interpolation)
-    : Namable(name),
+    : fem::Namable(name),
       interpolation_(interpolation) {}
 
 /**

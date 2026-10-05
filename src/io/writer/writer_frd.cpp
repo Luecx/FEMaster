@@ -238,7 +238,7 @@ int frd_frame(const std::string& s) {
  * @return FRD topology code or zero if unsupported.
  */
 int frd_element_type(const model::ElementInterface& element) {
-    const auto* structural = dynamic_cast<const model::StructuralElement*>(&element);
+    const auto* structural = element.as<model::StructuralElement>();
 
     if (!structural) {
         return 0;

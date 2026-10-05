@@ -72,12 +72,12 @@ void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& parser)
 
                             const fem::loadcase::tools::RayleighDamping damping{ab[0], ab[1]};
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 lc->set_damping(damping);
                                 return;
                             }
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::LinearHarmonic*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::LinearHarmonic>()) {
                                 lc->set_damping(damping);
                                 return;
                             }

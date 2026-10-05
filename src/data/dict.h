@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "namable.h"
+#include "../core/namable.h"
 
 #include <memory>
 #include <string>
@@ -32,7 +32,7 @@ struct IsNamableOrIncomplete : std::true_type {};
 
 template<typename T>
 struct IsNamableOrIncomplete<T, std::void_t<decltype(sizeof(T))>>
-    : std::bool_constant<std::is_base_of_v<Namable, T>> {};
+    : std::bool_constant<std::is_base_of_v<fem::Namable, T>> {};
 
 } // namespace detail
 
@@ -53,7 +53,7 @@ struct Dict {
     std::conditional_t<std::is_same_v<Key, std::string>, std::unordered_map<Key, TPtr>, std::vector<TPtr>> _data;
 
     static_assert(!std::is_same_v<Key, std::string> || detail::IsNamableOrIncomplete<T>::value,
-                  "String-keyed Dict entries must derive from Namable");
+                  "String-keyed Dict entries must derive from fem::Namable");
 
     TPtr _cur = nullptr;    ///< Tracks the most recently accessed entry.
 
@@ -124,7 +124,7 @@ struct Dict {
     }
 
     // Register an already constructed named object. String-keyed dictionaries
-    // derive the key from the object's immutable Namable::name property so the
+    // derive the key from the object's immutable fem::Namable::name property so the
     // owning API does not need to accept the same name separately.
     template<typename K = Key>
     std::enable_if_t<std::is_same_v<K, std::string>, TPtr> add(TPtr instance) {
@@ -156,7 +156,7 @@ struct Dict {
      * @brief Creates and stores a new instance associated with `key`.
      *
      * When `Key` is a string, the constructor forwards the key to the stored
-     * type if it inherits from `Namable`.
+     * type if it inherits from `fem::Namable`.
      */
     template<typename Derived = T, typename... Args>
     TPtr create(const Key& key, Args... args) {

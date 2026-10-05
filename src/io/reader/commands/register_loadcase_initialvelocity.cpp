@@ -45,7 +45,7 @@ void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, Parser&
 
             const std::string field = keys.raw("FIELD");
 
-            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                 // Resolve field now and attach pointer directly
                 auto& mdl = parser.model();
                 auto fptr = mdl._data->get_field(field);

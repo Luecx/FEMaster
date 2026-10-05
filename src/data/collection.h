@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "namable.h"
+#include "../core/namable.h"
 
 #include <algorithm>
 #include <memory>
@@ -31,7 +31,7 @@ namespace model {
  * @tparam T Value type stored inside the collection.
  */
 template<typename T>
-class Collection : public Namable {
+class Collection : public fem::Namable {
     public:
     using value_type = T;                                 ///< Value stored in the collection.
     using Ptr        = std::shared_ptr<Collection<T>>;    ///< Shared pointer alias for derived collections.
@@ -43,7 +43,7 @@ class Collection : public Namable {
      * (either arithmetic or pointer types).
      */
     Collection(std::string p_name, bool p_duplicates = false, bool p_sorted = true)
-        : Namable(std::move(p_name))
+        : fem::Namable(std::move(p_name))
         , _sorted(false)
         , _duplicates(false) {
         sorted(p_sorted);

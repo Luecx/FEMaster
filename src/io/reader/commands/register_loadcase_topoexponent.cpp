@@ -36,7 +36,8 @@ void register_loadcase_topoexponent(fem::io::dsl::Registry& registry, Parser& pa
                     .one<fem::Precision>().name("EXPONENT").desc("Penalization exponent")
                 )
                 .bind([&parser](fem::Precision exponent) {
-                    auto* lc = dynamic_cast<loadcase::LinearStaticTopo*>(parser.active_loadcase());
+                    auto* active_loadcase = parser.active_loadcase();
+                    auto* lc = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearStaticTopo>() : nullptr;
                     logging::error(lc != nullptr,
                         "TOPOEXPONENT only valid for LINEARSTATICTOPO loadcases");
                     lc->exponent = exponent;

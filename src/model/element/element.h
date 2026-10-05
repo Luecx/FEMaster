@@ -8,11 +8,18 @@
  * function is the complete cloning contract; no external type registry or
  * stored function pointer is required.
  *
+ * The interface binds compiled connectivity and integration-point offsets to
+ * model storage. Castable supplies checked access to concrete element families;
+ * section assignment and geometric queries remain element responsibilities.
+ *
+ * @see ElementInterface
+ * @see Castable
  * @see src/model/element/element_structural.h
  */
 
 #pragma once
 
+#include "../../core/castable.h"
 #include "../../core/types_cls.h"
 #include "../../section/section.h"
 #include "../geometry/surface/surface.h"
@@ -22,7 +29,22 @@
 
 namespace fem::model {
 
-struct ElementInterface {
+/**
+ * @brief Polymorphic definition and model binding shared by finite elements.
+ *
+ * An element stores its assembly identifier, global state offsets and a shared
+ * section reference. The model-data pointer is non-owning and must remain valid
+ * during evaluation. Connectivity and concrete formulation data are supplied by
+ * derived elements, which implement DOF layout, dimension, integration-point
+ * count and independent copying of their persistent definition.
+ *
+ * Integration-point and material-point indices combine the compiled offsets
+ * with local indices. Model compilation assigns these offsets and binds model
+ * storage before evaluation. Geometry helpers read global node coordinates from
+ * that storage; the base does not own constitutive history or solver state.
+ * Castable provides mutable and const runtime access to concrete element types.
+ */
+struct ElementInterface : public Castable {
     ID elem_id           = 0;
     ID elem_nodal_offset = 0;
     ID elem_ip_offset    = 0;
@@ -76,16 +98,6 @@ struct ElementInterface {
         return static_cast<Index>(elem_mp_offset)
              + local_ip * num_mp_per_ip()
              + local_mp;
-    }
-
-    template<typename T>
-    T* as() {
-        return dynamic_cast<T*>(this);
-    }
-
-    template<typename T>
-    const T* as() const {
-        return dynamic_cast<const T*>(this);
     }
 
     void set_section(Section::Ptr section) {

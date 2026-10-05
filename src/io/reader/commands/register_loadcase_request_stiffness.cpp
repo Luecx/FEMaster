@@ -45,15 +45,15 @@ void register_loadcase_request_stiffness(fem::io::dsl::Registry& registry, Parse
 
             std::string file = keys.has("FILE") ? keys.raw("FILE") : "stiffness_" + std::to_string(base->get_id()) + ".txt";
 
-            if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
+            if (auto* lc = base->as<loadcase::LinearBuckling>()) {
                 lc->stiffness_file = std::move(file);
                 return;
             }
-            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+            if (auto* lc = base->as<loadcase::LinearStatic>()) {
                 lc->stiffness_file = std::move(file);
                 return;
             }
-            if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+            if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
                 lc->stiffness_file = std::move(file);
                 return;
             }

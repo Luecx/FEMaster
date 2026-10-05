@@ -56,7 +56,7 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
                             logging::error(base != nullptr,
                                 "FREQUENCIES must appear inside *LOADCASE.");
 
-                            auto* lc = dynamic_cast<fem::loadcase::LinearHarmonic*>(base);
+                            auto* lc = base->as<fem::loadcase::LinearHarmonic>();
                             logging::error(lc != nullptr,
                                 "FREQUENCIES not supported for loadcase type " +
                                 base->type_name());

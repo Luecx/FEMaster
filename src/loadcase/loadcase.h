@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "../core/castable.h"
 #include "../constraints/constraint_groups.h"
 #include "../model/model.h"
 #include "../io/writer/writers.h"
@@ -37,10 +38,12 @@ namespace loadcase {
  * command can observe it. Derived classes provide the canonical input-deck type
  * name and implement the actual analysis in @ref run.
  *
+ * Castable provides mutable and const runtime access to concrete implementations.
+ *
  * The writer and model pointers are non-owning. Their lifetime is controlled by
  * the parser and covers the complete execution of every active load case.
  */
-struct LoadCase {
+struct LoadCase : public Castable {
     // Owning polymorphic load-case pointer
     using Ptr = std::unique_ptr<LoadCase>;
 

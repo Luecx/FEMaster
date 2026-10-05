@@ -69,15 +69,15 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
                 method = constraint::ConstraintTransformer::Method::Elimination;
             }
 
-            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+            if (auto* lc = base->as<loadcase::LinearStatic>()) {
                 lc->constraint_method = method;
                 return;
             }
-            if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+            if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
                 lc->constraint_method = method;
                 return;
             }
-            if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+            if (auto* lc = base->as<loadcase::LinearHarmonic>()) {
                 lc->constraint_method = method;
                 return;
             }

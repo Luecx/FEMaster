@@ -51,7 +51,7 @@ void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser)
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "NEWMARK must appear inside *LOADCASE.");
 
-                            if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
+                            if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 lc->set_newmark(bg[0], bg[1]);
                                 return;
                             }

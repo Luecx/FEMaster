@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "../core/castable.h"
 #include "../core/printable.h"
 #include "../data/region.h"
 #include "../material/material.h"
@@ -29,9 +30,10 @@ namespace fem {
  * @brief Abstract base class for FEM sections.
  *
  * Every concrete section owns the material-region pairing used by elements and
- * adds only the extra properties needed by that element family.
+ * adds only the extra properties needed by that element family. Castable
+ * provides mutable and const runtime access to concrete section types.
  */
-struct Section : public fem::Printable {
+struct Section : public fem::Printable, public Castable {
     using Ptr = std::shared_ptr<Section>; ///< Shared pointer alias for section ownership.
 
     material::Material::Ptr  material_ = nullptr; ///< Material associated with the section.
@@ -41,22 +43,6 @@ struct Section : public fem::Printable {
      * @brief Defaulted virtual destructor for polymorphic deletion.
      */
     virtual ~Section() = default;
-
-    /**
-     * @brief Casts this section to a concrete section type.
-     *
-     * @tparam T Concrete section type.
-     * @return T* Pointer to the concrete type, or nullptr on mismatch.
-     */
-    template<typename T>
-    T* as() {
-        return dynamic_cast<T*>(this);
-    }
-
-    template<typename T>
-    const T* as() const {
-        return dynamic_cast<const T*>(this);
-    }
 
     /**
      * @brief Outputs section details through the logger.

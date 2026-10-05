@@ -28,7 +28,7 @@
 #pragma once
 
 #include "../core/types_eig.h"
-#include "../data/namable.h"
+#include "../core/namable.h"
 #include "part.h"
 
 #include <memory>
@@ -51,7 +51,7 @@ namespace fem::model {
  * surface handedness are preserved. `Model::compile()` validates these
  * invariants before creating any dense assembly entities.
  */
-struct Instance : public Namable {
+struct Instance : public fem::Namable {
     // Shared ownership type used by the semantic model dictionary. Instances
     // themselves share their referenced Part instead of copying its topology.
     using Ptr = std::shared_ptr<Instance>;
@@ -85,7 +85,7 @@ struct Instance : public Namable {
              Part::Ptr   part,
              Vec3        translation = Vec3::Zero(),
              Mat3        rotation    = Mat3::Identity())
-        : Namable(std::move(name)),
+        : fem::Namable(std::move(name)),
           part       (std::move(part)),
           translation(translation),
           rotation   (rotation) {}

@@ -35,7 +35,7 @@ void register_loadcase_rebalance(fem::io::dsl::Registry& registry, Parser& parse
             logging::error(base != nullptr,
                 "REBALANCELOADS must appear inside *LOADCASE");
 
-            auto* lc = dynamic_cast<loadcase::LinearStatic*>(base);
+            auto* lc = base->as<loadcase::LinearStatic>();
             logging::error(lc != nullptr,
                 "REBALANCELOADS is only supported for linear static load cases");
             lc->rebalance_loads = true;

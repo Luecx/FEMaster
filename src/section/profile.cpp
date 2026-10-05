@@ -22,7 +22,7 @@ Profile::Profile(const std::string& name,
                  Precision offset_z,
                  Precision reference_y,
                  Precision reference_z)
-    : Namable(name),
+    : fem::Namable(name),
       area_(area),
       inertia_y_(inertia_y),
       inertia_z_(inertia_z),

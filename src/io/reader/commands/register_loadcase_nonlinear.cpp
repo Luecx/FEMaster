@@ -69,7 +69,7 @@ void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser& parse
             logging::error(base != nullptr,
                 "NONLINEAR must appear inside *LOADCASE");
 
-            auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base);
+            auto* lc = base->as<loadcase::NonlinearStatic>();
             logging::error(lc != nullptr,
                 "NONLINEAR is only supported for NONLINEARSTATIC loadcases");
 

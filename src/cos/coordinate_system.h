@@ -17,7 +17,7 @@
 #pragma once
 
 #include "../core/types_eig.h"
-#include "../data/namable.h"
+#include "../core/namable.h"
 
 #include <memory>
 #include <string>
@@ -36,10 +36,10 @@ using Basis = Mat3; ///< Convenience alias for a 3x3 basis matrix.
  * owning part is instantiated, `Model::compile()` requests a rigidly transformed
  * copy instead of mutating the shared source definition.
  */
-struct CoordinateSystem : Namable {
+struct CoordinateSystem : fem::Namable {
     using Ptr = std::shared_ptr<CoordinateSystem>; ///< Shared pointer shorthand.
 
-    explicit CoordinateSystem(const std::string& name = "") : Namable(name) {}
+    explicit CoordinateSystem(const std::string& name = "") : fem::Namable(name) {}
     virtual ~CoordinateSystem() = default;
 
     /**
