@@ -29,8 +29,9 @@ namespace {
 /**
  * Prints the solver banner and compile-time build information.
  *
- * Version strings are padded on the right to keep the closing border in column
- * 70 regardless of their digit counts within the available width. Each version
+ * The title and solver version are centered within the 68 interior columns.
+ * Build-information versions are padded on the right to keep the border in
+ * column 70 regardless of digit counts within the available width. Each version
  * field restores right alignment afterward to preserve subsequent formatting.
  * The global Startup instance invokes this output before command-line parsing.
  */
@@ -46,14 +47,20 @@ void print_banner() {
                                         std::to_string(SPECTRA_MINOR_VERSION) + "." +
                                         std::to_string(SPECTRA_PATCH_VERSION);
 
+    // Split unused title columns evenly; an odd extra column stays on the right.
+    const auto print_centered = [](const std::string& text) {
+        const int padding = 68 - static_cast<int>(text.size());
+        std::cout << "*" << std::setw(padding / 2) << "" << text
+                  << std::setw(padding - padding / 2) << "" << "*\n";
+    };
+
     // Reserve the remaining columns for each value and its trailing padding.
     std::cout << "**********************************************************************\n";
     std::cout << "*                                                                    *\n";
-    std::cout << "*                         FEMaster                                   *\n";
-    std::cout << "*                          v" << std::left << std::setw(41)
-              << solver_version << std::right << "*\n";
+    print_centered("FEMaster");
+    print_centered("v" + solver_version);
     std::cout << "*                                                                    *\n";
-    std::cout << "*           Copyright (c) 2024, Finn Eggers                            *\n";
+    std::cout << "*           Copyright (c) 2024, Finn Eggers                          *\n";
     std::cout << "*                                                                    *\n";
     std::cout << "*           Licensed under the MIT License.                          *\n";
     std::cout << "*           See LICENSE.txt for the complete license terms.          *\n";
