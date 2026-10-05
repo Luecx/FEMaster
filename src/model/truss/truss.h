@@ -195,7 +195,8 @@ struct T3 : StructuralElement {
     bool compute_beam_section_forces(
         Field&       section_forces,
         const Field& displacement,
-        int          offset
+        int          offset,
+        const Field* linearization = nullptr
     ) override;
 };
 
