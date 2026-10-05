@@ -101,8 +101,6 @@ void SolidElement<N>::compute_stress_strain(
         "SolidElement: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
         "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
-    logging::error((!exact_state && linearization == nullptr) || thermal_free_strain == nullptr,
-        "SolidElement: thermal free strain recovery is supported only for linear kinematics");
     logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
         "SolidElement: thermal free strain must be scalar ELEMENT_NODAL data");
 
@@ -153,10 +151,21 @@ void SolidElement<N>::compute_stress_strain(
         Mat6            material_tangent;
         evaluate_material(
             point.r, point.s, point.t, green, old_state, nullptr, second_pk,
-            exact_state ? nullptr : &material_tangent);
+            (exact_state && !thermal_free_strain) ? nullptr : &material_tangent);
+
+        Vec6 thermal_stress = Vec6::Zero();
+        if (thermal_free_strain) {
+            const Precision free =
+                this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
+            thermal_stress =
+                material_tangent * Vec6(free, free, free, 0, 0, 0);
+        }
+
+        const VolumeStressPK2 effective_pk(
+            Vec6(second_pk.voigt() - thermal_stress));
 
         Vec6 recovered_strain = green.voigt();
-        const Mat3 sigma = second_pk.to_cauchy(F).tensor();
+        const Mat3 sigma = effective_pk.to_cauchy(F).tensor();
         Mat3 recovered_stress = sigma;
         if (!exact_state) {
             // Differentiate E and sigma = F S F^T / det(F) in the same direction
@@ -164,13 +173,10 @@ void SolidElement<N>::compute_stress_strain(
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
             const Vec6 delta_strain = VolumeStrainGreenLagrange(delta_E).voigt();
             recovered_strain += delta_strain;
-            Vec6 mechanical_increment = delta_strain;
-            if (thermal_free_strain) {
-                const Precision free = this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
-                mechanical_increment.head<3>().array() -= free;
-            }
-            const Mat3 delta_S = VolumeStressPK2(Vec6(material_tangent * mechanical_increment)).tensor();
-            const Mat3 S = second_pk.tensor();
+            const Vec6 mechanical_increment = delta_strain;
+            const Mat3 delta_S =
+                VolumeStressPK2(Vec6(material_tangent * mechanical_increment)).tensor();
+            const Mat3 S = effective_pk.tensor();
             recovered_stress += (delta_F * S * F.transpose() + F * delta_S * F.transpose()
                                + F * S * delta_F.transpose()) / F.determinant()
                               - (F.inverse() * delta_F).trace() * sigma;
@@ -481,7 +487,8 @@ MapMatrix SolidElement<N>::evaluate(
         //
         // Thus, the stress already present at u0 contributes to K_T(u0), while the
         // separate geometric operator contains only the effect of the perturbation.
-        const Mat3 stress_linear_base = stress.tensor();
+        const Mat3 stress_linear_base =
+            VolumeStressPK2(Vec6(stress.voigt() - thermal_stress)).tensor();
 
         Vec6 stress_increment = Vec6::Zero();
         if (with_geometric) {
