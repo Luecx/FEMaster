@@ -239,8 +239,25 @@ struct B33 : BeamElement<2> {
         }
 
         const StaticVector<12> u_local = T * u_global;
-        const Precision N_axial = get_elasticity()->youngs * get_profile()->area_
-                                * (u_local(6) - u_local(0)) / L;
+        Precision thermal_strain = Precision(0);
+        auto material = get_material();
+        if (this->_model_data->temperature && material->has_thermal_expansion()) {
+            const Precision zero  = material->get_thermal_zero_temperature();
+            const Precision alpha = material->get_thermal_expansion();
+            Precision temperature = Precision(0);
+            for (Index node = 0; node < 2; ++node) {
+                const Precision value =
+                    (*this->_model_data->temperature)(
+                        static_cast<Index>(this->node_ids[node]), 0);
+                temperature += std::isfinite(value) ? value : zero;
+            }
+            temperature *= Precision(0.5);
+            thermal_strain = alpha * (temperature - zero);
+        }
+
+        const Precision N_axial =
+            get_elasticity()->youngs * get_profile()->area_
+            * ((u_local(6) - u_local(0)) / L - thermal_strain);
 
         if (std::abs(N_axial) <= std::numeric_limits<Precision>::epsilon()) {
             return StaticMatrix<12, 12>::Zero();
