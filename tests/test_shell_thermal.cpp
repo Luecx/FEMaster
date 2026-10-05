@@ -3,7 +3,6 @@
  * @brief Uniform-through-thickness thermal equivalent loads for MITC/FRT shells.
  */
 
-#include "../src/bc/neumann/load_t.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/material/isotropic_j2_elasticity.h"
 #include "../src/model/model.h"
@@ -51,6 +50,7 @@ void check_uniform_thermal_load(
     auto material = std::make_shared<material::Material>("MAT");
     material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.25);
     material->set_thermal_expansion(0.01);
+    material->set_thermal_zero_temperature(20.0);
     model.add_material(material);
 
     const auto region = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
@@ -83,13 +83,8 @@ void check_uniform_thermal_load(
         (*temperature)(i, 0) = 20.0 + free_strain / 0.01;
     }
 
-    bc::TLoad load;
-    load.temp_field_ = temperature;
-    load.ref_temp_ = 20.0;
-
-    model::Field rhs{"RHS", model::FieldDomain::NODE, static_cast<Index>(N), 6};
-    rhs.set_zero();
-    load.apply(*model._data, rhs, 0.0);
+    model._data->temperature = temperature;
+    model::Field rhs = model.build_thermal_expansion_load_matrix();
 
     // A homogeneous thermal free-expansion displacement produces exactly the
     // same generalized strain as the uniform, thickness-constant thermal load.
@@ -118,14 +113,7 @@ void check_uniform_thermal_load(
     }
 
     if (!use_abd) {
-        model::Field thermal_free_strain{
-            "THERMAL_FREE_STRAIN",
-            model::FieldDomain::ELEMENT_NODAL,
-            model._data->field_rows(model::FieldDomain::ELEMENT_NODAL),
-            1
-        };
-        thermal_free_strain.set_zero();
-        load.apply_thermal_free_strain(*model._data, thermal_free_strain);
+        model::Field thermal_free_strain = model.build_thermal_free_strain();
 
         model::Field displacement{
             "DISPLACEMENT", model::FieldDomain::NODE, static_cast<Index>(N), 6
@@ -197,10 +185,9 @@ void check_uniform_thermal_load(
 
     // No thermal RHS when all nodal temperatures equal the reference state.
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
-        (*temperature)(node, 0) = load.ref_temp_;
+        (*temperature)(node, 0) = material->get_thermal_zero_temperature();
     }
-    rhs.set_zero();
-    load.apply(*model._data, rhs, 0.0);
+    rhs = model.build_thermal_expansion_load_matrix();
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         for (Index dof = 0; dof < 6; ++dof) {
             EXPECT_NEAR(rhs(node, dof), 0.0, 1e-12);
@@ -398,6 +385,7 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     auto material = std::make_shared<material::Material>("MAT");
     material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.25);
     material->set_thermal_expansion(0.01);
+    material->set_thermal_zero_temperature(20.0);
     const auto region = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
     model.add_material(material);
     model.add_section(std::make_shared<IntegratedShellSection>(material, region, 0.2, nullptr));
@@ -423,12 +411,8 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
         }
     }
 
-    bc::TLoad load;
-    load.temp_field_ = temperature;
-    load.ref_temp_   = 20.0;
-    model::Field rhs{"RHS", model::FieldDomain::NODE, 8, 6};
-    rhs.set_zero();
-    load.apply(*model._data, rhs, 0.0);
+    model._data->temperature = temperature;
+    model::Field rhs = model.build_thermal_expansion_load_matrix();
 
     // Verify consistent nodal loads, including the independent drilling motion
     auto* element = model._data->elements[0]->as<model::FRTShellS8>();
@@ -443,10 +427,7 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     }
 
     // Free compatible expansion must leave no recovered stress or prestress
-    model::Field thermal{"THERMAL_FREE_STRAIN", model::FieldDomain::ELEMENT_NODAL,
-                         model._data->field_rows(model::FieldDomain::ELEMENT_NODAL), 1};
-    thermal.set_zero();
-    load.apply_thermal_free_strain(*model._data, thermal);
+    model::Field thermal = model.build_thermal_free_strain();
     const auto recovered = model.compute_stress_nodal(displacement, nullptr, &thermal);
     const auto& stress = std::get<0>(recovered);
     for (Index node = 0; node < 8; ++node) {
