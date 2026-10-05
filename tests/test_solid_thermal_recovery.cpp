@@ -3,7 +3,6 @@
  * @brief Thermal free strain recovery and prestress for linear solid mechanics.
  */
 
-#include "../src/bc/neumann/load_t.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/solid/c3d8.h"
@@ -33,6 +32,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     auto material = std::make_shared<material::Material>("MAT");
     material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.25);
     material->set_thermal_expansion(0.01);
+    material->set_thermal_zero_temperature(20.0);
     model.add_material(material);
 
     auto section = std::make_shared<SolidSection>();
@@ -49,18 +49,8 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
         (*temperature)(node, 0) = 40.0;
     }
 
-    bc::TLoad load;
-    load.temp_field_ = temperature;
-    load.ref_temp_ = 20.0;
-
-    model::Field thermal_free_strain{
-        "THERMAL_FREE_STRAIN",
-        model::FieldDomain::ELEMENT_NODAL,
-        model._data->field_rows(model::FieldDomain::ELEMENT_NODAL),
-        1
-    };
-    thermal_free_strain.set_zero();
-    load.apply_thermal_free_strain(*model._data, thermal_free_strain);
+    model._data->temperature = temperature;
+    model::Field thermal_free_strain = model.build_thermal_free_strain();
 
     for (Index row = 0; row < thermal_free_strain.rows; ++row) {
         EXPECT_NEAR(thermal_free_strain(row, 0), 0.2, 1e-12);
