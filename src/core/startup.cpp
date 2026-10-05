@@ -2,6 +2,10 @@
  * @file startup.cpp
  * @brief Implements the startup helper that reports build information.
  *
+ * The core startup object prints solver and dependency versions together with
+ * compile-time backend availability before main. Version values occupy fixed
+ * output columns so their digit counts do not shift the banner border.
+ *
  * @see src/core/startup.h
  * @see src/core/version.h
  * @author Finn Eggers
@@ -14,6 +18,7 @@
 #include "version.h"
 
 #include <Spectra/Util/Version.h>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -21,14 +26,34 @@ namespace fem {
 namespace startup {
 namespace {
 
+/**
+ * Prints the solver banner and compile-time build information.
+ *
+ * Version strings are padded on the right to keep the closing border in column
+ * 70 regardless of their digit counts within the available width. Each version
+ * field restores right alignment afterward to preserve subsequent formatting.
+ * The global Startup instance invokes this output before command-line parsing.
+ */
 void print_banner() {
+    // Assemble complete version values before applying output field widths.
+    const std::string solver_version  = std::to_string(VERSION_MAJOR) + "." +
+                                        std::to_string(VERSION_MINOR) + "." +
+                                        std::to_string(VERSION_PATCH);
+    const std::string eigen_version   = std::to_string(EIGEN_WORLD_VERSION) + "." +
+                                        std::to_string(EIGEN_MAJOR_VERSION) + "." +
+                                        std::to_string(EIGEN_MINOR_VERSION);
+    const std::string spectra_version = std::to_string(SPECTRA_MAJOR_VERSION) + "." +
+                                        std::to_string(SPECTRA_MINOR_VERSION) + "." +
+                                        std::to_string(SPECTRA_PATCH_VERSION);
+
+    // Reserve the remaining columns for each value and its trailing padding.
     std::cout << "**********************************************************************\n";
     std::cout << "*                                                                    *\n";
     std::cout << "*                         FEMaster                                   *\n";
-    std::cout << "*                          v" << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH <<
-        "                                    *\n";
+    std::cout << "*                          v" << std::left << std::setw(41)
+              << solver_version << std::right << "*\n";
     std::cout << "*                                                                    *\n";
-    std::cout << "*           Copyright (c) 2024, Finn Eggers                          *\n";
+    std::cout << "*           Copyright (c) 2024, Finn Eggers                            *\n";
     std::cout << "*                                                                    *\n";
     std::cout << "*           Licensed under the MIT License.                          *\n";
     std::cout << "*           See LICENSE.txt for the complete license terms.          *\n";
@@ -69,12 +94,12 @@ void print_banner() {
     std::cout << "*           cuDSS Supported       : No                               *\n";
 #endif
     std::cout << "*                                                                    *\n";
-    std::cout << "*           FEMaster Version      : " << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH <<
-        "                            *\n";
-    std::cout << "*           Eigen Version         : " << EIGEN_WORLD_VERSION << "." << EIGEN_MAJOR_VERSION << "." <<
-        EIGEN_MINOR_VERSION << "                           *\n";
-    std::cout << "*           Spectra Version       : " << SPECTRA_MAJOR_VERSION << "." << SPECTRA_MINOR_VERSION << "." <<
-        SPECTRA_PATCH_VERSION << "                            *\n";
+    std::cout << "*           FEMaster Version      : " << std::left << std::setw(34)
+              << solver_version << std::right << "*\n";
+    std::cout << "*           Eigen Version         : " << std::left << std::setw(34)
+              << eigen_version << std::right << "*\n";
+    std::cout << "*           Spectra Version       : " << std::left << std::setw(34)
+              << spectra_version << std::right << "*\n";
     std::cout << "*                                                                    *\n";
     std::cout << "**********************************************************************\n";
 }
