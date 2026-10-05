@@ -27,7 +27,6 @@
 #include "../../core/core.h"
 #include "../../material/elasticity.h"
 #include "../../material/strain/axial_strain_green_lagrange.h"
-#include "../../material/strain/axial_strain_linearized.h"
 #include "../../material/stress/axial_stress_cauchy.h"
 #include "../../material/stress/axial_stress_pk2.h"
 #include "../../section/section_truss.h"
@@ -196,7 +195,8 @@ struct T3 : StructuralElement {
     bool compute_beam_section_forces(
         Field&       section_forces,
         const Field& displacement,
-        int          offset
+        int          offset,
+        const Field* linearization = nullptr
     ) override;
 };
 

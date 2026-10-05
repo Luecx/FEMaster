@@ -45,20 +45,9 @@ struct GeneralisedIsotropicElasticity : Elasticity {
 
     // Advertise all axial, volume and shell strain measures implemented below.
     // The law is linear in every supplied strain measure and contains no state.
-    bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
-    bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
-
-    // Linearized axial response sigma = E epsilon. Independent shear stiffness
-    // does not enter this one-dimensional reduction; the tangent is optional.
-    void evaluate(const AxialStrainLinearized& strain,
-                  const Precision*             old_state,
-                  Precision*                   new_state,
-                  AxialStressCauchy&           stress,
-                  Precision*                   tangent = nullptr) const override;
 
     // Total-Lagrangian axial response S = E E_GL with optional constant tangent E.
     void evaluate(const AxialStrainGreenLagrange& strain,
@@ -67,14 +56,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
                   AxialStressPK2&                 stress,
                   Precision*                      tangent = nullptr) const override;
 
-    // Linearized three-dimensional response. Normal entries follow isotropic
-    // E/nu coupling, while all engineering shear diagonals use the supplied G.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
-
     // Finite-strain response with the identical constant material operator,
     // interpreted as the mapping from Green-Lagrange strain to PK2 stress.
     void evaluate(const VolumeStrainGreenLagrange& strain,
@@ -82,14 +63,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6*                            tangent = nullptr) const override;
-
-    // Linearized shell plane-stress response. The in-plane normal block uses
-    // E and nu; in-plane and transverse engineering shear terms use G.
-    void evaluate(const ShellMaterialStrainLinearized& strain,
-                  const Precision*                     old_state,
-                  Precision*                           new_state,
-                  ShellMaterialStressCauchy&            stress,
-                  Mat5*                                tangent = nullptr) const override;
 
     // Finite-strain shell response returning PK2 components. The reduced
     // material derivative is written only when requested.

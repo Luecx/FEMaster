@@ -156,10 +156,16 @@ struct StructuralElement : ElementInterface {
         (void) offset;
         return false;
     }
-    virtual bool compute_beam_section_forces(Field& section_forces, const Field& displacement, int offset) {
+    virtual bool compute_beam_section_forces(
+        Field&       section_forces,
+        const Field& displacement,
+        int          offset,
+        const Field* linearization = nullptr
+    ) {
         (void) section_forces;
         (void) displacement;
         (void) offset;
+        (void) linearization;
         return false;
     }
     virtual bool compute_shell_section_forces(Field& section_forces,

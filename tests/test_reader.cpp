@@ -17,8 +17,8 @@
 #include "../src/io/reader/parser.h"
 #include "../src/bc/neumann/load_inertial.h"
 #include "../src/material/orthotropic_elasticity.h"
-#include "../src/material/strain/shell_material_strain_linearized.h"
-#include "../src/material/stress/shell_material_stress_cauchy.h"
+#include "../src/material/strain/shell_material_strain_green_lagrange.h"
+#include "../src/material/stress/shell_material_stress_pk2.h"
 #include "../src/model/model.h"
 
 #include <filesystem>
@@ -142,9 +142,9 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
         12.0, 13.0, 23.0
     );
 
-    ShellMaterialStrainLinearized strain;
-    ShellMaterialStressCauchy     stress;
-    Mat5                          tangent;
+    ShellMaterialStrainGreenLagrange strain;
+    ShellMaterialStressPK2             stress;
+    Mat5                               tangent;
     Precision old_state = Precision(0);
     Precision new_state = Precision(0);
     ortho.evaluate(strain, &old_state, &new_state, stress, &tangent);

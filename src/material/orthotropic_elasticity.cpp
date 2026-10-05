@@ -20,9 +20,7 @@
 #include "orthotropic_elasticity.h"
 
 #include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
-#include "strain/volume_strain_linearized.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
 #include "stress/volume_stress_cauchy.h"
@@ -69,15 +67,7 @@ OrthotropicElasticity::OrthotropicElasticity(Precision E1,
       G13 (G13),
       G23 (G23) {}
 
-bool OrthotropicElasticity::supports_volume_linearized() const {
-    return true;
-}
-
 bool OrthotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool OrthotropicElasticity::supports_shell_integration_linearized() const {
     return true;
 }
 
@@ -141,34 +131,6 @@ Mat6 OrthotropicElasticity::volume_tangent() const {
 }
 
 /**
- * Evaluates linearized orthotropic Cauchy stress in material coordinates.
- *
- * The constant orthotropic operator is required to obtain the stress itself. It
- * is therefore built once and copied to the output tangent only when requested.
- *
- * @param strain Infinitesimal engineering strain vector.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Optional orthotropic volume tangent.
- */
-void OrthotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                     const Precision*              old_state,
-                                     Precision*                    new_state,
-                                     VolumeStressCauchy&           stress,
-                                     Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = volume_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
  * Evaluates orthotropic PK2 stress from Green-Lagrange strain.
  *
  * @param strain Green-Lagrange engineering strain vector.
@@ -187,31 +149,6 @@ void OrthotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 
     const Mat6 material_tangent = volume_tangent();
     stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
- * Evaluates linearized orthotropic shell Cauchy stress under plane stress.
- *
- * @param strain Five-component shell material strain.
- * @param old_state Unused input material-point state row.
- * @param new_state Unused output material-point state row.
- * @param stress Shell Cauchy stress in material ordering.
- * @param tangent Optional reduced orthotropic shell tangent.
- */
-void OrthotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                     const Precision*                     old_state,
-                                     Precision*                           new_state,
-                                     ShellMaterialStressCauchy&            stress,
-                                     Mat5*                                tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat5 material_tangent = shell_material_tangent();
-    stress.values() = material_tangent * strain.values();
 
     if (tangent != nullptr) {
         *tangent = material_tangent;

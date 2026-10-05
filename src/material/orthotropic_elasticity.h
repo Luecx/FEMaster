@@ -38,8 +38,8 @@ namespace fem::material {
  * The volume tangent is obtained by inverting the symmetric engineering
  * compliance. Shell response uses an in-plane orthotropic plane-stress tangent
  * together with the independent `G13` and `G23` transverse shear moduli.
- * Linearized evaluation returns Cauchy stress; Green-Lagrange evaluation returns
- * second Piola-Kirchhoff stress.
+ * Constitutive evaluation uses Green-Lagrange strain and second Piola-Kirchhoff
+ * stress.
  */
 struct OrthotropicElasticity : Elasticity {
     // Young's moduli along the principal material directions
@@ -69,20 +69,10 @@ struct OrthotropicElasticity : Elasticity {
                           Precision G13,
                           Precision G23);
 
-    // Advertise three-dimensional and shell response for both infinitesimal and
-    // Green-Lagrange strain measures. Axial and beam reductions are unsupported.
-    bool supports_volume_linearized() const override;
+    // Advertise three-dimensional and shell Green-Lagrange response. Axial and
+    // beam reductions are unsupported.
     bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
-
-    // Linearized three-dimensional orthotropic response in material axes. The
-    // optional tangent maps engineering strain to Cauchy stress.
-    void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              old_state,
-                  Precision*                    new_state,
-                  VolumeStressCauchy&           stress,
-                  Mat6*                         tangent = nullptr) const override;
 
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
@@ -91,14 +81,6 @@ struct OrthotropicElasticity : Elasticity {
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6*                            tangent = nullptr) const override;
-
-    // Linearized shell response in the material basis. In-plane terms use the
-    // orthotropic plane-stress reduction; 13 and 23 shear use G13 and G23.
-    void evaluate(const ShellMaterialStrainLinearized& strain,
-                  const Precision*                     old_state,
-                  Precision*                           new_state,
-                  ShellMaterialStressCauchy&            stress,
-                  Mat5*                                tangent = nullptr) const override;
 
     // Finite-strain shell response returning PK2 components work-conjugate to
     // the five supplied Green-Lagrange strain components. State remains unchanged.

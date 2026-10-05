@@ -299,8 +299,10 @@ template<Index N>
 bool BeamElement<N>::compute_beam_section_forces(
     Field&       section_forces,
     const Field& displacement,
-    int          offset
+    int          offset,
+    const Field* linearization
 ) {
+    (void) linearization;
     Eigen::Matrix<Precision, N * 6, 1> u_global;
     for (Index i = 0; i < N; ++i) {
         const ID nid = node_ids[i];

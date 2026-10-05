@@ -24,7 +24,6 @@
 
 #include "../core/logging.h"
 #include "../material/strain/shell_material_strain_green_lagrange.h"
-#include "../material/strain/shell_material_strain_linearized.h"
 #include "../material/stress/shell_material_stress_cauchy.h"
 #include "../material/stress/shell_material_stress_pk2.h"
 

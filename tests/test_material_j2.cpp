@@ -5,8 +5,6 @@
 #include "../src/material/isotropic_j2_elasticity.h"
 #include "../src/material/strain/axial_strain_green_lagrange.h"
 #include "../src/material/strain/volume_strain_green_lagrange.h"
-#include "../src/material/strain/volume_strain_linearized.h"
-#include "../src/material/stress/volume_stress_cauchy.h"
 #include "../src/material/stress/axial_stress_pk2.h"
 #include "../src/material/stress/volume_stress_pk2.h"
 #include "../src/model/model.h"
@@ -55,13 +53,13 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
     // A sufficiently large deviatoric strain drives the material into plasticity.
     Vec6 strain_values = Vec6::Zero();
     strain_values(0) = Precision(0.01);
-    const VolumeStrainLinearized strain(strain_values);
+    const VolumeStrainGreenLagrange strain(strain_values);
 
     std::vector<Precision> trial_a(committed.size());
     std::vector<Precision> trial_b(committed.size());
-    VolumeStressCauchy stress_a;
-    VolumeStressCauchy stress_b;
-    VolumeStressCauchy stress_readonly;
+    VolumeStressPK2 stress_a;
+    VolumeStressPK2 stress_b;
+    VolumeStressPK2 stress_readonly;
     Mat6 tangent_a;
     Mat6 tangent_b;
     Mat6 tangent_readonly;
@@ -104,33 +102,21 @@ TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
     strain_values(1) = Precision(-0.005);
 
     std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
-    std::vector<Precision> trial_small(committed.size());
-    std::vector<Precision> trial_finite(committed.size());
+    std::vector<Precision> trial(committed.size());
     j2.initialize_state(committed.data());
 
-    VolumeStressCauchy small_stress;
-    j2.evaluate(
-        VolumeStrainLinearized(strain_values),
-        committed.data(),
-        trial_small.data(),
-        small_stress,
-        nullptr
-    );
-
-    VolumeStressPK2 finite_stress;
+    VolumeStressPK2 stress;
     j2.evaluate(
         VolumeStrainGreenLagrange(strain_values),
         committed.data(),
-        trial_finite.data(),
-        finite_stress,
+        trial.data(),
+        stress,
         nullptr
     );
 
-    // Both formulations must enter plasticity. In the J2 state layout the final
-    // component is accumulated equivalent plastic strain, so a positive value is
-    // an unambiguous regression check for the yield decision.
-    EXPECT_GT(trial_small[6], Precision(0));
-    EXPECT_GT(trial_finite[6], Precision(0));
+    // The finite-strain formulation must enter plasticity. In the J2 state
+    // layout the final component is accumulated equivalent plastic strain.
+    EXPECT_GT(trial[6], Precision(0));
 }
 
 TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {

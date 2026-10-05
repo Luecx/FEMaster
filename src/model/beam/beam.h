@@ -163,7 +163,8 @@ struct BeamElement : StructuralElement {
     bool compute_beam_section_forces(
         Field&       section_forces,
         const Field& displacement,
-        int          offset
+        int          offset,
+        const Field* linearization = nullptr
     ) override;
 
     // One-point midpoint integration of scalar, vector and tensor fields over

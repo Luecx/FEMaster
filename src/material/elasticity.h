@@ -33,20 +33,15 @@
 
 namespace fem {
 
-struct AxialStrainLinearized;
 struct AxialStrainGreenLagrange;
-struct VolumeStrainLinearized;
 struct VolumeStrainGreenLagrange;
 struct BeamGeneralizedStrain;
-struct ShellMaterialStrainLinearized;
 struct ShellMaterialStrainGreenLagrange;
 
-struct AxialStressCauchy;
 struct AxialStressPK2;
 struct VolumeStressCauchy;
 struct VolumeStressPK2;
 struct BeamStressResultants;
-struct ShellMaterialStressCauchy;
 struct ShellMaterialStressPK2;
 
 namespace material {
@@ -54,11 +49,9 @@ namespace material {
 /**
  * @brief Polymorphic interface for axial, solid, beam and shell elasticity.
  *
- * The interface exposes separate overloads for linearized and finite-strain
- * evaluations so their stress measures remain explicit. Linearized axial,
- * volume and shell calls return Cauchy stress. Their finite-strain counterparts
- * accept Green-Lagrange strain and return second Piola-Kirchhoff stress. Beam
- * evaluation operates directly on generalized strains and resultants.
+ * Axial, volume and shell constitutive evaluation uses Green-Lagrange strain
+ * with work-conjugate second Piola-Kirchhoff stress. Beam evaluation operates
+ * directly on generalized strains and resultants.
  *
  * Capability queries allow sections and elements to reject unsupported
  * kinematics before evaluation. The base implementations report no supported
@@ -82,18 +75,13 @@ struct Elasticity {
 
     virtual ~Elasticity() = default;
 
-    // Capability queries used by elements and sections before dispatch. Each
-    // flag refers to one exact strain/stress-measure pair; support for a
-    // linearized formulation does not imply support for its finite-strain form.
-    virtual bool supports_axial_linearized() const;
+    // Capability queries used by elements and sections before dispatch.
     virtual bool supports_axial_green_lagrange() const;
 
-    virtual bool supports_volume_linearized() const;
     virtual bool supports_volume_green_lagrange() const;
 
     virtual bool supports_beam_resultants() const;
 
-    virtual bool supports_shell_integration_linearized() const;
     virtual bool supports_shell_integration_green_lagrange() const;
 
     // Material-point history contract. state_size() is the number of leading
@@ -107,14 +95,6 @@ struct Elasticity {
     // history components to new_state when the output row is non-null. Tangent
     // output is optional for every kinematic formulation.
 
-    // Infinitesimal axial response in the material direction. Stress is Cauchy
-    // stress and the optional tangent is d(sigma)/d(epsilon).
-    virtual void evaluate(const AxialStrainLinearized& strain,
-                          const Precision*             old_state,
-                          Precision*                   new_state,
-                          AxialStressCauchy&           stress,
-                          Precision*                   tangent = nullptr) const;
-
     // Finite-strain axial response in the reference material direction. Stress
     // is second Piola-Kirchhoff stress work-conjugate to Green-Lagrange strain;
     // the optional tangent is the consistent derivative dS/dE.
@@ -123,15 +103,6 @@ struct Elasticity {
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
                           Precision*                      tangent = nullptr) const;
-
-    // Infinitesimal three-dimensional response in the material basis. Voigt
-    // ordering follows VolumeStrain/VolumeStress; the optional tangent maps
-    // engineering strain components to Cauchy-stress components.
-    virtual void evaluate(const VolumeStrainLinearized& strain,
-                          const Precision*              old_state,
-                          Precision*                    new_state,
-                          VolumeStressCauchy&           stress,
-                          Mat6*                         tangent = nullptr) const;
 
     // Total-Lagrangian three-dimensional response in the reference material
     // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;
@@ -150,15 +121,6 @@ struct Elasticity {
                           Precision*                   new_state,
                           BeamStressResultants&        resultants,
                           Mat6*                        tangent = nullptr) const;
-
-    // Infinitesimal shell material response at one physical thickness point.
-    // The five strain components exclude thickness-normal strain; stress is
-    // Cauchy stress under the material's plane-stress reduction.
-    virtual void evaluate(const ShellMaterialStrainLinearized& strain,
-                          const Precision*                     old_state,
-                          Precision*                           new_state,
-                          ShellMaterialStressCauchy&            stress,
-                          Mat5*                                tangent = nullptr) const;
 
     // Finite-strain shell material response at one physical thickness point.
     // The five-component Green-Lagrange input returns work-conjugate PK2 stress

@@ -27,11 +27,8 @@
 
 #include "../core/logging.h"
 #include "strain/axial_strain_green_lagrange.h"
-#include "strain/axial_strain_linearized.h"
 #include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
-#include "strain/volume_strain_linearized.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_cauchy.h"
@@ -75,15 +72,7 @@ NeoHookeElasticity::NeoHookeElasticity(Precision c10_in, Precision d1_in)
     lame_lambda = bulk - Precision(2) * mu / Precision(3);
 }
 
-bool NeoHookeElasticity::supports_axial_linearized() const {
-    return true;
-}
-
 bool NeoHookeElasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool NeoHookeElasticity::supports_volume_linearized() const {
     return true;
 }
 
@@ -91,98 +80,8 @@ bool NeoHookeElasticity::supports_volume_green_lagrange() const {
     return true;
 }
 
-bool NeoHookeElasticity::supports_shell_integration_linearized() const {
-    return true;
-}
-
 bool NeoHookeElasticity::supports_shell_integration_green_lagrange() const {
     return true;
-}
-
-/**
- * Builds the infinitesimal three-dimensional tangent of the finite-strain
- * potential at the undeformed state.
- *
- * The normal block is formed from the Lamé constants and the engineering shear
- * entries equal `mu` because the strain vector stores engineering shear strains.
- *
- * @return Isotropic engineering-Voigt tangent defined by `lambda` and `mu`.
- */
-Mat6 NeoHookeElasticity::linear_tangent() const {
-    const Precision c11 = lame_lambda + Precision(2) * mu;
-
-    Mat6 tangent;
-    tangent <<
-        c11,          lame_lambda, lame_lambda, Precision(0), Precision(0), Precision(0),
-        lame_lambda,  c11,         lame_lambda, Precision(0), Precision(0), Precision(0),
-        lame_lambda,  lame_lambda, c11,         Precision(0), Precision(0), Precision(0),
-        Precision(0), Precision(0), Precision(0), mu,         Precision(0), Precision(0),
-        Precision(0), Precision(0), Precision(0), Precision(0), mu,         Precision(0),
-        Precision(0), Precision(0), Precision(0), Precision(0), Precision(0), mu;
-    return tangent;
-}
-
-/**
- * Builds the infinitesimal shell plane-stress tangent implied by the
- * Neo-Hookean bulk and shear moduli.
- *
- * Young's modulus and Poisson's ratio are recovered from `K` and `mu`, after
- * which the in-plane normal block follows the ordinary isotropic plane-stress
- * relation. The in-plane and transverse engineering shear terms remain `mu`.
- *
- * @return Five-component tangent ordered `[11,22,12,13,23]`.
- */
-Mat5 NeoHookeElasticity::linear_shell_tangent() const {
-    const Precision youngs  = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
-    const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
-                            / (Precision(2) * (Precision(3) * bulk + mu));
-    const Precision scalar  = youngs / (Precision(1) - poisson * poisson);
-
-    Mat5 tangent = Mat5::Zero();
-    tangent(0, 0) = scalar;
-    tangent(0, 1) = scalar * poisson;
-    tangent(1, 0) = scalar * poisson;
-    tangent(1, 1) = scalar;
-    tangent(2, 2) = mu;
-    tangent(3, 3) = mu;
-    tangent(4, 4) = mu;
-    return tangent;
-}
-
-/**
- * Evaluates the infinitesimal axial response implied by the Neo-Hookean
- * parameters.
- *
- * The one-dimensional constitutive relation is
- *
- *     sigma = E epsilon
- *
- * with `E` recovered from the stored bulk and shear moduli. The derivative is
- * returned only when the caller provides tangent storage.
- *
- * @param strain Infinitesimal axial strain.
- * @param old_state Unused committed state row.
- * @param new_state Unused trial state row.
- * @param stress Axial Cauchy stress.
- * @param tangent Optional derivative `d sigma/d epsilon`.
- */
-void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
-                                  const Precision*             old_state,
-                                  Precision*                   new_state,
-                                  AxialStressCauchy&           stress,
-                                  Precision*                   tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    // Recover the infinitesimal Young's modulus from K and mu.
-    const Precision youngs = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
-
-    // Stress does not require tangent storage for this scalar linear relation.
-    stress.value() = youngs * strain.value();
-
-    if (tangent != nullptr) {
-        *tangent = youngs;
-    }
 }
 
 /**
@@ -297,35 +196,6 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
 }
 
 /**
- * Evaluates the infinitesimal three-dimensional Cauchy response.
- *
- * The constant linearized material operator is required for the stress
- * multiplication itself. It is copied to the optional tangent output only when
- * requested.
- *
- * @param strain Infinitesimal volume strain in engineering-Voigt ordering.
- * @param old_state Unused committed state row.
- * @param new_state Unused trial state row.
- * @param stress Cauchy stress in the material basis.
- * @param tangent Optional infinitesimal material tangent.
- */
-void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                  const Precision*              old_state,
-                                  Precision*                    new_state,
-                                  VolumeStressCauchy&           stress,
-                                  Mat6*                         tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat6 material_tangent = linear_tangent();
-    stress.voigt() = material_tangent * strain.voigt();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
-}
-
-/**
  * Evaluates the full three-dimensional finite-strain material response.
  *
  * Green-Lagrange strain is converted to the right Cauchy-Green tensor through
@@ -357,31 +227,6 @@ void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
     evaluate_full(C, full_stress, tangent);
 
     stress = VolumeStressPK2(full_stress);
-}
-
-/**
- * Evaluates the infinitesimal five-component shell response.
- *
- * @param strain Linearized shell material strain.
- * @param old_state Unused committed state row.
- * @param new_state Unused trial state row.
- * @param stress Plane-stress shell Cauchy stress.
- * @param tangent Optional reduced shell tangent.
- */
-void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                  const Precision*                     old_state,
-                                  Precision*                           new_state,
-                                  ShellMaterialStressCauchy&            stress,
-                                  Mat5*                                tangent) const {
-    (void) old_state;
-    (void) new_state;
-
-    const Mat5 material_tangent = linear_shell_tangent();
-    stress.values() = material_tangent * strain.values();
-
-    if (tangent != nullptr) {
-        *tangent = material_tangent;
-    }
 }
 
 /**
