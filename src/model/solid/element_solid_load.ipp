@@ -38,7 +38,7 @@ namespace fem::model {
  * @param ref_temp Reference temperature for thermal strain and invalid values.
  */
 template<Index N>
-void SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
+void SolidElement<N>::apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) {
     // Validate and collect the reference geometry and scalar nodal temperatures
     StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
     logging::error(node_temp.domain == FieldDomain::NODE,
@@ -51,20 +51,26 @@ void SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Pre
         node_temp_glob(i) = node_temp(row, 0);
     }
 
-    // Replace undefined temperatures by the stress-free reference temperature
+    // Materials without thermal expansion do not contribute a thermal source.
+    auto mat = material();
+    logging::error(mat != nullptr,
+        "no material assigned to element ", elem_id);
+    logging::error(mat->has_elasticity(),
+        "material has no elasticity components assigned at element ", elem_id);
+    if (!mat->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision ref_temp = mat->get_thermal_zero_temperature();
+    logging::error(std::isfinite(ref_temp),
+        "SolidElement: thermal zero temperature must be finite at element ", elem_id);
+
+    // Replace undefined temperatures by the material stress-free temperature.
     for (Index i = 0; i < (Index)node_temp_glob.size(); i++) {
-        if (std::isnan(node_temp_glob(i)) || std::isinf(node_temp_glob(i))) {
+        if (!std::isfinite(node_temp_glob(i))) {
             node_temp_glob(i) = ref_temp;
         }
     }
-
-    // Validate all material data required by the thermal-stress construction
-    logging::error(material() != nullptr,
-        "no material assigned to element ", elem_id);
-    logging::error(material()->has_elasticity(),
-        "material has no elasticity components assigned at element ", elem_id);
-    logging::error(material()->has_thermal_expansion(),
-        "material has no thermal expansion assigned at element ", elem_id);
 
     const auto& state_scheme = this->integration_scheme_stiffness();
 
@@ -142,21 +148,24 @@ void SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Pre
 template<Index N>
 void SolidElement<N>::apply_thermal_free_strain(
     Field&       thermal_free_strain,
-    const Field& node_temp,
-    Precision    ref_temp) {
+    const Field& node_temp) {
     // Validate element-nodal free-strain storage and the prescribed temperatures
     logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain.components == 1,
         "SolidElement: thermal free strain requires scalar ELEMENT_NODAL storage");
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
         "SolidElement: thermal free strain requires a scalar nodal temperature field");
-    logging::error(std::isfinite(ref_temp),
-        "SolidElement: thermal reference temperature must be finite");
-
     const auto material = this->material();
-    logging::error(material->has_thermal_expansion(),
-        "SolidElement: material has no thermal expansion at element ", this->elem_id);
+    logging::error(material != nullptr,
+        "SolidElement: no material assigned at element ", this->elem_id);
+    if (!material->has_thermal_expansion()) {
+        return;
+    }
 
-    // Add isotropic nodal free strain, replacing undefined temperatures by T_ref
+    const Precision ref_temp = material->get_thermal_zero_temperature();
+    logging::error(std::isfinite(ref_temp),
+        "SolidElement: thermal zero temperature must be finite");
+
+    // Add isotropic nodal free strain, replacing undefined temperatures by T_ref.
     const Precision alpha = material->get_thermal_expansion();
     for (Index node = 0; node < N; ++node) {
         const Precision value = node_temp(static_cast<Index>(node_ids[node]), 0);
