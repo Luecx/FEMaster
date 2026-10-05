@@ -470,9 +470,11 @@ Field Model::compute_volumes() {
  * avoid nested oversubscription.
  *
  * @param displacement Global nodal displacement field used for recovery.
+ * @param linearization Optional exact base state for affine recovery. A null
+ *                      pointer linearizes about the undeformed reference state.
  * @return Six-component element-nodal beam section-force field.
  */
-Field Model::compute_section_forces(Field& displacement) {
+Field Model::compute_section_forces(Field& displacement, const Field* linearization) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
@@ -492,7 +494,7 @@ Field Model::compute_section_forces(Field& displacement) {
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
                 const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
+                sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset), linearization);
             }
         }, Index(32));
 
