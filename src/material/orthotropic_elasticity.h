@@ -69,11 +69,6 @@ struct OrthotropicElasticity : Elasticity {
                           Precision G13,
                           Precision G23);
 
-    // Advertise three-dimensional and shell Green-Lagrange response. Axial and
-    // beam reductions are unsupported.
-    bool supports_volume_green_lagrange() const override;
-    bool supports_shell_integration_green_lagrange() const override;
-
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
     void evaluate(const VolumeStrainGreenLagrange& strain,
