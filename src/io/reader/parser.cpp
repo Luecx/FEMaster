@@ -207,6 +207,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("NORMAL");
     }
 
+    // Initial conditions bind already materialized named fields to persistent
+    // model-state handles. Temperature and velocity then remain authoritative
+    // until a later analysis procedure explicitly evolves them.
+    root.execute_children("INITIALCONDITION");
+    root.execute_children("INITIALCONDITIONS");
+
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
     root.execute_children("TIE");
     for (const auto* assembly : root.children("ASSEMBLY")) {
@@ -483,6 +489,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_tload(registry, mdl);
     commands::register_vload(registry, mdl);
     commands::register_inertialload(registry, mdl);
+    commands::register_initial_condition(registry, mdl);
     commands::register_rbm(registry, mdl);
     commands::register_support(registry, mdl);
     commands::register_amplitude(registry, mdl);
