@@ -165,7 +165,6 @@ struct B33 : BeamElement<2> {
         const Field*     linearization,
         const Field*     thermal_free_strain = nullptr
     ) override {
-        (void) thermal_free_strain;
         logging::error(linearization == nullptr,
             "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress != nullptr,
@@ -185,7 +184,19 @@ struct B33 : BeamElement<2> {
         StaticMatrix<12, 1> u_local = T * u_global;
 
         const Precision axial_strain = (u_local(6) - u_local(0)) / L;
-        const Precision axial_force  = E * A * axial_strain;
+
+        Precision thermal_strain = Precision(0);
+        if (thermal_free_strain) {
+            logging::error(
+                thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                && thermal_free_strain->components == 1,
+                "B33: thermal free strain must be scalar ELEMENT_NODAL data");
+            thermal_strain = Precision(0.5) * (
+                (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + 0, 0)
+              + (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + 1, 0));
+        }
+
+        const Precision axial_force = E * A * (axial_strain - thermal_strain);
 
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
             const Index row = static_cast<Index>(offset + i);
