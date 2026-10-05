@@ -112,8 +112,6 @@ MapMatrix T3::evaluate(
     const Field* thermal_free_strain,
     bool         update_state
 ) {
-    (void) thermal_free_strain;
-
     // -----------------------------------------------------------------------------
     // requested outputs
     // -----------------------------------------------------------------------------
@@ -248,12 +246,31 @@ MapMatrix T3::evaluate(
     // Green-Lagrange strain:
     //
     //     E0 = 1/2 (lambda0^2 - 1).
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(stretch_base);
+    const AxialStrainGreenLagrange strain_base =
+        AxialStrainGreenLagrange::from_stretch(stretch_base);
+
+    Precision thermal_strain = Precision(0);
+    if (thermal_free_strain) {
+        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
+                    && thermal_free_strain->components == 1,
+            "T3: thermal free strain must be scalar ELEMENT_NODAL data");
+        thermal_strain = Precision(0.5) * (
+            (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + 0, 0)
+          + (*thermal_free_strain)(static_cast<Index>(this->elem_nodal_offset) + 1, 0));
+    }
+
+    const AxialStrainGreenLagrange mechanical_strain(
+        strain_base.value() - thermal_strain);
 
     AxialStressPK2 stress_base;
     Precision      material_tangent = Precision(0);
 
-    elasticity->evaluate(strain_base, old_state, new_state, stress_base, need_material ? &material_tangent : nullptr);
+    elasticity->evaluate(
+        mechanical_strain,
+        old_state,
+        new_state,
+        stress_base,
+        need_material ? &material_tangent : nullptr);
 
     // -----------------------------------------------------------------------------
     // complete tangent stiffness at u0
