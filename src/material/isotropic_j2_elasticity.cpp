@@ -42,12 +42,9 @@
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/volume_strain.h"
 #include "strain/volume_strain_green_lagrange.h"
-#include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
-#include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
 #include "stress/volume_stress.h"
-#include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
 #include <Eigen/Eigenvalues>
@@ -70,7 +67,6 @@ using YieldPoint = IsotropicJ2Elasticity::YieldPoint;
 using YieldCurve = std::vector<YieldPoint>;
 
 #include "isotropic_j2_elasticity_utils.ipp"
-#include "isotropic_j2_elasticity_small.ipp"
 #include "isotropic_j2_elasticity_finite.ipp"
 #include "isotropic_j2_elasticity_reductions.ipp"
 
@@ -298,8 +294,7 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 /**
  * Evaluates finite-strain integrated-shell J2 under `S33 = 0`.
  *
- * The reduction has the same structure as the infinitesimal shell case, but the
- * three-dimensional constitutive candidates use Green-Lagrange strain, PK2
+ * The three-dimensional constitutive candidates use Green-Lagrange strain, PK2
  * stress and the multiplicative finite-strain return map. The local thickness
  * solve retains the exact three-dimensional tangent. The exact plane-stress Schur
  * complement is formed first and only then symmetrized for global shell assembly.
@@ -330,7 +325,7 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& str
     State state{};
     Mat6  tangent_3d;
 
-    const VolumeStress stress_3d = solve_shell_plane_stress<true>(
+    const VolumeStress stress_3d = solve_shell_plane_stress(
         strain.values(),
         committed,
         state,
@@ -426,7 +421,7 @@ void IsotropicJ2Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
     State state{};
     Mat6  tangent_3d;
 
-    const VolumeStress stress_3d = solve_axial_stress<true>(
+    const VolumeStress stress_3d = solve_axial_stress(
         strain.value(),
         committed,
         state,
