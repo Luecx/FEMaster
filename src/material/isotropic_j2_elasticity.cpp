@@ -177,18 +177,6 @@ IsotropicJ2Elasticity::get_yield_points() const {
     return yield_points_;
 }
 
-bool IsotropicJ2Elasticity::supports_axial_green_lagrange() const {
-    return true;
-}
-
-bool IsotropicJ2Elasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool IsotropicJ2Elasticity::supports_shell_integration_green_lagrange() const {
-    return true;
-}
-
 /**
  * Returns the number of persistent J2 history components.
  *
