@@ -1,15 +1,21 @@
 /**
  * @file coordinate_system.h
- * @brief Declares the base interface for local coordinate systems.
+ * @brief Defines the common interface for local geometric coordinate systems.
  *
- * Coordinate systems are definition objects and are deliberately independent
- * of the part/instance compilation lifecycle. They may therefore be registered
- * before or after `Model::compile()`. During compilation, an instance-local
- * section orientation is copied through `transformed()` so both directional
- * axes and spatial origins follow the rigid placement of the instance.
+ * The coordinate-system subsystem supplies point mappings and local orthonormal
+ * bases for material orientations and constraint transformations. Basis columns
+ * are local unit directions expressed in global Cartesian coordinates. Sections
+ * and constraints apply these bases to their own vectors, tensors and DOFs.
  *
- * @see src/cos/rectangular_system.h
- * @see src/cos/cylindrical_system.h
+ * Coordinate systems are persistent definitions independent of model compilation.
+ * An instance placement creates an independent transformed definition instead of
+ * modifying a shared source. Concrete systems determine whether a spatial origin
+ * or only an orientation belongs to their definition.
+ *
+ * @see CoordinateSystem
+ * @see RectangularSystem
+ * @see CylindricalSystem
+ *
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -25,59 +31,60 @@
 namespace fem {
 namespace cos {
 
-using Basis = Mat3; ///< Convenience alias for a 3x3 basis matrix.
+// Local unit directions expressed in global Cartesian coordinates as columns.
+using Basis = Mat3;
 
 /**
- * @struct CoordinateSystem
- * @brief Abstract component that converts between global and local coordinates.
+ * @brief Named polymorphic interface for point mappings and local bases.
  *
- * Coordinate systems are immutable geometric definitions from the model point
- * of view. A section may reference one directly before compilation. When the
- * owning part is instantiated, `Model::compile()` requests a rigidly transformed
- * copy instead of mutating the shared source definition.
+ * The base owns only its immutable name through fem::Namable. Derived systems own
+ * their geometric definition and implement point mappings, basis evaluation and
+ * copying under rigid placement. Definitions carry no constitutive history or
+ * solver state and are shared through Ptr without mutation during evaluation.
+ *
+ * For B = get_axes(local_point), columns are the local unit directions in global
+ * Cartesian coordinates. Thus B maps local vector components to global components
+ * and B.transpose() maps global vector components to local components. Point
+ * mappings additionally depend on the concrete coordinate representation and its
+ * origin; cylindrical point coordinates are not vector components in this basis.
+ *
+ * transformed() follows the instance convention x' = rotation * x + translation.
+ * The supplied rotation must be proper orthonormal. Direction vectors rotate,
+ * while any spatial origin also translates. The copy retains the semantic name;
+ * the shared source definition remains unchanged.
  */
 struct CoordinateSystem : fem::Namable {
-    using Ptr = std::shared_ptr<CoordinateSystem>; ///< Shared pointer shorthand.
+    // Shared ownership of persistent coordinate-system definitions referenced by
+    // sections and other model entities. Multiple consumers may reuse the same
+    // definition; const evaluation does not modify its geometric data.
+    using Ptr = std::shared_ptr<CoordinateSystem>;
 
+    // Construction and polymorphic destruction.
     explicit CoordinateSystem(const std::string& name = "") : fem::Namable(name) {}
     virtual ~CoordinateSystem() = default;
 
-    /**
-     * @brief Converts a point from the global frame to the local frame.
-     *
-     * @param global_point Position expressed in global coordinates.
-     * @return Vec3 Local coordinates.
-     */
+    // Point mappings between global Cartesian and concrete local coordinates.
+    // to_local() expresses a global point in the local representation; to_global()
+    // reconstructs a global point and includes any spatial origin. Rectangular
+    // systems use Cartesian components, cylindrical systems their documented
+    // radial/angular/axial representation with angles in radians. Whether these
+    // operations are inverses depends on the concrete coordinate conventions.
+    // Vector and tensor components are transformed using get_axes() instead.
     virtual Vec3 to_local(const Vec3& global_point) const = 0;
-
-    /**
-     * @brief Converts a point from the local frame to the global frame.
-     *
-     * @param local_point Position expressed in local coordinates.
-     * @return Vec3 Global coordinates.
-     */
     virtual Vec3 to_global(const Vec3& local_point) const = 0;
 
-    /**
-     * @brief Returns the basis vectors of the local frame at a specific location.
-     *
-     * @param local_point Local coordinates where the basis is evaluated.
-     * @return Basis Matrix containing the basis vectors as columns.
-     */
+    // Evaluate the orthonormal local basis at a point in local coordinates.
+    // The returned columns are local unit directions expressed in global Cartesian
+    // coordinates: B maps local vector components to global components, and
+    // B.transpose() performs the reverse mapping. Rectangular bases are constant;
+    // cylindrical radial/tangential directions depend on the supplied azimuth.
     virtual Basis get_axes(const Vec3& local_point) const = 0;
 
-    /**
-     * @brief Creates a copy embedded by one rigid instance transformation.
-     *
-     * The transformation follows the same convention as `Instance`: a source
-     * point `x` becomes `rotation * x + translation`. Direction vectors are
-     * affected only by `rotation`; coordinate systems with a spatial origin
-     * must transform that origin by both rotation and translation.
-     *
-     * @param rotation Proper orthonormal instance rotation.
-     * @param translation Instance translation in global coordinates.
-     * @return Independent coordinate-system definition in the instance frame.
-     */
+    // Create an independent definition under the rigid instance placement
+    // x' = rotation * x + translation, retaining the name and leaving this object
+    // unchanged. rotation must be proper orthonormal. Unit directions rotate;
+    // a spatial origin also translates. Orientation-only systems ignore translation.
+    // The returned shared pointer owns the newly created concrete definition.
     virtual Ptr transformed(const Mat3& rotation, const Vec3& translation) const = 0;
 };
 } // namespace cos
