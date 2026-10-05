@@ -28,7 +28,6 @@
  * @date 25.08.2026
  */
 
-#include "../bc/neumann/load_t.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
@@ -326,10 +325,49 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
 }
 
 /**
- * Builds the accumulated isotropic free thermal strain at structural element
- * nodes for the selected load collectors.
+ * Builds the positive equivalent structural load associated with the current
+ * model temperature. This field is not an external load definition; linear
+ * procedures may add it to their effective solve RHS.
+ */
+Field Model::build_thermal_expansion_load_matrix() {
+    Field thermal_load{
+        "THERMAL_EXPANSION_LOAD",
+        FieldDomain::NODE,
+        _data->field_rows(FieldDomain::NODE),
+        6
+    };
+    thermal_load.set_zero();
+
+    if (!_data->temperature) {
+        return thermal_load;
+    }
+
+    logging::error(_data->temperature->domain == FieldDomain::NODE
+                && _data->temperature->components == 1,
+        "Model temperature must be a scalar NODE field");
+    logging::error(_data->temperature->rows == _data->field_rows(FieldDomain::NODE),
+        "Model temperature has wrong node count");
+
+    for (const auto& element : _data->elements) {
+        if (!element) continue;
+        if (auto* structural = element->as<StructuralElement>()) {
+            structural->apply_thermal_expansion_load(
+                thermal_load, *_data->temperature);
+        }
+    }
+
+    return thermal_load;
+}
+
+/**
+ * Builds the current isotropic free thermal strain at structural element nodes.
+ *
+ * The load-set argument is retained temporarily for source compatibility with
+ * existing analysis code. Temperature is taken exclusively from ModelData.
  */
 Field Model::build_thermal_free_strain(std::vector<std::string> load_sets) {
+    (void) load_sets;
+
     Field thermal_free_strain{
         "THERMAL_FREE_STRAIN",
         FieldDomain::ELEMENT_NODAL,
@@ -338,13 +376,21 @@ Field Model::build_thermal_free_strain(std::vector<std::string> load_sets) {
     };
     thermal_free_strain.set_zero();
 
-    for (auto& key : load_sets) {
-        auto data = _data->load_cols.get(key);
-        for (const auto& load : data->entries()) {
-            if (!load) continue;
-            auto thermal = std::dynamic_pointer_cast<bc::TLoad>(load);
-            if (!thermal) continue;
-            thermal->apply_thermal_free_strain(*_data, thermal_free_strain);
+    if (!_data->temperature) {
+        return thermal_free_strain;
+    }
+
+    logging::error(_data->temperature->domain == FieldDomain::NODE
+                && _data->temperature->components == 1,
+        "Model temperature must be a scalar NODE field");
+    logging::error(_data->temperature->rows == _data->field_rows(FieldDomain::NODE),
+        "Model temperature has wrong node count");
+
+    for (const auto& element : _data->elements) {
+        if (!element) continue;
+        if (auto* structural = element->as<StructuralElement>()) {
+            structural->apply_thermal_free_strain(
+                thermal_free_strain, *_data->temperature);
         }
     }
 
@@ -593,6 +639,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     logging::error(nodal_forces.components >= 6,
         "tangent internal force output requires at least 6 components");
 
+    Field thermal_free_strain = build_thermal_free_strain();
+    const Field* thermal = _data->temperature ? &thermal_free_strain : nullptr;
+
     auto lambda = [&](const ElementPtr& element,
                       Precision*        local_matrix_storage,
                       NodeData&         local_nodal_forces) -> MapMatrix {
@@ -608,7 +657,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             &local_nodal_forces,
             &displacement,
             &displacement,
-            nullptr,
+            thermal,
             true
         );
 
@@ -692,13 +741,16 @@ void Model::build_internal_force_nonlinear(
 
     nodal_forces.set_zero();
 
+    Field thermal_free_strain = build_thermal_free_strain();
+    const Field* thermal = _data->temperature ? &thermal_free_strain : nullptr;
+
     for (const auto& element : _data->elements) {
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
         structural->evaluate(
             nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, nullptr, true);
+            &displacement, &displacement, thermal, true);
     }
 
     for (const auto& element : _data->point_elements) {
