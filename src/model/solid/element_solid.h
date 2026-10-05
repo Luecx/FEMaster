@@ -213,10 +213,10 @@ public:
         bool            scale_by_density,
         const TenField& field) override;
 
-    // Convert prescribed temperatures into equivalent forces or scalar nodal
-    // free strain. Both paths retain committed constitutive history.
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
-    void apply_thermal_free_strain(Field& thermal_free_strain, const Field& node_temp, Precision ref_temp) override;
+    // Convert the current model temperature into equivalent forces or scalar
+    // nodal free strain. The material owns the stress-free zero temperature.
+    void apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) override;
+    void apply_thermal_free_strain(Field& thermal_free_strain, const Field& node_temp) override;
 
     // Stress/strain recovery is state-neutral. Constitutive response is evaluated
     // only at material integration points; nodal output is extrapolated from the
