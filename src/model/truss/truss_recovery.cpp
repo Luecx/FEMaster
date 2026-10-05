@@ -16,6 +16,7 @@
 #include "truss.h"
 
 #include "../../material/isotropic_j2_elasticity.h"
+#include <cmath>
 
 namespace fem {
 namespace model {
