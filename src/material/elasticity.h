@@ -35,13 +35,11 @@ namespace fem {
 
 struct AxialStrainGreenLagrange;
 struct VolumeStrainGreenLagrange;
-struct BeamGeneralizedStrain;
 struct ShellMaterialStrainGreenLagrange;
 
 struct AxialStressPK2;
 struct VolumeStressCauchy;
 struct VolumeStressPK2;
-struct BeamStressResultants;
 struct ShellMaterialStressPK2;
 
 namespace material {
@@ -50,12 +48,8 @@ namespace material {
  * @brief Polymorphic interface for axial, solid, beam and shell elasticity.
  *
  * Axial, volume and shell constitutive evaluation uses Green-Lagrange strain
- * with work-conjugate second Piola-Kirchhoff stress. Beam evaluation operates
- * directly on generalized strains and resultants.
- *
- * Capability queries allow sections and elements to reject unsupported
- * kinematics before evaluation. The base implementations report no supported
- * formulation and raise a model error if an unsupported overload is called.
+ * with work-conjugate second Piola-Kirchhoff stress. Unsupported dimensional
+ * reductions are rejected by the corresponding base `evaluate()` overload.
  *
  * Material-point state is passed as non-owning input/output storage.
  * `state_size()` defines the required leading components, and
@@ -74,15 +68,6 @@ struct Elasticity {
     using Ptr = std::shared_ptr<Elasticity>;
 
     virtual ~Elasticity() = default;
-
-    // Capability queries used by elements and sections before dispatch.
-    virtual bool supports_axial_green_lagrange() const;
-
-    virtual bool supports_volume_green_lagrange() const;
-
-    virtual bool supports_beam_resultants() const;
-
-    virtual bool supports_shell_integration_green_lagrange() const;
 
     // Material-point history contract. state_size() is the number of leading
     // scalar values consumed in every globally enumerated state row.
@@ -112,15 +97,6 @@ struct Elasticity {
                           Precision*                       new_state,
                           VolumeStressPK2&                 stress,
                           Mat6*                            tangent = nullptr) const;
-
-    // Generalized beam response. The section-defined six-component strain and
-    // resultant ordering is preserved. The optional tangent is their consistent
-    // local derivative.
-    virtual void evaluate(const BeamGeneralizedStrain& strain,
-                          const Precision*             old_state,
-                          Precision*                   new_state,
-                          BeamStressResultants&        resultants,
-                          Mat6*                        tangent = nullptr) const;
 
     // Finite-strain shell material response at one physical thickness point.
     // The five-component Green-Lagrange input returns work-conjugate PK2 stress
