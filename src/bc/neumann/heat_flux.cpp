@@ -113,7 +113,7 @@ void HeatFlux::apply(model::ModelData& model_data,
                 [value](const Vec3&) -> Precision { return value; }
             );
 
-            logging::error(local.size() == surface->n_nodes && local.allFinite(),
+            logging::error(static_cast<Index>(local.size()) == surface->n_nodes && local.allFinite(),
                 "HEATFLUX: local surface load is invalid on surface ", surface_id);
 
             for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {

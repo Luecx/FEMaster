@@ -1,3 +1,19 @@
+/**
+ * @file solve_newmark_gpu.cpp
+ * @brief Implements linear Newmark time integration on the GPU.
+ *
+ * The Newmark backend evaluates sparse matrix-vector products with cuSPARSE
+ * and reuses cuDSS factorizations for the time integration systems.
+ * Initial conditions, force bases and integration parameters are supplied by
+ * the calling solver; device storage and result downloads are handled here.
+ * cuDSS 0.8 descriptors distinguish row-offset, column-index and value types.
+ *
+ * @see newmark_linear_gpu
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
+ */
+
 #include "solve_newmark_gpu.h"
 
 #include "../../core/logging.h"
@@ -205,8 +221,9 @@ struct CudssFactorizedSolver {
                                                  nullptr,
                                                  mat.col_ind(),
                                                  mat.val_ptr(),
-                                                 CUDA_R_32I,
-                                                 CUDA_P_TYPE,
+                                                 CUDSS_R_32I, // Row offsets.
+                                                 CUDSS_R_32I, // Column indices.
+                                                 CUDSS_P_TYPE,
                                                  CUDSS_MTYPE_GENERAL,
                                                  CUDSS_MVIEW_FULL,
                                                  CUDSS_BASE_ZERO),
@@ -254,7 +271,7 @@ private:
                                                 1,
                                                 n,
                                                 static_cast<CudaPrecision*>(rhs),
-                                                CUDA_P_TYPE,
+                                                CUDSS_P_TYPE,
                                                 CUDSS_LAYOUT_COL_MAJOR),
                             "cudssMatrixCreateDn(rhs)");
         runtime_check_cudss(cudssMatrixCreateDn(&cudss_sol,
@@ -262,7 +279,7 @@ private:
                                                 1,
                                                 n,
                                                 static_cast<CudaPrecision*>(sol),
-                                                CUDA_P_TYPE,
+                                                CUDSS_P_TYPE,
                                                 CUDSS_LAYOUT_COL_MAJOR),
                             "cudssMatrixCreateDn(sol)");
     }

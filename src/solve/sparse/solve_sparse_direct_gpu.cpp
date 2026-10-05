@@ -1,3 +1,18 @@
+/**
+ * @file solve_sparse_direct_gpu.cpp
+ * @brief Implements GPU direct sparse solves for one or multiple right-hand sides.
+ *
+ * The sparse solver backend uploads CSR storage and selects cuDSS for SPD,
+ * symmetric or general systems. The legacy cuSolver path supports SPD systems
+ * and delegates unsupported matrix types to the CPU backend.
+ * cuDSS 0.8 matrix descriptors use separate offset, index and value types.
+ *
+ * @see solve_direct_gpu
+ *
+ * @author Finn Eggers
+ * @date 05.10.2026
+ */
+
 #include "solve_sparse_direct.h"
 
 #include "../../core/logging.h"
@@ -111,8 +126,9 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
                                              nullptr,
                                              col_indices,
                                              values,
-                                             CUDA_R_32I,
-                                             CUDA_P_TYPE,
+                                             CUDSS_R_32I, // Row offsets.
+                                             CUDSS_R_32I, // Column indices.
+                                             CUDSS_P_TYPE,
                                              cudss_matrix_type,
                                              cudss_matrix_view,
                                              CUDSS_BASE_ZERO),
@@ -122,7 +138,7 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
                                             static_cast<int64_t>(nrhs),
                                             nrows,
                                             rhs_values,
-                                            CUDA_P_TYPE,
+                                            CUDSS_P_TYPE,
                                             CUDSS_LAYOUT_COL_MAJOR),
                         "cudssMatrixCreateDn(rhs)");
     runtime_check_cudss(cudssMatrixCreateDn(&cudss_sol,
@@ -130,7 +146,7 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
                                             static_cast<int64_t>(nrhs),
                                             nrows,
                                             sol_values,
-                                            CUDA_P_TYPE,
+                                            CUDSS_P_TYPE,
                                             CUDSS_LAYOUT_COL_MAJOR),
                         "cudssMatrixCreateDn(sol)");
 

@@ -149,7 +149,7 @@ void Convection::apply(model::ModelData& model_data,
                 [source](const Vec3&) -> Precision { return source; }
             );
 
-            logging::error(local.size() == surface->n_nodes && local.allFinite(),
+            logging::error(static_cast<Index>(local.size()) == surface->n_nodes && local.allFinite(),
                 "CONVECTION: local ambient source is invalid on surface ", surface_id);
 
             for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
@@ -210,7 +210,7 @@ void Convection::apply_matrix(model::ModelData&   model_data,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "CONVECTION: reference positions are not initialized");
-    logging::error(system_dof_ids.rows() == model_data.positions_reference->rows,
+    logging::error(static_cast<Index>(system_dof_ids.rows()) == model_data.positions_reference->rows,
         "CONVECTION: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.cols() == 1,
         "CONVECTION: thermal DOF map must contain exactly one component");
@@ -271,7 +271,8 @@ void Convection::apply_matrix(model::ModelData&   model_data,
                 [h](const Vec3&) -> Precision { return h; }
             );
 
-            logging::error(local.rows() == surface->n_nodes && local.cols() == surface->n_nodes,
+            logging::error(static_cast<Index>(local.rows()) == surface->n_nodes
+                        && static_cast<Index>(local.cols()) == surface->n_nodes,
                 "CONVECTION: local boundary matrix does not match surface connectivity");
             logging::error(local.allFinite(),
                 "CONVECTION: local boundary matrix contains NaN or Inf");
