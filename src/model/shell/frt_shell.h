@@ -378,6 +378,11 @@ struct FRTShell : ShellElement<N> {
         // Compact current nodal configuration used by all kinematic routines.
         CurrentState state;
 
+        // Optional element-nodal thermal free strain already belonging to the
+        // exact nonlinear base state. When set, constitutive section evaluation
+        // receives mechanical generalized strain directly.
+        const Field* thermal_free_strain = nullptr;
+
         // Nodal SO(3) values and derivatives retained in the thread-local
         // workspace. The pointer is null when no rotational derivatives are
         // required.
@@ -508,7 +513,8 @@ struct FRTShell : ShellElement<N> {
         bool                with_B,
         bool                with_G,
         bool                with_resultants,
-        bool                write_material_state = false
+        bool                write_material_state = false,
+        const Field*        thermal_free_strain = nullptr
     ) const;
     void compute_material_resultants(EvaluationData& data) const;
 
