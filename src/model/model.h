@@ -192,6 +192,7 @@ struct Model {
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
+    Field build_thermal_expansion_load_matrix();
     Field build_thermal_free_strain(
         std::vector<std::string> load_sets = {});
     constraint::ConstraintGroups collect_constraints(
