@@ -155,10 +155,9 @@ struct ShellElement : StructuralElement {
         return node_ids.data();
     }
 
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
+    void apply_thermal_expansion_load(Field& node_loads, const Field& node_temp) override {
         (void) node_loads;
         (void) node_temp;
-        (void) ref_temp;
     }
 
     void compute_stress_strain(
