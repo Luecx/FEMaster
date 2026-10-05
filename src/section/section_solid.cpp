@@ -180,8 +180,6 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     // Validate the reference constitutive response used by this sensitivity.
     logging::error(material_ && material_->has_elasticity(),
         "SolidSection requires a material with elasticity");
-    logging::error(material_->elasticity()->supports_volume_green_lagrange(),
-        "SolidSection material does not support Green-Lagrange volume evaluation");
 
     auto elasticity = material_->elasticity();
 
