@@ -60,66 +60,17 @@ namespace fem::bc {
  * @param time Unused by the current field-based thermal-load representation.
  * @param ignore_amplitude Unused because no additional amplitude is applied.
  */
-void TLoad::apply(model::ModelData& model_data, model::Field& rhs, Precision time, bool ignore_amplitude) {
-    // The prescribed nodal temperature field already represents the complete
-    // thermal state for this load evaluation
-    (void)time;
-    (void)ignore_amplitude;
-
-    // Validate the scalar nodal thermal field and stress-free reference state
-    logging::error(temp_field_ != nullptr,
-        "TLOAD: temperature field is not initialized");
-    logging::error(temp_field_->domain == model::FieldDomain::NODE,
-        "TLOAD: temperature field ", temp_field_->name, " must use NODE domain");
-    logging::error(temp_field_->components == 1,
-        "TLOAD: temperature field ", temp_field_->name, " must have one component");
-    logging::error(std::isfinite(ref_temp_),
-        "TLOAD: reference temperature must be finite");
-
-    // Let each structural formulation construct its own B, constitutive thermal
-    // strain and quadrature contribution. This keeps the thermal-force mapping
-    // consistent with the element's actual mechanical kinematics.
-    for (auto& element : model_data.elements) {
-        auto* structural = element->as<model::StructuralElement>();
-        if (!structural) {
-            continue;
-        }
-
-        structural->apply_tload(rhs, *temp_field_, ref_temp_);
-    }
-}
-
-/**
- * Accumulates the scalar isotropic free thermal strain at structural material
- * element nodes. The field uses the compiled ELEMENT_NODAL enumeration so
- * each element owns a disjoint range and multiple TLOAD definitions superimpose.
- */
-void TLoad::apply_thermal_free_strain(model::ModelData& model_data,
-                                      model::Field& thermal_free_strain) const {
-    logging::error(temp_field_ != nullptr,
-        "TLOAD: temperature field is not initialized");
-    logging::error(temp_field_->domain == model::FieldDomain::NODE,
-        "TLOAD: temperature field ", temp_field_->name, " must use NODE domain");
-    logging::error(temp_field_->components == 1,
-        "TLOAD: temperature field ", temp_field_->name, " must have one component");
-    logging::error(std::isfinite(ref_temp_),
-        "TLOAD: reference temperature must be finite");
-    logging::error(thermal_free_strain.domain == model::FieldDomain::ELEMENT_NODAL,
-        "TLOAD: thermal free strain field must use ELEMENT_NODAL domain");
-    logging::error(thermal_free_strain.components == 1,
-        "TLOAD: thermal free strain field must have one component");
-
-    for (auto& element : model_data.elements) {
-        if (!element) {
-            continue;
-        }
-        auto* structural = element->as<model::StructuralElement>();
-        if (!structural) {
-            continue;
-        }
-        structural->apply_thermal_free_strain(
-            thermal_free_strain, *temp_field_, ref_temp_);
-    }
+void TLoad::apply(model::ModelData& model_data,
+                  model::Field& rhs,
+                  Precision time,
+                  bool ignore_amplitude) {
+    // TLOAD is intentionally not an external mechanical force anymore.
+    // ModelData::temperature is the sole current temperature state; a later
+    // temperature-state manager will evolve it between step states.
+    (void) model_data;
+    (void) rhs;
+    (void) time;
+    (void) ignore_amplitude;
 }
 
 /**
