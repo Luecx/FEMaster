@@ -541,12 +541,21 @@ void C3D8I::apply_thermal_expansion_load(Field& node_loads, const Field& node_te
     // Validate temperatures and form scalar nodal free strain
     logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
         "C3D8I: thermal loading requires a scalar nodal temperature field");
-    logging::error(material() != nullptr && material()->has_thermal_expansion(),
-        "C3D8I: thermal loading requires material expansion in element ", elem_id);
+    auto mat = material();
+    logging::error(mat != nullptr,
+        "C3D8I: no material assigned to element ", elem_id);
+    if (!mat->has_thermal_expansion()) {
+        return;
+    }
+
+    const Precision ref_temp = mat->get_thermal_zero_temperature();
+    const Precision alpha    = mat->get_thermal_expansion();
+
     StaticVector<N> free = StaticVector<N>::Zero();
     for (Index node = 0; node < N; ++node) {
         const Precision value = node_temp(node_ids[node], 0);
-        free(node) = material()->get_thermal_expansion() * ((std::isfinite(value) ? value : ref_temp) - ref_temp);
+        const Precision temperature = std::isfinite(value) ? value : ref_temp;
+        free(node) = alpha * (temperature - ref_temp);
     }
 
     // Condense the thermal source with the complete stationary reference tangent
