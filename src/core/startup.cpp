@@ -94,11 +94,11 @@ void print_banner() {
     std::cout << "*           cuDSS Supported       : No                               *\n";
 #endif
     std::cout << "*                                                                    *\n";
-    std::cout << "*           FEMaster Version      : " << std::left << std::setw(34)
+    std::cout << "*           FEMaster Version      : " << std::left << std::setw(33)
               << solver_version << std::right << "*\n";
-    std::cout << "*           Eigen Version         : " << std::left << std::setw(34)
+    std::cout << "*           Eigen Version         : " << std::left << std::setw(33)
               << eigen_version << std::right << "*\n";
-    std::cout << "*           Spectra Version       : " << std::left << std::setw(34)
+    std::cout << "*           Spectra Version       : " << std::left << std::setw(33)
               << spectra_version << std::right << "*\n";
     std::cout << "*                                                                    *\n";
     std::cout << "**********************************************************************\n";
