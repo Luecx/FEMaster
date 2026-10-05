@@ -49,8 +49,12 @@ void LinearStatic::run() {
         "constructing load matrix (node x 6)");
 
     auto thermal_free_strain = Timer::measure(
-        [&]() { return model->build_thermal_free_strain(loads); },
+        [&]() { return model->build_thermal_free_strain(); },
         "constructing thermal free strain field");
+
+    auto global_thermal_load_mat = Timer::measure(
+        [&]() { return model->build_thermal_expansion_load_matrix(); },
+        "constructing temperature-induced structural load");
 
     if (inertia_relief) {
         logging::error(supps.empty(),
@@ -98,9 +102,18 @@ void LinearStatic::run() {
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K");
 
+    // The structural solve sees the temperature-induced initial-strain source,
+    // but EXTERNAL_FORCES remains the genuinely external mechanical load field.
+    auto global_rhs_mat = global_load_mat;
+    global_rhs_mat += global_thermal_load_mat;
+
     auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f");
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_rhs_mat); },
+        "reducing mechanical + thermal RHS -> active vector f");
+
+    auto f_thermal = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_thermal_load_mat); },
+        "reducing temperature-induced load -> active vector");
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
@@ -200,8 +213,8 @@ void LinearStatic::run() {
     // default output set so an explicit request can report it without another
     // model recovery pass.
     auto internal_active = Timer::measure(
-        [&]() { return K * u; },
-        "computing internal nodal forces K u");
+        [&]() { return K * u - f_thermal; },
+        "computing physical internal nodal forces K u - f_thermal");
 
     auto r_support = Timer::measure(
         [&]() { return transformer->support_reactions(K, f, q); },
@@ -259,6 +272,9 @@ void LinearStatic::run() {
             output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
             output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+            if (model->_data->temperature) {
+                output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+            }
 
             output.write_frame(*writer, model->_data.get());
         },
