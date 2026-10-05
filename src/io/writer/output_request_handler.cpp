@@ -300,10 +300,12 @@ void OutputRequestHandler::compute(OutputField field) {
                 thermal_free_strain());
             return;
 
-        case OutputField::LOCAL_SECTION_FORCES:
+        case OutputField::LOCAL_SECTION_FORCES: {
+            auto& displacement = resolve(OutputField::DISPLACEMENT);
             computed_[index(field)] =
-                model_->compute_section_forces(resolve(OutputField::DISPLACEMENT));
+                model_->compute_section_forces(displacement, nonlinear_ ? &displacement : nullptr);
             return;
+        }
 
         case OutputField::SHEAR_FLOW:
             computed_[index(field)] =
