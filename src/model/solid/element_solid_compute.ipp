@@ -73,7 +73,16 @@ void SolidElement<N>::evaluate_material(
  * Exact recovery evaluates F and PK2 stress at displacement. Affine recovery
  * evaluates them at linearization (nullptr means u_L = 0) and differentiates
  * both Green-Lagrange strain and the complete PK2-to-Cauchy push-forward.
- * Reference thermal strain contributes -C0 epsilon_th without advancing history.
+ *
+ * Temperature is part of the base state. At every integration point the
+ * constitutive model therefore receives
+ *
+ *     E_mech,0 = E0 - E_th,
+ *
+ * with isotropic free strain E_th = alpha (T - T0). During affine continuation
+ * the temperature state is held fixed, so only the displacement-induced strain
+ * increment contributes to Delta S.
+ *
  * Integration-point values are copied or extrapolated to topology node locations.
  *
  * @param strain Optional total strain output.
@@ -131,9 +140,8 @@ void SolidElement<N>::compute_stress_strain(
         const Precision alpha = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision value =
+            const Precision temperature =
                 (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
-            const Precision temperature = std::isfinite(value) ? value : zero;
             nodal_thermal_strain(node) = alpha * (temperature - zero);
         }
     }
@@ -164,8 +172,10 @@ void SolidElement<N>::compute_stress_strain(
                 .dot(nodal_thermal_strain);
         }
 
+        // Temperature belongs to the base state, so the material always sees
+        // the mechanical strain E_mech,0 = E0 - E_th at the expansion point.
         Vec6 constitutive_strain_values = green.voigt();
-        if (exact_state && has_thermal_state) {
+        if (has_thermal_state) {
             constitutive_strain_values.head<3>().array() -= free;
         }
         const VolumeStrainGreenLagrange constitutive_strain(
@@ -177,19 +187,10 @@ void SolidElement<N>::compute_stress_strain(
             point.r, point.s, point.t,
             constitutive_strain,
             old_state, nullptr, second_pk,
-            (exact_state && !has_thermal_state) ? nullptr : &material_tangent);
-
-        Vec6 thermal_stress = Vec6::Zero();
-        if (has_thermal_state && !exact_state) {
-            thermal_stress =
-                material_tangent * Vec6(free, free, free, 0, 0, 0);
-        }
-
-        const VolumeStressPK2 effective_pk(
-            Vec6(second_pk.voigt() - thermal_stress));
+            exact_state ? nullptr : &material_tangent);
 
         Vec6 recovered_strain = green.voigt();
-        const Mat3 sigma = effective_pk.to_cauchy(F).tensor();
+        const Mat3 sigma = second_pk.to_cauchy(F).tensor();
         Mat3 recovered_stress = sigma;
         if (!exact_state) {
             // Differentiate E and sigma = F S F^T / det(F) in the same direction
@@ -197,10 +198,14 @@ void SolidElement<N>::compute_stress_strain(
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
             const Vec6 delta_strain = VolumeStrainGreenLagrange(delta_E).voigt();
             recovered_strain += delta_strain;
+            // Temperature is fixed during the displacement perturbation:
+            //
+            //     Delta E_th   = 0,
+            //     Delta E_mech = Delta E.
             const Vec6 mechanical_increment = delta_strain;
             const Mat3 delta_S =
                 VolumeStressPK2(Vec6(material_tangent * mechanical_increment)).tensor();
-            const Mat3 S = effective_pk.tensor();
+            const Mat3 S = second_pk.tensor();
             recovered_stress += (delta_F * S * F.transpose() + F * delta_S * F.transpose()
                                + F * S * delta_F.transpose()) / F.determinant()
                               - (F.inverse() * delta_F).trace() * sigma;
@@ -381,9 +386,8 @@ MapMatrix SolidElement<N>::evaluate(
         const Precision alpha = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision value =
+            const Precision temperature =
                 (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
-            const Precision temperature = std::isfinite(value) ? value : zero;
             nodal_thermal_strain(node) = alpha * (temperature - zero);
         }
     }
@@ -391,9 +395,6 @@ MapMatrix SolidElement<N>::evaluate(
     // -----------------------------------------------------------------------------
     // main loop
     // -----------------------------------------------------------------------------
-    const bool exact_thermal_state =
-        has_thermal_state && linearization != nullptr && displacement == linearization;
-
     // Determine which quantities must be assembled internally.
     //
     // An affine force evaluation is required when the requested displacement u
@@ -413,11 +414,8 @@ MapMatrix SolidElement<N>::evaluate(
 
     // The constitutive tangent C = dS/dE is required for:
     // - the material tangent contribution K_M = ∫ B^T C B dV,
-    // - thermal stress S_th = C E_th,
     // - the stress increment used by the separately requested geometric stiffness.
-    const bool need_material = need_tangent
-                            || has_thermal_state
-                            || with_geometric;
+    const bool need_material = need_tangent || with_geometric;
 
     // Initialize the element quantities accumulated over all integration points.
     StaticMatrix<D * N, D * N> tangent   = StaticMatrix<D * N, D * N>::Zero();
@@ -459,8 +457,12 @@ MapMatrix SolidElement<N>::evaluate(
                 this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
         }
 
+        // Temperature is part of the state about which the element is
+        // linearized. The material therefore always receives
+        //
+        //     E_mech,0 = E0 - E_th.
         Vec6 constitutive_strain_values = strain.voigt();
-        if (exact_thermal_state) {
+        if (has_thermal_state) {
             constitutive_strain_values.head<3>().array() -= thermal_strain_ip;
         }
         const VolumeStrainGreenLagrange constitutive_strain(
@@ -478,9 +480,9 @@ MapMatrix SolidElement<N>::evaluate(
         Precision*       new_state = update_state ? &(*this->_model_data->material_state_new)(state_row, 0) : nullptr;
 
         // Evaluate the constitutive response at the current integration point.
-        // stress stores the second Piola-Kirchhoff stress S, while material_tangent
-        // optionally stores the constitutive tangent C = dS/dE when required for the
-        // subsequent stiffness, thermal-stress, or geometric-stiffness calculations.
+        // stress stores the second Piola-Kirchhoff stress S associated with the
+        // mechanical strain E_mech,0. material_tangent optionally stores the
+        // constitutive tangent C = dS/dE when required by a tangent operator.
         VolumeStressPK2 stress;
         Mat6            material_tangent;
         evaluate_material(
@@ -490,30 +492,9 @@ MapMatrix SolidElement<N>::evaluate(
             need_material ? &material_tangent : nullptr);
 
         // -----------------------------------------------------------------------------
-        // thermal stresses
-        // -----------------------------------------------------------------------------
-        // If a nodal thermal free-strain field is present, interpolate the scalar
-        // thermal strain to the current integration point and interpret it as an
-        // isotropic free strain
-        //
-        //     E_th = [eps_th, eps_th, eps_th, 0, 0, 0]^T.
-        //
-        // The corresponding stress correction is then obtained from
-        //
-        //     S_th = C E_th,
-        //
-        // and is subtracted from the mechanical stress contribution later on.
-        Vec6 thermal_stress = Vec6::Zero();
-        if (has_thermal_state && !exact_thermal_state && (with_force || with_geometric)) {
-            thermal_stress = material_tangent
-                           * Vec6(thermal_strain_ip, thermal_strain_ip, thermal_strain_ip,
-                                  0, 0, 0);
-        }
-
-        // -----------------------------------------------------------------------------
         // contributions to default stiffness and force vector
         // -----------------------------------------------------------------------------
-        if (with_force)   force.noalias()   += det0 * point.w * B.transpose() * (stress.voigt() - thermal_stress);
+        if (with_force)   force.noalias()   += det0 * point.w * B.transpose() * stress.voigt();
         if (need_tangent) tangent.noalias() += det0 * point.w * B.transpose() * material_tangent * B;
 
         // -----------------------------------------------------------------------------
@@ -532,16 +513,16 @@ MapMatrix SolidElement<N>::evaluate(
         // A separately requested geometric stiffness uses only the stress increment
         // from u0 to the requested state u:
         //
-        //     Delta S = C0 B0 (u - u0) - S_th.
+        //     Delta S = C0 B0 (u - u0).
         //
-        // Thus, the stress already present at u0 contributes to K_T(u0), while the
-        // separate geometric operator contains only the effect of the perturbation.
-        const Mat3 stress_linear_base =
-            VolumeStressPK2(Vec6(stress.voigt() - thermal_stress)).tensor();
+        // Temperature is held fixed during this displacement perturbation. Thus,
+        // the complete base stress S0, including thermal stress, contributes to
+        // K_T(u0), while the separate geometric operator contains only Delta S.
+        const Mat3 stress_linear_base = stress.tensor();
 
         Vec6 stress_increment = Vec6::Zero();
         if (with_geometric) {
-            stress_increment = material_tangent * (B * delta) - thermal_stress;
+            stress_increment = material_tangent * (B * delta);
         }
 
         const Mat3 stress_geometric = VolumeStressPK2(stress_increment).tensor();
