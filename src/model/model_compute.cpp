@@ -44,14 +44,18 @@ namespace fem::model {
  * `compute_stress_strain()` interface. The field is not used as solver scratch
  * for geometric or nonlinear stiffness assembly.
  *
- * @param displacement Global nodal displacement field used for recovery.
- * @param linearization Displacement expansion state; null denotes zero.
+ * @param target_displacement Requested nodal displacement state.
+ * @param target_temperature Requested nodal temperature state.
+ * @param base_displacement Base displacement state; null denotes zero.
+ * @param base_temperature Base temperature state; null denotes stress-free temperature.
  * @return Integration-point stress field with the established eight-component
  *         FEMaster layout.
  */
 Field Model::compute_stress_state(
-    Field&       displacement,
-    const Field* linearization
+    Field&       target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
     // Validate and access the compiled integration-point enumeration.
     logging::error(_data->element_ip_offsets != nullptr,
@@ -88,10 +92,12 @@ Field Model::compute_stress_state(
             sel->compute_stress_strain(
                 nullptr,
                 &ip_stress,
-                displacement,
+                target_displacement,
+                target_temperature,
                 rst,
                 static_cast<int>(ip_offset),
-                linearization
+                base_displacement,
+                base_temperature
             );
         }
     }
@@ -117,8 +123,10 @@ Field Model::compute_stress_state(
  * @return Pair containing the global nodal stress field followed by strain.
  */
 std::tuple<Field, Field> Model::compute_stress_nodal(
-    Field&       displacement,
-    const Field* linearization
+    Field&       target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
@@ -153,10 +161,12 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
                 sel->compute_stress_strain(
                     &element_strain,
                     &element_stress,
-                    displacement,
+                    target_displacement,
+                    target_temperature,
                     rst,
                     static_cast<int>(offset),
-                    linearization
+                    base_displacement,
+                    base_temperature
                 );
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
@@ -237,8 +247,10 @@ Field Model::compute_peeq_nodal() {
  * @return Pair containing global nodal top-face and bottom-face stress fields.
  */
 std::tuple<Field, Field> Model::compute_stress_top_bot(
-    Field&       displacement,
-    const Field* linearization
+    Field&       target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
@@ -278,8 +290,16 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
                 }
 
                 const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), linearization);
-                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), linearization);
+                sel->compute_stress_strain(
+                    nullptr, &element_bot,
+                    target_displacement, target_temperature,
+                    rst_bot, static_cast<int>(offset),
+                    base_displacement, base_temperature);
+                sel->compute_stress_strain(
+                    nullptr, &element_top,
+                    target_displacement, target_temperature,
+                    rst_top, static_cast<int>(offset),
+                    base_displacement, base_temperature);
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }, Index(8));
@@ -303,10 +323,18 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
  * global node and divided by the summed counts to preserve the original
  * arithmetic nodal average.
  *
- * @param displacement Global nodal displacement field used for recovery.
+ * @param target_displacement Requested nodal displacement state.
+ * @param target_temperature Requested nodal temperature state.
+ * @param base_displacement Base displacement state; null denotes zero.
+ * @param base_temperature Base temperature state; null denotes stress-free temperature.
  * @return Averaged eight-component nodal shell-resultant field.
  */
-Field Model::compute_shell_resultants(Field& displacement) {
+Field Model::compute_shell_resultants(
+    Field&       target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
+) {
     const Index node_count    = _data->field_rows(FieldDomain::NODE);
     const Index element_count = static_cast<Index>(_data->elements.size());
 
@@ -338,7 +366,10 @@ Field Model::compute_shell_resultants(Field& displacement) {
                 sel->compute_shell_section_forces(
                     thread_resultants[static_cast<std::size_t>(thread)],
                     thread_counts[static_cast<std::size_t>(thread)],
-                    displacement
+                    target_displacement,
+                    target_temperature,
+                    base_displacement,
+                    base_temperature
                 );
             }
         }, Index(64));
@@ -458,12 +489,18 @@ Field Model::compute_volumes() {
  * may run in parallel while Eigen and MKL internal threading are restricted to
  * avoid nested oversubscription.
  *
- * @param displacement Global nodal displacement field used for recovery.
- * @param linearization Optional exact base state for affine recovery. A null
- *                      pointer linearizes about the undeformed reference state.
+ * @param target_displacement Requested nodal displacement state.
+ * @param target_temperature Requested nodal temperature state.
+ * @param base_displacement Base displacement state; null denotes zero.
+ * @param base_temperature Base temperature state; null denotes stress-free temperature.
  * @return Six-component element-nodal beam section-force field.
  */
-Field Model::compute_section_forces(Field& displacement, const Field* linearization) {
+Field Model::compute_section_forces(
+    Field&       target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
+) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
@@ -483,7 +520,13 @@ Field Model::compute_section_forces(Field& displacement, const Field* linearizat
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
                 const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset), linearization);
+                sel->compute_beam_section_forces(
+                    beam_forces,
+                    target_displacement,
+                    target_temperature,
+                    static_cast<int>(offset),
+                    base_displacement,
+                    base_temperature);
             }
         }, Index(32));
 
