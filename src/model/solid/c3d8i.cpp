@@ -1048,7 +1048,6 @@ MapMatrix C3D8I::evaluate(
  * @param stress Optional Cauchy stress output field.
  * @param displacement Requested global nodal displacement.
  * @param rst Integration-point or natural nodal output coordinates.
- * @param offset First output row belonging to this element.
  * @param linearization Affine expansion displacement; null selects zero.
  */
 void C3D8I::compute_stress_strain(
@@ -1057,10 +1056,15 @@ void C3D8I::compute_stress_strain(
     const Field&     target_displacement,
     const Field*     target_temperature,
     const RowMatrix& rst,
-    int              offset,
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
+    // First compiled output row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
+        offset = static_cast<Index>(this->elem_ip_offset);
+    }
+
     const bool exact_displacement = base_displacement == &target_displacement;
 
     // Validate recovery coordinates
