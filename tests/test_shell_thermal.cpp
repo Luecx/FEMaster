@@ -85,20 +85,39 @@ void check_uniform_thermal_load(
 
     model._data->temperature = temperature;
 
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        static_cast<Index>(N),
+        6
+    };
+    reference_displacement.set_zero();
+
     model::Field reference_internal{
         "REFERENCE_INTERNAL_FORCES",
         model::FieldDomain::NODE,
         static_cast<Index>(N),
         6
     };
-    model.build_internal_force_reference(reference_internal);
+    model.build_internal_force(
+        reference_internal,
+        reference_displacement,
+        temperature.get(),
+        nullptr,
+        nullptr,
+        false,
+        nullptr);
 
     // A homogeneous thermal free-expansion displacement produces exactly the
     // same generalized strain as the uniform, thickness-constant thermal load.
     // Comparing with K*u checks all six DOFs, correct sign, thickness factor,
     // topology-specific MITC B, and (for ABD) coupled nodal thermal moments.
     Precision matrix_storage[6 * N * 6 * N] {};
-    const DynamicMatrix K = element->evaluate(matrix_storage, nullptr, nullptr, nullptr, nullptr, false);
+    const DynamicMatrix K = element->evaluate(
+        matrix_storage, nullptr, nullptr,
+        nullptr, nullptr,
+        nullptr, nullptr,
+        false);
     StaticVector<6 * N> free_expansion = StaticVector<6 * N>::Zero();
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         free_expansion(6 * node + 0) = free_strain * coords[node].x();
@@ -132,7 +151,8 @@ void check_uniform_thermal_load(
         }
 
         auto stress_strain =
-            model.compute_stress_nodal(displacement);
+            model.compute_stress_nodal(
+                displacement, temperature.get(), nullptr, nullptr);
         const auto& stress = std::get<0>(stress_strain);
         const auto& strain = std::get<1>(stress_strain);
 
@@ -154,7 +174,8 @@ void check_uniform_thermal_load(
         }
 
         const auto resultants =
-            model.compute_shell_resultants(displacement);
+            model.compute_shell_resultants(
+                displacement, temperature.get(), nullptr, nullptr);
         for (Index node = 0; node < static_cast<Index>(N); ++node) {
             for (Index component = 0; component < 8; ++component) {
                 EXPECT_NEAR(resultants(node, component), 0.0, 1e-8)
@@ -164,7 +185,11 @@ void check_uniform_thermal_load(
 
         Precision kg_storage[6 * N * 6 * N] {};
         const DynamicMatrix Kg_free =
-            element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, false);
+            element->evaluate(
+                nullptr, kg_storage, nullptr,
+                &displacement, temperature.get(),
+                nullptr, nullptr,
+                false);
         EXPECT_LT(Kg_free.norm(), 1e-8);
 
         displacement.set_zero();
@@ -193,7 +218,14 @@ void check_uniform_thermal_load(
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         (*temperature)(node, 0) = material->get_thermal_zero_temperature();
     }
-    model.build_internal_force_reference(reference_internal);
+    model.build_internal_force(
+        reference_internal,
+        reference_displacement,
+        temperature.get(),
+        nullptr,
+        nullptr,
+        false,
+        nullptr);
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         for (Index dof = 0; dof < 6; ++dof) {
             EXPECT_NEAR(reference_internal(node, dof), 0.0, 1e-12);
@@ -419,19 +451,38 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
 
     model._data->temperature = temperature;
 
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        8,
+        6
+    };
+    reference_displacement.set_zero();
+
     model::Field reference_internal{
         "REFERENCE_INTERNAL_FORCES",
         model::FieldDomain::NODE,
         8,
         6
     };
-    model.build_internal_force_reference(reference_internal);
+    model.build_internal_force(
+        reference_internal,
+        reference_displacement,
+        temperature.get(),
+        nullptr,
+        nullptr,
+        false,
+        nullptr);
 
     // Verify consistent nodal loads, including the independent drilling motion
     auto* element = model._data->elements[0]->as<model::FRTShellS8>();
     ASSERT_NE(element, nullptr);
     Precision storage[48*48]{};
-    const DynamicMatrix K = element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, false);
+    const DynamicMatrix K = element->evaluate(
+        storage, nullptr, nullptr,
+        nullptr, nullptr,
+        nullptr, nullptr,
+        false);
     const StaticVector<48> expected = K * motion;
     for (Index node = 0; node < 8; ++node) {
         for (Index dof = 0; dof < 6; ++dof) {
@@ -440,7 +491,8 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     }
 
     // Free compatible expansion must leave no recovered stress or prestress
-    const auto recovered = model.compute_stress_nodal(displacement);
+    const auto recovered = model.compute_stress_nodal(
+        displacement, temperature.get(), nullptr, nullptr);
     const auto& stress = std::get<0>(recovered);
     for (Index node = 0; node < 8; ++node) {
         for (Index component = 0; component < 6; ++component) {
@@ -448,7 +500,11 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
         }
     }
     Precision kg_storage[48*48]{};
-    const DynamicMatrix Kg = element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, false);
+    const DynamicMatrix Kg = element->evaluate(
+        nullptr, kg_storage, nullptr,
+        &displacement, temperature.get(),
+        nullptr, nullptr,
+        false);
     EXPECT_LT(Kg.norm(), 1e-8);
     model.step_end();
 }
