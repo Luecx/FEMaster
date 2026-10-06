@@ -21,7 +21,9 @@ Profile::Profile(const std::string& name,
                  Precision offset_y,
                  Precision offset_z,
                  Precision reference_y,
-                 Precision reference_z)
+                 Precision reference_z,
+                 Precision shear_area_y,
+                 Precision shear_area_z)
     : fem::Namable(name),
       area_(area),
       inertia_y_(inertia_y),
@@ -31,7 +33,9 @@ Profile::Profile(const std::string& name,
       offset_y_(offset_y),
       offset_z_(offset_z),
       reference_y_(reference_y),
-      reference_z_(reference_z) {
+      reference_z_(reference_z),
+      shear_area_y_(shear_area_y > Precision(0) ? shear_area_y : Precision(5) * area / Precision(6)),
+      shear_area_z_(shear_area_z > Precision(0) ? shear_area_z : Precision(5) * area / Precision(6)) {
     logging::error(area_            > Precision(0),
         "PROFILE: cross-section area must be positive");
     logging::error(inertia_y_       > Precision(0),
@@ -40,6 +44,8 @@ Profile::Profile(const std::string& name,
         "PROFILE: inertia Iz must be positive");
     logging::error(torsion_inertia_ > Precision(0),
         "PROFILE: torsional inertia must be positive");
+    logging::error(shear_area_y_ > Precision(0) && shear_area_z_ > Precision(0),
+        "PROFILE: effective shear areas must be positive");
     logging::error(inertia_y_ * inertia_z_ - product_inertia_yz_ * product_inertia_yz_ > Precision(0),
         "PROFILE: bending inertia matrix must be positive definite");
 }
@@ -55,5 +61,7 @@ void Profile::info() {
     logging::info(true, "   Offset z          : ", offset_z_);
     logging::info(true, "   Reference y       : ", reference_y_);
     logging::info(true, "   Reference z       : ", reference_z_);
+    logging::info(true, "   Shear area y      : ", shear_area_y_);
+    logging::info(true, "   Shear area z      : ", shear_area_z_);
 }
 } // namespace fem
