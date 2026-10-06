@@ -1,4 +1,3 @@
-```
 /**
  * @file truss_evaluate.cpp
  * @brief Implements the state-based mechanical evaluation of the T3 truss.
@@ -478,5 +477,3 @@ MapMatrix T3::evaluate(
 
 } // namespace model
 } // namespace fem
-
-```
