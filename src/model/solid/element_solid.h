@@ -227,13 +227,10 @@ public:
         const Field&     target_displacement,
         const Field*     target_temperature,
         const RowMatrix& rst,
-        int              offset,
         const Field*     base_displacement,
         const Field*     base_temperature
     ) override;
-    bool compute_peeq(
-        Field& peeq,
-        int    offset) override;
+    bool compute_peeq(Field& peeq) override;
     void compute_compliance(
         Field& displacement,
         Field& result) override;
