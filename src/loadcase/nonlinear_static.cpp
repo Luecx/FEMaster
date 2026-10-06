@@ -910,6 +910,9 @@ void NonlinearStatic::run() {
     output.provide(OutputField::EXTERNAL_FORCES,     global_load_final);
     output.provide(OutputField::INTERNAL_FORCES,     final_internal);
     output.provide(OutputField::REACTION_FORCES,     reaction_masked);
+    if (model->_data->temperature) {
+        output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+    }
     output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
 
