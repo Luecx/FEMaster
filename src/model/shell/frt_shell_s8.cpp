@@ -318,7 +318,7 @@ void FRTShellS8::apply_mitc_natural(
                   basis_2.dot(basis_1), basis_2.dot(basis_2);
 
         const Precision determinant = metric.determinant();
-        logging::error(std::abs(determinant) > Precision(1e-14),
+        logging::error(determinant > Precision(1e-12) * metric(0, 0) * metric(1, 1),
                        "FRTShellS8: singular auxiliary MITC8 tangent basis");
 
         const Mat2 inverse = metric.inverse();
@@ -707,7 +707,7 @@ void FRTShellS8::pull_back_mitc_resultants(
                   basis_2.dot(basis_1), basis_2.dot(basis_2);
 
         const Precision determinant = metric.determinant();
-        logging::error(std::abs(determinant) > Precision(1e-14),
+        logging::error(determinant > Precision(1e-12) * metric(0, 0) * metric(1, 1),
                        "FRTShellS8: singular auxiliary MITC8 tangent basis");
 
         const Mat2 inverse = metric.inverse();
