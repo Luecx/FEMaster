@@ -45,9 +45,8 @@ Precision FRTShell<N>::thermal_strain_at(Precision r, Precision s) const {
 
     Precision free_strain = Precision(0);
     for (Index node = 0; node < num_nodes; ++node) {
-        const Precision value =
+        const Precision temperature =
             (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
-        const Precision temperature = std::isfinite(value) ? value : zero;
         free_strain += shape(node) * alpha * (temperature - zero);
     }
 
@@ -227,16 +226,22 @@ void FRTShell<N>::physical_stress_strain_at(
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
-    const Vec8 generalized_base   = generalized_strain_at(data, Vec6N::Zero(), r, s);
-    const Vec8 generalized_strain = generalized_strain_at(data, displacement_increment, r, s);
-    Vec8 generalized_increment    = generalized_strain - generalized_base;
+    const Vec8 generalized_total_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
+    const Vec8 generalized_strain      = generalized_strain_at(data, displacement_increment, r, s);
+    const Vec8 generalized_increment   = generalized_strain - generalized_total_base;
 
+    // Temperature belongs to the exact base state. The section therefore sees
+    //
+    //     epsilon_mech,0 = epsilon0 - epsilon_th,
+    //
+    // while the displacement perturbation contains no thermal increment.
+    Vec8 generalized_base = generalized_total_base;
     const Precision free_strain = thermal_strain_at(r, s);
     if (free_strain != Precision(0)) {
         const ReferencePoint* cached    = cached_reference_point(r, s);
         const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
         const ReferencePoint& point     = cached ? *cached : temporary;
-        generalized_increment -= thermal_generalized_strain(point, free_strain);
+        generalized_base -= thermal_generalized_strain(point, free_strain);
     }
 
     const Precision h = this->get_section()->thickness_;
@@ -326,7 +331,7 @@ void FRTShell<N>::compute_stress_strain(
     // Request B0 and the first SO(3) derivatives at the exact base state. The
     // resultant request keeps section evaluation on the same Green-Lagrange
     // constitutive path used by mechanical evaluation.
-    const EvaluationData data = init_evaluation(state, true, true, false, true, false);
+    const EvaluationData data = init_evaluation(state, true, true, false, true);
 
     for (Eigen::Index point = 0; point < rst.rows(); ++point) {
         Vec6 strain_value;
@@ -509,14 +514,18 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         const Precision r = rst(node, 0);
         const Precision s = rst(node, 1);
 
-        const Vec8 strain_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
-        Vec8 strain_increment  = generalized_strain_at(data, q, r, s) - strain_base;
+        const Vec8 strain_total_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
+        Vec8 strain_base              = strain_total_base;
+        const Vec8 strain_increment   = generalized_strain_at(data, q, r, s) - strain_total_base;
 
+        // Evaluate the section at the thermo-mechanical reference state. The
+        // temperature is fixed while q is applied, so the affine increment is
+        // purely displacement-induced.
         if (has_thermal_state) {
             const ReferencePoint* cached    = cached_reference_point(r, s);
             const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
             const ReferencePoint& point     = cached ? *cached : temporary;
-            strain_increment -= thermal_generalized_strain(
+            strain_base -= thermal_generalized_strain(
                 point, thermal_strain_at(r, s));
         }
 
