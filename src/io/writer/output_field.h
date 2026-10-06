@@ -39,7 +39,6 @@ enum class OutputField : std::uint8_t {
     EXTERNAL_FORCES,
     INTERNAL_FORCES,
     REACTION_FORCES,
-    THERMAL_FREE_STRAIN,
 
     STRESS,
     STRAIN,

@@ -98,7 +98,7 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
         displacement(node, 0) = (node >= 4) ? 1.0 : 0.0;
     }
 
-    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, nullptr);
+    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, nullptr, nullptr, nullptr);
 
     ASSERT_EQ(stress_top.rows, stress_bot.rows);
     ASSERT_EQ(stress_top.components, stress_bot.components);
@@ -168,6 +168,8 @@ TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
         geometric_storage,
         &base_force,
         &linearization,
+        nullptr,
+        nullptr,
         &linearization,
         nullptr,
         false
@@ -211,6 +213,7 @@ TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
         nullptr,
         &target_force,
         &target,
+        nullptr,
         &linearization,
         nullptr,
         false
@@ -376,7 +379,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
     Precision storage[24 * 24] {};
     const DynamicMatrix tangent =
-        element->evaluate(storage, nullptr, &internal, &displacement, &displacement, nullptr, true);
+        element->evaluate(storage, nullptr, &internal, &displacement, nullptr, &displacement, nullptr, true);
 
     Precision geometric_storage[24 * 24] {};
     const DynamicMatrix geometric = element->evaluate(
@@ -400,7 +403,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
             "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
         };
         force.set_zero();
-        element->evaluate(nullptr, nullptr, &force, &u, &u, nullptr, true);
+        element->evaluate(nullptr, nullptr, &force, &u, nullptr, &u, nullptr, true);
 
         StaticVector<24> result = StaticVector<24>::Zero();
         for (Index node = 0; node < 8; ++node) {
@@ -471,6 +474,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
             nullptr,
             &rotated_internal,
             &rotated_displacement,
+            nullptr,
             &rotated_displacement,
             nullptr,
             true
@@ -507,7 +511,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     // Model-level output uses the thermal-aware virtual overload even when no
     // thermal field is supplied; this call therefore also checks C3D8I recovery
     // dispatch through StructuralElement.
-    EXPECT_NO_THROW(model.compute_stress_nodal(displacement, &displacement));
+    EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr, &displacement, nullptr));
 
     model.step_end();
 }
@@ -569,7 +573,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                 auto internal_force = [&](const model::Field& displacement) {
                     model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
                     forces.set_zero();
-                    element->evaluate(nullptr, nullptr, &forces, &displacement, &displacement, nullptr, true);
+                    element->evaluate(nullptr, nullptr, &forces, &displacement, nullptr, &displacement, nullptr, true);
 
                     StaticVector<24> result;
                     for (Index node = 0; node < 8; ++node) {
@@ -598,7 +602,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                     model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
                     forces.set_zero();
                     Precision storage[24 * 24] {};
-                    const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);
+                    const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, nullptr, &displacement, nullptr, true);
                     EXPECT_LT((tangent - tangent.transpose()).norm(), Precision(1e-10) * tangent.norm());
 
                     // Difference every independent translational degree of freedom
@@ -629,7 +633,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                         rotation.block<3, 3>(3 * node, 3 * node) = Q;
                     }
                     forces.set_zero();
-                    const DynamicMatrix rotated_tangent = element->evaluate(storage, nullptr, &forces, &rotated, &rotated, nullptr, true);
+                    const DynamicMatrix rotated_tangent = element->evaluate(storage, nullptr, &forces, &rotated, nullptr, &rotated, nullptr, true);
                     const auto base_force    = internal_force(displacement);
                     const auto rotated_force = internal_force(rotated);
                     const Precision force_error = (rotated_force - rotation * base_force).norm()
@@ -685,7 +689,7 @@ TEST(Elements_C3D8I, LinearLimitAndSixRigidBodyModes) {
         displacement.set_zero();
         forces.set_zero();
         Precision storage[24 * 24] {};
-        const DynamicMatrix linear    = element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+        const DynamicMatrix linear    = element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false);
         const DynamicMatrix nonlinear = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);
         EXPECT_LT((linear - nonlinear).norm(), Precision(1e-12) * linear.norm());
         EXPECT_LT((linear - linear.transpose()).norm(), Precision(1e-14) * linear.norm());
@@ -754,14 +758,14 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
         const model::Field trial = *model._data->material_state_new;
         const model::Field original_force = forces;
         forces.set_zero();
-        element->evaluate(nullptr, nullptr, &forces, &displacement, &displacement, nullptr, true);
+        element->evaluate(nullptr, nullptr, &forces, &displacement, nullptr, &displacement, nullptr, true);
         EXPECT_TRUE(tangent.allFinite());
 
         // Auxiliary paths may reconstruct local parameters but must not commit history
         element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
-        element->evaluate(nullptr, storage, nullptr, &displacement, nullptr, nullptr, false);
+        element->evaluate(nullptr, storage, nullptr, &displacement, nullptr, nullptr, nullptr, false);
         EXPECT_NO_THROW(model.compute_stress_nodal(displacement, &displacement));
-        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr));
+        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr, nullptr, nullptr));
         for (Index row = 0; row < trial.rows; ++row) {
             for (Dim component = 0; component < trial.components; ++component) {
                 EXPECT_DOUBLE_EQ((*model._data->material_state_old)(row, component), committed(row, component));

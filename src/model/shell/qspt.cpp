@@ -256,13 +256,15 @@ MapMatrix QSPT::evaluate(
     Precision*   tangent,
     Precision*   geometric_tangent,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
-    const Field* thermal_free_strain,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
-    (void) linearization;
-    (void) thermal_free_strain;
+    (void) target_temperature;
+    (void) base_displacement;
+    (void) base_temperature;
     (void) update_state;
 
     const bool need_stiffness = tangent != nullptr || internal_force != nullptr;
@@ -272,12 +274,12 @@ MapMatrix QSPT::evaluate(
     }
 
     if (internal_force != nullptr) {
-        logging::error(displacement != nullptr,
+        logging::error(target_displacement != nullptr,
             "QSPT: internal force evaluation requires displacement");
         logging::error(internal_force->components >= 3,
             "QSPT: internal force requires at least three nodal components");
 
-        const StaticVector<12> u     = displacement_vector(*displacement);
+        const StaticVector<12> u     = displacement_vector(*target_displacement);
         const StaticVector<12> force = K * u;
 
         for (Index node = 0; node < 4; ++node) {

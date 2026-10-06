@@ -170,18 +170,18 @@ public:
         const Mat3&               F
     );
 
-    // Total-Lagrangian state evaluation. linearization defines the base state
-    // u0 (nullptr means u0 = 0), while displacement defines the requested state u.
-    // The complete tangent is evaluated at u0 and supplies affine forces away from
-    // that state. The separate geometric output is generated only by the
-    // linearized stress increment from u0 to u.
+    // Total-Lagrangian state evaluation. target_* defines (u,T), while base_*
+    // defines the linearization state (u0,T0). The complete tangent is evaluated
+    // at the base state and supplies the displacement-linearized continuation
+    // from the exact force anchor at (u0,T).
     MapMatrix evaluate(
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
-        const Field* thermal_free_strain,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
@@ -213,10 +213,8 @@ public:
         bool            scale_by_density,
         const TenField& field) override;
 
-    // Convert prescribed temperatures into equivalent forces or scalar nodal
-    // free strain. Both paths retain committed constitutive history.
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
-    void apply_thermal_free_strain(Field& thermal_free_strain, const Field& node_temp, Precision ref_temp) override;
+    // Convert the current model temperature into equivalent forces or scalar
+    // nodal free strain. The material owns the stress-free zero temperature.
 
     // Stress/strain recovery is state-neutral. Constitutive response is evaluated
     // only at material integration points; nodal output is extrapolated from the
@@ -226,11 +224,13 @@ public:
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr) override;
+        const Field*     base_displacement,
+        const Field*     base_temperature
+    ) override;
     bool compute_peeq(
         Field& peeq,
         int    offset) override;

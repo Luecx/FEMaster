@@ -147,12 +147,16 @@ void Transient::run() {
     DynamicVector q0    = DynamicVector::Zero(A.rows());
     DynamicVector qdot0 = DynamicVector::Zero(A.rows());
 
-    // Optional: initial velocity from node FIELD (must have exactly 6 components)
-    if (initial_velocity) {
-        logging::error(initial_velocity->domain == fem::model::FieldDomain::NODE, "Initial velocity field must be a node field");
-        logging::error(initial_velocity->components == 6, "Initial velocity field must have exactly 6 components");
+    // A loadcase-local INITIALVELOCITY overrides the persistent model initial
+    // condition. Otherwise use ModelData::velocity as the model-state source.
+    const auto velocity_state = initial_velocity ? initial_velocity : model->_data->velocity;
+    if (velocity_state) {
+        logging::error(velocity_state->domain == fem::model::FieldDomain::NODE,
+            "Initial velocity field must be a node field");
+        logging::error(velocity_state->components == 6,
+            "Initial velocity field must have exactly 6 components");
 
-        auto v_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, *initial_velocity);
+        auto v_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, *velocity_state);
         // Map to reduced initial velocity qdot0 = T^T v_active
         qdot0 = CT->project_vector(v_active);
     }
@@ -169,11 +173,6 @@ void Transient::run() {
     }
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
-
-    // Direct transient integration currently has no thermal loading path.
-    // Still provide the common dependency explicitly as an empty field so
-    // structural recovery can use the same dependency graph as other steps.
-    model::Field thermal_free_strain;
 
     for (int k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
@@ -198,7 +197,6 @@ void Transient::run() {
         output.provide(OutputField::DISPLACEMENT,        U_mat);
         output.provide(OutputField::VELOCITY,            V_mat);
         output.provide(OutputField::ACCELERATION,        A_mat);
-        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
         output.write_frame(*writer, model->_data.get());
     }
 

@@ -159,14 +159,15 @@ struct B33 : BeamElement<2> {
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override {
-        (void) thermal_free_strain;
-        logging::error(linearization == nullptr,
+        (void) base_temperature;
+        logging::error(base_displacement == nullptr,
             "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress != nullptr,
             "B33: compute_stress_strain requires at least one output field");
@@ -177,7 +178,7 @@ struct B33 : BeamElement<2> {
 
         StaticMatrix<12, 1> u_global;
         for (int i = 0; i < 2; ++i) {
-            Vec6 ug = displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
+            Vec6 ug = target_displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
             for (int d = 0; d < 6; ++d) u_global(6 * i + d) = ug(d);
         }
 
@@ -185,7 +186,28 @@ struct B33 : BeamElement<2> {
         StaticMatrix<12, 1> u_local = T * u_global;
 
         const Precision axial_strain = (u_local(6) - u_local(0)) / L;
-        const Precision axial_force  = E * A * axial_strain;
+
+        // Thermal expansion enters the axial constitutive response through
+        //
+        //     epsilon_mech = epsilon - alpha (T - T0).
+        //
+        // The two-node beam uses the mean nodal temperature.
+        Precision thermal_strain = Precision(0);
+        auto material = get_material();
+        if (target_temperature && material->has_thermal_expansion()) {
+            const Precision T0    = material->get_thermal_zero_temperature();
+            const Precision alpha = material->get_thermal_expansion();
+
+            Precision temperature = Precision(0);
+            for (Index node = 0; node < 2; ++node) {
+                temperature += (*target_temperature)(
+                    static_cast<Index>(this->node_ids[node]), 0);
+            }
+            temperature *= Precision(0.5);
+            thermal_strain = alpha * (temperature - T0);
+        }
+
+        const Precision axial_force = E * A * (axial_strain - thermal_strain);
 
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
             const Index row = static_cast<Index>(offset + i);
@@ -206,30 +228,60 @@ struct B33 : BeamElement<2> {
      *
      * The axial prestress is recovered locally as
      *
-     *     N = EA (u2_x - u1_x) / L
+     *     Delta N = EA [(u2_x - u1_x) / L
+     *                  - epsilon_th(T) + epsilon_th(T0)]
      *
      * in the beam principal frame. The resulting initial-stress matrix is then
      * rotated back to global element coordinates. No global integration-point
      * stress/resultant field is required.
      *
-     * @param displacement Global nodal displacement field defining prestress.
+     * @param target_displacement Global target displacement from u0 = 0.
+     * @param target_temperature Target temperature state T.
+     * @param base_temperature Base temperature state T0.
      * @return Global twelve-by-twelve geometric stiffness matrix.
      */
-    StaticMatrix<12, 12> stiffness_geom_impl(const Field& displacement) override {
+    StaticMatrix<12, 12> stiffness_geom_impl(
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field* base_temperature
+    ) override {
         const StaticMatrix<12, 12> T = transformation();
         const Precision L = length();
 
         StaticVector<12> u_global;
         for (Index node = 0; node < 2; ++node) {
-            const Vec6 u = displacement.row_vec6(static_cast<Index>(node_ids[node]));
+            const Vec6 u = target_displacement.row_vec6(static_cast<Index>(node_ids[node]));
             for (Index dof = 0; dof < 6; ++dof) {
                 u_global(6 * node + dof) = u(dof);
             }
         }
 
         const StaticVector<12> u_local = T * u_global;
-        const Precision N_axial = get_elasticity()->youngs * get_profile()->area_
-                                * (u_local(6) - u_local(0)) / L;
+
+        auto material = get_material();
+        const auto thermal_strain = [&](const Field* temperature_field) {
+            if (!temperature_field || !material->has_thermal_expansion()) {
+                return Precision(0);
+            }
+
+            const Precision T0    = material->get_thermal_zero_temperature();
+            const Precision alpha = material->get_thermal_expansion();
+
+            Precision temperature = Precision(0);
+            for (Index node = 0; node < 2; ++node) {
+                temperature += (*temperature_field)(
+                    static_cast<Index>(this->node_ids[node]), 0);
+            }
+
+            temperature *= Precision(0.5);
+            return alpha * (temperature - T0);
+        };
+
+        const Precision N_axial =
+            get_elasticity()->youngs * get_profile()->area_
+            * ((u_local(6) - u_local(0)) / L
+             - thermal_strain(target_temperature)
+             + thermal_strain(base_temperature));
 
         if (std::abs(N_axial) <= std::numeric_limits<Precision>::epsilon()) {
             return StaticMatrix<12, 12>::Zero();

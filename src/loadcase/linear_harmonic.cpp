@@ -235,14 +235,11 @@ void LinearHarmonic::run() {
             // Harmonic displacement is solved directly as real and imaginary
             // components. Stress/strain components are recovered lazily from
             // the corresponding displacement component only when requested.
-            model::Field thermal_free_strain;
-
             using io::writer::OutputField;
             output.begin_frame(frequency, "_" + std::to_string(i + 1));
             output.provide(OutputField::DISPLACEMENT_REAL,    displacement_real);
             output.provide(OutputField::DISPLACEMENT_IMAG,    displacement_imag);
             output.provide(OutputField::EXTERNAL_FORCES,      global_load_mat);
-            output.provide(OutputField::THERMAL_FREE_STRAIN,  thermal_free_strain);
             output.write_frame(*writer, model->_data.get());
         });
 

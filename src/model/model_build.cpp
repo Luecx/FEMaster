@@ -28,7 +28,7 @@
  * @date 25.08.2026
  */
 
-#include "../bc/neumann/load_t.h"
+#include "../core/parallel.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
@@ -326,32 +326,6 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
 }
 
 /**
- * Builds the accumulated isotropic free thermal strain at structural element
- * nodes for the selected load collectors.
- */
-Field Model::build_thermal_free_strain(std::vector<std::string> load_sets) {
-    Field thermal_free_strain{
-        "THERMAL_FREE_STRAIN",
-        FieldDomain::ELEMENT_NODAL,
-        _data->field_rows(FieldDomain::ELEMENT_NODAL),
-        1
-    };
-    thermal_free_strain.set_zero();
-
-    for (auto& key : load_sets) {
-        auto data = _data->load_cols.get(key);
-        for (const auto& load : data->entries()) {
-            if (!load) continue;
-            auto thermal = std::dynamic_pointer_cast<bc::TLoad>(load);
-            if (!thermal) continue;
-            thermal->apply_thermal_free_strain(*_data, thermal_free_strain);
-        }
-    }
-
-    return thermal_free_strain;
-}
-
-/**
  * Decomposes selected loads into amplitude-independent spatial basis fields.
  *
  * Loads sharing the same amplitude pointer contribute to one six-component
@@ -521,7 +495,11 @@ constraint::ConstraintGroups Model::collect_constraints(
  * @param stiffness_scalar Optional one-component element stiffness scale.
  * @return Assembled sparse linear stiffness matrix.
  */
-SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* stiffness_scalar) {
+SparseMatrix Model::build_stiffness_matrix(
+    SystemDofIds& indices,
+    const Field*  base_temperature,
+    const Field*  stiffness_scalar
+) {
     logging::error(_data->contacts.empty(),
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
 
@@ -529,7 +507,9 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->evaluate(
                 storage, nullptr, nullptr,
-                nullptr, nullptr, nullptr, false);
+                nullptr, nullptr,
+                nullptr, base_temperature,
+                false);
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
                     "stiffness scale field must use ELEMENT domain");
@@ -547,11 +527,13 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
     SparseMatrix matrix = mattools::assemble_matrix(_data->elements, indices, lambda);
 
     if (!_data->point_elements.empty()) {
-        auto point_lambda = [](const ElementPtr& element, Precision* storage) {
+        auto point_lambda = [&](const ElementPtr& element, Precision* storage) {
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, nullptr,
-                    nullptr, nullptr, nullptr, false);
+                    nullptr, nullptr,
+                    nullptr, base_temperature,
+                    false);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -576,14 +558,20 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
  *                     force contributions.
- * @param displacement Current global nodal displacement field.
+ * @param target_displacement Requested global nodal displacement field.
+ * @param target_temperature Requested global nodal temperature field.
+ * @param base_displacement Base displacement state used for linearization.
+ * @param base_temperature Base temperature state used for linearization.
  * @param stiffness_scalar Optional one-component element tangent scale.
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
     SystemDofIds& indices,
     NodeData&     nodal_forces,
-    const Field&  displacement,
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field&  base_displacement,
+    const Field*  base_temperature,
     const Field*  stiffness_scalar
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
@@ -606,9 +594,10 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             local_matrix_storage,
             nullptr,
             &local_nodal_forces,
-            &displacement,
-            &displacement,
-            nullptr,
+            &target_displacement,
+            target_temperature,
+            &base_displacement,
+            base_temperature,
             true
         );
 
@@ -637,7 +626,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, &local_nodal_forces,
-                    &displacement, &displacement, nullptr, true);
+                    &target_displacement, target_temperature,
+                    &base_displacement, base_temperature,
+                    true);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -676,93 +667,152 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
  * @param indices Active global DOF identifiers required by contact assembly.
  * @param nodal_forces Six-component nodal field overwritten with the resulting
  *                     internal and contact forces.
- * @param displacement Current global nodal displacement field.
+ * @param target_displacement Requested global nodal displacement field.
+ * @param target_temperature Requested global nodal temperature field.
+ * @param base_displacement Optional base displacement state; nullptr denotes zero.
+ * @param base_temperature Optional base temperature state; nullptr denotes the
+ *                         material stress-free temperature.
+ * @param update_state If the material state shall be updated or not
+ * @param include_contact If contact should be considered
  */
-void Model::build_internal_force_nonlinear(
-    SystemDofIds& indices,
+void Model::build_internal_force(
     NodeData&     nodal_forces,
-    const Field&  displacement
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field*  base_displacement,
+    const Field*  base_temperature,
+    bool          update_state,
+    SystemDofIds* indices      // only relevant for contact, if nullptr, no contact is considered
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
-        "nonlinear internal force output must use NODE domain");
+        "internal force output must use NODE domain");
     logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
-        "nonlinear internal force output has wrong node count");
+        "internal force output has wrong node count");
     logging::error(nodal_forces.components >= 6,
-        "nonlinear internal force output requires at least 6 components");
+        "internal force output requires at least 6 components");
 
     nodal_forces.set_zero();
 
-    for (const auto& element : _data->elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, nullptr, true);
+    // Element forces share global nodes, so direct parallel writes into the
+    // caller-owned field would race. Give every worker a private nodal field,
+    // evaluate regular and auxiliary point elements in one indexed loop, and
+    // reduce the completed worker fields afterwards.
+    const std::size_t regular_count = _data->elements.size();
+    const std::size_t point_count   = _data->point_elements.size();
+    const std::size_t element_count = regular_count + point_count;
+
+    constexpr std::size_t min_batch_size = 64;
+    const int worker_count = parallel::worker_count(
+        element_count,
+        static_cast<int>(global_config.max_threads),
+        min_batch_size
+    );
+
+    std::vector<NodeData> worker_forces;
+    worker_forces.reserve(static_cast<std::size_t>(worker_count));
+
+    for (int worker = 0; worker < worker_count; ++worker) {
+        worker_forces.emplace_back(
+            nodal_forces.name,
+            nodal_forces.domain,
+            nodal_forces.rows,
+            nodal_forces.components
+        );
+        worker_forces.back().set_zero();
     }
 
-    for (const auto& element : _data->point_elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, nullptr, true);
-    }
+    parallel::for_index(
+        element_count,
+        worker_count,
+        [&](std::size_t element_index, int worker) {
+            const ElementPtr& element =
+                element_index < regular_count
+                    ? _data->elements[element_index]
+                    : _data->point_elements[element_index - regular_count];
 
-    TripletList discarded_contact_triplets;
-    for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+            if (!element) return;
+
+            auto* structural = element->as<StructuralElement>();
+            if (!structural) return;
+
+            structural->evaluate(
+                nullptr, nullptr,
+                &worker_forces[static_cast<std::size_t>(worker)],
+                &target_displacement, target_temperature,
+                base_displacement, base_temperature,
+                update_state
+            );
+        },
+        min_batch_size
+    );
+
+    const Index value_count = nodal_forces.rows * nodal_forces.components;
+    Precision* target = nodal_forces.data();
+
+    parallel::for_index(
+        value_count,
+        worker_count,
+        [&](Index value, int /*worker*/) {
+            Precision sum = Precision(0);
+
+            for (int source = 0; source < worker_count; ++source) {
+                sum += worker_forces[static_cast<std::size_t>(source)].data()[value];
+            }
+
+            target[value] = sum;
+        },
+        Index(1024)
+    );
+
+    if (indices) {
+        TripletList discarded_contact_triplets;
+        for (const auto& contact : _data->contacts) {
+            contact.assemble(*indices, *_data, nodal_forces, discarded_contact_triplets);
+        }
     }
 
     nodal_forces.check_finite("Internal force");
 }
 
 /**
- * Assembles the global perturbation geometric stiffness from u0 to u.
+ * Assembles the global perturbation geometric stiffness between two states.
  *
- * `linearization` defines the base state u0; nullptr denotes u0 = 0.
- * `displacement` defines the requested state u. Each structural element forms
- * the linearized stress or stress-resultant increment generated by u - u0 and
- * assembles the corresponding geometric stiffness locally. Stress already
- * present at u0 belongs to the complete tangent at the base state and is not
- * repeated in this operator.
+ * Target displacement and temperature define (u,T), while base displacement
+ * and temperature define (u0,T0). Each structural element forms the stress or
+ * stress-resultant increment relative to the base state and assembles the
+ * corresponding geometric stiffness locally. Stress already present at
+ * (u0,T0) belongs to the complete tangent and is not repeated here.
  *
  * No global integration-point stress field is created or consumed. Auxiliary
  * point elements are excluded because they carry no stress-dependent geometric
  * stiffness.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
- * @param displacement Requested global nodal displacement state u.
+ * @param target_displacement Requested global nodal displacement state u.
+ * @param target_temperature Requested global nodal temperature state T.
+ * @param base_displacement Optional base displacement state u0.
+ * @param base_temperature Optional base temperature state T0.
  * @param stiffness_scalar Optional one-component element stiffness scale.
- * @param thermal_free_strain Optional thermal free-strain perturbation.
- * @param linearization Optional base displacement state u0; nullptr denotes zero.
  * @return Assembled sparse perturbation geometric stiffness matrix.
  */
 SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
-    const Field&  displacement,
-    const Field*  stiffness_scalar,
-    const Field*  thermal_free_strain,
-    const Field*  linearization
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field*  base_displacement,
+    const Field*  base_temperature,
+    const Field*  stiffness_scalar
 ) {
-    if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL,
-            "thermal free strain field must use ELEMENT_NODAL domain");
-        logging::error(thermal_free_strain->components == 1,
-            "thermal free strain field must have 1 component");
-        logging::error(thermal_free_strain->rows == _data->field_rows(FieldDomain::ELEMENT_NODAL),
-            "thermal free strain field has wrong element-nodal row count");
-    }
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix geometric_stiffness = structural->evaluate(
                 nullptr,
                 storage,
                 nullptr,
-                &displacement,
-                linearization,
-                thermal_free_strain,
+                &target_displacement,
+                target_temperature,
+                base_displacement,
+                base_temperature,
                 false
             );
 

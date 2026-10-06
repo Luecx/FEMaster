@@ -57,6 +57,7 @@ void register_field            (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_heading          (fem::io::dsl::Registry& registry);
 void register_hyperelastic     (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_inertialload     (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_initial_condition(fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_instance         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_mass             (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_material         (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -80,7 +81,6 @@ void register_spring           (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_support          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_surface          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tie              (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_tload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_truss_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_vload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 

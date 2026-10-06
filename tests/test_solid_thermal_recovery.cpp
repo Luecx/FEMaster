@@ -3,7 +3,6 @@
  * @brief Thermal free strain recovery and prestress for linear solid mechanics.
  */
 
-#include "../src/bc/neumann/load_t.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/solid/c3d8.h"
@@ -33,6 +32,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     auto material = std::make_shared<material::Material>("MAT");
     material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.25);
     material->set_thermal_expansion(0.01);
+    material->set_thermal_zero_temperature(20.0);
     model.add_material(material);
 
     auto section = std::make_shared<SolidSection>();
@@ -49,22 +49,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
         (*temperature)(node, 0) = 40.0;
     }
 
-    bc::TLoad load;
-    load.temp_field_ = temperature;
-    load.ref_temp_ = 20.0;
-
-    model::Field thermal_free_strain{
-        "THERMAL_FREE_STRAIN",
-        model::FieldDomain::ELEMENT_NODAL,
-        model._data->field_rows(model::FieldDomain::ELEMENT_NODAL),
-        1
-    };
-    thermal_free_strain.set_zero();
-    load.apply_thermal_free_strain(*model._data, thermal_free_strain);
-
-    for (Index row = 0; row < thermal_free_strain.rows; ++row) {
-        EXPECT_NEAR(thermal_free_strain(row, 0), 0.2, 1e-12);
-    }
+    model._data->temperature = temperature;
 
     model::Field displacement{"DISPLACEMENT", model::FieldDomain::NODE, 8, 6};
     displacement.set_zero();
@@ -75,7 +60,8 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     }
 
     auto stress_strain =
-        model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
+        model.compute_stress_nodal(
+            displacement, temperature.get(), nullptr, nullptr);
     const auto& stress = std::get<0>(stress_strain);
     const auto& strain = std::get<1>(stress_strain);
 
@@ -94,12 +80,16 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
 
     Precision kg_storage[24 * 24] {};
     const DynamicMatrix Kg_free =
-        element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
+        element->evaluate(
+            nullptr, kg_storage, nullptr,
+            &displacement, temperature.get(),
+            nullptr, nullptr,
+            false);
     EXPECT_LT(Kg_free.norm(), 1e-8);
 
     displacement.set_zero();
     stress_strain =
-        model.compute_stress_nodal(displacement, nullptr, &thermal_free_strain);
+        model.compute_stress_nodal(displacement);
     const auto& restrained_stress = std::get<0>(stress_strain);
     const Precision expected = -1000.0 / (1.0 - 2.0 * 0.25) * 0.2;
 
@@ -113,7 +103,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     }
 
     const DynamicMatrix Kg_restrained =
-        element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, &thermal_free_strain, false);
+        element->evaluate(nullptr, kg_storage, nullptr, &displacement, nullptr, false);
     EXPECT_GT(Kg_restrained.norm(), 1e-6);
 
     model.step_end();

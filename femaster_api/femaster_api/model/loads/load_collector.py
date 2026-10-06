@@ -8,10 +8,9 @@ from .inertial_load import InertialLoad
 from .nodal_force import NodalForce
 from .pressure_load import PressureLoad
 from .surface_traction import SurfaceTraction
-from .thermal_load import ThermalLoad
 from .volume_load import VolumeLoad
 
-LoadEntry = NodalForce | SurfaceTraction | PressureLoad | VolumeLoad | ThermalLoad | InertialLoad
+LoadEntry = NodalForce | SurfaceTraction | PressureLoad | VolumeLoad | InertialLoad
 
 
 @dataclass(frozen=True, slots=True)

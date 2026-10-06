@@ -265,7 +265,7 @@ Mat3 FRTShell<N>::integrate_tensor_field(
 template<Index N>
 void FRTShell<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[num_dofs * num_dofs];
-    MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     const Vec6N u = element_displacement_vector(displacement);
 
     result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);

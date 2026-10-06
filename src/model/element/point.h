@@ -85,17 +85,19 @@ struct PointElement : StructuralElement {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
-        const Field* thermal_free_strain,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override {
-        (void) linearization;
-        (void) thermal_free_strain;
+        (void) target_temperature;
+        (void) base_displacement;
+        (void) base_temperature;
         (void) update_state;
 
         if (internal_force != nullptr) {
-            logging::error(displacement != nullptr,
+            logging::error(target_displacement != nullptr,
                 "PointElement: internal force evaluation requires displacement");
 
             if (_section) {
@@ -106,9 +108,9 @@ struct PointElement : StructuralElement {
                 const Index node = static_cast<Index>(node_ids[0]);
                 for (Index dof = 0; dof < 3; ++dof) {
                     (*internal_force)(node, dof) +=
-                        section->spring_constants_(dof) * (*displacement)(node, dof);
+                        section->spring_constants_(dof) * (*target_displacement)(node, dof);
                     (*internal_force)(node, dof + 3) +=
-                        section->rotary_spring_constants_(dof) * (*displacement)(node, dof + 3);
+                        section->rotary_spring_constants_(dof) * (*target_displacement)(node, dof + 3);
                 }
             }
         }
@@ -197,28 +199,24 @@ struct PointElement : StructuralElement {
         return section->mass_ * field(node_position(0));
     }
 
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
-        (void) node_loads;
-        (void) node_temp;
-        (void) ref_temp;
-    }
-
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override {
         (void) strain;
         (void) stress;
-        (void) displacement;
+        (void) target_displacement;
+        (void) target_temperature;
         (void) rst;
         (void) offset;
-        (void) linearization;
-        (void) thermal_free_strain;
+        (void) base_displacement;
+        (void) base_temperature;
     }
 };
 

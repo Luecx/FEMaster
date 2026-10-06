@@ -53,9 +53,10 @@ struct QSPT : ShellElement<4> {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
-        const Field* thermal_free_strain,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override;
     MapMatrix  mass(Precision* buffer) override;

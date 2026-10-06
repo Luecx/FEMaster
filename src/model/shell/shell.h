@@ -97,9 +97,10 @@ struct ShellElement : StructuralElement {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
-        const Field* thermal_free_strain,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override = 0;
     MapMatrix  mass(Precision* buffer) override = 0;
@@ -155,28 +156,24 @@ struct ShellElement : StructuralElement {
         return node_ids.data();
     }
 
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
-        (void) node_loads;
-        (void) node_temp;
-        (void) ref_temp;
-    }
-
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override {
         (void) strain;
         (void) stress;
-        (void) displacement;
+        (void) target_displacement;
+        (void) target_temperature;
         (void) rst;
         (void) offset;
-        (void) linearization;
-        (void) thermal_free_strain;
+        (void) base_displacement;
+        (void) base_temperature;
         logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
     }
 
@@ -210,10 +207,16 @@ struct ShellElement : StructuralElement {
     void compute_compliance(Field& displacement, Field& result) override {
         // Elementsteifigkeit (global gedreht) holen
         Precision buffer[6 * N * 6 * N];
-        MapMatrix Ke = evaluate(
-            buffer, nullptr, nullptr,
-            nullptr, nullptr, nullptr, false); // 6N × 6N
-
+        MapMatrix Ke = evaluate (
+            buffer,     // tangent
+            nullptr,    // geometric tangent
+            nullptr,    // internal force
+            nullptr,    // target displacement
+            nullptr,    // target temperature
+            nullptr,    // base displacement
+            nullptr,    // base temperature
+            false       // update state
+        );
         // Element-Verschiebungsvektor (global) aufbauen: [ux,uy,uz,rx,ry,rz] je Knoten
         // nodal_data<6>(...) liefert dir genau diese 6 DOFs pro Knoten in globalen Achsen
         StaticMatrix<6, N> u_mat = StaticMatrix<6, N>(this->nodal_data<6>(displacement).transpose());

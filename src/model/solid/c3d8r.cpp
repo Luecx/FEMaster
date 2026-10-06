@@ -266,18 +266,20 @@ MapMatrix C3D8R::evaluate(
     Precision*   tangent,
     Precision*   geometric_tangent,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
-    const Field* thermal_free_strain,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     MapMatrix mapped = SolidElement<N>::evaluate(
         tangent,
         geometric_tangent,
         internal_force,
-        displacement,
-        linearization,
-        thermal_free_strain,
+        target_displacement,
+        target_temperature,
+        base_displacement,
+        base_temperature,
         update_state
     );
 
@@ -289,9 +291,11 @@ MapMatrix C3D8R::evaluate(
     const Matrix24 hourglass = hourglass_stiffness();
 
     if (internal_force != nullptr) {
-        logging::error(displacement != nullptr,
+        logging::error(target_displacement != nullptr,
             "C3D8R: hourglass force requires displacement");
-        assemble_local_force(*internal_force, hourglass * local_displacement(*displacement));
+        assemble_local_force(
+            *internal_force,
+            hourglass * local_displacement(*target_displacement));
     }
 
     if (tangent != nullptr) {

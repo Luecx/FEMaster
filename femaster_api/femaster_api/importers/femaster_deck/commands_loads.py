@@ -17,7 +17,6 @@ from femaster_api.model import (
     Support,
     SupportCollector,
     SurfaceTraction,
-    ThermalLoad,
     TieConstraint,
     VolumeLoad,
 )
@@ -118,18 +117,6 @@ def cmd_vload(parser, header: Header) -> None:
         collector = collector.add(VolumeLoad(_element_target(parser, tokens[0]), _vector(tokens[1:], 3), orientation, amplitude))
     parser.model.load_collectors.add(collector)
 
-
-def cmd_tload(parser, header: Header) -> None:
-    collector = _load_collector(parser, header)
-    field_name = header.params.get("TEMPERATUREFIELD") or header.params.get("FIELD")
-    if not field_name:
-        raise FEMasterInputError("*TLOAD requires TEMPERATUREFIELD")
-    ref = header.params.get("REFERENCETEMPERATURE")
-    if ref is None:
-        raise FEMasterInputError("*TLOAD requires REFERENCETEMPERATURE")
-    _reject_data(parser, "*TLOAD")
-    collector = collector.add(ThermalLoad(parser.model.fields.get(field_name), float(ref)))
-    parser.model.load_collectors.add(collector)
 
 
 def cmd_inertial_load(parser, header: Header) -> None:
@@ -298,7 +285,6 @@ LOAD_COMMANDS = {
     "DLOAD": cmd_dload,
     "PLOAD": cmd_pload,
     "VLOAD": cmd_vload,
-    "TLOAD": cmd_tload,
     "INERTIALOAD": cmd_inertial_load,
     "INERTIALLOAD": cmd_inertial_load,
     "RBM": cmd_rbm,

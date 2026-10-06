@@ -10,7 +10,6 @@ from femaster_api.model.loads import (
     NodalForce,
     PressureLoad,
     SurfaceTraction,
-    ThermalLoad,
     VolumeLoad,
 )
 
@@ -75,15 +74,6 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
                             ),
                             csv((target_token(entry.target), *entry.values)),
                         ]
-                    )
-                )
-            elif isinstance(entry, ThermalLoad):
-                blocks.append(
-                    keyword(
-                        "TLOAD",
-                        LOAD_COLLECTOR=collector.name,
-                        TEMPERATUREFIELD=entry.temperature_field.name,
-                        REFERENCETEMPERATURE=entry.reference_temperature,
                     )
                 )
             elif isinstance(entry, InertialLoad):

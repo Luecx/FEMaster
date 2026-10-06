@@ -106,9 +106,6 @@ private:
     // Compute one missing field after all declared requirements are available
     void compute(OutputField field);
 
-    // Empty thermal strain is the explicit "thermal recovery not active" value
-    const model::Field* thermal_free_strain();
-
     // Shared writer path preserving established result names
     void write(OutputField field,
                ResultWriters& writer,

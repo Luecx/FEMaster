@@ -50,7 +50,8 @@ void print_banner() {
     // Split unused title columns evenly; an odd extra column stays on the right.
     const auto print_centered = [](const std::string& text) {
         const int padding = 68 - static_cast<int>(text.size());
-        std::cout << "*" << std::setw(padding / 2) << "" << text
+        std::cout << "*"
+                  << std::setw(padding           / 2) << "" << text
                   << std::setw(padding - padding / 2) << "" << "*\n";
     };
 
@@ -101,12 +102,9 @@ void print_banner() {
     std::cout << "*           cuDSS Supported       : No                               *\n";
 #endif
     std::cout << "*                                                                    *\n";
-    std::cout << "*           FEMaster Version      : " << std::left << std::setw(33)
-              << solver_version << std::right << "*\n";
-    std::cout << "*           Eigen Version         : " << std::left << std::setw(33)
-              << eigen_version << std::right << "*\n";
-    std::cout << "*           Spectra Version       : " << std::left << std::setw(33)
-              << spectra_version << std::right << "*\n";
+    std::cout << "*           FEMaster Version      : " << std::left << std::setw(33) << solver_version << std::right << "*\n";
+    std::cout << "*           Eigen Version         : " << std::left << std::setw(33) << eigen_version << std::right << "*\n";
+    std::cout << "*           Spectra Version       : " << std::left << std::setw(33) << spectra_version << std::right << "*\n";
     std::cout << "*                                                                    *\n";
     std::cout << "**********************************************************************\n";
 }

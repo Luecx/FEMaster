@@ -207,6 +207,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("NORMAL");
     }
 
+    // Initial conditions bind already materialized named fields to persistent
+    // model-state handles. Temperature and velocity then remain authoritative
+    // until a later analysis procedure explicitly evolves them.
+    root.execute_children("INITIALCONDITION");
+    root.execute_children("INITIALCONDITIONS");
+
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
     root.execute_children("TIE");
     for (const auto* assembly : root.children("ASSEMBLY")) {
@@ -229,7 +235,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
     root.execute_children("PLOAD");
-    root.execute_children("TLOAD");
     root.execute_children("VLOAD");
     root.execute_children("INERTIALOAD");
 
@@ -248,7 +253,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
         assembly->execute_children("PLOAD");
-        assembly->execute_children("TLOAD");
         assembly->execute_children("VLOAD");
         assembly->execute_children("INERTIALOAD");
 
@@ -306,10 +310,11 @@ void Parser::initialize_writers(const std::string&                    input_path
                                 const std::string&                    output_path,
                                 const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
-    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".femr"), std::string(".inp")}) {
+    for (const std::string& ext : { std::string(".res"),  std::string(".frd"),
+                                    std::string(".femr"), std::string(".inp")}) {
         if (writer_base.size() >= ext.size()
          && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
-            writer_base.resize(writer_base.size() - ext.size());
+            writer_base.resize (writer_base.size() - ext.size());
             break;
         }
     }
@@ -480,9 +485,9 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_cload(registry, mdl);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
-    commands::register_tload(registry, mdl);
     commands::register_vload(registry, mdl);
     commands::register_inertialload(registry, mdl);
+    commands::register_initial_condition(registry, mdl);
     commands::register_rbm(registry, mdl);
     commands::register_support(registry, mdl);
     commands::register_amplitude(registry, mdl);

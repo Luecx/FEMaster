@@ -59,28 +59,35 @@ struct Material : public fem::Namable {
     }
 
     bool has_thermal_specific_heat() const { return m_thermal_specific_heat >= Precision(0); }
-    bool has_thermal_conductivity() const { return m_thermal_conductivity >= Precision(0); }
+    bool has_thermal_conductivity () const { return m_thermal_conductivity  >= Precision(0); }
+    bool has_thermal_expansion    () const { return m_thermal_expansion     >= Precision(0); }
+    bool has_density              () const { return m_density               >= Precision(0); }
 
-    Precision get_thermal_specific_heat() const { return m_thermal_specific_heat; }
-    Precision get_thermal_conductivity() const { return m_thermal_conductivity; }
+    Precision get_thermal_specific_heat   () const { return m_thermal_specific_heat; }
+    Precision get_thermal_conductivity    () const { return m_thermal_conductivity; }
+    Precision get_thermal_expansion       () const { return m_thermal_expansion; }
+    Precision get_thermal_zero_temperature() const { return m_thermal_zero_temperature; }
+    Precision get_density                 () const { return m_density; }
 
-    void set_thermal_specific_heat(Precision value) { m_thermal_specific_heat = value; }
-    void set_thermal_conductivity(Precision value) { m_thermal_conductivity = value; }
-
-    bool has_thermal_expansion() const { return m_thermal_expansion >= Precision(0); }
-    void set_thermal_expansion(Precision value) { m_thermal_expansion = value; }
-    Precision get_thermal_expansion() const { return m_thermal_expansion; }
-
-    bool has_density() const { return m_density >= Precision(0); }
-    void set_density(Precision value);
-    Precision get_density() const { return m_density; }
+    void set_thermal_specific_heat   (Precision value) { m_thermal_specific_heat    = value; }
+    void set_thermal_conductivity    (Precision value) { m_thermal_conductivity     = value; }
+    void set_thermal_zero_temperature(Precision value) { m_thermal_zero_temperature = value; }
+    void set_thermal_expansion       (Precision value) { m_thermal_expansion        = value; }
+    void set_density                 (Precision value) { m_density                  = value; }
 
 private:
-    ElasticityPtr m_elastic = nullptr; ///< Elasticity model associated with the material.
-    Precision m_thermal_specific_heat   = Precision(-1); ///< Thermal capacity value.
-    Precision m_thermal_conductivity    = Precision(-1); ///< Thermal conductivity value.
-    Precision m_thermal_expansion       = Precision(-1); ///< Thermal expansion coefficient.
-    Precision m_density                 = Precision(-1); ///< Density value.
+
+    // elastic model used. Could be linear or nonlinear
+    ElasticityPtr m_elastic = nullptr;
+
+    // thermal fields for structural / thermal analysis
+    Precision m_thermal_specific_heat    = Precision(-1);
+    Precision m_thermal_conductivity     = Precision(-1);
+    Precision m_thermal_expansion        = Precision(-1);
+    Precision m_thermal_zero_temperature = Precision(0);
+
+    // density of the material
+    Precision m_density                  = Precision(-1);
 };
 } // namespace material
 } // namespace fem

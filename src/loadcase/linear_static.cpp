@@ -48,10 +48,6 @@ void LinearStatic::run() {
         [&]() { return model->build_load_matrix(loads); },
         "constructing load matrix (node x 6)");
 
-    auto thermal_free_strain = Timer::measure(
-        [&]() { return model->build_thermal_free_strain(loads); },
-        "constructing thermal free strain field");
-
     if (inertia_relief) {
         logging::error(supps.empty(),
             "InertiaRelief: cannot be used with *SUPPORT in this load case. "
@@ -98,9 +94,52 @@ void LinearStatic::run() {
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K");
 
-    auto f = Timer::measure(
+    // Evaluate the force anchor f_int(u0,T) at zero displacement and the
+    // requested temperature. The stiffness above remains K(u0,T0) with the
+    // stress-free base temperature T0.
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    reference_displacement.set_zero();
+
+    model::Field reference_internal{
+        "REFERENCE_INTERNAL_FORCES",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+
+    Timer::measure(
+        [&]() {
+            model->build_internal_force(
+                reference_internal,
+                reference_displacement,
+                model->_data->temperature.get(),
+                nullptr,
+                nullptr,
+                false,
+                nullptr);
+        },
+        "constructing reference internal force"
+    );
+
+    auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f");
+        "reducing external load matrix -> active vector"
+    );
+
+    auto f_reference = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        "reducing reference internal force -> active vector"
+    );
+
+    // Linear equilibrium about u0 = 0:
+    //
+    //     K u = f_ext - f_int(0, T).
+    auto f = f_external - f_reference;
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
@@ -200,8 +239,8 @@ void LinearStatic::run() {
     // default output set so an explicit request can report it without another
     // model recovery pass.
     auto internal_active = Timer::measure(
-        [&]() { return K * u; },
-        "computing internal nodal forces K u");
+        [&]() { return f_reference + K * u; },
+        "computing physical internal nodal forces f_int(0,T) + K u");
 
     auto r_support = Timer::measure(
         [&]() { return transformer->support_reactions(K, f, q); },
@@ -258,7 +297,9 @@ void LinearStatic::run() {
             output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
             output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-            output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+            if (model->_data->temperature) {
+                output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+            }
 
             output.write_frame(*writer, model->_data.get());
         },

@@ -197,17 +197,6 @@ Mat3 T3::integrate_tensor_field(bool scale_by_density, const TenField& field) {
          * l;
 }
 
-/**
- * Applies equivalent nodal loading from a prescribed temperature field.
- *
- * Thermal expansion is not implemented for T3 yet. The function deliberately
- * remains a no-op while satisfying the common StructuralElement interface.
- */
-void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    (void) node_loads;
-    (void) node_temp;
-    (void) ref_temp;
-}
 
 } // namespace model
 } // namespace fem

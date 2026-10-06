@@ -192,8 +192,6 @@ struct Model {
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
-    Field build_thermal_free_strain(
-        std::vector<std::string> load_sets = {});
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
         const std::vector<std::string>& supp_sets = {});
@@ -201,48 +199,67 @@ struct Model {
         std::vector<std::string> load_sets = {});
     SparseMatrix build_stiffness_matrix(
         SystemDofIds& indices,
+        const Field* base_temperature = nullptr,
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_tangent_stiffness_matrix(
         SystemDofIds& indices,
         NodeData& nodal_forces,
-        const Field& displacement,
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field& base_displacement,
+        const Field* base_temperature,
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
-        const Field& displacement,
-        const Field* stiffness_scalar = nullptr,
-        const Field* thermal_free_strain = nullptr,
-        const Field* linearization = nullptr);
-    void build_internal_force_nonlinear(
-        SystemDofIds& indices,
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr,
+        const Field* stiffness_scalar = nullptr);
+    void build_internal_force(
         NodeData& nodal_forces,
-        const Field& displacement);
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr,
+        bool update_state = true,
+        SystemDofIds* indices = nullptr);
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural
     // quantities retain their established integration-point, element-nodal or
     // nodal domains. Heat flux is recovered element-nodally by each thermal
     // formulation and projected to a unique global NODE field before output.
-    // Null denotes zero displacement. Passing displacement itself selects the
-    // exact response; solids also support affine recovery about arbitrary states.
+    // Target and base fields follow the same state convention as evaluate().
     Field compute_stress_state(
-        Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
+        Field&       target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr);
     std::tuple<Field, Field> compute_stress_nodal(
-        Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
+        Field&       target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr);
     std::tuple<Field, Field> compute_stress_top_bot(
-        Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
-    Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
+        Field&       target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr);
+    Field compute_shell_resultants(
+        Field&       target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr);
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);
     Field compute_volumes();
     Field compute_peeq_nodal();
-    Field compute_section_forces(Field& displacement, const Field* linearization = nullptr);
+    Field compute_section_forces(
+        Field&       target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr);
     Field compute_shear_flow(Field& displacement);
     Field compute_heat_flux(const Field& temperature);
 

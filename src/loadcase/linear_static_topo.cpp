@@ -59,11 +59,6 @@ void LinearStaticTopo::run() {
         "constructing load matrix (node x 6)"
     );
 
-    auto thermal_free_strain = Timer::measure(
-        [&]() { return model->build_thermal_free_strain(loads); },
-        "constructing thermal free strain field"
-    );
-
     if (inertia_relief) {
         logging::error(supps.empty(),
             "InertiaRelief: cannot be used with *SUPPORT in this load case. "
@@ -112,10 +107,38 @@ void LinearStaticTopo::run() {
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
-    auto f = Timer::measure(
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    reference_displacement.set_zero();
+
+    model::Field reference_internal{
+        "REFERENCE_INTERNAL_FORCES",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    model->build_internal_force(
+        reference_internal,
+        reference_displacement,
+        model->_data->temperature.get(),
+        nullptr,
+        nullptr,
+        false,
+        nullptr);
+
+    auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
+        "reducing load matrix -> active external vector"
     );
+    auto f_reference = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        "reducing reference internal force -> active vector"
+    );
+    auto f = f_external - f_reference;
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
@@ -287,7 +310,6 @@ void LinearStaticTopo::run() {
     output.provide(OutputField::DISPLACEMENT,        global_disp_mat);
     output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
     output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-    output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
     output.provide(OutputField::COMPLIANCE,          compliance_raw);
     output.provide(OutputField::DENS_GRAD,           density_grad);
     output.provide(OutputField::DENSITY,             *density);

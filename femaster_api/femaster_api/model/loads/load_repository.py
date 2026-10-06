@@ -11,10 +11,9 @@ from .inertial_load import InertialLoad
 from .nodal_force import NodalForce
 from .pressure_load import PressureLoad
 from .surface_traction import SurfaceTraction
-from .thermal_load import ThermalLoad
 from .volume_load import VolumeLoad
 
-LoadEntry = NodalForce | SurfaceTraction | PressureLoad | VolumeLoad | ThermalLoad | InertialLoad
+LoadEntry = NodalForce | SurfaceTraction | PressureLoad | VolumeLoad | InertialLoad
 
 
 class LoadRepository:
@@ -25,7 +24,7 @@ class LoadRepository:
         self._amplitudes: dict[str, Amplitude] = {}
 
     def add(self, entry: LoadEntry) -> LoadEntry:
-        if not isinstance(entry, (NodalForce, SurfaceTraction, PressureLoad, VolumeLoad, ThermalLoad, InertialLoad)):
+        if not isinstance(entry, (NodalForce, SurfaceTraction, PressureLoad, VolumeLoad, InertialLoad)):
             raise TypeError("entry must be a load object")
         self._loads.append(entry)
         return entry

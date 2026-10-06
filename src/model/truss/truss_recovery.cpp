@@ -41,6 +41,237 @@ RowMatrix T3::stress_strain_ip_rst() {
 }
 
 /**
+ * Evaluates the axial strain and physical Cauchy stress at the requested state.
+ *
+ * The optional linearization field defines the exact base configuration u0.
+ * Without one, the undeformed reference configuration is used,
+ *
+ *     u0 = 0.
+ *
+ * The exact configuration at u0 is described by
+ *
+ *     r0      = (X2 + u02) - (X1 + u01),
+ *     lambda0 = ||r0|| / L0,
+ *     n0      = r0 / ||r0||.
+ *
+ * The corresponding Green-Lagrange strain is
+ *
+ *     E0 = 1/2 (lambda0^2 - 1).
+ *
+ * Thermal expansion contributes an eigenstrain
+ *
+ *     E_th = alpha (T - T0),
+ *
+ * where the truss temperature is taken as the mean nodal temperature. The
+ * constitutive strain at the linearization point is therefore
+ *
+ *     E_mech,0 = E0 - E_th.
+ *
+ * The constitutive model returns the work-conjugate PK2 stress S0 and material
+ * tangent C0 at this exact base state.
+ *
+ * The displacement perturbation between the requested state u and the exact
+ * base state u0 is
+ *
+ *     Delta u = u - u0,
+ *
+ * giving
+ *
+ *     Delta r = Delta u2 - Delta u1.
+ *
+ * Linearizing stretch and Green-Lagrange strain about u0 gives
+ *
+ *     Delta lambda = n0 . Delta r / L0,
+ *
+ *     Delta E      = lambda0 Delta lambda
+ *                  = lambda0 n0 . Delta r / L0.
+ *
+ * Strain and PK2 stress are continued linearly from the exact base state,
+ *
+ *     E ~= E0 + Delta E,
+ *
+ *     S ~= S0 + C0 Delta E.
+ *
+ * Physical axial stress follows from
+ *
+ *     sigma = lambda S.
+ *
+ * Its first-order expansion about u0 is therefore
+ *
+ *     sigma ~= lambda0 S0
+ *            + S0 Delta lambda
+ *            + lambda0 Delta S.
+ *
+ * The product Delta lambda Delta S is second order and is deliberately
+ * omitted.
+ *
+ * @param displacement Requested displacement state u.
+ * @param linearization Optional exact base state u0; null denotes u0 = 0.
+ * @return Pair containing axial strain and physical axial stress.
+ */
+std::pair<Precision, Precision> T3::evaluate_axial_response(
+    const Field& target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
+) {
+    const Vec3 X1 = node_position_reference(0);
+    const Vec3 X2 = node_position_reference(1);
+    const Vec3 u1 = target_displacement.row_vec3(static_cast<Index>(node_ids[0]));
+    const Vec3 u2 = target_displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+    Vec3 u01 = Vec3::Zero();
+    Vec3 u02 = Vec3::Zero();
+
+    if (base_displacement) {
+        u01 = base_displacement->row_vec3(static_cast<Index>(node_ids[0]));
+        u02 = base_displacement->row_vec3(static_cast<Index>(node_ids[1]));
+    }
+
+    const Vec3      reference_axis = X2 - X1;
+    const Precision L0             = reference_axis.norm();
+    const Vec3      axis_base      = (X2 + u02) - (X1 + u01);
+    const Precision length_base    = axis_base.norm();
+
+    auto elasticity = get_elasticity();
+
+    logging::error(L0 > Precision(0),
+        "T3: zero reference length in evaluate_axial_response for element ", this->elem_id);
+    logging::error(length_base > Precision(0),
+        "T3: zero length at the linearization state in evaluate_axial_response for element ",
+        this->elem_id);
+
+    // -------------------------------------------------------------------------
+    // exact state at the linearization point u0
+    // -------------------------------------------------------------------------
+
+    // The exact configuration at u0 is described by
+    //
+    //     r0      = (X2 + u02) - (X1 + u01),
+    //     lambda0 = ||r0|| / L0,
+    //     n0      = r0 / ||r0||.
+    //
+    // The corresponding Green-Lagrange strain is
+    //
+    //     E0 = 1/2 (lambda0^2 - 1).
+    const Precision lambda0 = length_base / L0;
+    const Vec3      n0      = axis_base / length_base;
+
+    const AxialStrainGreenLagrange strain_base =
+        AxialStrainGreenLagrange::from_stretch(lambda0);
+
+    // -------------------------------------------------------------------------
+    // thermal contribution
+    // -------------------------------------------------------------------------
+
+    // Thermal expansion is evaluated for both temperature states. A null field
+    // denotes the material stress-free temperature.
+    const auto material = get_material();
+    const auto thermal_strain = [&](const Field* temperature_field) {
+        if (!temperature_field || !material->has_thermal_expansion()) {
+            return Precision(0);
+        }
+
+        const Precision T_zero = material->get_thermal_zero_temperature();
+        const Precision alpha  = material->get_thermal_expansion();
+
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            temperature += (*temperature_field)(
+                static_cast<Index>(node_ids[node]), 0);
+        }
+
+        temperature /= static_cast<Precision>(N);
+        return alpha * (temperature - T_zero);
+    };
+
+    const AxialStrainGreenLagrange mechanical_strain_base(
+        strain_base.value() - thermal_strain(base_temperature));
+    const AxialStrainGreenLagrange mechanical_strain_target(
+        strain_base.value() - thermal_strain(target_temperature));
+
+    // -------------------------------------------------------------------------
+    // material model evaluation
+    // -------------------------------------------------------------------------
+
+    AxialStressPK2 stress_base;
+    AxialStressPK2 stress_target_base;
+    Precision      material_tangent = Precision(0);
+
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state =
+        &(*this->_model_data->material_state_old)(state_row, 0);
+
+    elasticity->evaluate(
+        mechanical_strain_base,
+        old_state,
+        nullptr,
+        stress_base,
+        &material_tangent
+    );
+
+    if (target_temperature == base_temperature) {
+        stress_target_base = stress_base;
+    } else {
+        elasticity->evaluate(
+            mechanical_strain_target,
+            old_state,
+            nullptr,
+            stress_target_base,
+            nullptr
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // linear continuation from u0 to u
+    // -------------------------------------------------------------------------
+
+    // The displacement perturbation is
+    //
+    //     Delta u = u - u0
+    //
+    // and therefore
+    //
+    //     Delta r = Delta u2 - Delta u1.
+    const Vec3 delta_axis = (u2 - u02) - (u1 - u01);
+
+    // Linearizing the stretch and Green-Lagrange strain about u0 gives
+    //
+    //     Delta lambda = n0 . Delta r / L0,
+    //
+    //     Delta E      = lambda0 Delta lambda
+    //                  = lambda0 n0 . Delta r / L0.
+    const Precision delta_lambda = n0.dot(delta_axis) / L0;
+    const Precision delta_strain = lambda0 * delta_lambda;
+
+    // Continue strain and PK2 stress linearly from the exact base state:
+    //
+    //     E ~= E0 + Delta E,
+    //
+    //     S ~= S0 + C0 Delta E.
+    const Precision strain_value     = strain_base.value() + delta_strain;
+    const Precision stress_increment = material_tangent * delta_strain;
+
+    // Physical axial stress is
+    //
+    //     sigma = lambda S.
+    //
+    // Its first-order expansion about u0 is therefore
+    //
+    //     sigma ~= lambda0 S0
+    //            + S0 Delta lambda
+    //            + lambda0 Delta S.
+    //
+    // The product Delta lambda Delta S is second order and is deliberately
+    // omitted.
+    const Precision stress_value = lambda0 * stress_target_base.value()
+                                 + stress_base.value() * delta_lambda
+                                 + lambda0 * stress_increment;
+
+    return {strain_value, stress_value};
+}
+
+/**
  * Recovers axial strain and physical Cauchy stress.
  *
  * Reference recovery uses the infinitesimal axial strain
@@ -71,119 +302,31 @@ RowMatrix T3::stress_strain_ip_rst() {
  *
  *     sigma = lambda S.
  *
- * T3 currently supports only reference recovery or exact recovery at the
- * supplied displacement; intermediate affine recovery points are rejected.
+ * T3 currently supports reference recovery, exact recovery at the supplied
+ * displacement and affine continuation about a supplied linearization state.
  */
 void T3::compute_stress_strain(
     Field*           strain,
     Field*           stress,
-    const Field&     displacement,
+    const Field&     target_displacement,
+    const Field*     target_temperature,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization,
-    const Field*     thermal_free_strain
+    const Field*     base_displacement,
+    const Field*     base_temperature
 ) {
-    (void) thermal_free_strain;
-
-    const Vec3 X1 = node_position_reference(0);
-    const Vec3 X2 = node_position_reference(1);
-    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-
-    Vec3 u01 = Vec3::Zero();
-    Vec3 u02 = Vec3::Zero();
-
-    if (linearization) {
-        u01 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
-        u02 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
-    }
-
-    const Vec3      reference_axis = X2 - X1;
-    const Precision L0             = reference_axis.norm();
-    const Vec3      axis_base      = (X2 + u02) - (X1 + u01);
-    const Precision length_base    = axis_base.norm();
-
-    auto elasticity = get_elasticity();
-
     // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
         "T3: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 1,
         "T3: stress/strain coordinates require at least one natural coordinate");
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in compute_stress_strain for element ", this->elem_id);
-    logging::error(length_base > Precision(0),
-        "T3: zero length at the linearization state for element ", this->elem_id);
-    // -------------------------------------------------------------------------
-    // exact state at the linearization point u0
-    // -------------------------------------------------------------------------
 
-    // The exact configuration at u0 is described by
-    //
-    //     r0      = (X2 + u02) - (X1 + u01),
-    //     lambda0 = ||r0|| / L0,
-    //     n0      = r0 / ||r0||.
-    //
-    // The corresponding Green-Lagrange strain is
-    //
-    //     E0 = 1/2 (lambda0^2 - 1).
-    const Precision lambda0 = length_base / L0;
-    const Vec3      n0      = axis_base / length_base;
-
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
-    AxialStressPK2                 stress_base;
-    Precision                      material_tangent = Precision(0);
-
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-
-    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
-
-    // -------------------------------------------------------------------------
-    // linear continuation from u0 to u
-    // -------------------------------------------------------------------------
-
-    // The displacement perturbation is
-    //
-    //     Delta u = u - u0
-    //
-    // and therefore
-    //
-    //     Delta r = Delta u2 - Delta u1.
-    const Vec3 delta_axis = (u2 - u02) - (u1 - u01);
-
-    // Linearizing the stretch and Green-Lagrange strain about u0 gives
-    //
-    //     Delta lambda = n0 . Delta r / L0,
-    //
-    //     Delta E      = lambda0 Delta lambda
-    //                  = lambda0 n0 . Delta r / L0.
-    const Precision delta_lambda = n0.dot(delta_axis) / L0;
-    const Precision delta_strain = lambda0 * delta_lambda;
-
-    // Continue strain and PK2 stress linearly from the exact base state:
-    //
-    //     E ~= E0 + Delta E,
-    //
-    //     S ~= S0 + C0 Delta E.
-    const Precision strain_value    = strain_base.value() + delta_strain;
-    const Precision stress_increment = material_tangent * delta_strain;
-
-    // Physical axial stress is
-    //
-    //     sigma = lambda S.
-    //
-    // Its first-order expansion about u0 is therefore
-    //
-    //     sigma ~= lambda0 S0
-    //            + S0 Delta lambda
-    //            + lambda0 Delta S.
-    //
-    // The product Delta lambda Delta S is second order and is deliberately
-    // omitted.
-    const Precision stress_value = lambda0 * stress_base.value()
-                                 + stress_base.value() * delta_lambda
-                                 + lambda0 * stress_increment;
+    const auto [strain_value, stress_value] =
+        evaluate_axial_response(
+            target_displacement,
+            target_temperature,
+            base_displacement,
+            base_temperature);
 
     // The axial strain and stress are constant over the two-node truss.
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
@@ -192,12 +335,14 @@ void T3::compute_stress_strain(
         if (strain) {
             for (Index component = 0; component < strain->components; ++component)
                 (*strain)(row, component) = Precision(0);
+
             (*strain)(row, 0) = strain_value;
         }
 
         if (stress) {
             for (Index component = 0; component < stress->components; ++component)
                 (*stress)(row, component) = Precision(0);
+
             (*stress)(row, 0) = stress_value;
         }
     }
@@ -257,7 +402,11 @@ void T3::compute_compliance(Field& displacement, Field& result) {
     //
     // where K_0 is the tangent evaluated at the reference state u0 = 0.
     Precision buffer[N * 3 * N * 3] {};
-    const MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    const MapMatrix K = evaluate(
+        buffer, nullptr, nullptr,
+        nullptr, nullptr,
+        nullptr, nullptr,
+        false);
 
     // Gather the six translational element DOFs in local node-major ordering:
     //
@@ -286,7 +435,7 @@ void T3::compute_compliance(Field& displacement, Field& result) {
  *
  *     lambda0 = l0 / L0,
  *     E0      = 1/2 (lambda0^2 - 1),
- *     S0      = S(E0),
+ *     S0      = S(E0 - E_th),
  *
  * while the displacement perturbation gives
  *
@@ -294,64 +443,36 @@ void T3::compute_compliance(Field& displacement, Field& result) {
  *     Delta E      = lambda0 Delta lambda,
  *     Delta S      = C0 Delta E.
  *
- * Linearizing N = A0 lambda S about the base state yields
+ * Linearizing
+ *
+ *     N = A0 lambda S
+ *
+ * about the base state yields
  *
  *     N ~= A0 [lambda0 S0 + S0 Delta lambda + lambda0 Delta S].
+ *
+ * This is identical to multiplying the physical axial stress recovered by
+ * evaluate_axial_response() with the reference cross-sectional area A0.
  */
 bool T3::compute_beam_section_forces(
     Field&       section_forces,
-    const Field& displacement,
+    const Field& target_displacement,
+    const Field* target_temperature,
     int          offset,
-    const Field* linearization
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
-    const Vec3 X1 = node_position_reference(0);
-    const Vec3 X2 = node_position_reference(1);
-    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+    const Precision stress_value =
+        evaluate_axial_response(
+            target_displacement,
+            target_temperature,
+            base_displacement,
+            base_temperature).second;
 
-    Vec3 u01 = Vec3::Zero();
-    Vec3 u02 = Vec3::Zero();
+    const Precision axial_force =
+        get_section()->area_ * stress_value;
 
-    if (linearization) {
-        u01 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
-        u02 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
-    }
-
-    const Vec3      reference_axis = X2 - X1;
-    const Precision L0             = reference_axis.norm();
-    const Vec3      axis_base      = (X2 + u02) - (X1 + u01);
-    const Precision length_base    = axis_base.norm();
-
-    auto elasticity = get_elasticity();
-
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
-    logging::error(length_base > Precision(0),
-        "T3: zero length at the linearization state in compute_beam_section_forces for element ", this->elem_id);
-
-    const Precision lambda0 = length_base / L0;
-    const Vec3      n0      = axis_base / length_base;
-
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
-    AxialStressPK2                 stress_base;
-    Precision                      material_tangent = Precision(0);
-
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-
-    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
-
-    const Vec3      delta_axis   = (u2 - u02) - (u1 - u01);
-    const Precision delta_lambda = n0.dot(delta_axis) / L0;
-    const Precision delta_strain = lambda0 * delta_lambda;
-    const Precision delta_stress = material_tangent * delta_strain;
-
-    const Precision axial_force = get_section()->area_ * (
-        lambda0 * stress_base.value()
-        + stress_base.value() * delta_lambda
-        + lambda0 * delta_stress
-    );
-
+    // The axial section force is constant over the two-node truss.
     for (Index node = 0; node < N; ++node) {
         const Index row = static_cast<Index>(offset) + node;
 

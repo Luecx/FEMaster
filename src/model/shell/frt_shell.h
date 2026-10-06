@@ -375,8 +375,10 @@ struct FRTShell : ShellElement<N> {
         // leave this false and pass nullptr as the section target state.
         bool write_material_state = false;
 
-        // Compact current nodal configuration used by all kinematic routines.
+        // Compact current nodal configuration and temperature state used by
+        // the constitutive evaluation.
         CurrentState state;
+        const Field* temperature = nullptr;
 
         // Nodal SO(3) values and derivatives retained in the thread-local
         // workspace. The pointer is null when no rotational derivatives are
@@ -504,6 +506,7 @@ struct FRTShell : ShellElement<N> {
     // the physical nonlinear tangent/internal-force evaluation.
     EvaluationData init_evaluation(
         const CurrentState& state,
+        const Field*        temperature,
         bool                with_strain,
         bool                with_B,
         bool                with_G,
@@ -521,8 +524,11 @@ struct FRTShell : ShellElement<N> {
     Precision topology_stiffness_scale() const;
     Mat8 resultant_stiffness(Precision r = Precision(0), Precision s = Precision(0)) const;
     Vec8 thermal_generalized_strain(const ReferencePoint& point, Precision free_strain) const;
-    Precision thermal_free_strain_at(const Field* thermal_free_strain,
-                                     Precision r, Precision s) const;
+    Precision thermal_strain_at(
+        const Field* temperature,
+        Precision    r,
+        Precision    s
+    ) const;
 
     // Element tangent and force assembly internals.
     // These routines assemble the pieces of the shell residual linearization:
@@ -572,11 +578,11 @@ struct FRTShell : ShellElement<N> {
     ) const;
     void physical_stress_strain_at(
         const EvaluationData& data,
+        const Field*          target_temperature,
         const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s,
         Precision             zeta,
-        const Field*          thermal_free_strain,
         Vec6&                 strain_out,
         Vec6&                 stress_out
     ) const;
@@ -589,19 +595,12 @@ struct FRTShell : ShellElement<N> {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
-        const Field* thermal_free_strain,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override;
-
-    // Convert one scalar midsurface temperature per node into consistent
-    // six-DOF thermal equivalent nodal forces. Temperature is uniform through
-    // the thickness; the section tangent includes membrane/bending coupling.
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
-    void apply_thermal_free_strain(Field& thermal_free_strain,
-                                   const Field& node_temp,
-                                   Precision ref_temp) override;
 
     // Basic geometric integration and mass interface.
     // These functions expose scalar geometric properties used outside the
@@ -633,11 +632,12 @@ struct FRTShell : ShellElement<N> {
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override;
     bool compute_peeq(
         Field& peeq,
@@ -650,13 +650,10 @@ struct FRTShell : ShellElement<N> {
     bool compute_shell_section_forces(
         Field&       section_forces,
         Field&       contribution_count,
-        const Field& displacement
-    ) override;
-    bool compute_shell_section_forces(
-        Field&       section_forces,
-        Field&       contribution_count,
-        const Field& displacement,
-        const Field* thermal_free_strain
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr
     ) override;
 
 };

@@ -31,7 +31,6 @@ std::string_view output_field_name(OutputField field) {
         case OutputField::EXTERNAL_FORCES:      return "EXTERNAL_FORCES";
         case OutputField::INTERNAL_FORCES:      return "INTERNAL_FORCES";
         case OutputField::REACTION_FORCES:      return "REACTION_FORCES";
-        case OutputField::THERMAL_FREE_STRAIN:  return "THERMAL_FREE_STRAIN";
         case OutputField::STRESS:               return "STRESS";
         case OutputField::STRAIN:               return "STRAIN";
         case OutputField::PEEQ:                 return "PEEQ";
@@ -100,7 +99,6 @@ std::optional<OutputField> output_field_from_request(std::string token) {
         {"EXTERNAL_FORCES",      OutputField::EXTERNAL_FORCES},
         {"INTERNAL_FORCES",      OutputField::INTERNAL_FORCES},
         {"REACTION_FORCES",      OutputField::REACTION_FORCES},
-        {"THERMAL_FREE_STRAIN",  OutputField::THERMAL_FREE_STRAIN},
         {"STRESS",               OutputField::STRESS},
         {"STRAIN",               OutputField::STRAIN},
         {"STRESS_TOP",           OutputField::STRESS_TOP},
