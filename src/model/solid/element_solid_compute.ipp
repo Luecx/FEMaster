@@ -231,19 +231,6 @@ void SolidElement<N>::compute_stress_strain(
         ip_stress.row(ip) = VolumeStressCauchy(recovered_stress).voigt().transpose();
     }
 
-    // Integration-point output is the constitutive result itself and must not be
-    // projected through a recovery basis.
-    if (output_at_ip) {
-        for (Eigen::Index n = 0; n < rst.rows(); ++n) {
-            const Index row = static_cast<Index>(offset + n);
-            for (Dim component = 0; component < n_strain; ++component) {
-                if (strain) (*strain)(row, component) = ip_strain(n, component);
-                if (stress) (*stress)(row, component) = ip_stress(n, component);
-            }
-        }
-        return;
-    }
-
     // Nodal values are reconstructed from the integration-point samples in
     // natural coordinates using the topology-specific constant operator.
     const RowMatrix& E      = this->extrapolation_matrix();
