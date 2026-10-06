@@ -68,7 +68,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         //
         //     epsilon_mech,0 = epsilon0 - epsilon_th.
         Vec8 strain_values = data.ip_strain[id];
-        const Precision free = thermal_strain_at(point.r, point.s);
+        const Precision free = thermal_strain_at(data.temperature, point.r, point.s);
         strain_values -= thermal_generalized_strain(point, free);
 
         ShellGeneralizedStrain strain(strain_values);
@@ -594,8 +594,10 @@ MapMatrix FRTShell<N>::evaluate(
     Precision*   tangent_buffer,
     Precision*   geometric_tangent_buffer,
     NodeData*    internal_force_output,
-    const Field* displacement,
-    const Field* linearization,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     const bool with_tangent   = tangent_buffer           != nullptr;
@@ -606,30 +608,35 @@ MapMatrix FRTShell<N>::evaluate(
         return MapMatrix(nullptr, 0, 0);
     }
 
-    logging::error(!with_force || displacement != nullptr,
+    logging::error(!with_force || target_displacement != nullptr,
         "FRTShell: internal force evaluation requires displacement");
     logging::error(!with_force || internal_force_output->components >= dofs_per_node,
         "FRTShell: internal force requires six nodal components");
-    logging::error(!update_state || (linearization != nullptr && displacement == linearization),
-        "FRTShell: material state requires an exact evaluation at the linearization state");
+    logging::error(!update_state ||
+        (base_displacement != nullptr && target_displacement == base_displacement &&
+         target_temperature == base_temperature),
+        "FRTShell: material state requires an exact evaluation at the base state");
 
     // -------------------------------------------------------------------------
-    // exact state at the linearization point u0
+    // exact state at the base point (u0,T0)
     // -------------------------------------------------------------------------
 
-    // A null linearization denotes q0 = 0. Reference and finite base states use
-    // the same nonlinear shell kinematics and the same Green-Lagrange section
-    // response; only the supplied nodal state differs.
-    const Vec6N q0 = linearization ? element_displacement_vector(*linearization) : Vec6N::Zero();
-    const Vec6N q  = displacement ? element_displacement_vector(*displacement) : q0;
+    const Vec6N q0 = base_displacement
+        ? element_displacement_vector(*base_displacement)
+        : Vec6N::Zero();
+    const Vec6N q = target_displacement
+        ? element_displacement_vector(*target_displacement)
+        : q0;
     const Vec6N delta = q - q0;
 
-    const CurrentState state = linearization ? current_state_from_displacement(*linearization) : reference_state();
+    const CurrentState state = base_displacement
+        ? current_state_from_displacement(*base_displacement)
+        : reference_state();
 
-    // Internal force away from q0 is continued affinely:
+    // Internal force follows the mixed state continuation
     //
-    //     f(q) ~= f(q0) + K_T(q0) (q - q0).
-    const bool affine_force          = with_force && displacement != linearization;
+    //     f(q,T) ~= f(q0,T) + K(q0,T0) (q-q0).
+    const bool affine_force          = with_force && target_displacement != base_displacement;
     const bool need_complete_tangent = with_tangent || affine_force;
     const bool need_B                = with_force || need_complete_tangent || with_geometric;
     const bool need_G                = need_complete_tangent || with_geometric;
@@ -637,6 +644,7 @@ MapMatrix FRTShell<N>::evaluate(
 
     EvaluationData data = init_evaluation(
         state,
+        base_temperature,
         true,
         need_B,
         need_G,
@@ -644,16 +652,67 @@ MapMatrix FRTShell<N>::evaluate(
         update_state
     );
 
-    Vec6N force = Vec6N::Zero();
-    if (with_force) {
-        assemble_internal_force(data, force);
+    // Temperature changes are evaluated exactly at the fixed base geometry.
+    // Only the generalized resultants need to be reevaluated; the kinematics,
+    // B matrices and tangent remain those of (q0,T0).
+    thread_local std::vector<Vec8> target_resultants;
+    const bool separate_target_temperature =
+        (with_force || with_geometric) && target_temperature != base_temperature;
+
+    if (separate_target_temperature) {
+        const auto& points = reference_data().ip_points;
+        ShellSection* section = shell_section();
+        const Precision scale = topology_stiffness_scale();
+        const Index state_stride = this->_model_data->material_state_old->components;
+
+        target_resultants.resize(points.size());
+
+        for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
+            const std::size_t id = static_cast<std::size_t>(ip);
+            const ReferencePoint& point = points[id];
+
+            Vec8 strain_values = data.ip_strain[id];
+            const Precision free =
+                thermal_strain_at(target_temperature, point.r, point.s);
+            strain_values -= thermal_generalized_strain(point, free);
+
+            const Index state_row = this->mp_index(ip, 0);
+            const Precision* old_state =
+                &(*this->_model_data->material_state_old)(state_row, 0);
+
+            ShellStressResultants resultants;
+            Mat8 discarded_tangent;
+            Mat3 basis = point.basis;
+
+            section->evaluate(
+                reference_position(point.r, point.s),
+                basis,
+                ShellGeneralizedStrain(strain_values),
+                old_state,
+                nullptr,
+                state_stride,
+                resultants,
+                discarded_tangent
+            );
+
+            target_resultants[id] = scale * resultants.values();
+        }
     }
 
-    // The complete tangent at q0 contains
+    Vec6N force = Vec6N::Zero();
+    if (with_force) {
+        if (separate_target_temperature) {
+            EvaluationData target_data = data;
+            target_data.ip_resultants = Span<Vec8>(target_resultants);
+            assemble_internal_force(target_data, force);
+        } else {
+            assemble_internal_force(data, force);
+        }
+    }
+
+    // The complete tangent is evaluated only at the base state:
     //
-    //     K_T(q0) = K_M(q0) + K_G(n0),
-    //
-    // where n0 are the exact generalized resultants at the base state.
+    //     K_0 = K_M(q0,T0) + K_G(n0).
     Mat6N complete  = Mat6N::Zero();
     Mat6N geometric = Mat6N::Zero();
 
@@ -671,33 +730,29 @@ MapMatrix FRTShell<N>::evaluate(
     }
 
     // -------------------------------------------------------------------------
-    // linear continuation from u0 to u
+    // perturbation relative to (q0,T0)
     // -------------------------------------------------------------------------
 
-    // Linearization about q0 gives
-    //
-    //     Delta epsilon = B0 Delta q,
-    //     Delta n       = H0 Delta epsilon.
-    //
-    // Temperature is fixed during the displacement perturbation, hence
-    //
-    //     Delta epsilon_th = 0.
     thread_local std::vector<Vec8> resultant_increment;
 
     if (with_geometric) {
-        resultant_increment.resize(reference_data().ip_points.size());
-
         const auto& points = reference_data().ip_points;
+        resultant_increment.resize(points.size());
+
         for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
             const std::size_t id = static_cast<std::size_t>(ip);
+
+            // Temperature changes are represented by the exact resultant
+            // difference at q0. Displacement changes are linearized with H0 B0.
             resultant_increment[id] =
                 data.ip_tangent[id] * (data.ip_B[id] * delta);
-        }
-    }
 
-    // The separate geometric operator contains only the perturbation resultants
-    // Delta n. Base resultants n0 are already contained in K_T(q0).
-    if (with_geometric) {
+            if (separate_target_temperature) {
+                resultant_increment[id] +=
+                    target_resultants[id] - data.ip_resultants[id];
+            }
+        }
+
         EvaluationData geometric_data = data;
         geometric_data.ip_resultants   = Span<Vec8>(resultant_increment);
         geometric_data.with_resultants = true;
