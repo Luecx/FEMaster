@@ -304,11 +304,14 @@ void C3D8I::compute_compliance_angle_derivative(Field& displacement, Field& resu
  * first induces the compatible/enhanced strain increment. Local stationarity
  * gives the corresponding enhanced-parameter increment
  *
- *     Delta alpha = -Kaa^-1 (Kau Delta u - f_alpha,th).
+ *     Delta alpha = -Kaa^-1 Kau Delta u.
  *
  * The constitutive tangent at u0 then produces the PK2 stress increment
  *
- *     Delta S = C0 Delta E - Delta S_th.
+ *     Delta S = C0 Delta E.
+ *
+ * Temperature is part of the stationary base state and remains fixed during
+ * this displacement perturbation.
  *
  * Only this stress increment is contracted with the second kinematic
  * derivatives. The stress already present at u0 remains part of the complete
@@ -338,7 +341,7 @@ void C3D8I::compute_compliance_angle_derivative(Field& displacement, Field& resu
  * @param alpha Stationary enhanced parameters at u0.
  * @param system Complete coupled tangent blocks at u0.
  * @param displacement_increment Nodal perturbation Delta u = u - u0.
- * @param nodal_thermal_strain Optional element-local thermal free-strain perturbation.
+ * @param thermal_strain Optional element-local thermal strain of the base state.
  * @return Map onto the condensed 24 x 24 perturbation geometric matrix.
  */
 MapMatrix C3D8I::stiffness_geom(
@@ -347,7 +350,7 @@ MapMatrix C3D8I::stiffness_geom(
     const Vector13&        alpha,
     const EnhancedSystem&   system,
     const Vector24&         displacement_increment,
-    const StaticVector<N>*  nodal_thermal_strain
+    const StaticVector<N>*  thermal_strain
 ) {
 
     // Differentiate the enhanced stationarity equation at the base state.
@@ -355,10 +358,7 @@ MapMatrix C3D8I::stiffness_geom(
     logging::error(solver.isInvertible(),
         "C3D8I: singular enhanced base tangent in element ", elem_id);
 
-    Vector13 enhanced_residual = system.kau * displacement_increment;
-    if (nodal_thermal_strain) {
-        enhanced_residual -= thermal_force(points, alpha, *nodal_thermal_strain).second;
-    }
+    const Vector13 enhanced_residual = system.kau * displacement_increment;
     const Vector13 alpha_increment = -solver.solve(enhanced_residual);
 
     StaticMatrix<N, D> local_delta = StaticMatrix<N, D>::Zero();
@@ -392,20 +392,33 @@ MapMatrix C3D8I::stiffness_geom(
         const Mat3 delta_F = delta_compatible * enhancement + point.compatible * delta_enhancement;
         const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
 
-        Vec6 mechanical_increment = VolumeStrainGreenLagrange(delta_E).voigt();
-        if (nodal_thermal_strain) {
-            const Precision free = this->shape_function(point.natural(0), point.natural(1), point.natural(2))
-                .dot(*nodal_thermal_strain);
-            mechanical_increment.head<3>().array() -= free;
-        }
+        // Temperature is fixed during the displacement perturbation, hence
+        //
+        //     Delta E_th   = 0,
+        //     Delta E_mech = Delta E.
+        const Vec6 mechanical_increment =
+            VolumeStrainGreenLagrange(delta_E).voigt();
 
-        const VolumeStrainGreenLagrange strain = VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const VolumeStrainGreenLagrange strain =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+
+        Vec6 constitutive_strain_values = strain.voigt();
+        if (thermal_strain) {
+            const Precision free =
+                this->shape_function(
+                    point.natural(0), point.natural(1), point.natural(2))
+                    .dot(*thermal_strain);
+            constitutive_strain_values.head<3>().array() -= free;
+        }
+        const VolumeStrainGreenLagrange constitutive_strain(
+            constitutive_strain_values);
+
         const Precision* old_state = &(*this->_model_data->material_state_old)(this->mp_index(ip), 0);
 
         VolumeStressPK2 stress_base;
         Mat6            material_tangent;
         evaluate_material(
-            point.natural(0), point.natural(1), point.natural(2), strain,
+            point.natural(0), point.natural(1), point.natural(2), constitutive_strain,
             old_state, nullptr, stress_base, &material_tangent);
 
         const Mat3 stress_increment =
@@ -475,23 +488,11 @@ MapMatrix C3D8I::stiffness_geom(
 }
 
 /**
- * Integrates reference thermal-force increments in the finite EAS basis.
- *
- * At the reference stationary state, -C epsilon_th is an affine stress source.
- * Its compatible and enhanced force increments share the finite strain operators
- * used by the block tangent. No material history is modified.
- *
- * @param points Geometry at the reference expansion point.
- * @param alpha Stationary enhanced parameters at that point.
- * @param free_strain Scalar isotropic free strain at the eight element nodes.
- * @return Compatible and enhanced positive thermal-force vectors before condensation.
- */
-/**
  * Builds the element-local free thermal strain from the current temperature state.
  *
- * Undefined nodal temperatures fall back to the material stress-free
- * temperature. A missing temperature field or missing expansion coefficient
- * yields a zero vector.
+ * A missing temperature field or missing expansion coefficient yields a zero
+ * vector. Nodal temperature values are consumed directly so invalid values
+ * propagate into the constitutive response.
  */
 StaticVector<C3D8I::N> C3D8I::nodal_thermal_strain() {
     StaticVector<N> free = StaticVector<N>::Zero();
@@ -505,47 +506,12 @@ StaticVector<C3D8I::N> C3D8I::nodal_thermal_strain() {
     const Precision alpha = mat->get_thermal_expansion();
 
     for (Index node = 0; node < N; ++node) {
-        const Precision value =
+        const Precision temperature =
             (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
-        const Precision temperature = std::isfinite(value) ? value : zero;
         free(node) = alpha * (temperature - zero);
     }
 
     return free;
-}
-
-std::pair<C3D8I::Vector24, C3D8I::Vector13> C3D8I::thermal_force(
-    const NonlinearPoints& points,
-    const Vector13&        alpha,
-    const StaticVector<N>& free_strain
-) {
-    Vector24 force_u = Vector24::Zero();
-    Vector13 force_a = Vector13::Zero();
-
-    // Integrate the affine thermal source using the reference finite tangent
-    for (Index ip = 0; ip < points.size(); ++ip) {
-        const auto& point = points[ip];
-        Mat3 enhancement = Mat3::Identity();
-        for (Index mode = 0; mode < n_modes; ++mode) enhancement += alpha(mode) * point.modes[mode];
-        const Mat3 F = point.compatible * enhancement;
-        const auto strain = VolumeStrainGreenLagrange::from_deformation_gradient(F);
-        const auto Bu = this->green_lagrange_strain_displacement(
-            StaticMatrix<N, D>(point.derivatives * enhancement), F);
-        EnhancedModes variations;
-        for (Index mode = 0; mode < n_modes; ++mode) variations[mode] = point.compatible * point.modes[mode];
-        const Matrix6x13 Ba = enhanced_green_lagrange_matrix(F, variations);
-
-        const Precision* old_state = &(*this->_model_data->material_state_old)(this->mp_index(ip), 0);
-        VolumeStressPK2 stress;
-        Mat6            tangent;
-        evaluate_material(
-            point.natural(0), point.natural(1), point.natural(2), strain, old_state, nullptr, stress, &tangent);
-        const Precision free = this->shape_function(point.natural(0), point.natural(1), point.natural(2)).dot(free_strain);
-        const Vec6 thermal_stress = tangent * Vec6(free, free, free, 0, 0, 0);
-        force_u.noalias() += point.measure * Bu.transpose() * thermal_stress;
-        force_a.noalias() += point.measure * Ba.transpose() * thermal_stress;
-    }
-    return {force_u, force_a};
 }
 
 /**
@@ -941,21 +907,20 @@ MapMatrix C3D8I::evaluate(
         local_u.row(node) = u_linearization.template segment<3>(D * node).transpose();
     }
 
-    // Gather the current temperature state only into element-local scratch.
+    // Temperature is part of the stationary base state. The same thermal strain
+    // is supplied to the local EAS solve and the final constitutive evaluation.
     const bool has_thermal_state =
         this->_model_data->temperature && material() && material()->has_thermal_expansion();
     const StaticVector<N> thermal_strain = nodal_thermal_strain();
-    const bool exact_thermal_state =
-        has_thermal_state && linearization != nullptr && displacement == linearization;
+    const StaticVector<N>* thermal_state =
+        has_thermal_state ? &thermal_strain : nullptr;
 
     const StaticMatrix<N, D> current_coords = reference_coords + local_u;
     const NonlinearPoints points = nonlinear_points(reference_coords, current_coords);
-    const Vector13 alpha = solve_nonlinear_modes(
-        points,
-        exact_thermal_state ? &thermal_strain : nullptr);
+    const Vector13 alpha = solve_nonlinear_modes(points, thermal_state);
 
     const bool affine_force          = with_force && displacement != linearization;
-    const bool need_complete_tangent = with_tangent || with_geometric || affine_force || has_thermal_state;
+    const bool need_complete_tangent = with_tangent || with_geometric || affine_force;
 
     const EnhancedSystem system = assemble_nonlinear_system(
         points,
@@ -964,7 +929,7 @@ MapMatrix C3D8I::evaluate(
         true,
         need_complete_tangent,
         true,
-        exact_thermal_state ? &thermal_strain : nullptr
+        thermal_state
     );
 
     Matrix24 complete = Matrix24::Zero();
@@ -982,7 +947,7 @@ MapMatrix C3D8I::evaluate(
             alpha,
             system,
             delta,
-            exact_thermal_state || !has_thermal_state ? nullptr : &thermal_strain
+            thermal_state
         );
     }
 
@@ -996,19 +961,6 @@ MapMatrix C3D8I::evaluate(
 
         if (affine_force) {
             force.noalias() += complete * delta;
-        }
-
-        // Affine/reference paths retain the thermal source formulation.
-        // Exact nonlinear paths already evaluated the constitutive law with
-        // mechanical strain and must not subtract the same thermal state twice.
-        if (has_thermal_state && !exact_thermal_state) {
-            const auto thermal = thermal_force(
-                points, alpha, thermal_strain);
-            Eigen::FullPivLU<Matrix13> solver(system.kaa);
-            logging::error(solver.isInvertible(),
-                "C3D8I: singular thermal condensation tangent in element ", elem_id);
-
-            force -= thermal.first - system.kua * solver.solve(thermal.second);
         }
 
         assemble_local_force(*internal_force, force);
@@ -1028,8 +980,11 @@ MapMatrix C3D8I::evaluate(
  *
  * Exact recovery solves the enhanced stationarity equations at the requested
  * displacement. Affine recovery solves them at the expansion point and obtains
- * the enhanced increment from Kaa delta_alpha = -Kau delta_u. Reference thermal
- * loading adds its enhanced force source to this equation.
+ * the enhanced increment from Kaa delta_alpha = -Kau delta_u.
+ *
+ * Temperature is part of the stationary expansion state. The constitutive base
+ * strain is always E_mech,0 = E0 - E_th, while the affine displacement
+ * perturbation is evaluated at fixed temperature.
  *
  * Both paths use F_bar = F_c (I + sum alpha_m H_m), Green-Lagrange strain and PK2
  * constitutive stress. Affine recovery differentiates the complete Cauchy
@@ -1081,18 +1036,18 @@ void C3D8I::compute_stress_strain(
     const auto points = nonlinear_points(
         reference_coords,
         StaticMatrix<N, D>(reference_coords + local_state));
-    const Vector13 alpha = solve_nonlinear_modes(
-        points,
-        (exact_state && has_thermal_state) ? &thermal_strain : nullptr);
+    const StaticVector<N>* thermal_state =
+        has_thermal_state ? &thermal_strain : nullptr;
+    const Vector13 alpha = solve_nonlinear_modes(points, thermal_state);
 
     // Differentiate local stationarity to recover the condensed enhanced increment
     Vector13 delta_alpha = Vector13::Zero();
     if (!exact_state) {
-        const auto system = assemble_nonlinear_system(points, alpha, false, true, true);
+        const auto system = assemble_nonlinear_system(
+            points, alpha, false, true, true, true, thermal_state);
         Vector24 delta_u;
         for (Index node = 0; node < N; ++node) delta_u.segment<D>(D * node) = local_delta.row(node).transpose();
-        Vector13 residual = system.kau * delta_u;
-        if (has_thermal_state) residual -= thermal_force(points, alpha, thermal_strain).second;
+        const Vector13 residual = system.kau * delta_u;
         Eigen::FullPivLU<Matrix13> solver(system.kaa);
         logging::error(solver.isInvertible(),
             "C3D8I: singular enhanced recovery tangent in element ", elem_id);
@@ -1121,8 +1076,10 @@ void C3D8I::compute_stress_strain(
                 .dot(thermal_strain);
         }
 
+        // Temperature belongs to the stationary base state, so the material
+        // always receives E_mech,0 = E0 - E_th.
         Vec6 constitutive_strain_values = green.voigt();
-        if (exact_state && has_thermal_state) {
+        if (has_thermal_state) {
             constitutive_strain_values.head<3>().array() -= free;
         }
         const VolumeStrainGreenLagrange constitutive_strain(
@@ -1135,19 +1092,10 @@ void C3D8I::compute_stress_strain(
         evaluate_material(
             point.natural(0), point.natural(1), point.natural(2),
             constitutive_strain, old_state, nullptr,
-            second_pk, (exact_state && !has_thermal_state) ? nullptr : &tangent);
-
-        Vec6 thermal_stress = Vec6::Zero();
-        if (has_thermal_state && !exact_state) {
-            thermal_stress =
-                tangent * Vec6(free, free, free, 0, 0, 0);
-        }
-
-        const VolumeStressPK2 effective_pk(
-            Vec6(second_pk.voigt() - thermal_stress));
+            second_pk, exact_state ? nullptr : &tangent);
 
         Vec6 recovered_strain = green.voigt();
-        const Mat3 sigma = effective_pk.to_cauchy(F).tensor();
+        const Mat3 sigma = second_pk.to_cauchy(F).tensor();
         Mat3 recovered_stress = sigma;
         if (!exact_state) {
             // Include compatible and stationary enhanced variations in delta F
@@ -1156,8 +1104,9 @@ void C3D8I::compute_stress_strain(
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
             const Vec6 delta_strain = VolumeStrainGreenLagrange(delta_E).voigt();
             recovered_strain += delta_strain;
+            // Temperature is fixed during the displacement perturbation.
             const Vec6 mechanical_increment = delta_strain;
-            const Mat3 S = effective_pk.tensor();
+            const Mat3 S = second_pk.tensor();
             const Mat3 delta_S =
                 VolumeStressPK2(Vec6(tangent * mechanical_increment)).tensor();
             recovered_stress += (delta_F * S * F.transpose() + F * delta_S * F.transpose()
