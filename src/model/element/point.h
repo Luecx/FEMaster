@@ -205,7 +205,6 @@ struct PointElement : StructuralElement {
         const Field&     target_displacement,
         const Field*     target_temperature,
         const RowMatrix& rst,
-        int              offset,
         const Field*     base_displacement,
         const Field*     base_temperature
     ) override {
@@ -214,7 +213,6 @@ struct PointElement : StructuralElement {
         (void) target_displacement;
         (void) target_temperature;
         (void) rst;
-        (void) offset;
         (void) base_displacement;
         (void) base_temperature;
     }
