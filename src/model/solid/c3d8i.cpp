@@ -1047,7 +1047,7 @@ MapMatrix C3D8I::evaluate(
  * @param strain Optional strain output field.
  * @param stress Optional Cauchy stress output field.
  * @param displacement Requested global nodal displacement.
- * @param rst Integration-point or natural nodal output coordinates.
+ * @param rst Natural element-nodal output coordinates.
  * @param linearization Affine expansion displacement; null selects zero.
  */
 void C3D8I::compute_stress_strain(
@@ -1059,11 +1059,8 @@ void C3D8I::compute_stress_strain(
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
-    // First compiled output row belonging to this element.
+    // First element-nodal result row belonging to this element.
     Index offset = static_cast<Index>(this->elem_nodal_offset);
-    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
-        offset = static_cast<Index>(this->elem_ip_offset);
-    }
 
     const bool exact_displacement = base_displacement == &target_displacement;
 
@@ -1072,11 +1069,13 @@ void C3D8I::compute_stress_strain(
         "C3D8I: stress/strain recovery requires at least one output field");
     logging::error(rst.cols() >= 3,
         "C3D8I: recovery coordinates require at least three columns");
+    logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
+                && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
+        "C3D8I: stress/strain recovery requires ELEMENT_NODAL output");
+    logging::error(rst.rows() == static_cast<Eigen::Index>(N),
+        "C3D8I: stress/strain recovery requires element-nodal coordinates");
+
     const auto& scheme = this->integration_scheme_stiffness();
-    const RowMatrix ip_rst = this->stress_strain_ip_rst();
-    const bool output_at_ip = rst.rows() == ip_rst.rows() && rst.leftCols(3).isApprox(ip_rst);
-    logging::error(output_at_ip || rst.rows() == static_cast<Eigen::Index>(N),
-        "C3D8I: stress/strain output must use integration points or element nodes");
 
     // Build the base nodal geometry u0 and the requested displacement increment.
     const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
