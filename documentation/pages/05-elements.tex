@@ -35,7 +35,8 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{MITC6FRT} & 6 & Six-node finite-rotation MITC shell. \\
 \val{MITC8FRT} & 8 & Eight-node finite-rotation MITC shell. \\
 \val{QSPT} & 4 & Specialized quadrilateral shear-panel element. \\
-\val{B33} & 2 & Three-dimensional beam element. \\
+\val{B31} & 2 & Two-node shear-flexible geometrically exact three-dimensional beam. \\
+\val{B33} & 2 & Three-dimensional Euler--Bernoulli beam element. \\
 \val{T3} & 2 & Three-dimensional truss element. \\
 \val{MASS} & 1 & Zero-dimensional point element with separately assigned translational mass. \\
 \val{ROTARYI} & 1 & Zero-dimensional point element with separately assigned rotary inertia. \\
@@ -43,7 +44,7 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \bottomrule
 \end{longtable}
 
-The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8I}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} types are shared directly by both input dialects and map to the same internal point-element implementation. Abaqus shell names are translated as shown below.
+The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8I}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B31} and \val{B33} are mapped to the corresponding FEMaster beam formulations. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} types are shared directly by both input dialects and map to the same internal point-element implementation. Abaqus shell names are translated as shown below.
 
 \begin{table}[H]
 \centering
@@ -607,6 +608,32 @@ Native \cmd{POINTMASS} provides an alternative NSET-based convenience syntax whe
 \section{Beam and truss elements}
 
 Line elements idealize slender three-dimensional members by describing the cross-section through section properties instead of meshing it explicitly. This can reduce the number of degrees of freedom by orders of magnitude compared with shell or solid modelling. The trade-off is that local three-dimensional connection behaviour, detailed cross-section distortion, holes, welds, and local stress concentrations are not resolved.
+
+\clearpage
+\subsection{\val{B31}: 2-node geometrically exact 3D beam}
+
+\begin{syntax}
+*ELEMENT, TYPE=B31, ELSET=<set>
+<id>, <n1>, <n2>
+\end{syntax}
+
+\val{B31} is a two-node shear-flexible spatial beam with three translational and three rotational degrees of freedom per node. The rotational degrees of freedom use FEMaster's total global axis--angle convention. The element evaluates finite rotations on \(SO(3)\), interpolates the relative nodal rotation objectively along the shortest rotation path, and carries the six generalized section strains
+\[
+[\varepsilon_x,\gamma_y,\gamma_z,\kappa_x,\kappa_y,\kappa_z]^T .
+\]
+
+The formulation uses the two end points as order-one Gauss--Lobatto integration points. Axial, transverse-shear, torsional and bending stiffnesses are obtained from the assigned isotropic material and \cmd{PROFILE}. The profile values \(A_{sy}\) and \(A_{sz}\) define the effective shear areas; if they are omitted, both default to \(5A/6\).
+
+Finite section offsets are part of the beam kinematics. With \(SP\) the shear point, \(SMP\) the section material/centroid point and \(REF\) the nodal reference line, the stored profile data define
+\[
+SP-SMP=(0,e_y,e_z),\qquad
+REF-SMP=(0,\mathrm{ref}_y,\mathrm{ref}_z).
+\]
+The vector from the nodal reference line to the shear point is therefore rotated with the current section orientation. The \(SP-SMP\) eccentricity also enters the sectional constitutive matrix so axial/bending coupling is represented without applying a small-rotation offset matrix after assembly.
+
+For nonlinear static analysis the internal force and the complete tangent are evaluated at the supplied base state. A superposed finite rigid-body translation and rotation therefore produces zero generalized strain. Linear static, eigenfrequency, harmonic and buckling operators use the same B31 reference tangent and mass/geometric operators. The current mass operator is the order-one collocated sectional mass matrix including reference-line eccentricity.
+
+The relative rotation between the two B31 nodes must remain below 180 degrees so the shortest \(SO(3)\) interpolation branch is unique. Large overall rigid-body rotations are not restricted by this condition; it applies only to the relative nodal rotation within one element.
 
 \clearpage
 \subsection{\val{B33}: 3D beam element}

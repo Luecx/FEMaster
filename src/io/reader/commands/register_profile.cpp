@@ -34,8 +34,8 @@ namespace fem::io::reader::commands {
 void register_profile(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("PROFILE", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Define beam profile properties in this order: A, Iy, Iz, Jt, Iyz, ey, ez, refy, refz. "
-                    "Only the first 4 are required. "
+        command.doc("Define beam profile properties in this order: A, Iy, Iz, Jt, Iyz, ey, ez, refy, refz, Asy, Asz. "
+                    "Only the first 4 are required; omitted shear areas default to 5A/6. "
                     "Convention: Iyz = integral_A(y*z*dA), i.e. without a leading minus sign.");
 
         auto profile_name = std::make_shared<std::string>();
@@ -70,6 +70,10 @@ void register_profile(fem::io::dsl::Registry& registry, model::Model& model) {
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                     .fixed<fem::Precision, 1>().name("REFZ").desc("Reference-line offset in local z: refz = z(REF) - z(SMP)")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .fixed<fem::Precision, 1>().name("ASY").desc("Effective transverse shear area in local y (default 5A/6)")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .fixed<fem::Precision, 1>().name("ASZ").desc("Effective transverse shear area in local z (default 5A/6)")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
                 .bind([&model, profile_name](fem::Precision area,
                                              fem::Precision inertia_y,
@@ -79,7 +83,9 @@ void register_profile(fem::io::dsl::Registry& registry, model::Model& model) {
                                              fem::Precision offset_y,
                                              fem::Precision offset_z,
                                              fem::Precision reference_y,
-                                             fem::Precision reference_z) {
+                                             fem::Precision reference_z,
+                                             fem::Precision shear_area_y,
+                                             fem::Precision shear_area_z) {
                     model.add_profile(std::make_shared<Profile>(
                         *profile_name,
                         area,
@@ -90,7 +96,9 @@ void register_profile(fem::io::dsl::Registry& registry, model::Model& model) {
                         offset_y,
                         offset_z,
                         reference_y,
-                        reference_z
+                        reference_z,
+                        shear_area_y,
+                        shear_area_z
                     ));
                 })
             )

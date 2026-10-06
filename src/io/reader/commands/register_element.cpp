@@ -27,6 +27,7 @@
 #include <string>
 #include <utility>
 
+#include "../../../model/beam/b31.h"
 #include "../../../model/beam/b33.h"
 #include "../../../model/model.h"
 #include "../../../model/shell/frt_shell_s3.h"
@@ -79,7 +80,7 @@ void register_element(dsl::Registry& registry, model::Model& model) {
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
                     "C3D4", "C3D5", "C3D6", "C3D8", "C3D8I", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                    "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
+                    "B31", "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
                     "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS", "ROTARYI", "SPRING1"
                 })
         );
@@ -123,6 +124,7 @@ void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ADD_ELEMENT_VARIANT("C3D20", C3D20, 20);
         FEM_ADD_ELEMENT_VARIANT("C3D20R", C3D20R, 20);
 
+        FEM_ADD_ELEMENT_VARIANT("B31", B31, 2);
         FEM_ADD_ELEMENT_VARIANT("B33", B33, 2);
         FEM_ADD_ELEMENT_VARIANT("T3", T3, 2);
         FEM_ADD_ELEMENT_VARIANT("T3D2", T3, 2);
