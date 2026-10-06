@@ -344,10 +344,12 @@ bool BeamElement<N>::compute_beam_section_forces(
     Field&       section_forces,
     const Field& target_displacement,
     const Field* target_temperature,
-    int          offset,
     const Field* base_displacement,
     const Field* base_temperature
 ) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     (void) base_temperature;
     logging::error(base_displacement == nullptr,
         "BeamElement: finite-rotation base displacement is not implemented yet for element ",
