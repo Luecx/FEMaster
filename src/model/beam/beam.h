@@ -162,7 +162,6 @@ struct BeamElement : StructuralElement {
         Field&       section_forces,
         const Field& target_displacement,
         const Field* target_temperature,
-        int          offset,
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr
     ) override;
