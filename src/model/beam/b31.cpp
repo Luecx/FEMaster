@@ -63,6 +63,68 @@ Mat3 right_jacobian_inverse(const Vec3& rotation_vector) {
          + coefficient * K * K;
 }
 
+
+/**
+ * Directional derivative of the inverse SO(3) right Jacobian.
+ *
+ * For phi = Log(R) and the body increment eta = vee(R^T dR),
+ *
+ *     d phi = J_r(phi)^-1 eta.
+ *
+ * The derivative below is required by the exact second derivative of the
+ * relative-rotation logarithm used by the B31 curvature field.
+ */
+Mat3 right_jacobian_inverse_directional(
+    const Vec3& rotation_vector,
+    const Vec3& direction
+) {
+    const Precision angle_squared = rotation_vector.squaredNorm();
+    const Precision projection    = rotation_vector.dot(direction);
+
+    const Mat3 K  = math::skew(rotation_vector);
+    const Mat3 dK = math::skew(direction);
+
+    Precision coefficient            = Precision(0);
+    Precision coefficient_directional = Precision(0);
+
+    if (angle_squared < Precision(1e-8)) {
+        const Precision s2 = angle_squared * angle_squared;
+
+        coefficient =
+              Precision(1) / Precision(12)
+            + angle_squared / Precision(720)
+            + s2 / Precision(30240);
+
+        coefficient_directional =
+            (Precision(1) / Precision(360)
+             + angle_squared / Precision(7560)
+             + s2 / Precision(201600)) * projection;
+    } else {
+        const Precision angle      = std::sqrt(angle_squared);
+        const Precision half       = Precision(0.5) * angle;
+        const Precision sin_half   = std::sin(half);
+        const Precision cos_half   = std::cos(half);
+        const Precision cot_half   = cos_half / sin_half;
+        const Precision csc2_half  = Precision(1) / (sin_half * sin_half);
+
+        coefficient =
+              Precision(1) / angle_squared
+            - cot_half / (Precision(2) * angle);
+
+        const Precision dcoefficient_dangle =
+              -Precision(2) / (angle * angle_squared)
+              + csc2_half / (Precision(4) * angle)
+              + cot_half / (Precision(2) * angle_squared);
+
+        coefficient_directional =
+            dcoefficient_dangle * projection / angle;
+    }
+
+    return Precision(0.5) * dK
+         + coefficient_directional * K * K
+         + coefficient * (dK * K + K * dK);
+}
+
 } // namespace
 
 Vec3 B31::node_position_reference(Index local_node) const {
@@ -332,51 +394,213 @@ B31::Mat12 B31::geometric_tangent_from_resultants(
     const Vec12& q,
     const std::array<Vec6, N>& resultants
 ) {
-    Precision resultant_scale = Precision(0);
-    for (const Vec6& resultant : resultants) {
-        resultant_scale = std::max(resultant_scale, resultant.norm());
-    }
-    if (resultant_scale <= std::numeric_limits<Precision>::epsilon()) {
-        return Mat12::Zero();
-    }
-
-    const Precision L = reference_length();
-    const Precision fd = std::cbrt(std::numeric_limits<Precision>::epsilon());
+    const Precision L     = reference_length();
     const Precision weight = L / Precision(2);
+    const Mat3 Qref       = reference_frame();
 
-    const auto kinematic_force = [&](const Vec12& state_q) {
-        const Kinematics state = kinematics(state_q, true);
-        Vec12 force = Vec12::Zero();
-        for (Index point = 0; point < N; ++point) {
-            force.noalias() +=
-                weight * state.point[point].B.transpose() * resultants[point];
+    const Profile* profile = get_profile();
+    const Vec3 offset_ref_to_sp_local(
+        Precision(0),
+        profile->offset_y_ - profile->reference_y_,
+        profile->offset_z_ - profile->reference_z_);
+    const Vec3 offset_ref_to_sp_global =
+        Qref * offset_ref_to_sp_local;
+
+    std::array<Vec3, N> theta;
+    std::array<Mat3, N> R;
+    std::array<Mat3, N> D;
+    std::array<Vec3, N> x;
+    std::array<std::array<Mat3, 3>, N> dR;
+    std::array<std::array<std::array<Mat3, 3>, 3>, N> d2R;
+
+    for (Index node = 0; node < N; ++node) {
+        const Vec3 u = q.template segment<3>(node * dofs_per_node);
+        theta[node] = q.template segment<3>(node * dofs_per_node + 3);
+
+        math::so3::rotation_matrix_second_derivatives(
+            theta[node],
+            R[node],
+            dR[node],
+            d2R[node]
+        );
+
+        D[node] = R[node] * Qref;
+        x[node] = node_position_reference(node)
+                + u
+                + R[node] * offset_ref_to_sp_global;
+    }
+
+    const Vec3 centerline_derivative = (x[1] - x[0]) / L;
+    const Mat3 relative_rotation     = D[0].transpose() * D[1];
+    const Vec3 relative_vector       =
+        rotation_vector_from_matrix(relative_rotation);
+
+    const Precision relative_angle = relative_vector.norm();
+    logging::error(
+        relative_angle < Precision(3.14159265358979323846) - Precision(1e-7),
+        "B31: relative nodal rotation is too close to 180 degrees in element ",
+        this->elem_id
+    );
+
+    const Mat3 Jrinv = right_jacobian_inverse(relative_vector);
+
+    // First derivatives needed by the exact Hessian of the generalized strains.
+    std::array<Vec3, num_dofs> d_centerline;
+    std::array<Mat3, num_dofs> d_relative;
+    std::array<Vec3, num_dofs> relative_increment;
+    std::array<Vec3, num_dofs> d_relative_vector;
+
+    for (Index column = 0; column < num_dofs; ++column) {
+        d_centerline[column].setZero();
+        d_relative[column].setZero();
+        relative_increment[column].setZero();
+        d_relative_vector[column].setZero();
+
+        const Index node = column / dofs_per_node;
+        const Index dof  = column % dofs_per_node;
+        const Precision sign =
+            node == 0 ? Precision(-1) : Precision(1);
+
+        if (dof < 3) {
+            Vec3 direction = Vec3::Zero();
+            direction(dof) = Precision(1);
+            d_centerline[column] = sign * direction / L;
+            continue;
         }
-        return force;
-    };
+
+        const Index a = dof - 3;
+        const Mat3 dD = dR[node][a] * Qref;
+
+        d_centerline[column] =
+            sign * (dR[node][a] * offset_ref_to_sp_global) / L;
+
+        if (node == 0) {
+            d_relative[column] = dD.transpose() * D[1];
+        } else {
+            d_relative[column] = D[0].transpose() * dD;
+        }
+
+        relative_increment[column] =
+            vee_skew(relative_rotation.transpose() * d_relative[column]);
+        d_relative_vector[column] =
+            Jrinv * relative_increment[column];
+    }
+
+    const auto first_director_derivative =
+        [&](Index point, Index column) {
+            Mat3 value = Mat3::Zero();
+
+            const Index node = column / dofs_per_node;
+            const Index dof  = column % dofs_per_node;
+
+            if (dof >= 3 && node == point) {
+                value = dR[node][dof - 3] * Qref;
+            }
+            return value;
+        };
+
+    const auto second_director_derivative =
+        [&](Index point, Index column_a, Index column_b) {
+            Mat3 value = Mat3::Zero();
+
+            const Index node_a = column_a / dofs_per_node;
+            const Index node_b = column_b / dofs_per_node;
+            const Index dof_a  = column_a % dofs_per_node;
+            const Index dof_b  = column_b % dofs_per_node;
+
+            if (dof_a >= 3 && dof_b >= 3
+                && node_a == point && node_b == point) {
+                value = d2R[point][dof_a - 3][dof_b - 3] * Qref;
+            }
+            return value;
+        };
 
     Mat12 geometric = Mat12::Zero();
 
-    for (Index column = 0; column < num_dofs; ++column) {
-        const bool translation = (column % dofs_per_node) < 3;
-        const Precision scale = translation
-            ? std::max(Precision(1), L)
-            : Precision(1);
-        const Precision h = std::max(
-            Precision(10) * std::numeric_limits<Precision>::epsilon(),
-            fd * scale);
+    for (Index column_a = 0; column_a < num_dofs; ++column_a) {
+        for (Index column_b = 0; column_b < num_dofs; ++column_b) {
+            const Index node_a = column_a / dofs_per_node;
+            const Index node_b = column_b / dofs_per_node;
+            const Index dof_a  = column_a % dofs_per_node;
+            const Index dof_b  = column_b % dofs_per_node;
 
-        Vec12 q_plus  = q;
-        Vec12 q_minus = q;
-        q_plus(column)  += h;
-        q_minus(column) -= h;
+            Vec3 d2_centerline = Vec3::Zero();
+            Mat3 d2_relative   = Mat3::Zero();
 
-        geometric.col(column) =
-            (kinematic_force(q_plus) - kinematic_force(q_minus))
-            / (Precision(2) * h);
+            if (dof_a >= 3 && dof_b >= 3) {
+                const Index a = dof_a - 3;
+                const Index b = dof_b - 3;
+
+                if (node_a == node_b) {
+                    const Precision sign =
+                        node_a == 0 ? Precision(-1) : Precision(1);
+
+                    d2_centerline =
+                        sign
+                        * (d2R[node_a][a][b] * offset_ref_to_sp_global)
+                        / L;
+
+                    const Mat3 d2D = d2R[node_a][a][b] * Qref;
+                    if (node_a == 0) {
+                        d2_relative = d2D.transpose() * D[1];
+                    } else {
+                        d2_relative = D[0].transpose() * d2D;
+                    }
+                } else if (node_a == 0) {
+                    d2_relative =
+                        (dR[0][a] * Qref).transpose()
+                        * (dR[1][b] * Qref);
+                } else {
+                    d2_relative =
+                        (dR[0][b] * Qref).transpose()
+                        * (dR[1][a] * Qref);
+                }
+            }
+
+            // Exact second derivative of phi = Log(D0^T D1).
+            const Vec3 d_increment =
+                vee_skew(
+                    d_relative[column_b].transpose() * d_relative[column_a]
+                    + relative_rotation.transpose() * d2_relative
+                );
+
+            const Mat3 dJrinv =
+                right_jacobian_inverse_directional(
+                    relative_vector,
+                    d_relative_vector[column_b]
+                );
+
+            const Vec3 d2_curvature =
+                (dJrinv * relative_increment[column_a]
+                 + Jrinv * d_increment) / L;
+
+            for (Index point = 0; point < N; ++point) {
+                const Mat3 dD_a =
+                    first_director_derivative(point, column_a);
+                const Mat3 dD_b =
+                    first_director_derivative(point, column_b);
+                const Mat3 d2D =
+                    second_director_derivative(
+                        point, column_a, column_b);
+
+                const Vec3 d2_gamma =
+                      d2D.transpose() * centerline_derivative
+                    + dD_a.transpose() * d_centerline[column_b]
+                    + dD_b.transpose() * d_centerline[column_a]
+                    + D[point].transpose() * d2_centerline;
+
+                Vec6 d2_strain = Vec6::Zero();
+                d2_strain.template head<3>() = d2_gamma;
+                d2_strain.template tail<3>() = d2_curvature;
+
+                geometric(column_a, column_b) +=
+                    weight * resultants[point].dot(d2_strain);
+            }
+        }
     }
 
-    // The operator is the Hessian contraction sum_a s_a d2 eps_a/dq2 and is
-    // therefore symmetric. Symmetrization removes only finite-difference noise.
+    // The exact operator is a Hessian. Average only roundoff-level asymmetry
+    // from the SO(3) logarithm/Jacobian evaluations.
     return Precision(0.5) * (geometric + geometric.transpose());
 }
 
