@@ -7,13 +7,13 @@ A Section defined for an element set inside a Part belongs to that Part. If the 
 
 \keywordpage{PROFILE}
 
-\cmd{PROFILE} defines the cross-section constants used by native FEMaster beam Sections. A Profile is referenced by name from \cmd{BEAM SECTION}. It stores area, bending second moments, torsional constant, optional product of inertia, shear-centre offsets, and reference-line offsets.
+\cmd{PROFILE} defines the cross-section constants used by native FEMaster beam Sections. A Profile is referenced by name from \cmd{BEAM SECTION}. It stores area, bending second moments, torsional constant, optional product of inertia, shear-centre offsets, reference-line offsets, and optional effective transverse-shear areas.
 
 The data order is
 \[
-A,\ I_y,\ I_z,\ J_t,\ I_{yz},\ e_y,\ e_z,\ \mathrm{ref}_y,\ \mathrm{ref}_z.
+A,\ I_y,\ I_z,\ J_t,\ I_{yz},\ e_y,\ e_z,\ \mathrm{ref}_y,\ \mathrm{ref}_z,\ A_{sy},\ A_{sz}.
 \]
-Only the first four values are required. The remaining quantities default to zero.
+Only the first four values are required. Product of inertia and offsets default to zero. If \(A_{sy}\) or \(A_{sz}\) is omitted or non-positive, FEMaster uses \(5A/6\). The shear areas are used by shear-flexible beam formulations such as \val{B31}; \val{B33} does not use them.
 
 FEMaster uses the convention
 \[
@@ -23,7 +23,7 @@ without a leading minus sign. Some texts and tools define the product of inertia
 
 The offsets \(e_y,e_z\) describe the relative position used for the section/shear-centre definition, while \(\mathrm{ref}_y,\mathrm{ref}_z\) describe the location of the beam reference line relative to the section reference point. In unsymmetric or eccentric Sections these offsets determine the different points about which axial force, shear, bending, and torsion act.
 
-Profile constants follow the unit system of the model. In a consistent N--mm model, \(A\) is in mm\(^2\), \(I_y\), \(I_z\), \(J_t\), and \(I_{yz}\) are in mm\(^4\), and all offsets are in mm.
+Profile constants follow the unit system of the model. In a consistent N--mm model, \(A\), \(A_{sy}\), and \(A_{sz}\) are in mm\(^2\), \(I_y\), \(I_z\), \(J_t\), and \(I_{yz}\) are in mm\(^4\), and all offsets are in mm.
 
 \begin{keywordparameters}
 \key{PROFILE} / \key{NAME} & required & Unique Profile name referenced by \cmd{BEAM SECTION}. \\
@@ -36,6 +36,7 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 \val{Iyz} & Product of inertia using \(I_{yz}=\int_A yz\,\mathrm dA\). \\
 \val{ey, ez} & Optional section/shear-centre offsets; default zero. \\
 \val{refy, refz} & Optional reference-line offsets; default zero. \\
+\val{Asy, Asz} & Optional effective transverse-shear areas; default \(5A/6\). \\
 \end{keyworddata}
 
 \exampleheading
@@ -44,7 +45,7 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 \begin{femasterdeck}
 *PROFILE, NAME=RECT_EQUIV
 200., 6666.67, 1666.67, 4577.,
-0., 0., 0., 0., 0.
+0., 0., 0., 0., 0., 166.667, 166.667.
 \end{femasterdeck}
 \begin{noabaqus}
 The supported Abaqus reader currently has no standalone Profile mapping for the native FEMaster beam-profile definition.
