@@ -97,8 +97,10 @@ struct ShellElement : StructuralElement {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override = 0;
     MapMatrix  mass(Precision* buffer) override = 0;
@@ -157,17 +159,21 @@ struct ShellElement : StructuralElement {
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override {
         (void) strain;
         (void) stress;
-        (void) displacement;
+        (void) target_displacement;
+        (void) target_temperature;
         (void) rst;
         (void) offset;
-        (void) linearization;
+        (void) base_displacement;
+        (void) base_temperature;
         logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
     }
 
