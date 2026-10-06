@@ -136,6 +136,12 @@ struct ModelData {
     Field::Ptr element_stiffness_scale     = nullptr;
     Field::Ptr material_orientation        = nullptr;
     Field::Ptr shell_element_nodal_normals = nullptr;
+
+    // fields set by initial conditions
+    Field::Ptr temperature                 = nullptr;
+    Field::Ptr velocity                    = nullptr;
+
+    // offsets to access certain field types
     Field::Ptr element_nodal_offsets       = nullptr;
     Field::Ptr element_ip_offsets          = nullptr;
     Field::Ptr element_mp_offsets          = nullptr;

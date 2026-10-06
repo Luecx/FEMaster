@@ -46,14 +46,12 @@ namespace fem::model {
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
- * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Integration-point stress field with the established eight-component
  *         FEMaster layout.
  */
 Field Model::compute_stress_state(
     Field&       displacement,
-    const Field* linearization,
-    const Field* thermal_free_strain
+    const Field* linearization
 ) {
     // Validate and access the compiled integration-point enumeration.
     logging::error(_data->element_ip_offsets != nullptr,
@@ -95,8 +93,7 @@ Field Model::compute_stress_state(
                 displacement,
                 rst,
                 static_cast<int>(ip_offset),
-                linearization,
-                thermal_free_strain
+                linearization
             );
         }
     }
@@ -119,13 +116,11 @@ Field Model::compute_stress_state(
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
- * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Pair containing the global nodal stress field followed by strain.
  */
 std::tuple<Field, Field> Model::compute_stress_nodal(
     Field&       displacement,
-    const Field* linearization,
-    const Field* thermal_free_strain
+    const Field* linearization
 ) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
@@ -163,8 +158,7 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
                     displacement,
                     rst,
                     static_cast<int>(offset),
-                    linearization,
-                    thermal_free_strain
+                    linearization
                 );
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
@@ -242,13 +236,11 @@ Field Model::compute_peeq_nodal() {
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
- * @param thermal_free_strain Optional element-nodal reference thermal strain.
  * @return Pair containing global nodal top-face and bottom-face stress fields.
  */
 std::tuple<Field, Field> Model::compute_stress_top_bot(
     Field&       displacement,
-    const Field* linearization,
-    const Field* thermal_free_strain
+    const Field* linearization
 ) {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
@@ -288,8 +280,8 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
                 }
 
                 const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), linearization, thermal_free_strain);
-                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), linearization, thermal_free_strain);
+                sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), linearization);
+                sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), linearization);
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }, Index(8));
@@ -316,7 +308,7 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
  * @param displacement Global nodal displacement field used for recovery.
  * @return Averaged eight-component nodal shell-resultant field.
  */
-Field Model::compute_shell_resultants(Field& displacement, const Field* thermal_free_strain) {
+Field Model::compute_shell_resultants(Field& displacement) {
     const Index node_count    = _data->field_rows(FieldDomain::NODE);
     const Index element_count = static_cast<Index>(_data->elements.size());
 
@@ -348,8 +340,7 @@ Field Model::compute_shell_resultants(Field& displacement, const Field* thermal_
                 sel->compute_shell_section_forces(
                     thread_resultants[static_cast<std::size_t>(thread)],
                     thread_counts[static_cast<std::size_t>(thread)],
-                    displacement,
-                    thermal_free_strain
+                    displacement
                 );
             }
         }, Index(64));

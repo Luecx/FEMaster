@@ -28,7 +28,6 @@
  * @date 25.08.2026
  */
 
-#include "../bc/neumann/load_t.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
@@ -326,32 +325,6 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
 }
 
 /**
- * Builds the accumulated isotropic free thermal strain at structural element
- * nodes for the selected load collectors.
- */
-Field Model::build_thermal_free_strain(std::vector<std::string> load_sets) {
-    Field thermal_free_strain{
-        "THERMAL_FREE_STRAIN",
-        FieldDomain::ELEMENT_NODAL,
-        _data->field_rows(FieldDomain::ELEMENT_NODAL),
-        1
-    };
-    thermal_free_strain.set_zero();
-
-    for (auto& key : load_sets) {
-        auto data = _data->load_cols.get(key);
-        for (const auto& load : data->entries()) {
-            if (!load) continue;
-            auto thermal = std::dynamic_pointer_cast<bc::TLoad>(load);
-            if (!thermal) continue;
-            thermal->apply_thermal_free_strain(*_data, thermal_free_strain);
-        }
-    }
-
-    return thermal_free_strain;
-}
-
-/**
  * Decomposes selected loads into amplitude-independent spatial basis fields.
  *
  * Loads sharing the same amplitude pointer contribute to one six-component
@@ -529,7 +502,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->evaluate(
                 storage, nullptr, nullptr,
-                nullptr, nullptr, nullptr, false);
+                nullptr, nullptr, false);
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
                     "stiffness scale field must use ELEMENT domain");
@@ -551,7 +524,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, nullptr,
-                    nullptr, nullptr, nullptr, false);
+                    nullptr, nullptr, false);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -608,7 +581,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             &local_nodal_forces,
             &displacement,
             &displacement,
-            nullptr,
             true
         );
 
@@ -637,7 +609,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, &local_nodal_forces,
-                    &displacement, &displacement, nullptr, true);
+                    &displacement, &displacement, true);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -663,6 +635,69 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 
     nodal_forces.check_finite("Internal force");
     return global_matrix;
+}
+
+/**
+ * Evaluates the structural internal force in the undeformed reference state.
+ *
+ * The displacement field is identically zero and no material trial state is
+ * written. Structural elements read the current model temperature directly,
+ * so thermal eigendeformation contributes to f_int(0, T) without a global
+ * thermal-strain or equivalent-load field.
+ *
+ * @param nodal_forces Six-component nodal field overwritten with the reference
+ *                     internal force.
+ */
+void Model::build_internal_force_reference(NodeData& nodal_forces) {
+    logging::error(nodal_forces.domain == FieldDomain::NODE,
+        "reference internal force output must use NODE domain");
+    logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
+        "reference internal force output has wrong node count");
+    logging::error(nodal_forces.components >= 6,
+        "reference internal force output requires at least 6 components");
+
+    // Evaluate every structural element at u = 0 without advancing material state
+    nodal_forces.set_zero();
+
+    Field zero_displacement{
+        "ZERO_DISPLACEMENT",
+        FieldDomain::NODE,
+        _data->field_rows(FieldDomain::NODE),
+        6
+    };
+    zero_displacement.set_zero();
+
+    for (const auto& element : _data->elements) {
+        if (!element) continue;
+        auto* structural = element->as<StructuralElement>();
+        if (!structural) continue;
+
+        structural->evaluate(
+            nullptr,
+            nullptr,
+            &nodal_forces,
+            &zero_displacement,
+            nullptr,
+            false
+        );
+    }
+
+    for (const auto& element : _data->point_elements) {
+        if (!element) continue;
+        auto* structural = element->as<StructuralElement>();
+        if (!structural) continue;
+
+        structural->evaluate(
+            nullptr,
+            nullptr,
+            &nodal_forces,
+            &zero_displacement,
+            nullptr,
+            false
+        );
+    }
+
+    nodal_forces.check_finite("Reference internal force");
 }
 
 /**
@@ -698,7 +733,7 @@ void Model::build_internal_force_nonlinear(
         if (!structural) continue;
         structural->evaluate(
             nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, nullptr, true);
+            &displacement, &displacement, true);
     }
 
     for (const auto& element : _data->point_elements) {
@@ -707,7 +742,7 @@ void Model::build_internal_force_nonlinear(
         if (!structural) continue;
         structural->evaluate(
             nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, nullptr, true);
+            &displacement, &displacement, true);
     }
 
     TripletList discarded_contact_triplets;
@@ -735,7 +770,6 @@ void Model::build_internal_force_nonlinear(
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param displacement Requested global nodal displacement state u.
  * @param stiffness_scalar Optional one-component element stiffness scale.
- * @param thermal_free_strain Optional thermal free-strain perturbation.
  * @param linearization Optional base displacement state u0; nullptr denotes zero.
  * @return Assembled sparse perturbation geometric stiffness matrix.
  */
@@ -743,17 +777,8 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
     const Field&  displacement,
     const Field*  stiffness_scalar,
-    const Field*  thermal_free_strain,
     const Field*  linearization
 ) {
-    if (thermal_free_strain) {
-        logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL,
-            "thermal free strain field must use ELEMENT_NODAL domain");
-        logging::error(thermal_free_strain->components == 1,
-            "thermal free strain field must have 1 component");
-        logging::error(thermal_free_strain->rows == _data->field_rows(FieldDomain::ELEMENT_NODAL),
-            "thermal free strain field has wrong element-nodal row count");
-    }
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix geometric_stiffness = structural->evaluate(
@@ -762,7 +787,6 @@ SparseMatrix Model::build_geom_stiffness_matrix(
                 nullptr,
                 &displacement,
                 linearization,
-                thermal_free_strain,
                 false
             );
 

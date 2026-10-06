@@ -75,7 +75,6 @@ struct StructuralElement : ElementInterface {
         NodeData*    internal_force,
         const Field* displacement,
         const Field* linearization,
-        const Field* thermal_free_strain,
         bool         update_state
     ) = 0;
 
@@ -110,14 +109,6 @@ struct StructuralElement : ElementInterface {
     virtual Mat3      integrate_tensor_field(bool            scale_by_density,
                                              const TenField& field) = 0;
 
-    virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;
-    virtual void apply_thermal_free_strain(Field& thermal_free_strain,
-                                           const Field& node_temp,
-                                           Precision ref_temp) {
-        (void) thermal_free_strain;
-        (void) node_temp;
-        (void) ref_temp;
-    }
 
     // State-neutral recovery about a displacement expansion point. Null denotes
     // zero displacement; passing displacement itself recovers the exact state.
@@ -130,8 +121,7 @@ struct StructuralElement : ElementInterface {
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     linearization
     ) = 0;
 
     // Recover accumulated equivalent plastic strain from committed material
@@ -175,13 +165,6 @@ struct StructuralElement : ElementInterface {
         (void) contribution_count;
         (void) displacement;
         return false;
-    }
-    virtual bool compute_shell_section_forces(Field& section_forces,
-                                              Field& contribution_count,
-                                              const Field& displacement,
-                                              const Field* thermal_free_strain) {
-        (void) thermal_free_strain;
-        return compute_shell_section_forces(section_forces, contribution_count, displacement);
     }
 };
 } // namespace model

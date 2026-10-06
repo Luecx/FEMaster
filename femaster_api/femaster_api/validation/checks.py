@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from femaster_api.model.constraints import ConnectorConstraint, CouplingConstraint, TieConstraint
-from femaster_api.model.loads import InertialLoad, NodalForce, PressureLoad, SurfaceTraction, ThermalLoad, VolumeLoad
+from femaster_api.model.loads import InertialLoad, NodalForce, PressureLoad, SurfaceTraction, VolumeLoad
 from femaster_api.model.sections import BeamSection, ShellSection, SolidSection, TrussSection
 from femaster_api.model.sets import EntitySet, EntityType
 from femaster_api.validation.diagnostics import Diagnostics
@@ -113,9 +113,6 @@ def _check_load(model, diagnostics: Diagnostics, load) -> None:
     elif isinstance(load, PressureLoad):
         if load.amplitude and not model.loads.has_amplitude(load.amplitude):
             diagnostics.error("load references amplitude outside this model", location="loads")
-    elif isinstance(load, ThermalLoad):
-        if not model.fields.has(load.temperature_field):
-            diagnostics.error("thermal load references field outside this model", location="loads")
     elif isinstance(load, InertialLoad):
         if not model.sets.has(load.target, EntityType.ELEMENT):
             diagnostics.error("inertial load references element set outside this model", location="loads")

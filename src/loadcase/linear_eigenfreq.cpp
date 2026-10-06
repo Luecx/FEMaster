@@ -196,11 +196,6 @@ static void write_results(std::vector<ModalMode>& modes,
     model::Field freqs         {"FREQUENCIES",      model::FieldDomain::UNKNOWN, num_modes, 1};
     model::Field participation {"PARTICIPATION",    model::FieldDomain::UNKNOWN, num_modes, 6};
 
-    // Modal analysis has no thermal load contribution. Supplying an explicit
-    // empty dependency keeps stress recovery available for requested mode
-    // stresses without introducing a modal-specific special case.
-    model::Field thermal_free_strain;
-
     for (Index i = 0; i < num_modes; ++i) {
         const auto index = static_cast<std::size_t>(i);
 
@@ -217,7 +212,6 @@ static void write_results(std::vector<ModalMode>& modes,
             "_" + std::to_string(i + 1)
         );
         output.provide(OutputField::DISPLACEMENT,        modes[index].mode_mat);
-        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
         output.write_frame(*writer, mdl->_data.get());
     }
 

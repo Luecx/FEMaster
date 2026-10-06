@@ -33,25 +33,25 @@ namespace fem::model {
 using math::normalized;
 
 template<Index N>
-Precision FRTShell<N>::thermal_free_strain_at(const Field* thermal_free_strain,
-                                              Precision r,
-                                              Precision s) const {
-    if (!thermal_free_strain) {
+Precision FRTShell<N>::thermal_strain_at(Precision r, Precision s) const {
+    const auto material = this->get_material();
+    if (!this->_model_data->temperature || !material || !material->has_thermal_expansion()) {
         return Precision(0);
     }
 
-    logging::error(thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL
-                   && thermal_free_strain->components == 1,
-                   "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
+    const Precision zero  = material->get_thermal_zero_temperature();
+    const Precision alpha = material->get_thermal_expansion();
+    const VecN shape      = shape_function(r, s);
 
-    const VecN shape = shape_function(r, s);
-    Precision value = Precision(0);
+    Precision free_strain = Precision(0);
     for (Index node = 0; node < num_nodes; ++node) {
-        value += shape(node)
-            * (*thermal_free_strain)(
-                static_cast<Index>(this->elem_nodal_offset) + node, 0);
+        const Precision value =
+            (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
+        const Precision temperature = std::isfinite(value) ? value : zero;
+        free_strain += shape(node) * alpha * (temperature - zero);
     }
-    return value;
+
+    return free_strain;
 }
 
 /**
@@ -224,7 +224,6 @@ void FRTShell<N>::physical_stress_strain_at(
     Precision             r,
     Precision             s,
     Precision             zeta,
-    const Field*          thermal_free_strain,
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
@@ -232,11 +231,12 @@ void FRTShell<N>::physical_stress_strain_at(
     const Vec8 generalized_strain = generalized_strain_at(data, displacement_increment, r, s);
     Vec8 generalized_increment    = generalized_strain - generalized_base;
 
-    if (thermal_free_strain) {
+    const Precision free_strain = thermal_strain_at(r, s);
+    if (free_strain != Precision(0)) {
         const ReferencePoint* cached    = cached_reference_point(r, s);
         const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
         const ReferencePoint& point     = cached ? *cached : temporary;
-        generalized_increment -= thermal_generalized_strain(point, thermal_free_strain_at(thermal_free_strain, r, s));
+        generalized_increment -= thermal_generalized_strain(point, free_strain);
     }
 
     const Precision h = this->get_section()->thickness_;
@@ -310,17 +310,12 @@ void FRTShell<N>::compute_stress_strain(
     const Field&     displacement,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization,
-    const Field*     thermal_free_strain
+    const Field*     linearization
 ) {
     logging::error(strain != nullptr || stress != nullptr,
         "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
         "FRTShell: stress/strain coordinates require r, s and t columns");
-    logging::error(!thermal_free_strain || linearization == nullptr,
-        "FRTShell: finite-state thermal free strain recovery is not implemented");
-    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
-        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
     const Vec6N q0 = linearization ? element_displacement_vector(*linearization) : Vec6N::Zero();
     const Vec6N q  = element_displacement_vector(displacement);
@@ -337,8 +332,15 @@ void FRTShell<N>::compute_stress_strain(
         Vec6 strain_value;
         Vec6 stress_value;
 
-        physical_stress_strain_at(data, delta, rst(point, 0), rst(point, 1), rst(point, 2),
-                                  thermal_free_strain, strain_value, stress_value);
+        physical_stress_strain_at(
+            data,
+            delta,
+            rst(point, 0),
+            rst(point, 1),
+            rst(point, 2),
+            strain_value,
+            stress_value
+        );
 
         const Index row = static_cast<Index>(offset) + point;
 
@@ -482,19 +484,12 @@ template<Index N>
 bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
                                                Field&       contribution_count,
                                                const Field& displacement) {
-    return compute_shell_section_forces(
-        resultants, contribution_count, displacement, nullptr);
-}
-
-template<Index N>
-bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
-                                               Field&       contribution_count,
-                                               const Field& displacement,
-                                               const Field* thermal_free_strain) {
     logging::error(resultants.components >= num_strains,
         "FRTShell: shell section forces require eight components [N11,N22,N12,M11,M22,M12,Q13,Q23]");
-    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
-        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
+
+    const auto material = this->get_material();
+    const bool has_thermal_state =
+        this->_model_data->temperature && material && material->has_thermal_expansion();
 
     const RowMatrix      rst     = this->stress_strain_nodal_rst();
     const CurrentState   state   = reference_state();
@@ -517,11 +512,12 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         const Vec8 strain_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
         Vec8 strain_increment  = generalized_strain_at(data, q, r, s) - strain_base;
 
-        if (thermal_free_strain) {
+        if (has_thermal_state) {
             const ReferencePoint* cached    = cached_reference_point(r, s);
             const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
             const ReferencePoint& point     = cached ? *cached : temporary;
-            strain_increment -= thermal_generalized_strain(point, thermal_free_strain_at(thermal_free_strain, r, s));
+            strain_increment -= thermal_generalized_strain(
+                point, thermal_strain_at(r, s));
         }
 
         // Natural nodal output points own no independent constitutive history.

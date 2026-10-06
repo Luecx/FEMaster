@@ -55,7 +55,6 @@ struct QSPT : ShellElement<4> {
         NodeData*    internal_force,
         const Field* displacement,
         const Field* linearization,
-        const Field* thermal_free_strain,
         bool         update_state
     ) override;
     MapMatrix  mass(Precision* buffer) override;

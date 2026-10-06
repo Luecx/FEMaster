@@ -87,11 +87,9 @@ struct PointElement : StructuralElement {
         NodeData*    internal_force,
         const Field* displacement,
         const Field* linearization,
-        const Field* thermal_free_strain,
         bool         update_state
     ) override {
         (void) linearization;
-        (void) thermal_free_strain;
         (void) update_state;
 
         if (internal_force != nullptr) {
@@ -197,20 +195,13 @@ struct PointElement : StructuralElement {
         return section->mass_ * field(node_position(0));
     }
 
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
-        (void) node_loads;
-        (void) node_temp;
-        (void) ref_temp;
-    }
-
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     linearization
     ) override {
         (void) strain;
         (void) stress;
@@ -218,7 +209,6 @@ struct PointElement : StructuralElement {
         (void) rst;
         (void) offset;
         (void) linearization;
-        (void) thermal_free_strain;
     }
 };
 

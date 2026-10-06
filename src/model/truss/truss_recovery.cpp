@@ -16,6 +16,7 @@
 #include "truss.h"
 
 #include "../../material/isotropic_j2_elasticity.h"
+#include <cmath>
 
 namespace fem {
 namespace model {
@@ -80,11 +81,8 @@ void T3::compute_stress_strain(
     const Field&     displacement,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization,
-    const Field*     thermal_free_strain
+    const Field*     linearization
 ) {
-    (void) thermal_free_strain;
-
     const Vec3 X1 = node_position_reference(0);
     const Vec3 X2 = node_position_reference(1);
     const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
@@ -130,14 +128,40 @@ void T3::compute_stress_strain(
     const Precision lambda0 = length_base / L0;
     const Vec3      n0      = axis_base / length_base;
 
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
-    AxialStressPK2                 stress_base;
-    Precision                      material_tangent = Precision(0);
+    const AxialStrainGreenLagrange strain_base =
+        AxialStrainGreenLagrange::from_stretch(lambda0);
+
+    Precision thermal_strain = Precision(0);
+    auto material = get_material();
+    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision alpha = material->get_thermal_expansion();
+
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            const Precision value =
+                (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
+            temperature += std::isfinite(value) ? value : zero;
+        }
+        temperature /= static_cast<Precision>(N);
+        thermal_strain = alpha * (temperature - zero);
+    }
+
+    const AxialStrainGreenLagrange mechanical_strain(
+        strain_base.value() - thermal_strain);
+
+    AxialStressPK2 stress_base;
+    Precision      material_tangent = Precision(0);
 
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
+    elasticity->evaluate(
+        mechanical_strain,
+        old_state,
+        nullptr,
+        stress_base,
+        &material_tangent);
 
     // -------------------------------------------------------------------------
     // linear continuation from u0 to u
@@ -332,14 +356,39 @@ bool T3::compute_beam_section_forces(
     const Precision lambda0 = length_base / L0;
     const Vec3      n0      = axis_base / length_base;
 
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(lambda0);
-    AxialStressPK2                 stress_base;
-    Precision                      material_tangent = Precision(0);
+    const AxialStrainGreenLagrange strain_base =
+        AxialStrainGreenLagrange::from_stretch(lambda0);
+
+    Precision thermal_strain = Precision(0);
+    const auto material = get_material();
+    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision alpha = material->get_thermal_expansion();
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            const Precision value =
+                (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
+            temperature += std::isfinite(value) ? value : zero;
+        }
+        temperature /= static_cast<Precision>(N);
+        thermal_strain = alpha * (temperature - zero);
+    }
+
+    const AxialStrainGreenLagrange mechanical_strain(
+        strain_base.value() - thermal_strain);
+
+    AxialStressPK2 stress_base;
+    Precision      material_tangent = Precision(0);
 
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    elasticity->evaluate(strain_base, old_state, nullptr, stress_base, &material_tangent);
+    elasticity->evaluate(
+        mechanical_strain,
+        old_state,
+        nullptr,
+        stress_base,
+        &material_tangent);
 
     const Vec3      delta_axis   = (u2 - u02) - (u1 - u01);
     const Precision delta_lambda = n0.dot(delta_axis) / L0;

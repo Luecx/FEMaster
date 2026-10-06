@@ -258,11 +258,9 @@ MapMatrix QSPT::evaluate(
     NodeData*    internal_force,
     const Field* displacement,
     const Field* linearization,
-    const Field* thermal_free_strain,
     bool         update_state
 ) {
     (void) linearization;
-    (void) thermal_free_strain;
     (void) update_state;
 
     const bool need_stiffness = tangent != nullptr || internal_force != nullptr;

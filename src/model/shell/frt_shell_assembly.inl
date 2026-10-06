@@ -62,7 +62,12 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
-        const Vec8& strain_values = data.ip_strain[id];
+        Vec8 strain_values = data.ip_strain[id];
+
+        if (data.include_thermal_strain) {
+            const Precision free = thermal_strain_at(point.r, point.s);
+            strain_values -= thermal_generalized_strain(point, free);
+        }
 
         ShellGeneralizedStrain strain(strain_values);
         ShellStressResultants  resultants;
@@ -562,103 +567,6 @@ typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
 }
 
 /**
- * Integrates equivalent nodal forces from a scalar midsurface temperature field.
- *
- * The prescribed temperature is constant through the section thickness. For
- * isotropic thermal expansion the free generalized membrane strain is equal in
- * both tangent directions. On a curved reference surface it also contains the
- * change of the generalized curvature produced by uniform midsurface scaling:
- * epsilon_th times X_,a dot D_,b. Without this term a uniformly heated cylinder
- * can avoid artificial bending energy by opening its seam instead of expanding
- * radially. The free transverse-shear strain remains zero. Multiplying by the
- * complete section tangent (including ABD coupling) yields generalized thermal
- * membrane forces and bending moments. The reference MITC B matrix and the
- * linear-stiffness integration weights map these resultants into consistent
- * forces and moments at all six nodal DOFs. Thermal metric and curvature
- * increments pass through the same MITC operator as mechanical strains.
- *
- * This is the linear/reference thermal RHS, not a constitutive update. It does
- * not modify material state; finite-state thermal constitutive response still
- * requires separate thermal state handling.
- */
-template<Index N>
-void FRTShell<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
-                   "FRTShell: thermal loading requires a scalar nodal temperature field");
-    logging::error(node_loads.domain == FieldDomain::NODE
-                   && node_loads.components >= dofs_per_node,
-                   "FRTShell: thermal loading requires six nodal load components");
-    logging::error(std::isfinite(ref_temp),
-                   "FRTShell: thermal reference temperature must be finite");
-
-    const auto material = this->get_material();
-    logging::error(material->has_thermal_expansion(),
-                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
-
-    VecN nodal_temperatures;
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
-        const Precision temperature = node_temp(node_id, 0);
-        // Match the solid TLOAD convention for undefined nodal temperatures.
-        nodal_temperatures(node) = std::isfinite(temperature) ? temperature : ref_temp;
-    }
-
-    const Precision alpha = material->get_thermal_expansion();
-    const EvaluationData data = init_evaluation(
-        reference_state(), true, true, false, false, false
-    );
-    const auto& points = reference_data().ip_points;
-    Vec6N thermal_force = Vec6N::Zero();
-
-    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
-        const ReferencePoint& point = points[id];
-        const Precision temperature =
-            shape_function(point.r, point.s).dot(nodal_temperatures);
-        const Precision free_strain = alpha * (temperature - ref_temp);
-
-        const Vec8 thermal_strain = thermal_generalized_strain(point, free_strain);
-
-        thermal_force.noalias() += (point.w * point.detJ)
-            * data.ip_B[id].transpose()
-            * (data.ip_tangent[id] * thermal_strain);
-    }
-
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
-        for (Index dof = 0; dof < dofs_per_node; ++dof) {
-            node_loads(node_id, dof) += thermal_force(dofs_per_node * node + dof);
-        }
-    }
-}
-
-template<Index N>
-void FRTShell<N>::apply_thermal_free_strain(Field& thermal_free_strain,
-                                            const Field& node_temp,
-                                            Precision ref_temp) {
-    logging::error(thermal_free_strain.domain == FieldDomain::ELEMENT_NODAL
-                   && thermal_free_strain.components == 1,
-                   "FRTShell: thermal free strain requires scalar ELEMENT_NODAL storage");
-    logging::error(node_temp.domain == FieldDomain::NODE && node_temp.components == 1,
-                   "FRTShell: thermal free strain requires a scalar nodal temperature field");
-    logging::error(std::isfinite(ref_temp),
-                   "FRTShell: thermal reference temperature must be finite");
-
-    const auto material = this->get_material();
-    logging::error(material->has_thermal_expansion(),
-                   "FRTShell: material has no thermal expansion for element ", this->elem_id);
-
-    const Precision alpha = material->get_thermal_expansion();
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Precision value =
-            node_temp(static_cast<Index>(this->node_ids[node]), 0);
-        const Precision temperature = std::isfinite(value) ? value : ref_temp;
-        thermal_free_strain(static_cast<Index>(this->elem_nodal_offset) + node, 0) +=
-            alpha * (temperature - ref_temp);
-    }
-}
-
-/**
  * Evaluates shell force and tangent operators about a selected base state u0.
  *
  * A null linearization denotes the reference state u0 = 0. A non-null
@@ -686,7 +594,6 @@ MapMatrix FRTShell<N>::evaluate(
     NodeData*    internal_force_output,
     const Field* displacement,
     const Field* linearization,
-    const Field* thermal_free_strain,
     bool         update_state
 ) {
     const bool with_tangent   = tangent_buffer           != nullptr;
@@ -703,10 +610,6 @@ MapMatrix FRTShell<N>::evaluate(
         "FRTShell: internal force requires six nodal components");
     logging::error(!update_state || (linearization != nullptr && displacement == linearization),
         "FRTShell: material state requires an exact evaluation at the linearization state");
-    logging::error(!thermal_free_strain || linearization == nullptr,
-        "FRTShell: finite-rotation thermal free strain is not implemented");
-    logging::error(!thermal_free_strain || (thermal_free_strain->domain == FieldDomain::ELEMENT_NODAL && thermal_free_strain->components == 1),
-        "FRTShell: thermal free strain must be scalar ELEMENT_NODAL data");
 
     // -------------------------------------------------------------------------
     // exact state at the linearization point u0
@@ -730,7 +633,21 @@ MapMatrix FRTShell<N>::evaluate(
     const bool need_G                = need_complete_tangent || with_geometric;
     const bool need_resultants       = with_force || need_complete_tangent || with_geometric;
 
-    EvaluationData data = init_evaluation(state, true, need_B, need_G, need_resultants, update_state);
+    const auto material = this->get_material();
+    const bool has_thermal_state =
+        this->_model_data->temperature && material && material->has_thermal_expansion();
+    const bool exact_thermal_state =
+        has_thermal_state && linearization != nullptr && displacement == linearization;
+
+    EvaluationData data = init_evaluation(
+        state,
+        true,
+        need_B,
+        need_G,
+        need_resultants,
+        update_state,
+        exact_thermal_state
+    );
 
     Vec6N force = Vec6N::Zero();
     if (with_force) {
@@ -776,7 +693,7 @@ MapMatrix FRTShell<N>::evaluate(
         resultant_increment.resize(reference_data().ip_points.size());
     }
 
-    if (with_geometric || (with_force && thermal_free_strain)) {
+    if (with_geometric || (with_force && has_thermal_state)) {
         const auto& points = reference_data().ip_points;
 
         for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
@@ -785,8 +702,8 @@ MapMatrix FRTShell<N>::evaluate(
 
             Vec8 increment = data.ip_tangent[id] * (data.ip_B[id] * delta);
 
-            if (thermal_free_strain) {
-                const Precision free_strain      = thermal_free_strain_at(thermal_free_strain, point.r, point.s);
+            if (has_thermal_state && !exact_thermal_state) {
+                const Precision free_strain      = thermal_strain_at(point.r, point.s);
                 const Vec8 thermal_strain        = thermal_generalized_strain(point, free_strain);
                 const Vec8 thermal_resultant     = data.ip_tangent[id] * thermal_strain;
 
@@ -819,7 +736,7 @@ MapMatrix FRTShell<N>::evaluate(
     if (affine_force) {
         force.noalias() += complete * delta;
     }
-    if (with_force && thermal_free_strain) {
+    if (with_force && has_thermal_state && !exact_thermal_state) {
         force.noalias() -= thermal_force;
     }
 

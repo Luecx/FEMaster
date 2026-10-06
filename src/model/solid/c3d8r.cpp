@@ -268,7 +268,6 @@ MapMatrix C3D8R::evaluate(
     NodeData*    internal_force,
     const Field* displacement,
     const Field* linearization,
-    const Field* thermal_free_strain,
     bool         update_state
 ) {
     MapMatrix mapped = SolidElement<N>::evaluate(
@@ -277,7 +276,6 @@ MapMatrix C3D8R::evaluate(
         internal_force,
         displacement,
         linearization,
-        thermal_free_strain,
         update_state
     );
 

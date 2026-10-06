@@ -109,11 +109,8 @@ MapMatrix T3::evaluate(
     NodeData*    internal_force,
     const Field* displacement,
     const Field* linearization,
-    const Field* thermal_free_strain,
     bool         update_state
 ) {
-    (void) thermal_free_strain;
-
     // -----------------------------------------------------------------------------
     // requested outputs
     // -----------------------------------------------------------------------------
@@ -248,12 +245,44 @@ MapMatrix T3::evaluate(
     // Green-Lagrange strain:
     //
     //     E0 = 1/2 (lambda0^2 - 1).
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(stretch_base);
+    const AxialStrainGreenLagrange strain_base =
+        AxialStrainGreenLagrange::from_stretch(stretch_base);
+
+    // Evaluate the free axial strain directly from the current model temperature.
+    Precision thermal_strain = Precision(0);
+    auto material = get_material();
+    const bool has_thermal_state =
+        this->_model_data->temperature && material->has_thermal_expansion();
+
+    if (has_thermal_state) {
+        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision alpha = material->get_thermal_expansion();
+
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            const Precision value =
+                (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
+            temperature += std::isfinite(value) ? value : zero;
+        }
+        temperature /= static_cast<Precision>(N);
+        thermal_strain = alpha * (temperature - zero);
+    }
+
+    const bool exact_thermal_state =
+        has_thermal_state && linearization != nullptr && displacement == linearization;
+
+    const AxialStrainGreenLagrange mechanical_strain(
+        strain_base.value() - (exact_thermal_state ? thermal_strain : Precision(0)));
 
     AxialStressPK2 stress_base;
     Precision      material_tangent = Precision(0);
 
-    elasticity->evaluate(strain_base, old_state, new_state, stress_base, need_material ? &material_tangent : nullptr);
+    elasticity->evaluate(
+        mechanical_strain,
+        old_state,
+        new_state,
+        stress_base,
+        need_material ? &material_tangent : nullptr);
 
     // -----------------------------------------------------------------------------
     // complete tangent stiffness at u0
@@ -328,7 +357,8 @@ MapMatrix T3::evaluate(
         // Only this stress increment contributes to the separately requested
         // geometric stiffness. The base stress S0 is already contained in the
         // complete tangent K_T(u0).
-        const Precision stress_increment = material_tangent * strain_increment;
+        const Precision stress_increment = material_tangent * (
+            strain_increment - (exact_thermal_state ? Precision(0) : thermal_strain));
         const Mat3 geometric_block       = (A0 * stress_increment / L0) * Mat3::Identity();
 
         geometric.block(0, 0, 3, 3) =  geometric_block;
@@ -372,6 +402,13 @@ MapMatrix T3::evaluate(
             delta.template segment<3>(3) = disp_delta.row(1).transpose();
 
             force.noalias() += tangent * delta;
+
+            if (has_thermal_state && !exact_thermal_state) {
+                const Vec3 thermal_force =
+                    A0 * material_tangent * thermal_strain * direction_base;
+                force.template segment<3>(0) += thermal_force;
+                force.template segment<3>(3) -= thermal_force;
+            }
         }
 
         // Scatter the six element force components to the global nodal field.

@@ -210,17 +210,15 @@ MapMatrix BeamElement<N>::evaluate(
     NodeData*    internal_force,
     const Field* displacement,
     const Field* linearization,
-    const Field* thermal_free_strain,
     bool         update_state
 ) {
-    (void) thermal_free_strain;
     (void) update_state;
 
     logging::error(linearization == nullptr,
         "BeamElement: finite-rotation linearization is not implemented yet for element ",
         this->elem_id);
-    logging::error(internal_force == nullptr,
-        "BeamElement: nonlinear/internal-force evaluation is not implemented yet for element ",
+    logging::error(internal_force == nullptr || displacement != nullptr,
+        "BeamElement: internal-force evaluation requires displacement for element ",
         this->elem_id);
 
     if (tangent != nullptr) {
@@ -233,6 +231,51 @@ MapMatrix BeamElement<N>::evaluate(
             "BeamElement: geometric stiffness requires a perturbation displacement from u0 = 0");
         MapMatrix mapped(geometric_tangent, N * 6, N * 6);
         mapped = stiffness_geom_impl(*displacement);
+    }
+
+    if (internal_force != nullptr) {
+        // Linear beam internal force is K u minus the free thermal axial source.
+        Eigen::Matrix<Precision, N * 6, 1> u_global;
+        for (Index node = 0; node < N; ++node) {
+            const Vec6 row =
+                displacement->row_vec6(static_cast<Index>(node_ids[node]));
+            for (Index dof = 0; dof < 6; ++dof) {
+                u_global(node * 6 + dof) = row(dof);
+            }
+        }
+
+        StaticVector<N * 6> force = stiffness_impl() * u_global;
+
+        auto material = get_material();
+        if (this->_model_data->temperature && material->has_thermal_expansion()) {
+            const Precision zero  = material->get_thermal_zero_temperature();
+            const Precision alpha = material->get_thermal_expansion();
+
+            Precision temperature = Precision(0);
+            for (Index node = 0; node < N; ++node) {
+                const Precision value =
+                    (*this->_model_data->temperature)(
+                        static_cast<Index>(node_ids[node]), 0);
+                temperature += std::isfinite(value) ? value : zero;
+            }
+            temperature /= static_cast<Precision>(N);
+
+            const Precision axial_force =
+                get_elasticity()->youngs * get_profile()->area_
+                * alpha * (temperature - zero);
+
+            StaticVector<N * 6> local_thermal = StaticVector<N * 6>::Zero();
+            local_thermal(0)           = -axial_force;
+            local_thermal((N - 1) * 6) =  axial_force;
+            force -= transformation().transpose() * local_thermal;
+        }
+
+        for (Index node = 0; node < N; ++node) {
+            const Index node_id = static_cast<Index>(node_ids[node]);
+            for (Index dof = 0; dof < 6; ++dof) {
+                (*internal_force)(node_id, dof) += force(node * 6 + dof);
+            }
+        }
     }
 
     if (tangent != nullptr) {
@@ -255,13 +298,6 @@ MapMatrix BeamElement<N>::mass(Precision* buffer) {
     MapMatrix result(buffer, N * 6, N * 6);
     result = mass_impl();
     return result;
-}
-
-template<Index N>
-void BeamElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    (void) node_loads;
-    (void) node_temp;
-    (void) ref_temp;
 }
 
 template<Index N>
@@ -314,8 +350,32 @@ bool BeamElement<N>::compute_beam_section_forces(
 
     const auto K_global = stiffness_impl();
     const auto T_out    = transformation_base();
-    const auto f_global = K_global * u_global;
-    const auto q_local  = T_out * f_global;
+    auto f_global       = K_global * u_global;
+
+    auto material = get_material();
+    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision alpha = material->get_thermal_expansion();
+        Precision temperature = Precision(0);
+        for (Index node = 0; node < N; ++node) {
+            const Precision value =
+                (*this->_model_data->temperature)(
+                    static_cast<Index>(node_ids[node]), 0);
+            temperature += std::isfinite(value) ? value : zero;
+        }
+        temperature /= static_cast<Precision>(N);
+
+        const Precision axial_force =
+            get_elasticity()->youngs * get_profile()->area_
+            * alpha * (temperature - zero);
+
+        StaticVector<N * 6> local_thermal = StaticVector<N * 6>::Zero();
+        local_thermal(0)           = -axial_force;
+        local_thermal((N - 1) * 6) =  axial_force;
+        f_global -= transformation().transpose() * local_thermal;
+    }
+
+    const auto q_local = T_out * f_global;
 
     for (Index i = 0; i < N; ++i) {
         for (Index d = 0; d < 6; ++d) {

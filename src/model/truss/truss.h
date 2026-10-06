@@ -124,7 +124,6 @@ struct T3 : StructuralElement {
         NodeData*    internal_force,
         const Field* displacement,
         const Field* linearization,
-        const Field* thermal_free_strain,
         bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
@@ -157,12 +156,7 @@ struct T3 : StructuralElement {
         const TenField& field
     ) override;
 
-    // Equivalent nodal loading caused by a prescribed temperature field
-    void apply_tload(
-        Field&       node_loads,
-        const Field& node_temp,
-        Precision    ref_temp
-    ) override;
+    // Thermal expansion from the current nodal temperature state.
 
     // Recover axial strain and physical stress at requested output positions.
     // Linear recovery uses infinitesimal axial strain and Cauchy stress. Finite-
@@ -174,8 +168,7 @@ struct T3 : StructuralElement {
         const Field&     displacement,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization,
-        const Field*     thermal_free_strain = nullptr
+        const Field*     linearization
     ) override;
     bool compute_peeq(
         Field& peeq,

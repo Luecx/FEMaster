@@ -138,15 +138,12 @@ struct BeamElement : StructuralElement {
         NodeData*    internal_force,
         const Field* displacement,
         const Field* linearization,
-        const Field* thermal_free_strain,
         bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
 
-    // Optional structural-element operations that currently have no generic
-    // beam implementation. Thermal loading deliberately preserves the neutral
-    // behavior of the previous inline definition.
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+    // Thermal expansion acts as an axial initial strain in the current linear
+    // beam formulation.
 
     // Fixed topology and degree-of-freedom metadata required by the common
     // element interface, together with direct connectivity access. Beam

@@ -71,6 +71,9 @@ struct Material : public fem::Namable {
     void set_thermal_expansion(Precision value) { m_thermal_expansion = value; }
     Precision get_thermal_expansion() const { return m_thermal_expansion; }
 
+    void set_thermal_zero_temperature(Precision value) { m_thermal_zero_temperature = value; }
+    Precision get_thermal_zero_temperature() const { return m_thermal_zero_temperature; }
+
     bool has_density() const { return m_density >= Precision(0); }
     void set_density(Precision value);
     Precision get_density() const { return m_density; }
@@ -80,6 +83,7 @@ private:
     Precision m_thermal_specific_heat   = Precision(-1); ///< Thermal capacity value.
     Precision m_thermal_conductivity    = Precision(-1); ///< Thermal conductivity value.
     Precision m_thermal_expansion       = Precision(-1); ///< Thermal expansion coefficient.
+    Precision m_thermal_zero_temperature = Precision(0);  ///< Stress-free temperature for thermal expansion.
     Precision m_density                 = Precision(-1); ///< Density value.
 };
 } // namespace material

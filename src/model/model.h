@@ -192,8 +192,6 @@ struct Model {
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
-    Field build_thermal_free_strain(
-        std::vector<std::string> load_sets = {});
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
         const std::vector<std::string>& supp_sets = {});
@@ -211,8 +209,8 @@ struct Model {
         SystemDofIds& indices,
         const Field& displacement,
         const Field* stiffness_scalar = nullptr,
-        const Field* thermal_free_strain = nullptr,
         const Field* linearization = nullptr);
+    void build_internal_force_reference(NodeData& nodal_forces);
     void build_internal_force_nonlinear(
         SystemDofIds& indices,
         NodeData& nodal_forces,
@@ -227,17 +225,14 @@ struct Model {
     // exact response; solids also support affine recovery about arbitrary states.
     Field compute_stress_state(
         Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
+        const Field* linearization = nullptr);
     std::tuple<Field, Field> compute_stress_nodal(
         Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
+        const Field* linearization = nullptr);
     std::tuple<Field, Field> compute_stress_top_bot(
         Field&       displacement,
-        const Field* linearization       = nullptr,
-        const Field* thermal_free_strain = nullptr);
-    Field compute_shell_resultants(Field& displacement, const Field* thermal_free_strain = nullptr);
+        const Field* linearization = nullptr);
+    Field compute_shell_resultants(Field& displacement);
     Field compute_compliance(Field& displacement);
     Field compute_compliance_angle_derivative(Field& displacement);
     Field compute_volumes();

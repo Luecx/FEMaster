@@ -208,22 +208,36 @@ void LinearBuckling::run() {
         "building global load matrix"
     );
 
-    auto thermal_free_strain = Timer::measure(
-        [&]() { return model->build_thermal_free_strain(loads); },
-        "building thermal free strain field"
-    );
-
     // (4) Active stiffness K (n x n)
     auto K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
     );
 
-    // (5) Reduce global loads -> active RHS f (n x 1)
-    auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
+    // (5) Linearize preload equilibrium about the undeformed temperature state.
+    model::Field reference_internal{
+        "REFERENCE_INTERNAL_FORCES",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+
+    Timer::measure(
+        [&]() { model->build_internal_force_reference(reference_internal); },
+        "constructing reference internal preload force"
     );
+
+    auto f_external = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        "reducing external preload -> active vector"
+    );
+
+    auto f_reference = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        "reducing reference internal preload -> active vector"
+    );
+
+    auto f = f_external - f_reference;
 
     // (6) Assemble constraints and build the null-space transformation
     auto CT = Timer::measure(
@@ -290,7 +304,7 @@ void LinearBuckling::run() {
     auto Kg = Timer::measure(
         [&]() {
             return model->build_geom_stiffness_matrix(
-                active_dof_idx_mat, U_mat, nullptr, &thermal_free_strain);
+                active_dof_idx_mat, U_mat);
         },
         "assembling geometric stiffness K_g from preload displacement"
     );
@@ -391,15 +405,12 @@ void LinearBuckling::run() {
     const Index num_modes = static_cast<Index>(modes.size());
 
     model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
-    model::Field empty_thermal_free_strain;
-
     for (Index i = 0; i < num_modes; ++i) {
         auto& mode = modes[static_cast<std::size_t>(i)];
         lambdas(i) = mode.lambda;
 
         output.begin_frame(mode.lambda, "_" + std::to_string(i + 1));
         output.provide(OutputField::DISPLACEMENT,        mode.mode_mat);
-        output.provide(OutputField::THERMAL_FREE_STRAIN, empty_thermal_free_strain);
         output.write_frame(*writer, model->_data.get());
     }
 

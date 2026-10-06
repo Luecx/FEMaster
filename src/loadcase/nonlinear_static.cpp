@@ -174,11 +174,9 @@ void NonlinearStatic::run() {
         nonlinear_state.reset_material_state();
     });
 
-    // Nonlinear thermal loading is not currently supported. Still expose the
-    // common dependency as an empty field so structural derived fields use the
-    // same dependency graph as every other structural step.
-    model::Field thermal_free_strain;
-
+    // Temperature is a persistent model state. Until a dedicated temperature
+    // state manager is introduced it remains constant throughout this step and
+    // is read directly by the element formulations.
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -663,7 +661,9 @@ void NonlinearStatic::run() {
         output.provide(OutputField::EXTERNAL_FORCES,     increment_external);
         output.provide(OutputField::INTERNAL_FORCES,     increment_internal);
         output.provide(OutputField::REACTION_FORCES,     increment_reactions);
-        output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
+        if (model->_data->temperature) {
+            output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+        }
         output.provide(OutputField::LAMBDA,              lambda_field);
         output.write_frame(*writer, model->_data.get());
     };
@@ -896,7 +896,6 @@ void NonlinearStatic::run() {
     output.provide(OutputField::EXTERNAL_FORCES,     global_load_final);
     output.provide(OutputField::INTERNAL_FORCES,     final_internal);
     output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-    output.provide(OutputField::THERMAL_FREE_STRAIN, thermal_free_strain);
     output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
 

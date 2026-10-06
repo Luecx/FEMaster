@@ -59,7 +59,6 @@ from .loads import (
     NodalForce,
     PressureLoad,
     SurfaceTraction,
-    ThermalLoad,
     VolumeLoad,
 )
 from .materials import (
@@ -161,7 +160,6 @@ __all__ = [
     "SurfaceSet",
     "SurfaceTraction",
     "T3",
-    "ThermalLoad",
     "TieConstraint",
     "TimeControl",
     "TopologyStaticStep",
