@@ -108,9 +108,9 @@ struct PointElement : StructuralElement {
                 const Index node = static_cast<Index>(node_ids[0]);
                 for (Index dof = 0; dof < 3; ++dof) {
                     (*internal_force)(node, dof) +=
-                        section->spring_constants_(dof) * (*displacement)(node, dof);
+                        section->spring_constants_(dof) * (*target_displacement)(node, dof);
                     (*internal_force)(node, dof + 3) +=
-                        section->rotary_spring_constants_(dof) * (*displacement)(node, dof + 3);
+                        section->rotary_spring_constants_(dof) * (*target_displacement)(node, dof + 3);
                 }
             }
         }
