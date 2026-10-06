@@ -61,7 +61,6 @@ Field Model::compute_stress_state(
     logging::error(_data->element_ip_offsets != nullptr,
         "element IP offset field has not been initialized");
 
-    const auto& ip_enum = *_data->element_ip_offsets;
     const Index element_count = static_cast<Index>(_data->elements.size());
     const Index total_ips = _data->field_rows(FieldDomain::ELEMENT_IP);
 
@@ -79,10 +78,6 @@ Field Model::compute_stress_state(
             logging::error(eid >= 0 && static_cast<Index>(eid) < element_count,
                 "Element id out of range in compute_stress_state: ", eid);
 
-            const Index ip_offset = static_cast<Index>(ip_enum(static_cast<Index>(eid), 0));
-            logging::error(ip_offset <= total_ips,
-                "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
-
             const RowMatrix rst = sel->stress_strain_ip_rst();
             if (rst.rows() == 0) continue;
 
@@ -95,7 +90,6 @@ Field Model::compute_stress_state(
                 target_displacement,
                 target_temperature,
                 rst,
-                static_cast<int>(ip_offset),
                 base_displacement,
                 base_temperature
             );
@@ -132,7 +126,6 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets       = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
@@ -157,14 +150,12 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
                 logging::error(rst.rows() == sel->n_nodes(),
                     "Element ", sel->elem_id, " returned ", rst.rows(),
                     " nodal stress coordinates, expected ", sel->n_nodes());
-                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
                 sel->compute_stress_strain(
                     &element_strain,
                     &element_stress,
                     target_displacement,
                     target_temperature,
                     rst,
-                    static_cast<int>(offset),
                     base_displacement,
                     base_temperature
                 );
@@ -201,7 +192,6 @@ Field Model::compute_peeq_nodal() {
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
@@ -218,10 +208,7 @@ Field Model::compute_peeq_nodal() {
             if (!el) return;
 
             if (auto sel = el->as<StructuralElement>()) {
-                const Index offset = static_cast<Index>(
-                    nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-
-                if (sel->compute_peeq(element_peeq, static_cast<int>(offset))) {
+                if (sel->compute_peeq(element_peeq)) {
                     element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
                 }
             }
@@ -256,7 +243,6 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
@@ -289,16 +275,15 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
                     }
                 }
 
-                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
                 sel->compute_stress_strain(
                     nullptr, &element_bot,
                     target_displacement, target_temperature,
-                    rst_bot, static_cast<int>(offset),
+                    rst_bot,
                     base_displacement, base_temperature);
                 sel->compute_stress_strain(
                     nullptr, &element_top,
                     target_displacement, target_temperature,
-                    rst_top, static_cast<int>(offset),
+                    rst_top,
                     base_displacement, base_temperature);
                 element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
@@ -505,7 +490,6 @@ Field Model::compute_section_forces(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
@@ -519,12 +503,10 @@ Field Model::compute_section_forces(
             auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
-                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
                 sel->compute_beam_section_forces(
                     beam_forces,
                     target_displacement,
                     target_temperature,
-                    static_cast<int>(offset),
                     base_displacement,
                     base_temperature);
             }
@@ -549,7 +531,6 @@ Field Model::compute_shear_flow(Field& displacement) {
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
@@ -563,8 +544,7 @@ Field Model::compute_shear_flow(Field& displacement) {
             auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
-                const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-                sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
+                sel->compute_shear_flow(shear_flow, displacement);
             }
         }, Index(32));
 
