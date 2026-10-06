@@ -214,7 +214,16 @@ void LinearBuckling::run() {
         "constructing stiffness matrix K"
     );
 
-    // (5) Linearize preload equilibrium about the undeformed temperature state.
+    // (5) Evaluate the preload force anchor f_int(u0,T) at zero displacement.
+    // The linear stiffness remains the base operator K(u0,T0).
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    reference_displacement.set_zero();
+
     model::Field reference_internal{
         "REFERENCE_INTERNAL_FORCES",
         model::FieldDomain::NODE,
@@ -223,7 +232,16 @@ void LinearBuckling::run() {
     };
 
     Timer::measure(
-        [&]() { model->build_internal_force_reference(reference_internal); },
+        [&]() {
+            model->build_internal_force(
+                reference_internal,
+                reference_displacement,
+                model->_data->temperature.get(),
+                nullptr,
+                nullptr,
+                false,
+                nullptr);
+        },
         "constructing reference internal preload force"
     );
 
@@ -304,7 +322,11 @@ void LinearBuckling::run() {
     auto Kg = Timer::measure(
         [&]() {
             return model->build_geom_stiffness_matrix(
-                active_dof_idx_mat, U_mat);
+                active_dof_idx_mat,
+                U_mat,
+                model->_data->temperature.get(),
+                nullptr,
+                nullptr);
         },
         "assembling geometric stiffness K_g from preload displacement"
     );
