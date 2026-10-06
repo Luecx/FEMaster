@@ -531,48 +531,56 @@ bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
  * @return Always `true` after shell resultants were accumulated.
  */
 template<Index N>
-bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
-                                               Field&       contribution_count,
-                                               const Field& displacement) {
+bool FRTShell<N>::compute_shell_section_forces(
+    Field&       resultants,
+    Field&       contribution_count,
+    const Field& target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
+) {
     logging::error(resultants.components >= num_strains,
         "FRTShell: shell section forces require eight components [N11,N22,N12,M11,M22,M12,Q13,Q23]");
 
-    const auto material = this->get_material();
-    const bool has_thermal_state =
-        this->_model_data->temperature && material && material->has_thermal_expansion();
+    const RowMatrix rst = this->stress_strain_nodal_rst();
+    const CurrentState state = base_displacement
+        ? current_state_from_displacement(*base_displacement)
+        : reference_state();
+    const EvaluationData data =
+        init_evaluation(state, base_temperature, true, true, false, false);
 
-    const RowMatrix      rst     = this->stress_strain_nodal_rst();
-    const CurrentState   state   = reference_state();
-    const EvaluationData data    = init_evaluation(state, true, true, false, false);
-    const Vec6N          q       = element_displacement_vector(displacement);
-    ShellSection*        section = shell_section();
-    const Precision      scale   = topology_stiffness_scale();
-    const auto&          points  = reference_data().ip_points;
+    const Vec6N q0 = base_displacement
+        ? element_displacement_vector(*base_displacement)
+        : Vec6N::Zero();
+    const Vec6N q = element_displacement_vector(target_displacement);
+    const Vec6N delta = q - q0;
+
+    ShellSection* section = shell_section();
+    const Precision scale = topology_stiffness_scale();
+    const auto& points = reference_data().ip_points;
 
     // Recover one generalized resultant vector at every natural element node.
-    //
-    // The reference state q0 = 0 is evaluated exactly and the requested linear
-    // displacement state is continued affinely:
-    //
-    //     n(q) ~= n0 + H0 Delta epsilon.
+    // Temperature is evaluated exactly at q0, while displacement is continued
+    // with the tangent of the base state (q0,T0).
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision r = rst(node, 0);
         const Precision s = rst(node, 1);
 
         const Vec8 strain_total_base = generalized_strain_at(data, Vec6N::Zero(), r, s);
-        Vec8 strain_base              = strain_total_base;
-        const Vec8 strain_increment   = generalized_strain_at(data, q, r, s) - strain_total_base;
+        const Vec8 strain_increment =
+            generalized_strain_at(data, delta, r, s) - strain_total_base;
 
-        // Evaluate the section at the thermo-mechanical reference state. The
-        // temperature is fixed while q is applied, so the affine increment is
-        // purely displacement-induced.
-        if (has_thermal_state) {
-            const ReferencePoint* cached    = cached_reference_point(r, s);
-            const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-            const ReferencePoint& point     = cached ? *cached : temporary;
-            strain_base -= thermal_generalized_strain(
-                point, thermal_strain_at(r, s));
-        }
+        const ReferencePoint* cached    = cached_reference_point(r, s);
+        const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+        const ReferencePoint& point     = cached ? *cached : temporary;
+
+        Vec8 strain_base = strain_total_base;
+        strain_base -= thermal_generalized_strain(
+            point, thermal_strain_at(base_temperature, r, s));
+
+        Vec8 strain_target = strain_total_base;
+        strain_target -= thermal_generalized_strain(
+            point, thermal_strain_at(target_temperature, r, s));
 
         // Natural nodal output points own no independent constitutive history.
         // Reuse the committed block of the closest in-plane integration point.
@@ -582,10 +590,10 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             + (s - points[0].s) * (s - points[0].s);
 
         for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
-            const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+            const ReferencePoint& point_ip = points[static_cast<std::size_t>(ip)];
             const Precision distance =
-                (r - point.r) * (r - point.r)
-                + (s - point.s) * (s - point.s);
+                (r - point_ip.r) * (r - point_ip.r)
+                + (s - point_ip.s) * (s - point_ip.s);
 
             if (distance < state_distance) {
                 state_ip       = ip;
@@ -597,15 +605,41 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
         ShellStressResultants resultants_base;
+        ShellStressResultants resultants_target;
         Mat8                  tangent_base;
+        Mat8                  discarded_tangent;
 
         const Vec3 position    = reference_position(r, s);
         const Mat3 shell_basis = reference_basis_global(r, s);
 
-        section->evaluate(position, shell_basis, ShellGeneralizedStrain(strain_base), old_state, nullptr, this->_model_data->material_state_old->components, resultants_base, tangent_base);
+        section->evaluate(
+            position,
+            shell_basis,
+            ShellGeneralizedStrain(strain_base),
+            old_state,
+            nullptr,
+            this->_model_data->material_state_old->components,
+            resultants_base,
+            tangent_base
+        );
+
+        if (target_temperature == base_temperature) {
+            resultants_target = resultants_base;
+        } else {
+            section->evaluate(
+                position,
+                shell_basis,
+                ShellGeneralizedStrain(strain_target),
+                old_state,
+                nullptr,
+                this->_model_data->material_state_old->components,
+                resultants_target,
+                discarded_tangent
+            );
+        }
 
         ShellStressResultants resultants_shell(
-            resultants_base.values() + tangent_base * strain_increment
+            resultants_target.values() + tangent_base * strain_increment
         );
 
         // Resultants from neighboring shells must be expressed in one
