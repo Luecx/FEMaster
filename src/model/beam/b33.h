@@ -165,17 +165,17 @@ struct B33 : BeamElement<2> {
         const Field*     base_displacement,
         const Field*     base_temperature
     ) override {
-        // First compiled output row belonging to this element.
+        // First element-nodal result row belonging to this element.
         Index offset = static_cast<Index>(this->elem_nodal_offset);
-        if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
-            offset = static_cast<Index>(this->elem_ip_offset);
-        }
 
         (void) base_temperature;
         logging::error(base_displacement == nullptr,
             "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress != nullptr,
             "B33: compute_stress_strain requires at least one output field");
+        logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
+                    && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
+            "B33: stress/strain recovery requires ELEMENT_NODAL output");
 
         const Precision E = get_elasticity()->youngs;
         const Precision A = get_profile()->area_;
