@@ -559,7 +559,6 @@ struct FRTShell : ShellElement<N> {
     // stress and strain vectors.
     Vec8 generalized_strain_at(
         const EvaluationData& data,
-        const Field*          target_temperature,
         const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s
@@ -579,6 +578,7 @@ struct FRTShell : ShellElement<N> {
     ) const;
     void physical_stress_strain_at(
         const EvaluationData& data,
+        const Field*          target_temperature,
         const Vec6N&          displacement_increment,
         Precision             r,
         Precision             s,

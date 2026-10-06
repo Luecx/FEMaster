@@ -207,9 +207,16 @@ struct ShellElement : StructuralElement {
     void compute_compliance(Field& displacement, Field& result) override {
         // Elementsteifigkeit (global gedreht) holen
         Precision buffer[6 * N * 6 * N];
-        MapMatrix Ke = evaluate(
-            buffer, nullptr, nullptr,
-            nullptr, nullptr, nullptr, nullptr, false);
+        MapMatrix Ke = evaluate (
+            buffer,     // tangent
+            nullptr,    // geometric tangent
+            nullptr,    // internal force
+            nullptr,    // target displacement
+            nullptr,    // target temperature
+            nullptr,    // base displacement
+            nullptr,    // base temperature
+            false       // update state
+        );
         // Element-Verschiebungsvektor (global) aufbauen: [ux,uy,uz,rx,ry,rz] je Knoten
         // nodal_data<6>(...) liefert dir genau diese 6 DOFs pro Knoten in globalen Achsen
         StaticMatrix<6, N> u_mat = StaticMatrix<6, N>(this->nodal_data<6>(displacement).transpose());
