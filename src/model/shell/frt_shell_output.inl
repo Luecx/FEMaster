@@ -352,10 +352,15 @@ void FRTShell<N>::compute_stress_strain(
     const Field&     target_displacement,
     const Field*     target_temperature,
     const RowMatrix& rst,
-    int              offset,
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
+    // First compiled output row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
+        offset = static_cast<Index>(this->elem_ip_offset);
+    }
+
     logging::error(strain != nullptr || stress != nullptr,
         "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
@@ -427,11 +432,13 @@ void FRTShell<N>::compute_stress_strain(
  * model-wide PEEQ average.
  *
  * @param peeq Scalar ELEMENT_NODAL output field.
- * @param offset First element-nodal row belonging to this shell.
  * @return True when the shell material uses J2 plasticity.
  */
 template<Index N>
-bool FRTShell<N>::compute_peeq(Field& peeq, int offset) {
+bool FRTShell<N>::compute_peeq(Field& peeq) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "FRTShell: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
