@@ -184,21 +184,24 @@ struct B33 : BeamElement<2> {
 
         const Precision axial_strain = (u_local(6) - u_local(0)) / L;
 
+        // Thermal expansion enters the axial constitutive response through
+        //
+        //     epsilon_mech = epsilon - alpha (T - T0).
+        //
+        // The two-node beam uses the mean nodal temperature.
         Precision thermal_strain = Precision(0);
         auto material = get_material();
         if (this->_model_data->temperature && material->has_thermal_expansion()) {
-            const Precision zero  = material->get_thermal_zero_temperature();
+            const Precision T0    = material->get_thermal_zero_temperature();
             const Precision alpha = material->get_thermal_expansion();
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                const Precision value =
-                    (*this->_model_data->temperature)(
-                        static_cast<Index>(this->node_ids[node]), 0);
-                temperature += std::isfinite(value) ? value : zero;
+                temperature += (*this->_model_data->temperature)(
+                    static_cast<Index>(this->node_ids[node]), 0);
             }
             temperature *= Precision(0.5);
-            thermal_strain = alpha * (temperature - zero);
+            thermal_strain = alpha * (temperature - T0);
         }
 
         const Precision axial_force = E * A * (axial_strain - thermal_strain);
@@ -222,7 +225,7 @@ struct B33 : BeamElement<2> {
      *
      * The axial prestress is recovered locally as
      *
-     *     N = EA (u2_x - u1_x) / L
+     *     N = EA [(u2_x - u1_x) / L - epsilon_th]
      *
      * in the beam principal frame. The resulting initial-stress matrix is then
      * rotated back to global element coordinates. No global integration-point
@@ -247,17 +250,15 @@ struct B33 : BeamElement<2> {
         Precision thermal_strain = Precision(0);
         auto material = get_material();
         if (this->_model_data->temperature && material->has_thermal_expansion()) {
-            const Precision zero  = material->get_thermal_zero_temperature();
+            const Precision T0    = material->get_thermal_zero_temperature();
             const Precision alpha = material->get_thermal_expansion();
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                const Precision value =
-                    (*this->_model_data->temperature)(
-                        static_cast<Index>(this->node_ids[node]), 0);
-                temperature += std::isfinite(value) ? value : zero;
+                temperature += (*this->_model_data->temperature)(
+                    static_cast<Index>(this->node_ids[node]), 0);
             }
             temperature *= Precision(0.5);
-            thermal_strain = alpha * (temperature - zero);
+            thermal_strain = alpha * (temperature - T0);
         }
 
         const Precision N_axial =
