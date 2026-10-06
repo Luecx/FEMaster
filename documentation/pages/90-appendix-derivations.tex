@@ -26,6 +26,19 @@ w_q B(r_q)^T D B(r_q)\,
 \lvert \det J(r_q)\rvert .
 \]
 
+\section{Thermal force anchor and affine structural response}
+
+For a material with constant isotropic expansion, the mechanical strain entering the solid law is
+\[
+\mathbf E_{\mathrm{mech}}=\mathbf E(u)-\alpha(T-T_{\mathrm{zero}})\mathbf I.
+\]
+Here \(\mathbf E\) is Green--Lagrange strain; this is the implemented additive initial-strain convention, not a separate multiplicative thermal-deformation model. The tangent is evaluated at the base state, while a target temperature produces the force anchor at fixed base geometry:
+\[
+f_{\mathrm{int}}(u,T)\simeq f_{\mathrm{int}}(u_0,T)
++K_T(u_0,T_0)(u-u_0).
+\]
+For reference linear statics this gives \(K_0u=f_{\mathrm{ext}}-f_{\mathrm{int}}(0,T)\). Total strain recovery retains the free-expansion strain even when mechanical strain and stress vanish. Shells and line elements apply their corresponding generalized or axial initial-strain conventions.
+
 \section{Compliance}
 
 For a linear static analysis,
@@ -40,6 +53,8 @@ Using the equilibrium equation \(f=Ku\), this can also be written as
 \[
 C = u^T K u .
 \]
+The identity above and the standard adjoint sensitivities below assume homogeneous supports and design-independent mechanical loading. With thermal force anchors, prescribed nonzero displacements, or design-dependent loads, external work and the quadratic stiffness measure need not coincide, and additional derivatives are required. FEMaster\textquotesingle s element \val{COMPLIANCE} is the quadratic quantity \(u_e^T K_e u_e\); it is not automatically a complete thermoelastic objective derivative.
+
 Because the global stiffness matrix is assembled from element stiffness matrices, compliance can be decomposed into element contributions:
 \[
 C = \sum_{e=1}^{n_e} u_e^T K_e u_e .

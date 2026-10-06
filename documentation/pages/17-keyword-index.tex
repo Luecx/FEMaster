@@ -18,6 +18,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \endhead
 
 \cmd{HEADING} & \checkmark & \checkmark & Input Format \\
+\cmd{INCLUDE} & \checkmark & \checkmark & Input Format; nested file inclusion with \key{INPUT}/\key{SRC} \\
 \cmd{MODEL} & \checkmark & -- & Input Format; optional native root marker \\
 \cmd{PART} & \checkmark & \checkmark & Model Definition \\
 \cmd{END PART} & \checkmark & \checkmark & Model Definition \\
@@ -63,6 +64,8 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{NORMAL} & \checkmark & -- & Fields \\
 
 \midrule
+\cmd{INITIALCONDITION} & \checkmark & -- & Loads and Boundary Conditions; Field-based model temperature or velocity \\
+\cmd{INITIAL CONDITIONS} & \checkmark & -- & Alias of native \cmd{INITIALCONDITION}; no Abaqus mapping \\
 \cmd{AMPLITUDE} & \checkmark & \checkmark & Loads and Boundary Conditions \\
 \cmd{SUPPORT} & \checkmark & -- & Loads and Boundary Conditions \\
 \cmd{BOUNDARY} & -- & \checkmark & Loads and Boundary Conditions \\
@@ -78,6 +81,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{KINEMATIC} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
 \cmd{DISTRIBUTING} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
 \cmd{EQUATION} & \checkmark & \checkmark & Constraints \\
+\cmd{MPC} & \checkmark & \checkmark & Constraints; two-node BEAM, TIE, PIN relations \\
 \cmd{TIE} & \checkmark & -- & Constraints \\
 \cmd{CONNECTOR} & \checkmark & -- & Constraints \\
 \cmd{RBM} & \checkmark & -- & Constraints \\
@@ -105,6 +109,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{DAMPING} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{FREQUENCIES} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{NUMEIGENVALUES} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{EIGENVALUERANGE} & \checkmark & -- & Solver and Numerical Controls; open interval in eigenvalues, not Hz \\
 \cmd{SIGMA} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{WRITEEVERY} & \checkmark & -- & Solver and Numerical Controls \\
 \cmd{INITIALVELOCITY} & \checkmark & -- & Solver and Numerical Controls \\
@@ -120,6 +125,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{NODE OUTPUT} & \checkmark & \checkmark & Output; selects nodal result Fields for the active step \\
 \cmd{ELEMENT OUTPUT} & \checkmark & \checkmark & Output; selects element-derived result Fields for the active step \\
 \cmd{NODE FILE} & \checkmark & \checkmark & Output; CalculiX-style alias selecting nodal result Fields \\
+\cmd{EL OUTPUT} & \checkmark & \checkmark & Output; alias of \cmd{ELEMENT OUTPUT} \\
 \cmd{EL FILE} & \checkmark & \checkmark & Output; CalculiX-style alias selecting element-derived result Fields \\
 \cmd{NODE PRINT} & \checkmark & \checkmark & Output; accepted and ignored \\
 \cmd{EL PRINT} & \checkmark & \checkmark & Output; accepted and ignored \\
@@ -147,6 +153,7 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \val{C3D5} & \val{C3D5} & 5-node pyramid input / transition solid \\
 \val{C3D6} & \val{C3D6} & 6-node linear wedge solid \\
 \val{C3D8} & \val{C3D8} & 8-node full-integration hexahedral solid \\
+\val{C3D8I} & \val{C3D8I} & 8-node hexahedral solid with 13 condensed incompatible modes \\
 \val{C3D8R} & \val{C3D8R} & 8-node reduced-integration hexahedral solid \\
 \val{C3D10} & \val{C3D10} & 10-node quadratic tetrahedral solid \\
 \val{C3D15} & \val{C3D15} & 15-node quadratic wedge solid \\
@@ -163,7 +170,8 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \val{MITC8} & -- & 8-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC8FRT} \\
 \val{MITC8FRT} & \val{S8}, \val{S8R} & Current finite-rotation 8-node MITC shell \\
 \val{QSPT} & -- & Native quadrilateral shear-panel element \\
-\val{B33} & \val{B33} & 2-node 3D beam \\
+\val{B31} & \val{B31} & 2-node geometrically exact shear-flexible 3D beam \\
+\val{B33} & \val{B33} & 2-node linear Euler--Bernoulli 3D beam \\
 \val{T3} / \val{T3D2} & \val{T3D2} & 2-node 3D truss; native parser accepts both spellings \\
 \val{MASS} & \val{MASS} & 1-node point element with an isotropic \cmd{MASS} property \\
 \val{ROTARYI} & \val{ROTARYI} & 1-node point element with a diagonal \cmd{ROTARY INERTIA} property \\
@@ -173,6 +181,12 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \normalsize
 
 The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}/\val{S4R} and native \val{S4}/\val{MITC4}/\val{MITC4FRT} all select the current four-node finite-rotation shell. The non-FRT input labels are retained for syntax compatibility but do not retain separate legacy linear formulations. Detailed topology figures and formulation notes are given in the Elements chapter.
+
+\section{Removed syntax and thermal availability}
+
+\cmd{TLOAD} has been removed and is not an accepted keyword. Native thermal expansion uses a model-level temperature Field selected by \cmd{INITIALCONDITION} and the material reference temperature \key{ZERO} on \cmd{EXPANSION}. The legacy material spelling \cmd{THERMALEXPANSION} remains accepted by both readers.
+
+The Abaqus reader does not register \cmd{TEMPERATURE} or \cmd{INITIAL CONDITIONS}; the native plural initial-condition alias uses Field selection only. Conductivity, specific heat, heat-flux/convection input cards, and a heat-transfer analysis procedure are not registered in either command-line grammar. Internal thermal assembly and output support must therefore not be read as additional input-keyword support.
 
 \section{Coverage notes}
 
@@ -188,6 +202,6 @@ The optional native \cmd{MODEL} marker is documented as input-file framing rathe
 
 The native \cmd{PLASTIC} material card is also registered in the supported Abaqus parser, with the same tabulated yield-stress/equivalent-plastic-strain rows. \cmd{SOLVER} is a FEMaster extension available in Abaqus \cmd{STEP} after its analysis procedure; the remaining native numerical-control keywords are not registered in the Abaqus parser.
 
-Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
+Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL OUTPUT}, and \cmd{EL FILE} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
 
 The index, detailed thematic documentation, and applicable complete examples together represent every added input keyword or element formulation. This keeps the manual aligned with the syntax users can actually run.

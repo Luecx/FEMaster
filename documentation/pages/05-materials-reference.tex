@@ -126,14 +126,16 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 
 Each data row gives the current uniaxial \emph{true (Cauchy) yield stress} followed by the \emph{accumulated equivalent plastic strain}, not total strain. This is the same stress meaning used by Abaqus-style \cmd{PLASTIC} input. The first row must have zero equivalent plastic strain. Later strain values must increase strictly, while yield stresses must be positive and non-decreasing. FEMaster interpolates the yield stress linearly between rows and holds it constant beyond the last row (perfect plasticity after the supplied range). A single row describes a perfectly plastic material from initial yield.
 
-\key{TYPE} is optional and defaults to \val{J2}; accepted selectors are \val{J2}, \val{MISES}, \val{VONMISES}, and \val{VON\_MISES}. The material implementation provides small-strain and finite-strain constitutive responses for the supported axial, solid, and integrated-shell evaluation paths. A nonlinear analysis is required to evolve plastic history; a linear static analysis does not turn into an elastoplastic analysis merely because this keyword is present.
+\key{TYPE} is optional and defaults to \val{J2}; accepted selectors are \val{J2}, \val{MISES}, \val{VONMISES}, and \val{VON_MISES}. The current material implementation uses finite-strain constitutive responses for supported axial, solid, and integrated-shell evaluation paths. Linear procedures obtain a tangent and an affine response about their base state from the same law; the separate linearized-strain material API has been removed. A nonlinear analysis is required to evolve plastic history; a linear static analysis does not turn into an elastoplastic analysis merely because this keyword is present.
 
 For finite strain, the return map uses Mandel/Kirchhoff equivalent stress internally. Because J2 plastic flow is isochoric, the tabulated Cauchy yield radius is converted consistently as \(\tau_y=J\sigma_y\), where \(J=\det\mathbf F\). This conversion and its deformation derivative are included in the finite-strain algorithmic tangent.
+
+The nonlinear material tangent is symmetrized for FEMaster's symmetric structural solve. Trial history is restored before a repeated Newton or line-search evaluation and committed only after an accepted increment. The scalar result \val{PEEQ} reports accumulated equivalent plastic strain from that accepted history; its recovery and shell through-thickness convention are described in Chapter~\ref{chap:output-results}.
 
 When converting uniaxial test data to this table, use true stress and subtract the elastic strain from the corresponding logarithmic total strain before specifying the plastic-strain ordinate. Stress values and Young's modulus must use the same stress unit.
 
 \begin{keywordparameters}
-\key{TYPE} & optional & \val{J2} (default), \val{MISES}, \val{VONMISES}, or \val{VON\_MISES}. \\
+\key{TYPE} & optional & \val{J2} (default), \val{MISES}, \val{VONMISES}, or \val{VON_MISES}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -244,7 +246,7 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 =\alpha\,\Delta T
 \begin{bmatrix}1&1&1&0&0&0\end{bmatrix}^{T}.
 \]
-Defining \(\alpha\) alone does not load the structure; a temperature Field and reference temperature are required to create \(\Delta T\).
+Here \(\Delta T=T-T_{\mathrm{zero}}\), with the material's stress-free temperature \(T_{\mathrm{zero}}\) supplied by \key{ZERO} (default 0). Defining \(\alpha\) alone does not load the structure. Native \cmd{INITIALCONDITION, TYPE=TEMPERATURE, FIELD=...} binds the absolute nodal temperature Field used by structural evaluation. With no temperature state, the element uses the stress-free temperature and has no thermal initial strain.
 
 The coefficient has units of inverse temperature, for example K\(^{-1}\). Temperature differences in kelvin and degrees Celsius are numerically identical, so either scale may be used for \(\Delta T\) as long as the coefficient is consistent.
 
@@ -254,6 +256,7 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature in the same scale as the nodal Field; default 0. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -265,12 +268,12 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 \begin{dialectexamples}
 \begin{femasterdeck}
 *MATERIAL, NAME=ALUMINIUM
-*EXPANSION, TYPE=ISO
+*EXPANSION, TYPE=ISO, ZERO=20.
 2.30e-5
 \end{femasterdeck}
 \begin{abaqusdeck}
 *MATERIAL, NAME=ALUMINIUM
-*EXPANSION, TYPE=ISO
+*EXPANSION, TYPE=ISO, ZERO=20.
 2.30e-5
 \end{abaqusdeck}
 \end{dialectexamples}
@@ -279,8 +282,11 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \cmd{THERMALEXPANSION} is the legacy spelling of \cmd{EXPANSION}. Both FEMaster and Abaqus input readers accept it with exactly the same syntax and constant isotropic thermal-expansion behavior. Use \cmd{EXPANSION} for new decks.
 
+\key{ZERO} has the same stress-free-reference-temperature meaning as on \cmd{EXPANSION}. Acceptance of either material keyword in Abaqus mode does not imply support for importing an Abaqus temperature state; the currently registered Abaqus grammar has no \cmd{TEMPERATURE} or \cmd{INITIAL CONDITIONS} mapping.
+
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature; default 0. \\
 \end{keywordparameters}
 
 \begin{keyworddata}

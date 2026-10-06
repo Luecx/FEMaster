@@ -112,6 +112,61 @@ The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does 
 
 \cmd{NODE PRINT} and \cmd{EL PRINT} remain compatibility-only keywords. Their variables are accepted and ignored because FEMaster does not provide a separate textual print-output mechanism.
 
+Requested derived quantities are recovered on demand from their dependencies. For example, requesting \val{S} recovers stress from the frame displacement without writing displacement unless \val{U} is also selected. Stress and strain share their recovery work within one frame. Filtering output does not suppress the internal forces, tangents, or material-state updates required by the solve. A recognized token can still fail if the active procedure does not provide a required primary state; naming \val{NT} does not make a thermal state available in a modal frame.
+
+The field-list cards accept up to 32 tokens per data line and have no region or cadence parameters in the current grammar. In particular, \key{NSET}, \key{ELSET}, \key{POSITION}, and \key{FREQUENCY} on those cards are not supported. Their NODE/ELEMENT names share one semantic request set rather than selecting a storage domain; \val{S} and \val{PEEQ} produce the recovered nodal Fields described below. \cmd{WRITEEVERY} separately controls native transient cadence.
+
+\subsection*{Accepted result-request variables}
+
+\begin{longtable}{@{}p{0.27\linewidth}p{0.63\linewidth}@{}}
+\toprule
+\textbf{Input variable} & \textbf{Result quantity} \\
+\midrule
+\endhead
+\val{U}, \val{V}, \val{A} & Displacement, velocity, acceleration. \\
+\val{NT}, \val{NT11}, \val{TEMP} & Scalar nodal temperature \val{TEMPERATURE}. \\
+\val{CF}, \val{NFORC}, \val{RF} & External, internal, reaction-force Fields. \\
+\val{S}, \val{E}, \val{PEEQ} & Stress, total strain, accumulated equivalent plastic strain. \\
+\val{SF} & \val{LOCAL_SECTION_FORCES}; use \val{SHELL_RESULTANTS} for shell membrane/bending/shear resultants. \\
+\val{HFL} & \val{HEAT_FLUX}, requiring a supplied temperature frame and thermal material properties. \\
+\bottomrule
+\end{longtable}
+
+The corresponding full FEMaster names are also accepted. Additional full names are \val{STRESS_TOP}, \val{STRESS_BOT}, \val{SHELL_RESULTANTS}, \val{SHEAR_FLOW}, \val{COMPLIANCE}, \val{VOLUME}, \val{MODE_SHAPE}, \val{BUCKLING_MODE}, \val{LAMBDA}, \val{DENS_GRAD}, \val{DENSITY}, \val{ORIENTATION_GRAD}, and \val{ORIENTATION}. Harmonic full names \val{DISPLACEMENT_REAL}, \val{DISPLACEMENT_IMAG}, \val{STRESS_REAL}, \val{STRESS_IMAG}, \val{STRAIN_REAL}, and \val{STRAIN_IMAG} select the respective component. In a harmonic procedure, compact \val{U}, \val{S}, and \val{E} automatically request both real and imaginary quantities. The step quantities \val{PARTICIPATION}, \val{EIGENVALUES}, \val{EIGENFREQUENCIES}, \val{FREQUENCIES}, and \val{BUCKLING_FACTORS} remain independent of frame filtering.
+
+\subsection*{Default frame selection}
+
+Without an explicit field-list card, the current procedures request the following frame quantities. Temperature is not selected automatically; add \val{NT} to an explicit request when the procedure supplies a temperature frame. Step-level spectra and participation quantities are written independently.
+
+\begin{longtable}{@{}p{0.23\linewidth}p{0.67\linewidth}@{}}
+\toprule
+\textbf{Procedure} & \textbf{Default frame variables} \\
+\midrule
+\endhead
+Linear static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{STRESS_TOP}, \val{STRESS_BOT}, \val{SHELL_RESULTANTS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, \val{LOCAL_SECTION_FORCES}, \val{SHEAR_FLOW}. \\
+Nonlinear static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{PEEQ}, \val{STRESS_TOP}, \val{STRESS_BOT}, \val{EXTERNAL_FORCES}, \val{INTERNAL_FORCES}, \val{REACTION_FORCES}, \val{LAMBDA}. \\
+Eigenfrequency & \val{MODE_SHAPE}. \\
+Linear buckling & \val{BUCKLING_MODE}. \\
+Linear transient & \val{DISPLACEMENT}, \val{VELOCITY}, \val{ACCELERATION}. \\
+Linear harmonic & \val{DISPLACEMENT_REAL}, \val{DISPLACEMENT_IMAG}, \val{STRESS_REAL}, \val{STRESS_IMAG}, \val{STRAIN_REAL}, \val{STRAIN_IMAG}. \\
+Topology static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, \val{COMPLIANCE}, \val{DENS_GRAD}, \val{VOLUME}, \val{DENSITY}, \val{SHEAR_FLOW}. \\
+\bottomrule
+\end{longtable}
+
+Topology analysis with an orientation Field additionally selects \val{ORIENTATION_GRAD} and \val{ORIENTATION}. Defaults can request quantities that a specialized element cannot recover; for example, a native \val{B31} nonlinear model should explicitly select \val{U}, \val{RF}, and \val{SF} instead of the generic stress/plastic-strain defaults.
+
+\keywordpage{OUTPUT}
+
+\cmd{OUTPUT} accepts the optional \key{FIELD} flag and \key{VARIABLE} parameter inside the active native loadcase or supported Abaqus Step. It has no data lines and does not select variables, clear defaults, or open another scope. Even \key{VARIABLE=PRESELECT} has no request-selection effect; use the following node/element cards for actual selection. \key{HISTORY} and other Abaqus output-container options are not registered.
+
+\begin{syntax}
+*OUTPUT, FIELD
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, PEEQ
+\end{syntax}
+
 \keywordpage{NODE OUTPUT}
 
 \cmd{NODE OUTPUT} selects nodal result quantities for the active step. When it is the first explicit output card, the step defaults are cleared before the listed variables are added.
@@ -145,6 +200,15 @@ S, E
 S, E
 \end{abaqusdeck}
 \end{dialectexamples}
+
+\keywordpage{EL OUTPUT}
+
+\cmd{EL OUTPUT} is a shared CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It has the same first-request replacement and subsequent additive selection behavior.
+
+\begin{syntax}
+*EL OUTPUT
+S, E, PEEQ
+\end{syntax}
 
 \keywordpage{NODE FILE}
 
@@ -299,9 +363,17 @@ The component meaning of raw result data therefore depends on whether the Field 
 
 For solid elements, FEMaster evaluates constitutive stress and strain at the element's actual material integration points. Result recovery extrapolates those values to the element's local nodes with a topology-specific interpolation/extrapolation matrix; the global nodal result is then assembled from the contributions of incident elements. A reduced-integration element can only recover the spatial variation represented by its integration-point data (for example, a single-point \val{C3D8R} supplies a constant recovered value per element). Extrapolated element-nodal values and averaged nodal values therefore need not equal the original integration-point values.
 
-The distinction is particularly important at a material interface, a stress discontinuity, a sharp corner, or a strongly distorted mesh: nodal averaging can smooth physically different element-side values, and extrapolation may produce extrema outside the integration-point range. When comparing results with another solver or experimental stress measures, compare the same stress measure and recovery location, not merely a field with the same name. Local \val{ELEMENT\_IP}, \val{ELEMENT\_NODAL}, and global \val{NODE} domains retain different indexing and recovery semantics in the native \file{.res} format.
+The distinction is particularly important at a material interface, a stress discontinuity, a sharp corner, or a strongly distorted mesh: nodal averaging can smooth physically different element-side values, and extrapolation may produce extrema outside the integration-point range. When comparing results with another solver or experimental stress measures, compare the same stress measure and recovery location, not merely a field with the same name. Local \val{ELEMENT_IP}, \val{ELEMENT_NODAL}, and global \val{NODE} domains retain different indexing and recovery semantics in the native \file{.res} format.
 
-FEMR version 1 stores \val{NODE} and \val{ELEMENT} result fields but does not serialize \val{ELEMENT\_NODAL}, \val{ELEMENT\_IP}, or \val{ELEMENT\_MP} fields. The writer skips unsupported domains with a warning; use \file{.res} when the local-field domain is needed. The absence of a local field in FEMR does not imply that FEMaster did not evaluate that quantity internally.
+The solid constitutive calculation uses Green--Lagrange strain and second Piola--Kirchhoff stress in the reference configuration. Recovered solid \val{STRESS} is Cauchy stress. A nonlinear frame recovers the accepted finite-deformation state; a linear frame uses affine displacement continuation about the reference state. Temperature is evaluated at the force/stress anchor and its free strain is subtracted for the material response. Reported \val{STRAIN} is total strain, so free thermal expansion can have nonzero strain and zero stress. The same temperature-aware recovery applies to FRT shell top/bottom stress and generalized resultants. Shell output bases and beam section forces retain their element-specific conventions.
+
+\subsection*{Accumulated equivalent plastic strain}
+
+\val{PEEQ} is a scalar nodal result recovered from accepted J2 material history. It is zero for an initialized elastic state and does not itself trigger plastic evolution in a linear analysis. Solids extrapolate integration-point history to element nodes. \val{T3} has one material point and supplies the same scalar at both end nodes. Integrated FRT shells first take the maximum through-thickness PEEQ at each in-plane integration point and then extrapolate those maxima over the midsurface; the result is not a through-thickness average or a separate top/bottom pair.
+
+Global nodal projection averages contributing element-nodal values. Elements without a PEEQ-capable formulation or material have zero averaging weight, so neighboring elastic-only elements do not dilute a plastic result. Extrapolation and nodal averaging remain distinct from the original material-point history. Request \val{PEEQ} alongside \val{U}, \val{RF}, \val{S}, and \val{E} when these other Fields are also needed, since the first explicit output card replaces defaults.
+
+FEMR version 1 stores \val{NODE} and \val{ELEMENT} result fields but does not serialize \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{ELEMENT_MP} fields. The writer skips unsupported domains with a warning; use \file{.res} when the local-field domain is needed. The absence of a local field in FEMR does not imply that FEMaster did not evaluate that quantity internally.
 
 \subsection*{Harmonic results}
 
@@ -316,7 +388,7 @@ Amplitude and phase can be reconstructed from
 \varphi=\operatorname{atan2}(q_\mathrm{imag},q_\mathrm{real}).
 \]
 Harmonic results distinguish the real part at a chosen phase, the complex amplitude magnitude, and signed components. These quantities are not interchangeable.
-Each excitation-frequency sample retains its own real/imaginary displacement, stress, and strain Fields. An ascending, one-based sweep index is appended to the native Field names (for example, \val{DISPLACEMENT\_REAL\_1} and \val{DISPLACEMENT\_IMAG\_1}); the physical excitation frequency remains the result-frame value. This also keeps samples with repeated frequency values distinct in \file{.res} output.
+Each excitation-frequency sample retains its own real/imaginary displacement, stress, and strain Fields. An ascending, one-based sweep index is appended to the native Field names (for example, \val{DISPLACEMENT_REAL_1} and \val{DISPLACEMENT_IMAG_1}); the physical excitation frequency remains the result-frame value. This also keeps samples with repeated frequency values distinct in \file{.res} output.
 The node-wise magnitude of the complex displacement vector can be reconstructed from the first three translational components of the paired real and imaginary Fields. The console's response norm instead combines all active degrees of freedom of the full displacement vectors, including rotational degrees of freedom where present, and is not the maximum node-wise displacement amplitude.
 
 The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.
@@ -391,6 +463,8 @@ Harmonic displacement, real / imaginary & \val{DISPREAL} / \val{DISPIMAG} & Sepa
 Velocity & \val{VELO} & Nodal velocity components. \\
 Acceleration & \val{ACCE} & Nodal acceleration components. \\
 Reaction force & \val{FORC} & Generalized reaction-force components; nonlinear static writes them for every accepted increment and for the final result frame. \\
+Temperature & \val{NDTEMP} & Scalar nodal temperature when supplied by the analysis and selected for output. \\
+Equivalent plastic strain & \val{PE} & Scalar recovered PEEQ. \\
 Stress & \val{STRESS} & Nodal recovered stress components. \\
 Harmonic stress, real / imaginary & \val{STRREAL} / \val{STRIMAG} & Separate components of the complex harmonic stress. \\
 Strain & \val{TOSTRAIN} & Nodal recovered strain components. \\

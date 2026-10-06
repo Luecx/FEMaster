@@ -15,6 +15,8 @@ where \(\rho_e\) is the value selected by \cmd{TOPODENSITY} and \(p\) is set by 
 
 If an orientation Field is supplied, its three components are interpreted as element-wise Euler rotation angles. The resulting additional rotation is applied to the material coordinate system for the topology-aware solid response. The Field therefore changes material orientation, not element geometry.
 
+The linear equilibrium includes a temperature-dependent internal-force anchor when a model temperature is bound. The reported element compliance and density/orientation gradients retain their quadratic stiffness definitions; interpreting them as optimization derivatives of a thermally driven objective requires accounting for the design dependence of thermal forcing and boundary conditions. The derivations and their assumptions are given in Appendix~\ref{chap:appendix-derivations}.
+
 The analysis also produces topology-related output such as density, compliance-related quantities, density sensitivity, volume, and orientation sensitivity where applicable.
 
 \keywordpage{TOPODENSITY}

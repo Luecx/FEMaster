@@ -1,11 +1,57 @@
 \chapter{Loads and Boundary Conditions}
 \label{chap:loads-bcs}
 
-Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical and thermal load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. The same load definition can therefore be reused in several analyses.
+Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. Temperature is a model state bound through \cmd{INITIALCONDITION}, rather than a mechanical load collector. The same mechanical load definition can therefore be reused in several analyses.
 
 Abaqus input expresses loads and boundary conditions primarily inside a \cmd{STEP}. The supported \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} cards are interpreted according to the active analysis procedure. The side-by-side examples in this chapter show the equivalent FEMaster modelling intent.
 
 Throughout this chapter, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
+
+\keywordpage{INITIALCONDITION}
+\label{sec:initial-condition}
+
+Native \cmd{INITIALCONDITION} binds an existing named Field to persistent model state. It is accepted only at root level, after the model and its root-level Fields have been materialized. The command has no data lines. \key{TYPE=TEMPERATURE} requires a one-component \val{NODE} Field; \key{TYPE=VELOCITY} requires a six-component \val{NODE} Field in the order \((V_x,V_y,V_z,\Omega_x,\Omega_y,\Omega_z)\).
+
+Temperature values are absolute temperatures in the user's consistent scale, not temperature differences. Each material obtains its own difference \(T-T_{\mathrm{zero}}\) from \cmd{EXPANSION, ZERO=...}. A numeric zero in the Field is an actual temperature; it does not mean ``unspecified''. Populate all relevant nodes, including nodes of placed Instances through their qualified references. \key{FILL=ZERO} initializes every remaining node to temperature zero. Field data address individual nodes, not node sets.
+
+The bound temperature remains fixed during the current structural procedures. Linear static and topology-static analyses include its initial-strain force in equilibrium. Nonlinear static evaluates this temperature throughout the step while the load factor scales the mechanical load vector. Thermal expansion is therefore not ramped by \cmd{LOADS}, a load amplitude, or the nonlinear load factor. Linear buckling uses it in the preload equilibrium and the recovered prestress. It is not a general nonlinear-preload restart into a subsequent modal or buckling loadcase.
+
+For transient dynamics the model velocity is the initial-velocity source unless the loadcase supplies \cmd{INITIALVELOCITY}; that explicit selector takes precedence. Binding an initial state does not itself solve a thermal problem or prescribe a time-dependent temperature history.
+
+\begin{keywordparameters}
+\key{TYPE} & required & \val{TEMPERATURE} or \val{VELOCITY}. \\
+\key{FIELD} & required & Existing nodal Field with respectively 1 or 6 components. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=T0, TYPE=NODE, COLS=1
+0, 80.
+1, 80.
+*INITIALCONDITION,
+ TYPE=TEMPERATURE, FIELD=T0
+\end{femasterdeck}
+\begin{noabaqus}
+The current Abaqus reader does not register \cmd{INITIAL CONDITIONS} or \cmd{TEMPERATURE}. Use native input for the Field-based temperature and velocity states described here.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{INITIAL CONDITIONS}
+
+In native input, \cmd{INITIAL CONDITIONS} (normalized to \cmd{INITIALCONDITIONS}) is an alias of \cmd{INITIALCONDITION}. It uses exactly the same required \key{TYPE} and \key{FIELD} parameters and has no data lines. Despite the familiar spelling, it is not an imported Abaqus initial-condition card with per-node data.
+
+\begin{syntax}
+*INITIAL CONDITIONS, TYPE=VELOCITY, FIELD=V0
+\end{syntax}
+
+\section{Thermal expansion and heat-conduction scope}
+
+The structural temperature workflow replaces the former \cmd{TLOAD}. That keyword is no longer registered: remove its collector/reference-temperature definition, bind the nodal temperature Field with \cmd{INITIALCONDITION}, and put the stress-free reference temperature on the material's \cmd{EXPANSION, ZERO=...}. Keep only mechanical collectors under \cmd{LOADS}.
+
+Solids interpolate isotropic free strain from nodal temperatures at their constitutive points. \val{C3D8I} uses the same enhanced-mode base state for thermal force, tangent, prestress, and recovery. FRT shells apply thermal free strain through the same assumed-strain and director transformations as their mechanical strain; this is necessary on warped or curved shells with inclined directors. One scalar temperature per midsurface node represents temperature constant through the thickness. There is no independent top/bottom temperature input or imposed through-thickness thermal gradient. \val{B31} evaluates axial free strain at its end integration points; \val{B33} and \val{T3} use the mean connected-node temperature for axial expansion. \val{QSPT} and point elements do not implement thermal-expansion response.
+
+Heat-conduction assembly, scalar temperature constraints, heat flux, and convection exist in the C++ model subsystem. The current command-line grammar does not register conductivity/specific-heat material cards, thermal boundary cards, or a heat-transfer \cmd{LOADCASE}/Abaqus procedure. They are consequently not runnable input-deck features in this version. \cmd{EXPANSION} defines mechanical free expansion and does not define thermal conductivity. A source-level thermal example or an accepted output token alone does not add a heat-transfer procedure to the parser.
 
 \keywordpage{AMPLITUDE}
 
@@ -298,7 +344,7 @@ The resulting force is independent of the mass density assigned to the material.
 For a gravity load, use a mass-proportional inertial load rather than entering acceleration components as \cmd{VLOAD}. The supported Abaqus \cmd{DLOAD} with \val{GRAV} interprets its magnitude and direction as acceleration and includes material density and selected regular concentrated masses via the \texttt{InertialLoad} path. The two commands therefore \emph{must not} be treated as numerically interchangeable. Auxiliary native \cmd{POINTMASS} definitions are not selected through a regular element set.
 
 \begin{keywordparameters}
-\key{LOAD\_COLLECTOR} & native required & Destination load collector. \\
+\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
 \key{ORIENTATION} & native optional & Named local vector basis for the force density. \\
 \key{AMPLITUDE} & native optional & Named time-scaling function. \\
 \end{keywordparameters}
