@@ -306,12 +306,11 @@ void C3D8I::compute_compliance_angle_derivative(Field& displacement, Field& resu
  *
  *     Delta alpha = -Kaa^-1 Kau Delta u.
  *
- * The constitutive tangent at u0 then produces the PK2 stress increment
+ * Temperature changes are evaluated exactly at the stationary nodal base
+ * geometry, including the corresponding stationary enhanced state. The
+ * displacement contribution is linearized at (u0,T0), so
  *
- *     Delta S = C0 Delta E.
- *
- * Temperature is part of the stationary base state and remains fixed during
- * this displacement perturbation.
+ *     Delta S = S(u0,T) - S(u0,T0) + C0 Delta E.
  *
  * Only this stress increment is contracted with the second kinematic
  * derivatives. The stress already present at u0 remains part of the complete
@@ -338,10 +337,12 @@ void C3D8I::compute_compliance_angle_derivative(Field& displacement, Field& resu
  *
  * @param buffer Caller-owned storage for the condensed geometric matrix.
  * @param points Finite kinematics at the base state u0.
- * @param alpha Stationary enhanced parameters at u0.
- * @param system Complete coupled tangent blocks at u0.
+ * @param alpha_base Stationary enhanced parameters at (u0,T0).
+ * @param alpha_target Stationary enhanced parameters at (u0,T).
+ * @param system_base Complete coupled tangent blocks at (u0,T0).
  * @param displacement_increment Nodal perturbation Delta u = u - u0.
- * @param thermal_strain Optional element-local thermal strain of the base state.
+ * @param thermal_base Optional element-local thermal strain at T0.
+ * @param thermal_target Optional element-local thermal strain at T.
  * @return Map onto the condensed 24 x 24 perturbation geometric matrix.
  */
 MapMatrix C3D8I::stiffness_geom(
@@ -881,12 +882,12 @@ void C3D8I::assemble_local_force(Field& node_forces, const Vector24& local_force
 /**
  * Evaluates the C3D8I response through the common mechanical interface.
  *
- * All requests solve the thirteen local stationarity equations at the base
- * state u0 defined by linearization; nullptr denotes u0 = 0. The complete
- * condensed tangent is evaluated at u0. Internal force at a different requested
- * state u is returned through the affine approximation
+ * Mechanical evaluation uses the explicit target state (u,T) and base state
+ * (u0,T0). The complete condensed tangent is evaluated at the stationary base
+ * state. A temperature change is solved exactly at the fixed base nodal
+ * geometry, while displacement is continued linearly:
  *
- *     f(u) = f(u0) + K_T(u0) (u - u0).
+ *     f(u,T) = f(u0,T) + K_T(u0,T0) (u-u0).
  *
  * The separately requested geometric stiffness is generated only by the
  * linearized PK2 stress increment from u0 to u. Existing stress at u0 remains
@@ -1034,9 +1035,9 @@ MapMatrix C3D8I::evaluate(
  * displacement. Affine recovery solves them at the expansion point and obtains
  * the enhanced increment from Kaa delta_alpha = -Kau delta_u.
  *
- * Temperature is part of the stationary expansion state. The constitutive base
- * strain is always E_mech,0 = E0 - E_th, while the affine displacement
- * perturbation is evaluated at fixed temperature.
+ * Base and target temperatures each receive their own stationary enhanced
+ * state at u0. The target-temperature response forms the recovery anchor, while
+ * the displacement perturbation is differentiated at the base state (u0,T0).
  *
  * Both paths use F_bar = F_c (I + sum alpha_m H_m), Green-Lagrange strain and PK2
  * constitutive stress. Affine recovery differentiates the complete Cauchy
