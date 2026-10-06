@@ -36,6 +36,8 @@ struct Profile : public fem::Namable {
     Precision offset_z_          = 0; ///< Shear point offset z: SP - SMP.
     Precision reference_y_       = 0; ///< Reference point offset y: REF - SMP.
     Precision reference_z_       = 0; ///< Reference point offset z: REF - SMP.
+    Precision shear_area_y_      = 0; ///< Effective transverse shear area in local y.
+    Precision shear_area_z_      = 0; ///< Effective transverse shear area in local z.
 
     /**
      * @brief Creates a beam profile with geometric constants.
@@ -50,6 +52,8 @@ struct Profile : public fem::Namable {
      * @param offset_z Shear point offset z: SP - SMP.
      * @param reference_y Reference point offset y: REF - SMP.
      * @param reference_z Reference point offset z: REF - SMP.
+     * @param shear_area_y Effective transverse shear area in local y; non-positive selects 5A/6.
+     * @param shear_area_z Effective transverse shear area in local z; non-positive selects 5A/6.
      */
     Profile(const std::string& name,
             Precision area,
@@ -60,7 +64,9 @@ struct Profile : public fem::Namable {
             Precision offset_y           = 0,
             Precision offset_z           = 0,
             Precision reference_y        = 0,
-            Precision reference_z        = 0);
+            Precision reference_z        = 0,
+            Precision shear_area_y       = 0,
+            Precision shear_area_z       = 0);
 
     /**
      * @brief Prints the profile constants to the logger.
