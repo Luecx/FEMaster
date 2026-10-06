@@ -208,16 +208,18 @@ MapMatrix BeamElement<N>::evaluate(
     Precision*   tangent,
     Precision*   geometric_tangent,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     (void) update_state;
 
-    logging::error(linearization == nullptr,
-        "BeamElement: finite-rotation linearization is not implemented yet for element ",
+    logging::error(base_displacement == nullptr,
+        "BeamElement: finite-rotation base displacement is not implemented yet for element ",
         this->elem_id);
-    logging::error(internal_force == nullptr || displacement != nullptr,
+    logging::error(internal_force == nullptr || target_displacement != nullptr,
         "BeamElement: internal-force evaluation requires displacement for element ",
         this->elem_id);
 
@@ -227,10 +229,13 @@ MapMatrix BeamElement<N>::evaluate(
     }
 
     if (geometric_tangent != nullptr) {
-        logging::error(displacement != nullptr,
-            "BeamElement: geometric stiffness requires a perturbation displacement from u0 = 0");
+        logging::error(target_displacement != nullptr,
+            "BeamElement: geometric stiffness requires a target displacement from u0 = 0");
         MapMatrix mapped(geometric_tangent, N * 6, N * 6);
-        mapped = stiffness_geom_impl(*displacement);
+        mapped = stiffness_geom_impl(
+            *target_displacement,
+            target_temperature,
+            base_temperature);
     }
 
     if (internal_force != nullptr) {
@@ -243,7 +248,7 @@ MapMatrix BeamElement<N>::evaluate(
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index node = 0; node < N; ++node) {
             const Vec6 row =
-                displacement->row_vec6(static_cast<Index>(node_ids[node]));
+                target_displacement->row_vec6(static_cast<Index>(node_ids[node]));
             for (Index dof = 0; dof < 6; ++dof) {
                 u_global(node * 6 + dof) = row(dof);
             }
@@ -252,13 +257,13 @@ MapMatrix BeamElement<N>::evaluate(
         StaticVector<N * 6> force = stiffness_impl() * u_global;
 
         auto material = get_material();
-        if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        if (target_temperature && material->has_thermal_expansion()) {
             const Precision T0    = material->get_thermal_zero_temperature();
             const Precision alpha = material->get_thermal_expansion();
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < N; ++node) {
-                temperature += (*this->_model_data->temperature)(
+                temperature += (*target_temperature)(
                     static_cast<Index>(node_ids[node]), 0);
             }
             temperature /= static_cast<Precision>(N);
@@ -337,15 +342,20 @@ SurfacePtr BeamElement<N>::surface(ID surface_id) {
 template<Index N>
 bool BeamElement<N>::compute_beam_section_forces(
     Field&       section_forces,
-    const Field& displacement,
+    const Field& target_displacement,
+    const Field* target_temperature,
     int          offset,
-    const Field* linearization
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
-    (void) linearization;
+    (void) base_temperature;
+    logging::error(base_displacement == nullptr,
+        "BeamElement: finite-rotation base displacement is not implemented yet for element ",
+        this->elem_id);
     Eigen::Matrix<Precision, N * 6, 1> u_global;
     for (Index i = 0; i < N; ++i) {
         const ID nid = node_ids[i];
-        const Vec6 row = displacement.row_vec6(static_cast<Index>(nid));
+        const Vec6 row = target_displacement.row_vec6(static_cast<Index>(nid));
         for (Index d = 0; d < 6; ++d) {
             u_global(i * 6 + d) = row(d);
         }
@@ -356,12 +366,12 @@ bool BeamElement<N>::compute_beam_section_forces(
     auto f_global       = K_global * u_global;
 
     auto material = get_material();
-    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+    if (target_temperature && material->has_thermal_expansion()) {
         const Precision T0    = material->get_thermal_zero_temperature();
         const Precision alpha = material->get_thermal_expansion();
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*this->_model_data->temperature)(
+            temperature += (*target_temperature)(
                 static_cast<Index>(node_ids[node]), 0);
         }
         temperature /= static_cast<Precision>(N);
