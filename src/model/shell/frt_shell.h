@@ -650,7 +650,10 @@ struct FRTShell : ShellElement<N> {
     bool compute_shell_section_forces(
         Field&       section_forces,
         Field&       contribution_count,
-        const Field& displacement
+        const Field& target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement = nullptr,
+        const Field* base_temperature = nullptr
     ) override;
 
 };
