@@ -1042,7 +1042,7 @@ MapMatrix C3D8I::evaluate(
  * Both paths use F_bar = F_c (I + sum alpha_m H_m), Green-Lagrange strain and PK2
  * constitutive stress. Affine recovery differentiates the complete Cauchy
  * push-forward, including det(F). Material history remains unchanged. Pointwise
- * results are copied to integration-point output or extrapolated to element nodes.
+ * results are extrapolated from the constitutive points to the element nodes.
  *
  * @param strain Optional strain output field.
  * @param stress Optional Cauchy stress output field.
@@ -1214,18 +1214,6 @@ void C3D8I::compute_stress_strain(
 
         ip_strain.row(ip) = recovered_strain.transpose();
         ip_stress.row(ip) = VolumeStressCauchy(recovered_stress).voigt().transpose();
-    }
-
-    // Write integration-point output directly when requested
-    if (output_at_ip) {
-        for (Eigen::Index row = 0; row < rst.rows(); ++row) {
-            const Index global_row = static_cast<Index>(offset + row);
-            for (Dim component = 0; component < 6; ++component) {
-                if (strain) (*strain)(global_row, component) = ip_strain(row, component);
-                if (stress) (*stress)(global_row, component) = ip_stress(row, component);
-            }
-        }
-        return;
     }
 
     // Extrapolate constitutive-point values to the eight natural element nodes
