@@ -20,9 +20,9 @@
  * so a superposed spatial rigid rotation acts as
  * F_bar -> Q F_bar without changing the local enhanced mode space.
  *
- * Thermal loading, stress recovery and perturbation geometric stiffness reconstruct
- * the same stationary enhanced base state. Material history remains state-neutral in
- * all auxiliary paths; only evaluate() with update_state=true writes trial state.
+ * Temperature, stress recovery and perturbation geometric stiffness use the same
+ * stationary enhanced base state. Material history remains state-neutral in all
+ * auxiliary paths; only evaluate() with update_state=true writes trial state.
  *
  * @see C3D8I
  * @see C3D8
