@@ -224,10 +224,13 @@ public:
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization) override;
+        const Field*     base_displacement,
+        const Field*     base_temperature
+    ) override;
     bool compute_peeq(
         Field& peeq,
         int    offset) override;
