@@ -110,20 +110,22 @@ RowMatrix T3::stress_strain_ip_rst() {
  * @return Pair containing axial strain and physical axial stress.
  */
 std::pair<Precision, Precision> T3::evaluate_axial_response(
-    const Field& displacement,
-    const Field* linearization
+    const Field& target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
     const Vec3 X1 = node_position_reference(0);
     const Vec3 X2 = node_position_reference(1);
-    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u2 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+    const Vec3 u1 = target_displacement.row_vec3(static_cast<Index>(node_ids[0]));
+    const Vec3 u2 = target_displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
     Vec3 u01 = Vec3::Zero();
     Vec3 u02 = Vec3::Zero();
 
-    if (linearization) {
-        u01 = linearization->row_vec3(static_cast<Index>(node_ids[0]));
-        u02 = linearization->row_vec3(static_cast<Index>(node_ids[1]));
+    if (base_displacement) {
+        u01 = base_displacement->row_vec3(static_cast<Index>(node_ids[0]));
+        u02 = base_displacement->row_vec3(static_cast<Index>(node_ids[1]));
     }
 
     const Vec3      reference_axis = X2 - X1;
@@ -162,43 +164,38 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
     // thermal contribution
     // -------------------------------------------------------------------------
 
-    // Thermal expansion contributes an eigenstrain
-    //
-    //     E_th = alpha (T - T0),
-    //
-    // where the truss temperature is taken as the mean nodal temperature.
-    // The constitutive strain at the linearization point is therefore
-    //
-    //     E_mech,0 = E0 - E_th.
-    Precision thermal_strain = Precision(0);
-
-    // Extract the material and the expansion / zero temperature.
+    // Thermal expansion is evaluated for both temperature states. A null field
+    // denotes the material stress-free temperature.
     const auto material = get_material();
-    if (this->_model_data->temperature && material->has_thermal_expansion()) {
-        const Precision T0    = material->get_thermal_zero_temperature();
-        const Precision alpha = material->get_thermal_expansion();
+    const auto thermal_strain = [&](const Field* temperature_field) {
+        if (!temperature_field || !material->has_thermal_expansion()) {
+            return Precision(0);
+        }
 
-        // Get the average temperature for the truss from the nodes.
+        const Precision T_zero = material->get_thermal_zero_temperature();
+        const Precision alpha  = material->get_thermal_expansion();
+
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*this->_model_data->temperature)(
+            temperature += (*temperature_field)(
                 static_cast<Index>(node_ids[node]), 0);
         }
 
-        // Compute the average and assign the corresponding thermal strain.
-        temperature   /= static_cast<Precision>(N);
-        thermal_strain = alpha * (temperature - T0);
-    }
+        temperature /= static_cast<Precision>(N);
+        return alpha * (temperature - T_zero);
+    };
 
-    // Subtract thermal strain from the base strain to obtain mechanical strain.
-    const AxialStrainGreenLagrange mechanical_strain(
-        strain_base.value() - thermal_strain);
+    const AxialStrainGreenLagrange mechanical_strain_base(
+        strain_base.value() - thermal_strain(base_temperature));
+    const AxialStrainGreenLagrange mechanical_strain_target(
+        strain_base.value() - thermal_strain(target_temperature));
 
     // -------------------------------------------------------------------------
     // material model evaluation
     // -------------------------------------------------------------------------
 
     AxialStressPK2 stress_base;
+    AxialStressPK2 stress_target_base;
     Precision      material_tangent = Precision(0);
 
     const Index      state_row = this->mp_index(0);
@@ -206,12 +203,24 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
         &(*this->_model_data->material_state_old)(state_row, 0);
 
     elasticity->evaluate(
-        mechanical_strain,
+        mechanical_strain_base,
         old_state,
         nullptr,
         stress_base,
         &material_tangent
     );
+
+    if (target_temperature == base_temperature) {
+        stress_target_base = stress_base;
+    } else {
+        elasticity->evaluate(
+            mechanical_strain_target,
+            old_state,
+            nullptr,
+            stress_target_base,
+            nullptr
+        );
+    }
 
     // -------------------------------------------------------------------------
     // linear continuation from u0 to u
@@ -255,7 +264,7 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
     //
     // The product Delta lambda Delta S is second order and is deliberately
     // omitted.
-    const Precision stress_value = lambda0 * stress_base.value()
+    const Precision stress_value = lambda0 * stress_target_base.value()
                                  + stress_base.value() * delta_lambda
                                  + lambda0 * stress_increment;
 
@@ -299,10 +308,12 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
 void T3::compute_stress_strain(
     Field*           strain,
     Field*           stress,
-    const Field&     displacement,
+    const Field&     target_displacement,
+    const Field*     target_temperature,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization
+    const Field*     base_displacement,
+    const Field*     base_temperature
 ) {
     // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
@@ -311,7 +322,11 @@ void T3::compute_stress_strain(
         "T3: stress/strain coordinates require at least one natural coordinate");
 
     const auto [strain_value, stress_value] =
-        evaluate_axial_response(displacement, linearization);
+        evaluate_axial_response(
+            target_displacement,
+            target_temperature,
+            base_displacement,
+            base_temperature);
 
     // The axial strain and stress are constant over the two-node truss.
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
@@ -387,7 +402,11 @@ void T3::compute_compliance(Field& displacement, Field& result) {
     //
     // where K_0 is the tangent evaluated at the reference state u0 = 0.
     Precision buffer[N * 3 * N * 3] {};
-    const MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, false);
+    const MapMatrix K = evaluate(
+        buffer, nullptr, nullptr,
+        nullptr, nullptr,
+        nullptr, nullptr,
+        false);
 
     // Gather the six translational element DOFs in local node-major ordering:
     //
@@ -437,12 +456,18 @@ void T3::compute_compliance(Field& displacement, Field& result) {
  */
 bool T3::compute_beam_section_forces(
     Field&       section_forces,
-    const Field& displacement,
+    const Field& target_displacement,
+    const Field* target_temperature,
     int          offset,
-    const Field* linearization
+    const Field* base_displacement,
+    const Field* base_temperature
 ) {
     const Precision stress_value =
-        evaluate_axial_response(displacement, linearization).second;
+        evaluate_axial_response(
+            target_displacement,
+            target_temperature,
+            base_displacement,
+            base_temperature).second;
 
     const Precision axial_force =
         get_section()->area_ * stress_value;
