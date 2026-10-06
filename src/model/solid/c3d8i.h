@@ -154,9 +154,6 @@ public:
         bool         update_state
     ) override;
 
-    // Thermal equivalent loading uses the same local static condensation as the
-    // mechanical linear stiffness.
-
     // Compliance orientation sensitivity uses the stationary enhanced strain
     // rather than the compatible C3D8 strain inherited by the common solid.
     void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
@@ -180,7 +177,7 @@ private:
         const Vector13&          alpha,
         const EnhancedSystem&    system,
         const Vector24&          displacement_increment,
-        const StaticVector<N>*   nodal_thermal_strain);
+        const StaticVector<N>*   thermal_strain);
 
     // Enhanced deformation-gradient basis and its linearized or finite-strain
     // work-conjugate strain matrices.
@@ -216,13 +213,8 @@ private:
         const NonlinearPoints& points,
         const StaticVector<N>* thermal_strain = nullptr);
 
-    // Current nodal free thermal strain and its affine source in the finite
-    // nodal/enhanced basis before static condensation.
+    // Current nodal free thermal strain used by the finite constitutive state.
     StaticVector<N> nodal_thermal_strain();
-    std::pair<Vector24, Vector13> thermal_force(
-        const NonlinearPoints& points,
-        const Vector13&        alpha,
-        const StaticVector<N>& free_strain);
 
     // Map between the common global nodal fields and the element-local
     // translational ordering [u1x,u1y,u1z,...,u8x,u8y,u8z].
