@@ -542,8 +542,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     bool                with_B,
     bool                with_G,
     bool                with_resultants,
-    bool                write_material_state,
-    bool                include_thermal_strain
+    bool                write_material_state
 ) const {
     // First derivatives and resultants both depend on the generalized strain at
     // the same current/trial configuration.
@@ -581,10 +580,9 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     data.with_strain          = with_strain;
     data.with_B               = with_B;
     data.with_G               = with_G;
-    data.with_resultants      = with_resultants;
-    data.write_material_state  = write_material_state;
-    data.include_thermal_strain = include_thermal_strain;
-    data.state                 = state;
+    data.with_resultants     = with_resultants;
+    data.write_material_state = write_material_state;
+    data.state                = state;
 
     data.tying_strain_nat        = Span<Vec8>(workspace.tying_strain_nat);
     data.tying_B_nat             = Span<Mat8x6N>(workspace.tying_B_nat);
