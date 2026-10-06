@@ -66,8 +66,7 @@ struct QSPT : ShellElement<4> {
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }
 
     bool compute_shear_flow(Field& shear_flow,
-                            const Field& displacement,
-                            int offset) override;
+                            const Field& displacement) override;
 
     Precision integrate_scalar_field(bool scale_by_density, const ScalarField& field) override;
     Vec3      integrate_vector_field(bool scale_by_density, const VecField& field) override;
