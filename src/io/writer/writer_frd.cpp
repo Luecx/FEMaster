@@ -384,6 +384,12 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
+            {"TEMPERATURE", "NDTEMP", "TEMP", "NT"}, "NDTEMP",
+            {
+                FRDComponent::scalar("T", 1)
+            }
+        },
+        {
             {"REACTIONFORCES", "FORC"}, "FORC",
             {
                 FRDComponent::vector("F1" , 1),
