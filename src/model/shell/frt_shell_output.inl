@@ -33,9 +33,13 @@ namespace fem::model {
 using math::normalized;
 
 template<Index N>
-Precision FRTShell<N>::thermal_strain_at(Precision r, Precision s) const {
+Precision FRTShell<N>::thermal_strain_at(
+    const Field* temperature_field,
+    Precision    r,
+    Precision    s
+) const {
     const auto material = this->get_material();
-    if (!this->_model_data->temperature || !material || !material->has_thermal_expansion()) {
+    if (!temperature_field || !material || !material->has_thermal_expansion()) {
         return Precision(0);
     }
 
@@ -46,7 +50,7 @@ Precision FRTShell<N>::thermal_strain_at(Precision r, Precision s) const {
     Precision free_strain = Precision(0);
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision temperature =
-            (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
+            (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
         free_strain += shape(node) * alpha * (temperature - zero);
     }
 
@@ -219,6 +223,7 @@ Mat3 FRTShell<N>::deformation_gradient_increment_at(
 template<Index N>
 void FRTShell<N>::physical_stress_strain_at(
     const EvaluationData& data,
+    const Field*          target_temperature,
     const Vec6N&          displacement_increment,
     Precision             r,
     Precision             s,
@@ -230,19 +235,19 @@ void FRTShell<N>::physical_stress_strain_at(
     const Vec8 generalized_strain      = generalized_strain_at(data, displacement_increment, r, s);
     const Vec8 generalized_increment   = generalized_strain - generalized_total_base;
 
-    // Temperature belongs to the exact base state. The section therefore sees
-    //
-    //     epsilon_mech,0 = epsilon0 - epsilon_th,
-    //
-    // while the displacement perturbation contains no thermal increment.
-    Vec8 generalized_base = generalized_total_base;
-    const Precision free_strain = thermal_strain_at(r, s);
-    if (free_strain != Precision(0)) {
-        const ReferencePoint* cached    = cached_reference_point(r, s);
-        const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-        const ReferencePoint& point     = cached ? *cached : temporary;
-        generalized_base -= thermal_generalized_strain(point, free_strain);
-    }
+    // Build the mechanical generalized strains at the base and target
+    // temperatures while keeping the same base geometry q0.
+    Vec8 generalized_base   = generalized_total_base;
+    Vec8 generalized_target = generalized_total_base;
+
+    const ReferencePoint* cached    = cached_reference_point(r, s);
+    const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
+    const ReferencePoint& point     = cached ? *cached : temporary;
+
+    generalized_base -= thermal_generalized_strain(
+        point, thermal_strain_at(data.temperature, r, s));
+    generalized_target -= thermal_generalized_strain(
+        point, thermal_strain_at(target_temperature, r, s));
 
     const Precision h = this->get_section()->thickness_;
     const Precision z = Precision(0.5) * h * zeta;
@@ -286,7 +291,36 @@ void FRTShell<N>::physical_stress_strain_at(
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-    const VolumeStressCauchy cauchy_stress = this->get_section()->recover_stress(
+    const ShellGeneralizedStrain zero_increment(Vec8::Zero());
+    const Mat3 zero_deformation_increment = Mat3::Zero();
+
+    // Temperature is evaluated exactly at q0, while the displacement increment
+    // is the derivative of the response at the base state (q0,T0).
+    const VolumeStressCauchy target_stress = this->get_section()->recover_stress(
+        reference_position(r, s),
+        reference_basis,
+        ShellGeneralizedStrain(generalized_target),
+        zero_increment,
+        old_state,
+        this->_model_data->material_state_old->components,
+        z,
+        deformation_gradient_base,
+        zero_deformation_increment
+    );
+
+    const VolumeStressCauchy base_stress = this->get_section()->recover_stress(
+        reference_position(r, s),
+        reference_basis,
+        ShellGeneralizedStrain(generalized_base),
+        zero_increment,
+        old_state,
+        this->_model_data->material_state_old->components,
+        z,
+        deformation_gradient_base,
+        zero_deformation_increment
+    );
+
+    const VolumeStressCauchy base_perturbed = this->get_section()->recover_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_base),
@@ -298,7 +332,10 @@ void FRTShell<N>::physical_stress_strain_at(
         deformation_gradient_increment
     );
 
-    stress_out = topology_stiffness_scale() * cauchy_stress.voigt();
+    stress_out = topology_stiffness_scale()
+               * (target_stress.voigt()
+                + base_perturbed.voigt()
+                - base_stress.voigt());
 }
 
 /**
@@ -312,26 +349,33 @@ template<Index N>
 void FRTShell<N>::compute_stress_strain(
     Field*           strain,
     Field*           stress,
-    const Field&     displacement,
+    const Field&     target_displacement,
+    const Field*     target_temperature,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization
+    const Field*     base_displacement,
+    const Field*     base_temperature
 ) {
     logging::error(strain != nullptr || stress != nullptr,
         "FRTShell: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
         "FRTShell: stress/strain coordinates require r, s and t columns");
 
-    const Vec6N q0 = linearization ? element_displacement_vector(*linearization) : Vec6N::Zero();
-    const Vec6N q  = element_displacement_vector(displacement);
+    const Vec6N q0 = base_displacement
+        ? element_displacement_vector(*base_displacement)
+        : Vec6N::Zero();
+    const Vec6N q = element_displacement_vector(target_displacement);
     const Vec6N delta = q - q0;
 
-    const CurrentState state = linearization ? current_state_from_displacement(*linearization) : reference_state();
+    const CurrentState state = base_displacement
+        ? current_state_from_displacement(*base_displacement)
+        : reference_state();
 
     // Request B0 and the first SO(3) derivatives at the exact base state. The
     // resultant request keeps section evaluation on the same Green-Lagrange
     // constitutive path used by mechanical evaluation.
-    const EvaluationData data = init_evaluation(state, true, true, false, true);
+    const EvaluationData data = init_evaluation(
+        state, base_temperature, true, true, false, true);
 
     for (Eigen::Index point = 0; point < rst.rows(); ++point) {
         Vec6 strain_value;
@@ -339,6 +383,7 @@ void FRTShell<N>::compute_stress_strain(
 
         physical_stress_strain_at(
             data,
+            target_temperature,
             delta,
             rst(point, 0),
             rst(point, 1),
