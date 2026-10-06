@@ -338,7 +338,10 @@ void NonlinearStatic::run() {
             Kt = model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 internal_mat,
-                displacement_evaluation
+                displacement_evaluation,
+                model->_data->temperature.get(),
+                displacement_evaluation,
+                model->_data->temperature.get()
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -409,10 +412,14 @@ void NonlinearStatic::run() {
         logging::disable();
 
         try {
-            model->build_internal_force_nonlinear(
-                active_dof_idx_mat,
+            model->build_internal_force(
                 internal_mat,
-                displacement_evaluation
+                displacement_evaluation,
+                model->_data->temperature.get(),
+                &displacement_evaluation,
+                model->_data->temperature.get(),
+                true,
+                &active_dof_idx_mat
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -626,10 +633,14 @@ void NonlinearStatic::run() {
         increment_internal.set_zero();
 
         nonlinear_state.reset_material_state();
-        model->build_internal_force_nonlinear(
-            active_dof_idx_mat,
+        model->build_internal_force(
             increment_internal,
-            displacement
+            displacement,
+            model->_data->temperature.get(),
+            &displacement,
+            model->_data->temperature.get(),
+            true,
+            &active_dof_idx_mat
         );
 
         auto increment_external = global_load_total;
@@ -843,7 +854,10 @@ void NonlinearStatic::run() {
             return model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 final_internal,
-                displacement
+                displacement,
+                model->_data->temperature.get(),
+                displacement,
+                model->_data->temperature.get()
             );
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
