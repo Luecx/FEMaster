@@ -162,10 +162,15 @@ struct B33 : BeamElement<2> {
         const Field&     target_displacement,
         const Field*     target_temperature,
         const RowMatrix& rst,
-        int              offset,
         const Field*     base_displacement,
         const Field*     base_temperature
     ) override {
+        // First compiled output row belonging to this element.
+        Index offset = static_cast<Index>(this->elem_nodal_offset);
+        if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
+            offset = static_cast<Index>(this->elem_ip_offset);
+        }
+
         (void) base_temperature;
         logging::error(base_displacement == nullptr,
             "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
