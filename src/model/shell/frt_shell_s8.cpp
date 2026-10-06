@@ -317,10 +317,6 @@ void FRTShellS8::apply_mitc_natural(
         metric << basis_1.dot(basis_1), basis_1.dot(basis_2),
                   basis_2.dot(basis_1), basis_2.dot(basis_2);
 
-        const Precision determinant = metric.determinant();
-        logging::error(determinant > Precision(1e-12) * metric(0, 0) * metric(1, 1),
-                       "FRTShellS8: singular auxiliary MITC8 tangent basis");
-
         const Mat2 inverse = metric.inverse();
         const Vec3 dual_1  = inverse(0, 0) * basis_1 + inverse(1, 0) * basis_2;
         const Vec3 dual_2  = inverse(0, 1) * basis_1 + inverse(1, 1) * basis_2;
@@ -361,6 +357,10 @@ void FRTShellS8::apply_mitc_natural(
                                        Index corner_2,
                                        bool  keep_ss) {
             const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+
+            logging::error(middle.X_rs.col(0).cross(middle.X_rs.col(1)).squaredNorm()
+                           > Precision(1e-12) * middle.X_rs.col(0).squaredNorm() * middle.X_rs.col(1).squaredNorm(),
+                           "FRTShellS8: singular auxiliary MITC8 tangent basis");
 
             Vec3 basis_1;
             Vec3 basis_2;
@@ -706,10 +706,6 @@ void FRTShellS8::pull_back_mitc_resultants(
         metric << basis_1.dot(basis_1), basis_1.dot(basis_2),
                   basis_2.dot(basis_1), basis_2.dot(basis_2);
 
-        const Precision determinant = metric.determinant();
-        logging::error(determinant > Precision(1e-12) * metric(0, 0) * metric(1, 1),
-                       "FRTShellS8: singular auxiliary MITC8 tangent basis");
-
         const Mat2 inverse = metric.inverse();
         const Vec3 dual_1  = inverse(0, 0) * basis_1 + inverse(1, 0) * basis_2;
         const Vec3 dual_2  = inverse(0, 1) * basis_1 + inverse(1, 1) * basis_2;
@@ -757,6 +753,10 @@ void FRTShellS8::pull_back_mitc_resultants(
                                            Index corner_2,
                                            bool  keep_ss) {
             const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+
+            logging::error(middle.X_rs.col(0).cross(middle.X_rs.col(1)).squaredNorm()
+                           > Precision(1e-12) * middle.X_rs.col(0).squaredNorm() * middle.X_rs.col(1).squaredNorm(),
+                           "FRTShellS8: singular auxiliary MITC8 tangent basis");
 
             Vec3 basis_1;
             Vec3 basis_2;
