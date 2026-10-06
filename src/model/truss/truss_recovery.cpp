@@ -311,10 +311,15 @@ void T3::compute_stress_strain(
     const Field&     target_displacement,
     const Field*     target_temperature,
     const RowMatrix& rst,
-    int              offset,
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
+    // First compiled output row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
+        offset = static_cast<Index>(this->elem_ip_offset);
+    }
+
     // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
         "T3: compute_stress_strain requires at least one output field");
@@ -356,7 +361,10 @@ void T3::compute_stress_strain(
  * reevaluation is necessary: the accepted scalar history variable is read
  * directly from material_state_old.
  */
-bool T3::compute_peeq(Field& peeq, int offset) {
+bool T3::compute_peeq(Field& peeq) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "T3: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
@@ -458,10 +466,12 @@ bool T3::compute_beam_section_forces(
     Field&       section_forces,
     const Field& target_displacement,
     const Field* target_temperature,
-    int          offset,
     const Field* base_displacement,
     const Field* base_temperature
 ) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     const Precision stress_value =
         evaluate_axial_response(
             target_displacement,
