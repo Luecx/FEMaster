@@ -710,7 +710,7 @@ template<Index N>
 void SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     // Obtain the state-neutral reference tangent through the common mechanical path
     Precision buffer[D * N * D * N];
-    auto K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, false);
+    auto K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false);
 
     auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
