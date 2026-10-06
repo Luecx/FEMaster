@@ -19,6 +19,8 @@
 #include <cmath>
 #include <limits>
 
+#include <Eigen/Geometry>
+
 namespace fem::model {
 
 namespace {
