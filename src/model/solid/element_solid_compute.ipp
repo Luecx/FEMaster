@@ -96,12 +96,14 @@ template<Index N>
 void SolidElement<N>::compute_stress_strain(
     Field*           strain,
     Field*           stress,
-    const Field&     displacement,
+    const Field&     target_displacement,
+    const Field*     target_temperature,
     const RowMatrix& rst,
     int              offset,
-    const Field*     linearization
+    const Field*     base_displacement,
+    const Field*     base_temperature
 ) {
-    const bool exact_state = linearization == &displacement;
+    const bool exact_displacement = base_displacement == &target_displacement;
 
     // Validate output coordinates
     logging::error(strain != nullptr || stress != nullptr,
@@ -117,34 +119,40 @@ void SolidElement<N>::compute_stress_strain(
     logging::error(output_at_ip || output_at_nodes,
         "SolidElement: stress/strain output must use integration points or element nodes");
 
-    const auto reference_coords       = this->node_coords_reference();
-    const auto local_displacement     = this->nodal_data<3>(displacement);
+    const auto reference_coords           = this->node_coords_reference();
+    const auto local_target_displacement  = this->nodal_data<3>(target_displacement);
     StaticMatrix<N, D> local_state = StaticMatrix<N, D>::Zero();
-    if (exact_state) {
-        local_state = local_displacement;
-    } else if (linearization) {
-        local_state = this->nodal_data<D>(*linearization);
+    if (base_displacement) {
+        local_state = this->nodal_data<D>(*base_displacement);
     }
-    const StaticMatrix<N, D> local_delta    = local_displacement - local_state;
+    const StaticMatrix<N, D> local_delta    = local_target_displacement - local_state;
     const StaticMatrix<N, D> current_coords = reference_coords + local_state;
 
-    // Build the element-local free thermal strain directly from the current
-    // model temperature and the material stress-free temperature.
-    StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+    // Build element-local free thermal strains for the base and target
+    // temperature states. A null field denotes the material stress-free
+    // temperature.
     auto material = this->material();
-    const bool has_thermal_state =
-        this->_model_data->temperature && material && material->has_thermal_expansion();
+    const auto nodal_thermal_strain = [&](const Field* temperature_field) {
+        StaticVector<N> result = StaticVector<N>::Zero();
 
-    if (has_thermal_state) {
-        const Precision zero  = material->get_thermal_zero_temperature();
-        const Precision alpha = material->get_thermal_expansion();
+        if (!temperature_field || !material || !material->has_thermal_expansion()) {
+            return result;
+        }
+
+        const Precision T_zero = material->get_thermal_zero_temperature();
+        const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
             const Precision temperature =
-                (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
-            nodal_thermal_strain(node) = alpha * (temperature - zero);
+                (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
+            result(node) = alpha * (temperature - T_zero);
         }
-    }
+
+        return result;
+    };
+
+    const StaticVector<N> thermal_base   = nodal_thermal_strain(base_temperature);
+    const StaticVector<N> thermal_target = nodal_thermal_strain(target_temperature);
 
     RowMatrix ip_strain = RowMatrix::Zero(scheme.count(), n_strain);
     RowMatrix ip_stress = RowMatrix::Zero(scheme.count(), n_strain);
@@ -166,33 +174,39 @@ void SolidElement<N>::compute_stress_strain(
         const VolumeStrainGreenLagrange green =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
-        Precision free = Precision(0);
-        if (has_thermal_state) {
-            free = this->shape_function(point.r, point.s, point.t)
-                .dot(nodal_thermal_strain);
-        }
+        const auto shape = this->shape_function(point.r, point.s, point.t);
+        const Precision free_base   = shape.dot(thermal_base);
+        const Precision free_target = shape.dot(thermal_target);
 
-        // Temperature belongs to the base state, so the material always sees
-        // the mechanical strain E_mech,0 = E0 - E_th at the expansion point.
-        Vec6 constitutive_strain_values = green.voigt();
-        if (has_thermal_state) {
-            constitutive_strain_values.head<3>().array() -= free;
-        }
-        const VolumeStrainGreenLagrange constitutive_strain(
-            constitutive_strain_values);
+        // Tangent quantities are evaluated at (u0,T0).
+        Vec6 constitutive_strain_base = green.voigt();
+        constitutive_strain_base.head<3>().array() -= free_base;
 
-        VolumeStressPK2 second_pk;
+        VolumeStressPK2 stress_base;
         Mat6            material_tangent;
         evaluate_material(
             point.r, point.s, point.t,
-            constitutive_strain,
-            old_state, nullptr, second_pk,
-            exact_state ? nullptr : &material_tangent);
+            VolumeStrainGreenLagrange(constitutive_strain_base),
+            old_state, nullptr, stress_base,
+            exact_displacement ? nullptr : &material_tangent);
+
+        // The stress anchor for recovery is evaluated exactly at (u0,T).
+        VolumeStressPK2 stress_target_base = stress_base;
+        if (target_temperature != base_temperature) {
+            Vec6 constitutive_strain_target = green.voigt();
+            constitutive_strain_target.head<3>().array() -= free_target;
+
+            evaluate_material(
+                point.r, point.s, point.t,
+                VolumeStrainGreenLagrange(constitutive_strain_target),
+                old_state, nullptr, stress_target_base, nullptr);
+        }
 
         Vec6 recovered_strain = green.voigt();
-        const Mat3 sigma = second_pk.to_cauchy(F).tensor();
-        Mat3 recovered_stress = sigma;
-        if (!exact_state) {
+        const Mat3 sigma_base   = stress_base.to_cauchy(F).tensor();
+        const Mat3 sigma_target = stress_target_base.to_cauchy(F).tensor();
+        Mat3 recovered_stress   = sigma_target;
+        if (!exact_displacement) {
             // Differentiate E and sigma = F S F^T / det(F) in the same direction
             const Mat3 delta_F = local_delta.transpose() * dN_dX;
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
@@ -205,10 +219,10 @@ void SolidElement<N>::compute_stress_strain(
             const Vec6 mechanical_increment = delta_strain;
             const Mat3 delta_S =
                 VolumeStressPK2(Vec6(material_tangent * mechanical_increment)).tensor();
-            const Mat3 S = second_pk.tensor();
+            const Mat3 S = stress_base.tensor();
             recovered_stress += (delta_F * S * F.transpose() + F * delta_S * F.transpose()
                                + F * S * delta_F.transpose()) / F.determinant()
-                              - (F.inverse() * delta_F).trace() * sigma;
+                              - (F.inverse() * delta_F).trace() * sigma_base;
         }
         ip_strain.row(ip) = recovered_strain.transpose();
         ip_stress.row(ip) = VolumeStressCauchy(recovered_stress).voigt().transpose();
@@ -334,8 +348,10 @@ MapMatrix SolidElement<N>::evaluate(
     Precision*   tangent_buffer,
     Precision*   geometric_tangent_buffer,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     // Requested element outputs:
@@ -349,12 +365,14 @@ MapMatrix SolidElement<N>::evaluate(
     // Validate requested outputs and evaluation state
     logging::error(with_tangent || with_geometric || with_force,
         "SolidElement: evaluation requires at least one requested output");
-    logging::error(!with_force || displacement != nullptr,
+    logging::error(!with_force || target_displacement != nullptr,
         "SolidElement: internal force evaluation requires displacement");
     logging::error(!with_force || internal_force->components >= D,
         "SolidElement: internal force requires at least three nodal components");
-    logging::error(!update_state || (linearization != nullptr && displacement == linearization),
-        "SolidElement: material state requires an exact evaluation at the linearization state");
+    logging::error(!update_state ||
+        (base_displacement != nullptr && target_displacement == base_displacement &&
+         target_temperature == base_temperature),
+        "SolidElement: material state requires an exact evaluation at the base state");
 
     // Gather the reference nodal coordinates and prepare the displacement states
     // used for the Total-Lagrangian linearization.
@@ -364,8 +382,8 @@ MapMatrix SolidElement<N>::evaluate(
 
     // Collect the displacement u0 at the linearization point and the displacement
     // increment du = u - u0.
-    if (linearization) disp_linear_base = this->nodal_data<D>(*linearization);
-    if (displacement)  disp_delta       = this->nodal_data<D>(*displacement) - disp_linear_base;
+    if (base_displacement)   disp_linear_base = this->nodal_data<D>(*base_displacement);
+    if (target_displacement) disp_delta       = this->nodal_data<D>(*target_displacement) - disp_linear_base;
 
     // Build the nodal coordinates of the linearization configuration x0 = X + u0.
     StaticMatrix<N, D> linearization_coords = reference_coords + disp_linear_base;
@@ -374,23 +392,30 @@ MapMatrix SolidElement<N>::evaluate(
     StaticMatrix<D, N> delta_matrix(disp_delta.transpose());
     const auto delta = Eigen::Map<const StaticVector<D * N>>(delta_matrix.data(), D * N);
 
-    // Evaluate the isotropic free thermal strain directly from the current
-    // nodal temperature state. No global thermal-strain field is constructed.
-    StaticVector<N> nodal_thermal_strain = StaticVector<N>::Zero();
+    // Evaluate isotropic free thermal strain for both temperature states.
+    // Null temperature fields denote the material stress-free temperature.
     auto material = this->material();
-    const bool has_thermal_state =
-        this->_model_data->temperature && material && material->has_thermal_expansion();
+    const auto nodal_thermal_strain = [&](const Field* temperature_field) {
+        StaticVector<N> result = StaticVector<N>::Zero();
 
-    if (has_thermal_state) {
-        const Precision zero  = material->get_thermal_zero_temperature();
-        const Precision alpha = material->get_thermal_expansion();
+        if (!temperature_field || !material || !material->has_thermal_expansion()) {
+            return result;
+        }
+
+        const Precision T_zero = material->get_thermal_zero_temperature();
+        const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
             const Precision temperature =
-                (*this->_model_data->temperature)(static_cast<Index>(this->node_ids[node]), 0);
-            nodal_thermal_strain(node) = alpha * (temperature - zero);
+                (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
+            result(node) = alpha * (temperature - T_zero);
         }
-    }
+
+        return result;
+    };
+
+    const StaticVector<N> thermal_base   = nodal_thermal_strain(base_temperature);
+    const StaticVector<N> thermal_target = nodal_thermal_strain(target_temperature);
 
     // -----------------------------------------------------------------------------
     // main loop
@@ -405,7 +430,7 @@ MapMatrix SolidElement<N>::evaluate(
     //
     // If u = u0, the internal force is evaluated directly at the linearization
     // state and no affine correction is required.
-    const bool affine_force = with_force && displacement != linearization;
+    const bool affine_force = with_force && target_displacement != base_displacement;
 
     // The complete tangent K_T = K_M + K_G is required either because it was
     // explicitly requested or because the affine force evaluation needs
@@ -451,22 +476,13 @@ MapMatrix SolidElement<N>::evaluate(
         const VolumeStrainGreenLagrange strain =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
-        Precision thermal_strain_ip = Precision(0);
-        if (has_thermal_state) {
-            thermal_strain_ip =
-                this->shape_function(point.r, point.s, point.t).dot(nodal_thermal_strain);
-        }
+        const auto shape = this->shape_function(point.r, point.s, point.t);
+        const Precision thermal_strain_base   = shape.dot(thermal_base);
+        const Precision thermal_strain_target = shape.dot(thermal_target);
 
-        // Temperature is part of the state about which the element is
-        // linearized. The material therefore always receives
-        //
-        //     E_mech,0 = E0 - E_th.
-        Vec6 constitutive_strain_values = strain.voigt();
-        if (has_thermal_state) {
-            constitutive_strain_values.head<3>().array() -= thermal_strain_ip;
-        }
-        const VolumeStrainGreenLagrange constitutive_strain(
-            constitutive_strain_values);
+        // The complete tangent is evaluated at the base state (u0,T0).
+        Vec6 constitutive_strain_base = strain.voigt();
+        constitutive_strain_base.head<3>().array() -= thermal_strain_base;
 
         // -----------------------------------------------------------------------------
         // material evaluation
@@ -483,18 +499,31 @@ MapMatrix SolidElement<N>::evaluate(
         // stress stores the second Piola-Kirchhoff stress S associated with the
         // mechanical strain E_mech,0. material_tangent optionally stores the
         // constitutive tangent C = dS/dE when required by a tangent operator.
-        VolumeStressPK2 stress;
+        VolumeStressPK2 stress_base;
         Mat6            material_tangent;
         evaluate_material(
             point.r, point.s, point.t,
-            constitutive_strain,
-            old_state, new_state, stress,
+            VolumeStrainGreenLagrange(constitutive_strain_base),
+            old_state, new_state, stress_base,
             need_material ? &material_tangent : nullptr);
+
+        // The force anchor is evaluated at the target temperature but at the
+        // same base geometry u0.
+        VolumeStressPK2 stress_target_base = stress_base;
+        if ((with_force || with_geometric) && target_temperature != base_temperature) {
+            Vec6 constitutive_strain_target = strain.voigt();
+            constitutive_strain_target.head<3>().array() -= thermal_strain_target;
+
+            evaluate_material(
+                point.r, point.s, point.t,
+                VolumeStrainGreenLagrange(constitutive_strain_target),
+                old_state, nullptr, stress_target_base, nullptr);
+        }
 
         // -----------------------------------------------------------------------------
         // contributions to default stiffness and force vector
         // -----------------------------------------------------------------------------
-        if (with_force)   force.noalias()   += det0 * point.w * B.transpose() * stress.voigt();
+        if (with_force)   force.noalias()   += det0 * point.w * B.transpose() * stress_target_base.voigt();
         if (need_tangent) tangent.noalias() += det0 * point.w * B.transpose() * material_tangent * B;
 
         // -----------------------------------------------------------------------------
@@ -518,11 +547,13 @@ MapMatrix SolidElement<N>::evaluate(
         // Temperature is held fixed during this displacement perturbation. Thus,
         // the complete base stress S0, including thermal stress, contributes to
         // K_T(u0), while the separate geometric operator contains only Delta S.
-        const Mat3 stress_linear_base = stress.tensor();
+        const Mat3 stress_linear_base = stress_base.tensor();
 
         Vec6 stress_increment = Vec6::Zero();
         if (with_geometric) {
-            stress_increment = material_tangent * (B * delta);
+            stress_increment =
+                stress_target_base.voigt() - stress_base.voigt()
+                + material_tangent * (B * delta);
         }
 
         const Mat3 stress_geometric = VolumeStressPK2(stress_increment).tensor();
