@@ -234,7 +234,12 @@ MapMatrix BeamElement<N>::evaluate(
     }
 
     if (internal_force != nullptr) {
-        // Linear beam internal force is K u minus the free thermal axial source.
+        // The linear beam uses
+        //
+        //     epsilon_mech = epsilon - epsilon_th
+        //
+        // for its axial constitutive response. In the linear element operator
+        // this appears algebraically as the corresponding axial offset in K u.
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index node = 0; node < N; ++node) {
             const Vec6 row =
@@ -248,21 +253,19 @@ MapMatrix BeamElement<N>::evaluate(
 
         auto material = get_material();
         if (this->_model_data->temperature && material->has_thermal_expansion()) {
-            const Precision zero  = material->get_thermal_zero_temperature();
+            const Precision T0    = material->get_thermal_zero_temperature();
             const Precision alpha = material->get_thermal_expansion();
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < N; ++node) {
-                const Precision value =
-                    (*this->_model_data->temperature)(
-                        static_cast<Index>(node_ids[node]), 0);
-                temperature += std::isfinite(value) ? value : zero;
+                temperature += (*this->_model_data->temperature)(
+                    static_cast<Index>(node_ids[node]), 0);
             }
             temperature /= static_cast<Precision>(N);
 
             const Precision axial_force =
                 get_elasticity()->youngs * get_profile()->area_
-                * alpha * (temperature - zero);
+                * alpha * (temperature - T0);
 
             StaticVector<N * 6> local_thermal = StaticVector<N * 6>::Zero();
             local_thermal(0)           = -axial_force;
@@ -354,20 +357,18 @@ bool BeamElement<N>::compute_beam_section_forces(
 
     auto material = get_material();
     if (this->_model_data->temperature && material->has_thermal_expansion()) {
-        const Precision zero  = material->get_thermal_zero_temperature();
+        const Precision T0    = material->get_thermal_zero_temperature();
         const Precision alpha = material->get_thermal_expansion();
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            const Precision value =
-                (*this->_model_data->temperature)(
-                    static_cast<Index>(node_ids[node]), 0);
-            temperature += std::isfinite(value) ? value : zero;
+            temperature += (*this->_model_data->temperature)(
+                static_cast<Index>(node_ids[node]), 0);
         }
         temperature /= static_cast<Precision>(N);
 
         const Precision axial_force =
             get_elasticity()->youngs * get_profile()->area_
-            * alpha * (temperature - zero);
+            * alpha * (temperature - T0);
 
         StaticVector<N * 6> local_thermal = StaticVector<N * 6>::Zero();
         local_thermal(0)           = -axial_force;
