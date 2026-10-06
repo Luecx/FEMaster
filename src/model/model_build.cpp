@@ -494,7 +494,11 @@ constraint::ConstraintGroups Model::collect_constraints(
  * @param stiffness_scalar Optional one-component element stiffness scale.
  * @return Assembled sparse linear stiffness matrix.
  */
-SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* stiffness_scalar) {
+SparseMatrix Model::build_stiffness_matrix(
+    SystemDofIds& indices,
+    const Field*  base_temperature,
+    const Field*  stiffness_scalar
+) {
     logging::error(_data->contacts.empty(),
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
 
@@ -502,7 +506,9 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->evaluate(
                 storage, nullptr, nullptr,
-                nullptr, nullptr, false);
+                nullptr, nullptr,
+                nullptr, base_temperature,
+                false);
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
                     "stiffness scale field must use ELEMENT domain");
@@ -520,11 +526,13 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
     SparseMatrix matrix = mattools::assemble_matrix(_data->elements, indices, lambda);
 
     if (!_data->point_elements.empty()) {
-        auto point_lambda = [](const ElementPtr& element, Precision* storage) {
+        auto point_lambda = [&](const ElementPtr& element, Precision* storage) {
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, nullptr,
-                    nullptr, nullptr, false);
+                    nullptr, nullptr,
+                    nullptr, base_temperature,
+                    false);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -549,14 +557,20 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
  *                     force contributions.
- * @param displacement Current global nodal displacement field.
+ * @param target_displacement Requested global nodal displacement field.
+ * @param target_temperature Requested global nodal temperature field.
+ * @param base_displacement Base displacement state used for linearization.
+ * @param base_temperature Base temperature state used for linearization.
  * @param stiffness_scalar Optional one-component element tangent scale.
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
     SystemDofIds& indices,
     NodeData&     nodal_forces,
-    const Field&  displacement,
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field&  base_displacement,
+    const Field*  base_temperature,
     const Field*  stiffness_scalar
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
@@ -579,8 +593,10 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             local_matrix_storage,
             nullptr,
             &local_nodal_forces,
-            &displacement,
-            &displacement,
+            &target_displacement,
+            target_temperature,
+            &base_displacement,
+            base_temperature,
             true
         );
 
@@ -609,7 +625,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             if (auto structural = element->as<StructuralElement>()) {
                 return structural->evaluate(
                     storage, nullptr, &local_nodal_forces,
-                    &displacement, &displacement, true);
+                    &target_displacement, target_temperature,
+                    &base_displacement, base_temperature,
+                    true);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
@@ -648,14 +666,20 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
  * @param indices Active global DOF identifiers required by contact assembly.
  * @param nodal_forces Six-component nodal field overwritten with the resulting
  *                     internal and contact forces.
- * @param displacement Current global nodal displacement field.
+ * @param target_displacement Requested global nodal displacement field.
+ * @param target_temperature Requested global nodal temperature field.
+ * @param base_displacement Optional base displacement state; nullptr denotes zero.
+ * @param base_temperature Optional base temperature state; nullptr denotes the
+ *                         material stress-free temperature.
  * @param update_state If the material state shall be updated or not
  * @param include_contact If contact should be considered
  */
 void Model::build_internal_force(
     NodeData&     nodal_forces,
-    const Field&  displacement,
-    const Field*  linearization,
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field*  base_displacement,
+    const Field*  base_temperature,
     bool          update_state,
     SystemDofIds* indices      // only relevant for contact, if nullptr, no contact is considered
 ) {
@@ -672,14 +696,22 @@ void Model::build_internal_force(
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->evaluate(nullptr, nullptr, &nodal_forces, &displacement, linearization, update_state);
+        structural->evaluate(
+            nullptr, nullptr, &nodal_forces,
+            &target_displacement, target_temperature,
+            base_displacement, base_temperature,
+            update_state);
     }
 
     for (const auto& element : _data->point_elements) {
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->evaluate(nullptr, nullptr, &nodal_forces, &displacement, linearization, update_state);
+        structural->evaluate(
+            nullptr, nullptr, &nodal_forces,
+            &target_displacement, target_temperature,
+            base_displacement, base_temperature,
+            update_state);
     }
 
     if (indices) {
@@ -694,30 +726,33 @@ void Model::build_internal_force(
 }
 
 /**
- * Assembles the global perturbation geometric stiffness from u0 to u.
+ * Assembles the global perturbation geometric stiffness between two states.
  *
- * `linearization` defines the base state u0; nullptr denotes u0 = 0.
- * `displacement` defines the requested state u. Each structural element forms
- * the linearized stress or stress-resultant increment generated by u - u0 and
- * assembles the corresponding geometric stiffness locally. Stress already
- * present at u0 belongs to the complete tangent at the base state and is not
- * repeated in this operator.
+ * Target displacement and temperature define (u,T), while base displacement
+ * and temperature define (u0,T0). Each structural element forms the stress or
+ * stress-resultant increment relative to the base state and assembles the
+ * corresponding geometric stiffness locally. Stress already present at
+ * (u0,T0) belongs to the complete tangent and is not repeated here.
  *
  * No global integration-point stress field is created or consumed. Auxiliary
  * point elements are excluded because they carry no stress-dependent geometric
  * stiffness.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
- * @param displacement Requested global nodal displacement state u.
+ * @param target_displacement Requested global nodal displacement state u.
+ * @param target_temperature Requested global nodal temperature state T.
+ * @param base_displacement Optional base displacement state u0.
+ * @param base_temperature Optional base temperature state T0.
  * @param stiffness_scalar Optional one-component element stiffness scale.
- * @param linearization Optional base displacement state u0; nullptr denotes zero.
  * @return Assembled sparse perturbation geometric stiffness matrix.
  */
 SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
-    const Field&  displacement,
-    const Field*  stiffness_scalar,
-    const Field*  linearization
+    const Field&  target_displacement,
+    const Field*  target_temperature,
+    const Field*  base_displacement,
+    const Field*  base_temperature,
+    const Field*  stiffness_scalar
 ) {
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
@@ -725,8 +760,10 @@ SparseMatrix Model::build_geom_stiffness_matrix(
                 nullptr,
                 storage,
                 nullptr,
-                &displacement,
-                linearization,
+                &target_displacement,
+                target_temperature,
+                base_displacement,
+                base_temperature,
                 false
             );
 
