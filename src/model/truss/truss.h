@@ -175,7 +175,6 @@ struct T3 : StructuralElement {
         const Field&     target_displacement,
         const Field*     target_temperature,
         const RowMatrix& rst,
-        int              offset,
         const Field*     base_displacement,
         const Field*     base_temperature
     ) override;
@@ -183,14 +182,10 @@ struct T3 : StructuralElement {
         Field&       section_forces,
         const Field& target_displacement,
         const Field* target_temperature,
-        int          offset,
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr
     ) override;
-    bool compute_peeq(
-        Field& peeq,
-        int    offset
-    ) override;
+    bool compute_peeq(Field& peeq) override;
 
     // Element-level scalar compliance contribution based on the current
     // displacement field and the truss stiffness operator.
