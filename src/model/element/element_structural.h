@@ -68,12 +68,49 @@ struct StructuralElement : ElementInterface {
 
     ~StructuralElement() override = default;
 
-    // Mechanical state evaluation. target_* defines the requested state (u,T)
-    // and base_* defines the linearization state (u0,T0). Null base fields denote
-    // zero displacement and the material stress-free temperature. The complete
-    // tangent is evaluated at (u0,T0), while the force anchor uses (u0,T).
-    // Null output pointers deliberately skip work that the caller does not need.
-    // Persistent constitutive history is written only when update_state is true.
+    // Evaluates the mechanical response of the element between a base state
+    // (u0, T0) and a requested target state (u, T).
+    //
+    // target_displacement and target_temperature define the state for which the
+    // element response is requested. base_displacement and base_temperature
+    // define the state about which the response is linearized.
+    //
+    // A null base_displacement denotes u0 = 0. A null base_temperature denotes
+    // the material stress-free reference temperature.
+    //
+    // The displacement increment used by the linearization is
+    //
+    //     du = u - u0.
+    //
+    // The complete tangent is evaluated at the base state:
+    //
+    //     K_T = d f_int / d u |_(u0,T0).
+    //
+    // The internal-force evaluation is anchored at the base geometry but uses
+    // the target temperature:
+    //
+    //     f_int(u,T) ~= f_int(u0,T) + K_T(u0,T0) (u - u0).
+    //
+    // This separation is intentional. A temperature change from T0 to T enters
+    // through the force anchor f_int(u0,T), while the tangent remains the tangent
+    // of the prescribed linearization state (u0,T0).
+    //
+    // When target and base states are identical, i.e. (u,T) = (u0,T0), the
+    // expression reduces to the exact element response at that state. This is
+    // the normal usage during nonlinear Newton iterations.
+    //
+    // geometric_tangent receives only the geometric-stiffness contribution
+    // associated with the stress increment between the base and target states.
+    // Geometric stiffness already present at the base state is part of the
+    // complete tangent returned through tangent and is therefore not repeated.
+    //
+    // Any of tangent, geometric_tangent, or internal_force may be nullptr. The
+    // corresponding quantity is then not assembled, allowing callers to request
+    // only the response components they require.
+    //
+    // update_state controls whether persistent constitutive history is committed.
+    // Trial, perturbation, and post-processing evaluations normally use false;
+    // accepted nonlinear state evaluations may use true.
     virtual MapMatrix evaluate(
         Precision*   tangent,
         Precision*   geometric_tangent,
