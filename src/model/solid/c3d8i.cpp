@@ -434,14 +434,10 @@ MapMatrix C3D8I::stiffness_geom(
             VolumeStrainGreenLagrange(constitutive_strain_base),
             old_state, nullptr, stress_base, &material_tangent);
 
-        if (thermal_target == thermal_base && alpha_target == alpha_base) {
-            stress_target = stress_base;
-        } else {
-            evaluate_material(
-                point.natural(0), point.natural(1), point.natural(2),
-                VolumeStrainGreenLagrange(constitutive_strain_target),
-                old_state, nullptr, stress_target, nullptr);
-        }
+        evaluate_material(
+            point.natural(0), point.natural(1), point.natural(2),
+            VolumeStrainGreenLagrange(constitutive_strain_target),
+            old_state, nullptr, stress_target, nullptr);
 
         const Mat3 stress_increment =
             VolumeStressPK2(Vec6(
@@ -901,8 +897,10 @@ MapMatrix C3D8I::evaluate(
     Precision*   tangent_buffer,
     Precision*   geometric_tangent_buffer,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     const bool with_tangent   = tangent_buffer           != nullptr;
@@ -913,47 +911,54 @@ MapMatrix C3D8I::evaluate(
         return MapMatrix(nullptr, 0, 0);
     }
 
-    logging::error(!with_force || displacement != nullptr,
+    logging::error(!with_force || target_displacement != nullptr,
         "C3D8I: internal force evaluation requires displacement");
-    logging::error(!update_state || (linearization != nullptr && displacement == linearization),
-        "C3D8I: material state requires an exact evaluation at the linearization state");
+    logging::error(!update_state ||
+        (base_displacement != nullptr && target_displacement == base_displacement &&
+         target_temperature == base_temperature),
+        "C3D8I: material state requires an exact evaluation at the base state");
 
     const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
 
-    Vector24 u_linearization = Vector24::Zero();
-    if (linearization) u_linearization = local_displacement(*linearization);
+    Vector24 u_base = Vector24::Zero();
+    if (base_displacement) u_base = local_displacement(*base_displacement);
 
-    const Vector24 u = displacement ? local_displacement(*displacement) : u_linearization;
-    const Vector24 delta = u - u_linearization;
+    const Vector24 u = target_displacement ? local_displacement(*target_displacement) : u_base;
+    const Vector24 delta = u - u_base;
 
     StaticMatrix<N, D> local_u;
     for (Index node = 0; node < N; ++node) {
-        local_u.row(node) = u_linearization.template segment<3>(D * node).transpose();
+        local_u.row(node) = u_base.template segment<3>(D * node).transpose();
     }
 
-    // Temperature is part of the stationary base state. The same thermal strain
-    // is supplied to the local EAS solve and the final constitutive evaluation.
-    const bool has_thermal_state =
-        this->_model_data->temperature && material() && material()->has_thermal_expansion();
-    const StaticVector<N> thermal_strain = nodal_thermal_strain();
-    const StaticVector<N>* thermal_state =
-        has_thermal_state ? &thermal_strain : nullptr;
+    // Build the two thermal states explicitly. A null temperature field denotes
+    // the material stress-free temperature and therefore contributes no free
+    // strain.
+    const bool has_expansion = material() && material()->has_thermal_expansion();
+    const StaticVector<N> thermal_base_values   = nodal_thermal_strain(base_temperature);
+    const StaticVector<N> thermal_target_values = nodal_thermal_strain(target_temperature);
+    const StaticVector<N>* thermal_base =
+        base_temperature && has_expansion ? &thermal_base_values : nullptr;
+    const StaticVector<N>* thermal_target =
+        target_temperature && has_expansion ? &thermal_target_values : nullptr;
 
     const StaticMatrix<N, D> current_coords = reference_coords + local_u;
     const NonlinearPoints points = nonlinear_points(reference_coords, current_coords);
-    const Vector13 alpha = solve_nonlinear_modes(points, thermal_state);
 
-    const bool affine_force          = with_force && displacement != linearization;
+    // The complete tangent uses the stationary EAS state at (u0,T0).
+    const Vector13 alpha_base = solve_nonlinear_modes(points, thermal_base);
+
+    const bool affine_force          = with_force && target_displacement != base_displacement;
     const bool need_complete_tangent = with_tangent || with_geometric || affine_force;
 
-    const EnhancedSystem system = assemble_nonlinear_system(
+    const EnhancedSystem system_base = assemble_nonlinear_system(
         points,
-        alpha,
+        alpha_base,
         update_state,
         true,
         need_complete_tangent,
         true,
-        thermal_state
+        thermal_base
     );
 
     Matrix24 complete = Matrix24::Zero();
@@ -961,17 +966,26 @@ MapMatrix C3D8I::evaluate(
         Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
         logging::error(solver.isInvertible(),
             "C3D8I: singular converged local EAS tangent in element ", elem_id);
-        complete = system.kuu - system_base.kua * solver.solve(system_base.kau);
+        complete = system_base.kuu - system_base.kua * solver.solve(system_base.kau);
+    }
+
+    // Temperature changes are evaluated exactly at the fixed base nodal
+    // geometry. The local enhanced state must therefore also be stationary at T.
+    Vector13 alpha_target = alpha_base;
+    if ((with_force || with_geometric) && target_temperature != base_temperature) {
+        alpha_target = solve_nonlinear_modes(points, thermal_target);
     }
 
     if (with_geometric) {
         stiffness_geom(
             geometric_tangent_buffer,
             points,
-            alpha,
-            system,
+            alpha_base,
+            alpha_target,
+            system_base,
             delta,
-            thermal_state
+            thermal_base,
+            thermal_target
         );
     }
 
@@ -981,7 +995,21 @@ MapMatrix C3D8I::evaluate(
     }
 
     if (with_force) {
-        Vector24 force = system.ru;
+        Vector24 force = system_base.ru;
+
+        // The force anchor is f_int(u0,T), not f_int(u0,T0).
+        if (target_temperature != base_temperature) {
+            const EnhancedSystem system_target = assemble_nonlinear_system(
+                points,
+                alpha_target,
+                false,
+                true,
+                false,
+                false,
+                thermal_target
+            );
+            force = system_target.ru;
+        }
 
         if (affine_force) {
             force.noalias() += complete * delta;
