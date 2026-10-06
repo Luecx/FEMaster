@@ -28,6 +28,7 @@
  * @date 25.08.2026
  */
 
+#include "../core/parallel.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
@@ -692,27 +693,76 @@ void Model::build_internal_force(
 
     nodal_forces.set_zero();
 
-    for (const auto& element : _data->elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &target_displacement, target_temperature,
-            base_displacement, base_temperature,
-            update_state);
+    // Element forces share global nodes, so direct parallel writes into the
+    // caller-owned field would race. Give every worker a private nodal field,
+    // evaluate regular and auxiliary point elements in one indexed loop, and
+    // reduce the completed worker fields afterwards.
+    const std::size_t regular_count = _data->elements.size();
+    const std::size_t point_count   = _data->point_elements.size();
+    const std::size_t element_count = regular_count + point_count;
+
+    constexpr std::size_t min_batch_size = 64;
+    const int worker_count = parallel::worker_count(
+        element_count,
+        static_cast<int>(global_config.max_threads),
+        min_batch_size
+    );
+
+    std::vector<NodeData> worker_forces;
+    worker_forces.reserve(static_cast<std::size_t>(worker_count));
+
+    for (int worker = 0; worker < worker_count; ++worker) {
+        worker_forces.emplace_back(
+            nodal_forces.name,
+            nodal_forces.domain,
+            nodal_forces.rows,
+            nodal_forces.components
+        );
+        worker_forces.back().set_zero();
     }
 
-    for (const auto& element : _data->point_elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &target_displacement, target_temperature,
-            base_displacement, base_temperature,
-            update_state);
-    }
+    parallel::for_index(
+        element_count,
+        worker_count,
+        [&](std::size_t element_index, int worker) {
+            const ElementPtr& element =
+                element_index < regular_count
+                    ? _data->elements[element_index]
+                    : _data->point_elements[element_index - regular_count];
+
+            if (!element) return;
+
+            auto* structural = element->as<StructuralElement>();
+            if (!structural) return;
+
+            structural->evaluate(
+                nullptr, nullptr,
+                &worker_forces[static_cast<std::size_t>(worker)],
+                &target_displacement, target_temperature,
+                base_displacement, base_temperature,
+                update_state
+            );
+        },
+        min_batch_size
+    );
+
+    const Index value_count = nodal_forces.rows * nodal_forces.components;
+    Precision* target = nodal_forces.data();
+
+    parallel::for_index(
+        value_count,
+        worker_count,
+        [&](Index value, int /*worker*/) {
+            Precision sum = Precision(0);
+
+            for (int source = 0; source < worker_count; ++source) {
+                sum += worker_forces[static_cast<std::size_t>(source)].data()[value];
+            }
+
+            target[value] = sum;
+        },
+        Index(1024)
+    );
 
     if (indices) {
         TripletList discarded_contact_triplets;
@@ -720,7 +770,6 @@ void Model::build_internal_force(
             contact.assemble(*indices, *_data, nodal_forces, discarded_contact_triplets);
         }
     }
-
 
     nodal_forces.check_finite("Internal force");
 }
