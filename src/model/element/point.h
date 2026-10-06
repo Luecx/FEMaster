@@ -85,15 +85,19 @@ struct PointElement : StructuralElement {
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override {
-        (void) linearization;
+        (void) target_temperature;
+        (void) base_displacement;
+        (void) base_temperature;
         (void) update_state;
 
         if (internal_force != nullptr) {
-            logging::error(displacement != nullptr,
+            logging::error(target_displacement != nullptr,
                 "PointElement: internal force evaluation requires displacement");
 
             if (_section) {
@@ -198,17 +202,21 @@ struct PointElement : StructuralElement {
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
-        const Field&     displacement,
+        const Field&     target_displacement,
+        const Field*     target_temperature,
         const RowMatrix& rst,
         int              offset,
-        const Field*     linearization
+        const Field*     base_displacement,
+        const Field*     base_temperature
     ) override {
         (void) strain;
         (void) stress;
-        (void) displacement;
+        (void) target_displacement;
+        (void) target_temperature;
         (void) rst;
         (void) offset;
-        (void) linearization;
+        (void) base_displacement;
+        (void) base_temperature;
     }
 };
 
