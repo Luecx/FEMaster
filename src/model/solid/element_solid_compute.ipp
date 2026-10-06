@@ -101,10 +101,15 @@ void SolidElement<N>::compute_stress_strain(
     const Field&     target_displacement,
     const Field*     target_temperature,
     const RowMatrix& rst,
-    int              offset,
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
+    // First compiled output row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
+        offset = static_cast<Index>(this->elem_ip_offset);
+    }
+
     const bool exact_displacement = base_displacement == &target_displacement;
 
     // Validate output coordinates
@@ -276,11 +281,13 @@ void SolidElement<N>::compute_stress_strain(
  * are excluded from the subsequent model-wide nodal average.
  *
  * @param peeq Scalar ELEMENT_NODAL output field.
- * @param offset First element-nodal row belonging to this element.
  * @return True when the element uses J2 plasticity and contributes PEEQ.
  */
 template<Index N>
-bool SolidElement<N>::compute_peeq(Field& peeq, int offset) {
+bool SolidElement<N>::compute_peeq(Field& peeq) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "SolidElement: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
