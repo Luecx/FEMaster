@@ -62,12 +62,14 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
+        // Temperature is part of the state evaluated at the selected
+        // linearization point. The section therefore always receives the
+        // mechanical generalized strain
+        //
+        //     epsilon_mech,0 = epsilon0 - epsilon_th.
         Vec8 strain_values = data.ip_strain[id];
-
-        if (data.include_thermal_strain) {
-            const Precision free = thermal_strain_at(point.r, point.s);
-            strain_values -= thermal_generalized_strain(point, free);
-        }
+        const Precision free = thermal_strain_at(point.r, point.s);
+        strain_values -= thermal_generalized_strain(point, free);
 
         ShellGeneralizedStrain strain(strain_values);
         ShellStressResultants  resultants;
@@ -509,7 +511,7 @@ void FRTShell<N>::assemble_drill_stabilization(
  * compatible reference metric and curvature increments. Deskewing and applying
  * the topology-specific MITC operator must match the mechanical strain path:
  * on curved MITC8 elements its assumed field differs from the pointwise field.
- * The same initial strain is used for loads, stress recovery and thermal stress increments.
+ * The same initial strain is used for constitutive evaluation and stress recovery.
  *
  * The supplied scalar retains the existing pointwise temperature interpolation.
  * This models constant-through-thickness expansion and introduces no thermal
@@ -633,20 +635,13 @@ MapMatrix FRTShell<N>::evaluate(
     const bool need_G                = need_complete_tangent || with_geometric;
     const bool need_resultants       = with_force || need_complete_tangent || with_geometric;
 
-    const auto material = this->get_material();
-    const bool has_thermal_state =
-        this->_model_data->temperature && material && material->has_thermal_expansion();
-    const bool exact_thermal_state =
-        has_thermal_state && linearization != nullptr && displacement == linearization;
-
     EvaluationData data = init_evaluation(
         state,
         true,
         need_B,
         need_G,
         need_resultants,
-        update_state,
-        exact_thermal_state
+        update_state
     );
 
     Vec6N force = Vec6N::Zero();
@@ -684,39 +679,19 @@ MapMatrix FRTShell<N>::evaluate(
     //     Delta epsilon = B0 Delta q,
     //     Delta n       = H0 Delta epsilon.
     //
-    // Reference thermal free strain is treated as an additional negative
-    // generalized strain increment.
-    Vec6N thermal_force = Vec6N::Zero();
+    // Temperature is fixed during the displacement perturbation, hence
+    //
+    //     Delta epsilon_th = 0.
     thread_local std::vector<Vec8> resultant_increment;
 
     if (with_geometric) {
         resultant_increment.resize(reference_data().ip_points.size());
-    }
 
-    if (with_geometric || (with_force && has_thermal_state)) {
         const auto& points = reference_data().ip_points;
-
         for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
             const std::size_t id = static_cast<std::size_t>(ip);
-            const ReferencePoint& point = points[id];
-
-            Vec8 increment = data.ip_tangent[id] * (data.ip_B[id] * delta);
-
-            if (has_thermal_state && !exact_thermal_state) {
-                const Precision free_strain      = thermal_strain_at(point.r, point.s);
-                const Vec8 thermal_strain        = thermal_generalized_strain(point, free_strain);
-                const Vec8 thermal_resultant     = data.ip_tangent[id] * thermal_strain;
-
-                increment -= thermal_resultant;
-
-                if (with_force) {
-                    thermal_force.noalias() += (point.w * point.detJ) * data.ip_B[id].transpose() * thermal_resultant;
-                }
-            }
-
-            if (with_geometric) {
-                resultant_increment[id] = increment;
-            }
+            resultant_increment[id] =
+                data.ip_tangent[id] * (data.ip_B[id] * delta);
         }
     }
 
@@ -735,9 +710,6 @@ MapMatrix FRTShell<N>::evaluate(
 
     if (affine_force) {
         force.noalias() += complete * delta;
-    }
-    if (with_force && has_thermal_state && !exact_thermal_state) {
-        force.noalias() -= thermal_force;
     }
 
     if (with_force) {
