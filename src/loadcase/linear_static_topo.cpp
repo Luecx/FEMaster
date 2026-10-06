@@ -107,13 +107,28 @@ void LinearStaticTopo::run() {
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    reference_displacement.set_zero();
+
     model::Field reference_internal{
         "REFERENCE_INTERNAL_FORCES",
         model::FieldDomain::NODE,
         model->_data->field_rows(model::FieldDomain::NODE),
         6
     };
-    model->build_internal_force_reference(reference_internal);
+    model->build_internal_force(
+        reference_internal,
+        reference_displacement,
+        model->_data->temperature.get(),
+        nullptr,
+        nullptr,
+        false,
+        nullptr);
 
     auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
