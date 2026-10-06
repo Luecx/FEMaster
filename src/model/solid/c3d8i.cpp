@@ -190,8 +190,8 @@ C3D8I::Vector13 C3D8I::solve_linear_modes(const Vector24& displacement) {
     const auto system    = assemble_nonlinear_system(points, alpha, false, true, true);
 
     // Differentiate the stationary local equation using its complete tangent
-    const Vector13 residual = system_base.kau * displacement;
-    Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
+    const Vector13 residual = system.kau * displacement;
+    Eigen::FullPivLU<Matrix13> solver(system.kaa);
     logging::error(solver.isInvertible(),
         "C3D8I: singular reference enhanced tangent in element ", elem_id);
     return -solver.solve(residual);
@@ -726,8 +726,8 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
             const StaticMatrix<6, ndof> CBu = measure * C * Bu;
             system.ru.noalias()             += measure * Bu.transpose() * stress_voigt;
             system.kuu.noalias()            += Bu.transpose() * CBu;
-            system_base.kua.noalias()            += Bu.transpose() * CBa;
-            system_base.kau.noalias()            += Ba.transpose() * CBu;
+            system.kua.noalias()                 += Bu.transpose() * CBa;
+            system.kau.noalias()                 += Ba.transpose() * CBu;
         }
 
         // Material-only assembly is used when separating the condensed
@@ -776,8 +776,8 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
                 const Vec3 coefficient     = measure * (first_variation + mixed_variation);
 
                 for (Dim component = 0; component < D; ++component) {
-                    system_base.kua(D * node_a + component, mode) += coefficient(component);
-                    system_base.kau(mode, D * node_a + component) += coefficient(component);
+                    system.kua(D * node_a + component, mode) += coefficient(component);
+                    system.kau(mode, D * node_a + component) += coefficient(component);
                 }
             }
         }
@@ -813,7 +813,7 @@ C3D8I::Vector13 C3D8I::solve_nonlinear_modes(
         const EnhancedSystem system = assemble_nonlinear_system(
             points, alpha, false, false, true, true, thermal_strain);
 
-        Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
+        Eigen::FullPivLU<Matrix13> solver(system.kaa);
         logging::error(solver.isInvertible(),
             "C3D8I: singular local EAS tangent in element ", elem_id);
 
