@@ -217,7 +217,15 @@ struct StructuralElement : ElementInterface {
         const RowMatrix& rst,
         const Field*     base_displacement,
         const Field*     base_temperature
-    ) = 0;
+    ) {
+        (void) strain;
+        (void) stress;
+        (void) target_displacement;
+        (void) target_temperature;
+        (void) rst;
+        (void) base_displacement;
+        (void) base_temperature;
+    }
 
     // Recovers accumulated equivalent plastic strain from committed material
     // history into this element's disjoint ELEMENT_NODAL row range.
