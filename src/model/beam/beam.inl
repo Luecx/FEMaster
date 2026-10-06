@@ -361,9 +361,9 @@ bool BeamElement<N>::compute_beam_section_forces(
         }
     }
 
-    const auto K_global = stiffness_impl();
-    const auto T_out    = transformation_base();
-    auto f_global       = K_global * u_global;
+    const auto K_global          = stiffness_impl();
+    const auto T_out             = transformation_base();
+    StaticVector<N * 6> f_global = K_global * u_global;
 
     auto material = get_material();
     if (target_temperature && material->has_thermal_expansion()) {
