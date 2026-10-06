@@ -94,8 +94,17 @@ void LinearStatic::run() {
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K");
 
-    // Evaluate the internal force already present in the undeformed state.
-    // Thermal expansion enters here directly through the element formulations.
+    // Evaluate the force anchor f_int(u0,T) at zero displacement and the
+    // requested temperature. The stiffness above remains K(u0,T0) with the
+    // stress-free base temperature T0.
+    model::Field reference_displacement{
+        "REFERENCE_DISPLACEMENT",
+        model::FieldDomain::NODE,
+        model->_data->field_rows(model::FieldDomain::NODE),
+        6
+    };
+    reference_displacement.set_zero();
+
     model::Field reference_internal{
         "REFERENCE_INTERNAL_FORCES",
         model::FieldDomain::NODE,
@@ -104,7 +113,16 @@ void LinearStatic::run() {
     };
 
     Timer::measure(
-        [&]() { model->build_internal_force_reference(reference_internal); },
+        [&]() {
+            model->build_internal_force(
+                reference_internal,
+                reference_displacement,
+                model->_data->temperature.get(),
+                nullptr,
+                nullptr,
+                false,
+                nullptr);
+        },
         "constructing reference internal force"
     );
 
