@@ -324,8 +324,10 @@ StaticVector<12> QSPT::displacement_vector(const Field& displacement) {
 }
 
 bool QSPT::compute_shear_flow(Field& shear_flow,
-                              const Field& displacement,
-                              int offset) {
+                              const Field& displacement) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     const ShearState state = shear_state();
     const StaticVector<12> u = displacement_vector(displacement);
     const Precision beta = (state.fn.dot(u)) / state.flexibility;

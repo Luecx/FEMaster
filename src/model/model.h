@@ -227,15 +227,9 @@ struct Model {
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural
-    // quantities retain their established integration-point, element-nodal or
-    // nodal domains. Heat flux is recovered element-nodally by each thermal
-    // formulation and projected to a unique global NODE field before output.
-    // Target and base fields follow the same state convention as evaluate().
-    Field compute_stress_state(
-        Field&       target_displacement,
-        const Field* target_temperature,
-        const Field* base_displacement = nullptr,
-        const Field* base_temperature = nullptr);
+    // quantities are recovered element-nodally and projected to nodal output.
+    // Heat flux follows the same element-nodal recovery path. Target and base
+    // fields use the same state convention as evaluate().
     std::tuple<Field, Field> compute_stress_nodal(
         Field&       target_displacement,
         const Field* target_temperature,

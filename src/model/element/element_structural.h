@@ -164,7 +164,6 @@ struct StructuralElement : ElementInterface {
         const Field&     target_displacement,
         const Field*     target_temperature,
         const RowMatrix& rst,
-        int              offset,
         const Field*     base_displacement,
         const Field*     base_temperature
     ) = 0;
@@ -172,9 +171,8 @@ struct StructuralElement : ElementInterface {
     // Recover accumulated equivalent plastic strain from committed material
     // history into this element's disjoint ELEMENT_NODAL row range. Unsupported
     // formulations return false and do not participate in model-wide averaging.
-    virtual bool compute_peeq(Field& peeq, int offset) {
+    virtual bool compute_peeq(Field& peeq) {
         (void) peeq;
-        (void) offset;
         return false;
     }
     virtual void compute_compliance(Field& displacement, Field& result) {
@@ -185,24 +183,21 @@ struct StructuralElement : ElementInterface {
         (void) displacement;
         (void) result;
     }
-    virtual bool compute_shear_flow(Field& shear_flow, const Field& displacement, int offset) {
+    virtual bool compute_shear_flow(Field& shear_flow, const Field& displacement) {
         (void) shear_flow;
         (void) displacement;
-        (void) offset;
         return false;
     }
     virtual bool compute_beam_section_forces(
         Field&       section_forces,
         const Field& target_displacement,
         const Field* target_temperature,
-        int          offset,
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr
     ) {
         (void) section_forces;
         (void) target_displacement;
         (void) target_temperature;
-        (void) offset;
         (void) base_displacement;
         (void) base_temperature;
         return false;

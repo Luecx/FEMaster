@@ -88,8 +88,7 @@ void SolidElement<N>::evaluate_material(
  * @param stress Optional Cauchy stress output.
  * @param target_displacement Requested nodal displacement state u.
  * @param target_temperature Requested nodal temperature state T.
- * @param rst Natural material-point or nodal output coordinates.
- * @param offset First output row belonging to this element.
+ * @param rst Natural element-nodal output coordinates.
  * @param base_displacement Base displacement state u0; nullptr denotes zero.
  * @param base_temperature Base temperature state T0; nullptr denotes the
  *        material stress-free temperature.
@@ -101,10 +100,12 @@ void SolidElement<N>::compute_stress_strain(
     const Field&     target_displacement,
     const Field*     target_temperature,
     const RowMatrix& rst,
-    int              offset,
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     const bool exact_displacement = base_displacement == &target_displacement;
 
     // Validate output coordinates
@@ -113,13 +114,13 @@ void SolidElement<N>::compute_stress_strain(
     logging::error(rst.cols() >= 3,
         "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
 
-    const auto&     scheme       = this->integration_scheme_stiffness();
-    const RowMatrix ip_rst       = this->stress_strain_ip_rst();
-    const bool      output_at_ip = rst.rows() == ip_rst.rows() && rst.leftCols(3).isApprox(ip_rst);
-    const bool output_at_nodes   = rst.rows() == static_cast<Eigen::Index>(N);
+    logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
+                && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
+        "SolidElement: stress/strain recovery requires ELEMENT_NODAL output");
+    logging::error(rst.rows() == static_cast<Eigen::Index>(N),
+        "SolidElement: stress/strain recovery requires element-nodal coordinates");
 
-    logging::error(output_at_ip || output_at_nodes,
-        "SolidElement: stress/strain output must use integration points or element nodes");
+    const auto& scheme = this->integration_scheme_stiffness();
 
     const auto reference_coords           = this->node_coords_reference();
     const auto local_target_displacement  = this->nodal_data<3>(target_displacement);
@@ -230,19 +231,6 @@ void SolidElement<N>::compute_stress_strain(
         ip_stress.row(ip) = VolumeStressCauchy(recovered_stress).voigt().transpose();
     }
 
-    // Integration-point output is the constitutive result itself and must not be
-    // projected through a recovery basis.
-    if (output_at_ip) {
-        for (Eigen::Index n = 0; n < rst.rows(); ++n) {
-            const Index row = static_cast<Index>(offset + n);
-            for (Dim component = 0; component < n_strain; ++component) {
-                if (strain) (*strain)(row, component) = ip_strain(n, component);
-                if (stress) (*stress)(row, component) = ip_stress(n, component);
-            }
-        }
-        return;
-    }
-
     // Nodal values are reconstructed from the integration-point samples in
     // natural coordinates using the topology-specific constant operator.
     const RowMatrix& E      = this->extrapolation_matrix();
@@ -276,11 +264,13 @@ void SolidElement<N>::compute_stress_strain(
  * are excluded from the subsequent model-wide nodal average.
  *
  * @param peeq Scalar ELEMENT_NODAL output field.
- * @param offset First element-nodal row belonging to this element.
  * @return True when the element uses J2 plasticity and contributes PEEQ.
  */
 template<Index N>
-bool SolidElement<N>::compute_peeq(Field& peeq, int offset) {
+bool SolidElement<N>::compute_peeq(Field& peeq) {
+    // First element-nodal result row belonging to this element.
+    Index offset = static_cast<Index>(this->elem_nodal_offset);
+
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "SolidElement: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
