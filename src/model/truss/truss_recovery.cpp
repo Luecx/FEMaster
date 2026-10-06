@@ -314,15 +314,15 @@ void T3::compute_stress_strain(
     const Field*     base_displacement,
     const Field*     base_temperature
 ) {
-    // First compiled output row belonging to this element.
+    // First element-nodal result row belonging to this element.
     Index offset = static_cast<Index>(this->elem_nodal_offset);
-    if ((strain && strain->domain == FieldDomain::ELEMENT_IP) || (stress && stress->domain == FieldDomain::ELEMENT_IP)) {
-        offset = static_cast<Index>(this->elem_ip_offset);
-    }
 
     // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
         "T3: compute_stress_strain requires at least one output field");
+    logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
+                && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
+        "T3: stress/strain recovery requires ELEMENT_NODAL output");
     logging::error(rst.cols() >= 1,
         "T3: stress/strain coordinates require at least one natural coordinate");
 
