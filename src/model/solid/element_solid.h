@@ -170,17 +170,18 @@ public:
         const Mat3&               F
     );
 
-    // Total-Lagrangian state evaluation. linearization defines the base state
-    // u0 (nullptr means u0 = 0), while displacement defines the requested state u.
-    // The complete tangent is evaluated at u0 and supplies affine forces away from
-    // that state. The separate geometric output is generated only by the
-    // linearized stress increment from u0 to u.
+    // Total-Lagrangian state evaluation. target_* defines (u,T), while base_*
+    // defines the linearization state (u0,T0). The complete tangent is evaluated
+    // at the base state and supplies the displacement-linearized continuation
+    // from the exact force anchor at (u0,T).
     MapMatrix evaluate(
         Precision*   tangent,
         Precision*   geometric_tangent,
         NodeData*    internal_force,
-        const Field* displacement,
-        const Field* linearization,
+        const Field* target_displacement,
+        const Field* target_temperature,
+        const Field* base_displacement,
+        const Field* base_temperature,
         bool         update_state
     ) override;
     MapMatrix mass(Precision* buffer) override;
