@@ -209,8 +209,7 @@ struct ShellElement : StructuralElement {
         Precision buffer[6 * N * 6 * N];
         MapMatrix Ke = evaluate(
             buffer, nullptr, nullptr,
-            nullptr, nullptr, nullptr, false); // 6N × 6N
-
+            nullptr, nullptr, nullptr, nullptr, false);
         // Element-Verschiebungsvektor (global) aufbauen: [ux,uy,uz,rx,ry,rz] je Knoten
         // nodal_data<6>(...) liefert dir genau diese 6 DOFs pro Knoten in globalen Achsen
         StaticMatrix<6, N> u_mat = StaticMatrix<6, N>(this->nodal_data<6>(displacement).transpose());
