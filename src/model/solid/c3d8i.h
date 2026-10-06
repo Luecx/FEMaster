@@ -12,9 +12,9 @@
  * stationarity solve and Schur-complement condensation of the coupled tangent.
  * Linear mechanics evaluates the same formulation at zero nodal displacement.
  *
- * Stress recovery, thermal loading and perturbation geometric stiffness use
- * the identical enhanced base state so all element operators represent the same
- * kinematic approximation.
+ * Temperature, stress recovery and perturbation geometric stiffness use the
+ * identical enhanced base state so all element operators represent the same
+ * thermo-mechanical kinematic approximation.
  *
  * @see C3D8
  * @see SolidElement
@@ -28,7 +28,6 @@
 #include "c3d8.h"
 
 #include <array>
-#include <utility>
 
 namespace fem::model {
 
