@@ -34,6 +34,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 
 namespace fem {
 namespace model {
@@ -162,6 +163,12 @@ struct T3 : StructuralElement {
     // Linear recovery uses infinitesimal axial strain and Cauchy stress. Finite-
     // strain recovery evaluates Green-Lagrange strain and PK2 stress and pushes
     // the latter forward to axial Cauchy stress for user-facing output.
+    // both, the section force computation and stress strain basically do the same
+    // so its just delegated into the evaluate axial response function
+    std::pair<Precision, Precision> evaluate_axial_response(
+        const Field& displacement,
+        const Field* linearization
+    );
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
@@ -169,6 +176,12 @@ struct T3 : StructuralElement {
         const RowMatrix& rst,
         int              offset,
         const Field*     linearization
+    ) override;
+    bool compute_beam_section_forces(
+        Field&       section_forces,
+        const Field& displacement,
+        int          offset,
+        const Field* linearization = nullptr
     ) override;
     bool compute_peeq(
         Field& peeq,
@@ -180,16 +193,6 @@ struct T3 : StructuralElement {
     void compute_compliance(
         Field& displacement,
         Field& result
-    ) override;
-
-    // Recover the constant axial section force at both truss nodes for generic
-    // beam-style section-force output. Component zero stores the axial force;
-    // remaining output components are cleared by the implementation.
-    bool compute_beam_section_forces(
-        Field&       section_forces,
-        const Field& displacement,
-        int          offset,
-        const Field* linearization = nullptr
     ) override;
 };
 

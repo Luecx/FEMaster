@@ -210,11 +210,12 @@ struct Model {
         const Field& displacement,
         const Field* stiffness_scalar = nullptr,
         const Field* linearization = nullptr);
-    void build_internal_force_reference(NodeData& nodal_forces);
-    void build_internal_force_nonlinear(
-        SystemDofIds& indices,
+    void build_internal_force(
         NodeData& nodal_forces,
-        const Field& displacement);
+        const Field& displacement,
+        const Field* linearization=nullptr,
+        bool update_state=true,
+        SystemDofIds* indices=nullptr);
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural

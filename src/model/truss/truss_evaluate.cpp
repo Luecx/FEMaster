@@ -1,3 +1,4 @@
+```
 /**
  * @file truss_evaluate.cpp
  * @brief Implements the state-based mechanical evaluation of the T3 truss.
@@ -10,9 +11,9 @@
  *     Delta u = u - u0.
  *
  * A null linearization denotes u0 = 0. The state at u0 is always evaluated
- * exactly using Green-Lagrange strain and second Piola-Kirchhoff stress. All
- * quantities at a different requested state u are obtained by linearization
- * about u0.
+ * exactly using Green-Lagrange strain and second Piola-Kirchhoff stress. Thermal
+ * strain is part of this base-state material evaluation. All quantities at a
+ * different requested state u are obtained by linearization about u0.
  *
  * The complete tangent is evaluated at u0. The separately requested geometric
  * stiffness is generated only by the linearized stress increment caused by
@@ -47,15 +48,23 @@ namespace model {
  *
  * The Green-Lagrange axial strain at u0 is
  *
- *     E0 = 1/2 (lambda0^2 - 1),
+ *     E0 = 1/2 (lambda0^2 - 1).
  *
- * with work-conjugate second Piola-Kirchhoff stress
+ * Thermal expansion contributes the free axial strain
  *
- *     S0 = S(E0)
+ *     E_th = alpha (T - T0),
  *
- * and material tangent
+ * so the material response is evaluated from the mechanical strain
  *
- *     C0 = dS/dE | E0.
+ *     E_mech,0 = E0 - E_th.
+ *
+ * The work-conjugate second Piola-Kirchhoff stress is therefore
+ *
+ *     S0 = S(E_mech,0)
+ *
+ * with material tangent
+ *
+ *     C0 = dS/dE_mech | E_mech,0.
  *
  * The internal force at the linearization state follows from
  *
@@ -81,9 +90,13 @@ namespace model {
  *
  * Linearization of the Green-Lagrange strain gives
  *
- *     Delta E = lambda0 / L0 n0 . Delta r,
+ *     Delta E = lambda0 / L0 n0 . Delta r.
  *
- * followed by the constitutive linearization
+ * Temperature is held fixed during the displacement linearization, hence
+ *
+ *     Delta E_th = 0
+ *
+ * and the constitutive linearization is
  *
  *     Delta S = C0 Delta E.
  *
@@ -101,7 +114,9 @@ namespace model {
  *     lambda0 = 1,
  *     E0 = 0,
  *
- * without requiring a separate infinitesimal formulation.
+ * without requiring a separate infinitesimal formulation. A thermal strain may
+ * nevertheless produce a non-zero base stress S0 and therefore contributes to
+ * both the reference internal force and the tangent at u0.
  */
 MapMatrix T3::evaluate(
     Precision*   tangent_buffer,
@@ -245,44 +260,41 @@ MapMatrix T3::evaluate(
     // Green-Lagrange strain:
     //
     //     E0 = 1/2 (lambda0^2 - 1).
-    const AxialStrainGreenLagrange strain_base =
-        AxialStrainGreenLagrange::from_stretch(stretch_base);
+    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(stretch_base);
 
-    // Evaluate the free axial strain directly from the current model temperature.
+    // Thermal expansion contributes the free axial strain
+    //
+    //     E_th = alpha (T - T0).
+    //
+    // T3 has one constant axial material state. For the linear two-node
+    // temperature interpolation the element average is the arithmetic mean of
+    // the nodal temperatures.
     Precision thermal_strain = Precision(0);
     auto material = get_material();
-    const bool has_thermal_state =
-        this->_model_data->temperature && material->has_thermal_expansion();
 
-    if (has_thermal_state) {
-        const Precision zero  = material->get_thermal_zero_temperature();
+    if (this->_model_data->temperature && material->has_thermal_expansion()) {
+        const Precision T0    = material->get_thermal_zero_temperature();
         const Precision alpha = material->get_thermal_expansion();
 
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            const Precision value =
-                (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
-            temperature += std::isfinite(value) ? value : zero;
+            temperature += (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
         }
-        temperature /= static_cast<Precision>(N);
-        thermal_strain = alpha * (temperature - zero);
+
+        temperature   /= static_cast<Precision>(N);
+        thermal_strain = alpha * (temperature - T0);
     }
 
-    const bool exact_thermal_state =
-        has_thermal_state && linearization != nullptr && displacement == linearization;
-
-    const AxialStrainGreenLagrange mechanical_strain(
-        strain_base.value() - (exact_thermal_state ? thermal_strain : Precision(0)));
+    // Temperature is part of the base state. The material model therefore
+    // always receives the mechanical strain
+    //
+    //     E_mech,0 = E0 - E_th.
+    const AxialStrainGreenLagrange mechanical_strain(strain_base.value() - thermal_strain);
 
     AxialStressPK2 stress_base;
     Precision      material_tangent = Precision(0);
 
-    elasticity->evaluate(
-        mechanical_strain,
-        old_state,
-        new_state,
-        stress_base,
-        need_material ? &material_tangent : nullptr);
+    elasticity->evaluate(mechanical_strain, old_state, new_state, stress_base, need_material ? &material_tangent : nullptr);
 
     // -----------------------------------------------------------------------------
     // complete tangent stiffness at u0
@@ -303,7 +315,7 @@ MapMatrix T3::evaluate(
         //
         //     f2 = A0 / L0 S0 r0.
         //
-        // Its variation is
+        // Its variation at fixed temperature is
         //
         //     df2 = A0 / L0 [S0 I + C0 lambda0^2 (n0 tensor n0)] dr0.
         //
@@ -350,15 +362,18 @@ MapMatrix T3::evaluate(
         //             = lambda0 n0 . Delta r / L0.
         const Precision strain_increment = stretch_base * direction_base.dot(delta_axis) / L0;
 
-        // Linearize the constitutive law about E0:
+        // Temperature is fixed during the displacement perturbation, so
+        //
+        //     Delta E_th = 0
+        //
+        // and the constitutive law linearizes as
         //
         //     Delta S = C0 Delta E.
         //
         // Only this stress increment contributes to the separately requested
         // geometric stiffness. The base stress S0 is already contained in the
         // complete tangent K_T(u0).
-        const Precision stress_increment = material_tangent * (
-            strain_increment - (exact_thermal_state ? Precision(0) : thermal_strain));
+        const Precision stress_increment = material_tangent * strain_increment;
         const Mat3 geometric_block       = (A0 * stress_increment / L0) * Mat3::Identity();
 
         geometric.block(0, 0, 3, 3) =  geometric_block;
@@ -387,6 +402,9 @@ MapMatrix T3::evaluate(
         //
         //     f1 = -A0 lambda0 S0 n0,
         //     f2 = +A0 lambda0 S0 n0.
+        //
+        // S0 already contains the thermal contribution because the material
+        // response was evaluated from E_mech,0 = E0 - E_th.
         const Vec3 axial_force = A0 * stretch_base * stress_base.value() * direction_base;
 
         force.template segment<3>(0) = -axial_force;
@@ -402,13 +420,6 @@ MapMatrix T3::evaluate(
             delta.template segment<3>(3) = disp_delta.row(1).transpose();
 
             force.noalias() += tangent * delta;
-
-            if (has_thermal_state && !exact_thermal_state) {
-                const Vec3 thermal_force =
-                    A0 * material_tangent * thermal_strain * direction_base;
-                force.template segment<3>(0) += thermal_force;
-                force.template segment<3>(3) -= thermal_force;
-            }
         }
 
         // Scatter the six element force components to the global nodal field.
@@ -442,3 +453,5 @@ MapMatrix T3::evaluate(
 
 } // namespace model
 } // namespace fem
+
+```

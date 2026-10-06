@@ -638,69 +638,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 }
 
 /**
- * Evaluates the structural internal force in the undeformed reference state.
- *
- * The displacement field is identically zero and no material trial state is
- * written. Structural elements read the current model temperature directly,
- * so thermal eigendeformation contributes to f_int(0, T) without a global
- * thermal-strain or equivalent-load field.
- *
- * @param nodal_forces Six-component nodal field overwritten with the reference
- *                     internal force.
- */
-void Model::build_internal_force_reference(NodeData& nodal_forces) {
-    logging::error(nodal_forces.domain == FieldDomain::NODE,
-        "reference internal force output must use NODE domain");
-    logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
-        "reference internal force output has wrong node count");
-    logging::error(nodal_forces.components >= 6,
-        "reference internal force output requires at least 6 components");
-
-    // Evaluate every structural element at u = 0 without advancing material state
-    nodal_forces.set_zero();
-
-    Field zero_displacement{
-        "ZERO_DISPLACEMENT",
-        FieldDomain::NODE,
-        _data->field_rows(FieldDomain::NODE),
-        6
-    };
-    zero_displacement.set_zero();
-
-    for (const auto& element : _data->elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-
-        structural->evaluate(
-            nullptr,
-            nullptr,
-            &nodal_forces,
-            &zero_displacement,
-            nullptr,
-            false
-        );
-    }
-
-    for (const auto& element : _data->point_elements) {
-        if (!element) continue;
-        auto* structural = element->as<StructuralElement>();
-        if (!structural) continue;
-
-        structural->evaluate(
-            nullptr,
-            nullptr,
-            &nodal_forces,
-            &zero_displacement,
-            nullptr,
-            false
-        );
-    }
-
-    nodal_forces.check_finite("Reference internal force");
-}
-
-/**
  * Evaluates nonlinear internal and contact forces without retaining a tangent.
  *
  * Structural elements use the same physical `evaluate()` path as full
@@ -712,18 +649,22 @@ void Model::build_internal_force_reference(NodeData& nodal_forces) {
  * @param nodal_forces Six-component nodal field overwritten with the resulting
  *                     internal and contact forces.
  * @param displacement Current global nodal displacement field.
+ * @param update_state If the material state shall be updated or not
+ * @param include_contact If contact should be considered
  */
-void Model::build_internal_force_nonlinear(
-    SystemDofIds& indices,
+void Model::build_internal_force(
     NodeData&     nodal_forces,
-    const Field&  displacement
+    const Field&  displacement,
+    const Field*  linearization,
+    bool          update_state,
+    SystemDofIds* indices      // only relevant for contact, if nullptr, no contact is considered
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
-        "nonlinear internal force output must use NODE domain");
+        "internal force output must use NODE domain");
     logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
-        "nonlinear internal force output has wrong node count");
+        "internal force output has wrong node count");
     logging::error(nodal_forces.components >= 6,
-        "nonlinear internal force output requires at least 6 components");
+        "internal force output requires at least 6 components");
 
     nodal_forces.set_zero();
 
@@ -731,24 +672,23 @@ void Model::build_internal_force_nonlinear(
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, true);
+        structural->evaluate(nullptr, nullptr, &nodal_forces, &displacement, linearization, update_state);
     }
 
     for (const auto& element : _data->point_elements) {
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->evaluate(
-            nullptr, nullptr, &nodal_forces,
-            &displacement, &displacement, true);
+        structural->evaluate(nullptr, nullptr, &nodal_forces, &displacement, linearization, update_state);
     }
 
-    TripletList discarded_contact_triplets;
-    for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+    if (indices) {
+        TripletList discarded_contact_triplets;
+        for (const auto& contact : _data->contacts) {
+            contact.assemble(*indices, *_data, nodal_forces, discarded_contact_triplets);
+        }
     }
+
 
     nodal_forces.check_finite("Internal force");
 }

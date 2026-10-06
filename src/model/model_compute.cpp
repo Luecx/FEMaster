@@ -77,15 +77,13 @@ Field Model::compute_stress_state(
 
             const Index ip_offset = static_cast<Index>(ip_enum(static_cast<Index>(eid), 0));
             logging::error(ip_offset <= total_ips,
-                "Invalid IP offset for element ", eid, ": ", ip_offset,
-                " / total=", total_ips);
+                "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
 
             const RowMatrix rst = sel->stress_strain_ip_rst();
             if (rst.rows() == 0) continue;
 
             logging::error(rst.rows() == sel->num_ip(),
-                "Element ", eid, " returned ", rst.rows(),
-                " integration-point stress coordinates, expected ", sel->num_ip());
+                "Element ", eid, " returned ", rst.rows(), " integration-point stress coordinates, expected ", sel->num_ip());
 
             sel->compute_stress_strain(
                 nullptr,
@@ -126,16 +124,16 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const auto& nodal_offsets       = *_data->element_nodal_offsets;
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate disjoint element-nodal recovery fields and participation weights
-    Field element_stress {"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_strain {"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_stress {"ELEMENT_NODAL_STRESS"  , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_strain {"ELEMENT_NODAL_STRAIN"  , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
     Field element_weights{"STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
-    element_stress.set_zero();
-    element_strain.set_zero();
+    element_stress .set_zero();
+    element_strain .set_zero();
     element_weights.set_zero();
 
     // Recover element-nodal values into non-overlapping compiled row ranges

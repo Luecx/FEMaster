@@ -45,9 +45,13 @@ void register_initial_condition(fem::io::dsl::Registry& registry, model::Model& 
                     return;
                 }
 
-                logging::error(field->components == 6,
-                    "INITIALCONDITION: velocity field must have six components");
-                model._data->velocity = field;
+                if (type == "VELOCITY") {
+                    logging::error(field->components == 6,
+                        "INITIALCONDITION: velocity field must have six components");
+                    model._data->velocity = field;
+                    return;
+                }
+
             });
 
             command.variant(fem::io::dsl::Variant::make());
