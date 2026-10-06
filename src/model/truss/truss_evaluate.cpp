@@ -122,8 +122,10 @@ MapMatrix T3::evaluate(
     Precision*   tangent_buffer,
     Precision*   geometric_tangent_buffer,
     NodeData*    internal_force,
-    const Field* displacement,
-    const Field* linearization,
+    const Field* target_displacement,
+    const Field* target_temperature,
+    const Field* base_displacement,
+    const Field* base_temperature,
     bool         update_state
 ) {
     // -----------------------------------------------------------------------------
@@ -142,13 +144,14 @@ MapMatrix T3::evaluate(
     // displacement states
     // -----------------------------------------------------------------------------
 
-    // A null linearization denotes u0 = 0. Store both nodal base displacements
-    // explicitly so all following expressions use the same state description.
+    // A null base displacement denotes u0 = 0. Store both nodal base
+    // displacements explicitly so all following expressions use the same state
+    // description.
     StaticMatrix<N, 3> disp_base = StaticMatrix<N, 3>::Zero();
 
-    if (linearization) {
-        disp_base.row(0) = linearization->row_vec3(static_cast<Index>(node_ids[0])).transpose();
-        disp_base.row(1) = linearization->row_vec3(static_cast<Index>(node_ids[1])).transpose();
+    if (base_displacement) {
+        disp_base.row(0) = base_displacement->row_vec3(static_cast<Index>(node_ids[0])).transpose();
+        disp_base.row(1) = base_displacement->row_vec3(static_cast<Index>(node_ids[1])).transpose();
     }
 
     // -----------------------------------------------------------------------------
@@ -186,10 +189,12 @@ MapMatrix T3::evaluate(
 
     logging::error(with_tangent || with_geometric || with_force,
         "T3: evaluation requires at least one requested output");
-    logging::error(!with_force || displacement != nullptr,
+    logging::error(!with_force || target_displacement != nullptr,
         "T3: internal force evaluation requires displacement");
-    logging::error(!update_state || (linearization != nullptr && displacement == linearization),
-        "T3: material state requires an exact evaluation at the linearization state");
+    logging::error(!update_state ||
+        (base_displacement != nullptr && target_displacement == base_displacement &&
+         target_temperature == base_temperature),
+        "T3: material state requires an exact evaluation at the base state");
     logging::error(L0 > Precision(0),
         "T3: zero reference length for element ", this->elem_id);
     logging::error(length_base > Precision(0),
@@ -206,9 +211,9 @@ MapMatrix T3::evaluate(
     // If no requested displacement is supplied, Delta u remains zero.
     StaticMatrix<N, 3> disp_delta = StaticMatrix<N, 3>::Zero();
 
-    if (displacement) {
-        disp_delta.row(0) = displacement->row_vec3(static_cast<Index>(node_ids[0])).transpose() - disp_base.row(0);
-        disp_delta.row(1) = displacement->row_vec3(static_cast<Index>(node_ids[1])).transpose() - disp_base.row(1);
+    if (target_displacement) {
+        disp_delta.row(0) = target_displacement->row_vec3(static_cast<Index>(node_ids[0])).transpose() - disp_base.row(0);
+        disp_delta.row(1) = target_displacement->row_vec3(static_cast<Index>(node_ids[1])).transpose() - disp_base.row(1);
     }
 
     // Only relative nodal motion contributes to axial deformation:
@@ -228,7 +233,7 @@ MapMatrix T3::evaluate(
     //
     // Therefore K_T may be required internally even if it was not requested as
     // an explicit matrix output.
-    const bool affine_force = with_force && displacement != linearization;
+    const bool affine_force = with_force && target_displacement != base_displacement;
     const bool need_tangent = with_tangent || affine_force;
 
     // The constitutive tangent C0 is required both for K_M and for the stress
@@ -262,39 +267,62 @@ MapMatrix T3::evaluate(
     //     E0 = 1/2 (lambda0^2 - 1).
     const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(stretch_base);
 
-    // Thermal expansion contributes the free axial strain
-    //
-    //     E_th = alpha (T - T0).
-    //
-    // T3 has one constant axial material state. For the linear two-node
-    // temperature interpolation the element average is the arithmetic mean of
-    // the nodal temperatures.
-    Precision thermal_strain = Precision(0);
+    // Thermal expansion is evaluated independently for the base and target
+    // temperature states. A null temperature denotes the material stress-free
+    // temperature and therefore contributes zero free strain.
     auto material = get_material();
+    const auto thermal_strain = [&](const Field* temperature_field) {
+        if (!temperature_field || !material->has_thermal_expansion()) {
+            return Precision(0);
+        }
 
-    if (this->_model_data->temperature && material->has_thermal_expansion()) {
-        const Precision T0    = material->get_thermal_zero_temperature();
-        const Precision alpha = material->get_thermal_expansion();
+        const Precision T_zero = material->get_thermal_zero_temperature();
+        const Precision alpha  = material->get_thermal_expansion();
 
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*this->_model_data->temperature)(static_cast<Index>(node_ids[node]), 0);
+            temperature += (*temperature_field)(static_cast<Index>(node_ids[node]), 0);
         }
 
-        temperature   /= static_cast<Precision>(N);
-        thermal_strain = alpha * (temperature - T0);
-    }
+        temperature /= static_cast<Precision>(N);
+        return alpha * (temperature - T_zero);
+    };
 
-    // Temperature is part of the base state. The material model therefore
-    // always receives the mechanical strain
+    const Precision thermal_strain_base   = thermal_strain(base_temperature);
+    const Precision thermal_strain_target = thermal_strain(target_temperature);
+
+    // The complete tangent is evaluated at the thermo-mechanical base state
     //
-    //     E_mech,0 = E0 - E_th.
-    const AxialStrainGreenLagrange mechanical_strain(strain_base.value() - thermal_strain);
+    //     E_mech,0 = E0 - E_th(T0).
+    const AxialStrainGreenLagrange mechanical_strain_base(
+        strain_base.value() - thermal_strain_base);
 
     AxialStressPK2 stress_base;
     Precision      material_tangent = Precision(0);
 
-    elasticity->evaluate(mechanical_strain, old_state, new_state, stress_base, need_material ? &material_tangent : nullptr);
+    elasticity->evaluate(
+        mechanical_strain_base,
+        old_state,
+        new_state,
+        stress_base,
+        need_material ? &material_tangent : nullptr);
+
+    // Internal force and perturbation stress use the target temperature at the
+    // same base geometry:
+    //
+    //     E_mech,T = E0 - E_th(T).
+    AxialStressPK2 stress_target_base = stress_base;
+    if ((with_force || with_geometric) && target_temperature != base_temperature) {
+        const AxialStrainGreenLagrange mechanical_strain_target(
+            strain_base.value() - thermal_strain_target);
+
+        elasticity->evaluate(
+            mechanical_strain_target,
+            old_state,
+            nullptr,
+            stress_target_base,
+            nullptr);
+    }
 
     // -----------------------------------------------------------------------------
     // complete tangent stiffness at u0
@@ -373,7 +401,9 @@ MapMatrix T3::evaluate(
         // Only this stress increment contributes to the separately requested
         // geometric stiffness. The base stress S0 is already contained in the
         // complete tangent K_T(u0).
-        const Precision stress_increment = material_tangent * strain_increment;
+        const Precision stress_increment =
+            stress_target_base.value() - stress_base.value()
+            + material_tangent * strain_increment;
         const Mat3 geometric_block       = (A0 * stress_increment / L0) * Mat3::Identity();
 
         geometric.block(0, 0, 3, 3) =  geometric_block;
@@ -405,7 +435,7 @@ MapMatrix T3::evaluate(
         //
         // S0 already contains the thermal contribution because the material
         // response was evaluated from E_mech,0 = E0 - E_th.
-        const Vec3 axial_force = A0 * stretch_base * stress_base.value() * direction_base;
+        const Vec3 axial_force = A0 * stretch_base * stress_target_base.value() * direction_base;
 
         force.template segment<3>(0) = -axial_force;
         force.template segment<3>(3) =  axial_force;
@@ -413,7 +443,7 @@ MapMatrix T3::evaluate(
         // For u != u0, continue the internal force linearly from the exact
         // base-state force:
         //
-        //     f_int(u) ~= f_int(u0) + K_T(u0) Delta u.
+        //     f_int(u,T) ~= f_int(u0,T) + K_T(u0,T0) Delta u.
         if (affine_force) {
             StaticVector<N * 3> delta = StaticVector<N * 3>::Zero();
             delta.template segment<3>(0) = disp_delta.row(0).transpose();
