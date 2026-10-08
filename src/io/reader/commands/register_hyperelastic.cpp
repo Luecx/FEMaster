@@ -40,22 +40,19 @@ void register_hyperelastic(fem::io::dsl::Registry& registry, model::Model& model
                     .doc("Use the Neo-Hooke potential with C10 and D1 parameters.")
         );
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("C10").desc("Neo-Hooke deviatoric coefficient")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .one<fem::Precision>().name("D1").desc("Neo-Hooke compressibility coefficient")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                )
-                .bind([&model](fem::Precision c10, fem::Precision d1) {
-                    auto material = model._data->materials.get();
-                    logging::error(material != nullptr,
-                        "HYPERELASTIC requires an active material context");
-                    material->set_elasticity<fem::material::NeoHookeElasticity>(c10, d1);
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<fem::Precision>("C10", "Neo-Hooke deviatoric coefficient")
+                    .defaults(fem::Precision{0})
+                .one<fem::Precision>("D1", "Neo-Hooke compressibility coefficient")
+                    .defaults(fem::Precision{0}),
+            [&model](fem::Precision c10, fem::Precision d1) {
+                auto material = model._data->materials.get();
+                logging::error(material != nullptr,
+                    "HYPERELASTIC requires an active material context");
+                material->set_elasticity<fem::material::NeoHookeElasticity>(c10, d1);
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

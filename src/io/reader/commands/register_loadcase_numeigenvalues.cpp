@@ -33,34 +33,31 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set number of eigenvalues for buckling/eigenfrequency loadcases.");
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("COUNT").desc("Number of eigenvalues")
-                )
-                .bind([&parser](int count) {
-                    logging::error(count > 0,
-                        "NUMEIGENVALUES requires a positive integer");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<int>("COUNT", "Number of eigenvalues"),
+            [&parser](int count) {
+                logging::error(count > 0,
+                    "NUMEIGENVALUES requires a positive integer");
 
-                    auto* base = parser.active_loadcase();
-                    logging::error(base != nullptr,
-                        "NUMEIGENVALUES must appear inside *LOADCASE");
+                auto* base = parser.active_loadcase();
+                logging::error(base != nullptr,
+                    "NUMEIGENVALUES must appear inside *LOADCASE");
 
-                    if (auto* lc = base->as<loadcase::LinearBuckling>()) {
-                        lc->num_eigenvalues = count;
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
-                        lc->num_eigenvalues = count;
-                        lc->use_eigenvalue_range = false;
-                        return;
-                    }
+                if (auto* lc = base->as<loadcase::LinearBuckling>()) {
+                    lc->num_eigenvalues = count;
+                    return;
+                }
+                if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
+                    lc->num_eigenvalues = count;
+                    lc->use_eigenvalue_range = false;
+                    return;
+                }
 
-                    logging::error(false,
-                        "NUMEIGENVALUES not supported for loadcase type ", base->type_name());
-                })
-            )
+                logging::error(false,
+                    "NUMEIGENVALUES not supported for loadcase type ", base->type_name());
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 
@@ -68,28 +65,25 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set an open eigenvalue interval for eigenfrequency loadcases; bounds are lambda, not Hz.");
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<Precision, 2>().name("RANGE").desc("Minimum and maximum eigenvalue")
-                )
-                .bind([&parser](const std::array<Precision, 2>& bounds) {
-                    auto* base = parser.active_loadcase();
-                    logging::error(base != nullptr,
-                        "EIGENVALUERANGE must appear inside *LOADCASE");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<Precision, 2>("RANGE", "Minimum and maximum eigenvalue"),
+            [&parser](const std::array<Precision, 2>& bounds) {
+                auto* base = parser.active_loadcase();
+                logging::error(base != nullptr,
+                    "EIGENVALUERANGE must appear inside *LOADCASE");
 
-                    auto* lc = base->as<loadcase::LinearEigenfrequency>();
-                    logging::error(lc != nullptr,
-                        "EIGENVALUERANGE not supported for loadcase type ", base->type_name());
-                    logging::error(std::isfinite(bounds[0]) && std::isfinite(bounds[1]) && bounds[0] < bounds[1],
-                        "EIGENVALUERANGE requires finite bounds with min < max");
+                auto* lc = base->as<loadcase::LinearEigenfrequency>();
+                logging::error(lc != nullptr,
+                    "EIGENVALUERANGE not supported for loadcase type ", base->type_name());
+                logging::error(std::isfinite(bounds[0]) && std::isfinite(bounds[1]) && bounds[0] < bounds[1],
+                    "EIGENVALUERANGE requires finite bounds with min < max");
 
-                    lc->min_eigenvalue       = bounds[0];
-                    lc->max_eigenvalue       = bounds[1];
-                    lc->use_eigenvalue_range = true;
-                })
-            )
+                lc->min_eigenvalue       = bounds[0];
+                lc->max_eigenvalue       = bounds[1];
+                lc->use_eigenvalue_range = true;
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

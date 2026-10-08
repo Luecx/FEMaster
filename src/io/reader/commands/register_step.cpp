@@ -161,15 +161,11 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
         // Riks arc-length increment controls
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_present("RIKS"))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<Precision, 8>().name("DATA")
-                        .desc("Riks arc-length controls")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser](const std::array<Precision, 8>& data) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<Precision, 8>("DATA", "Riks arc-length controls")
+                        .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+                [&parser](const std::array<Precision, 8>& data) {
                     auto* active_loadcase = parser.active_loadcase();
                     auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::NonlinearStatic>() : nullptr;
                     logging::error(loadcase != nullptr,
@@ -193,7 +189,8 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                     loadcase->maximum_increment = maximum_omitted
                         ? std::numeric_limits<Precision>::max()
                         : data[3] / period;
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0).max(1)
             )
         );
 
@@ -202,15 +199,11 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             .when(fem::io::dsl::Condition::negate(
                 fem::io::dsl::Condition::key_present("RIKS")
             ))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<Precision, 4>().name("DATA")
-                        .desc("Static time-increment controls")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser](const std::array<Precision, 4>& data) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<Precision, 4>("DATA", "Static time-increment controls")
+                        .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+                [&parser](const std::array<Precision, 4>& data) {
                     if (parser.step_state().perturbation) {
                         for (const Precision value : data) {
                             logging::error(std::isnan(value),
@@ -239,7 +232,8 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                         loadcase->minimum_increment = minimum / period;
                         loadcase->maximum_increment = maximum / period;
                     }
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0).max(1)
             )
         );
     });
@@ -266,23 +260,19 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             parser.begin_loadcase(std::move(loadcase));
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("NUM").desc("Number of eigenvalues")
-                    .fixed<Precision, 5>().name("REST").desc("Unused Abaqus spectral controls")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser](int count, const std::array<Precision, 5>&) {
-                    logging::error(count > 0,
-                        "FREQUENCY requires a positive eigenvalue count");
-                    auto* active_loadcase = parser.active_loadcase();
-                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearEigenfrequency>() : nullptr;
-                    loadcase->num_eigenvalues = count;
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<int>("NUM", "Number of eigenvalues")
+                .fixed<Precision, 5>("REST", "Unused Abaqus spectral controls")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser](int count, const std::array<Precision, 5>&) {
+                logging::error(count > 0,
+                    "FREQUENCY requires a positive eigenvalue count");
+                auto* active_loadcase = parser.active_loadcase();
+                auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearEigenfrequency>() : nullptr;
+                loadcase->num_eigenvalues = count;
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 
@@ -308,23 +298,19 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             parser.begin_loadcase(std::move(loadcase));
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("NUM").desc("Number of buckling eigenvalues")
-                    .fixed<Precision, 4>().name("REST").desc("Unused Abaqus buckling controls")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser](int count, const std::array<Precision, 4>&) {
-                    logging::error(count > 0,
-                        "BUCKLE requires a positive eigenvalue count");
-                    auto* active_loadcase = parser.active_loadcase();
-                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearBuckling>() : nullptr;
-                    loadcase->num_eigenvalues = count;
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<int>("NUM", "Number of buckling eigenvalues")
+                .fixed<Precision, 4>("REST", "Unused Abaqus buckling controls")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser](int count, const std::array<Precision, 4>&) {
+                logging::error(count > 0,
+                    "BUCKLE requires a positive eigenvalue count");
+                auto* active_loadcase = parser.active_loadcase();
+                auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearBuckling>() : nullptr;
+                loadcase->num_eigenvalues = count;
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 
@@ -356,28 +342,23 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             parser.begin_loadcase(std::move(loadcase));
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<Precision, 4>().name("DATA")
-                        .desc("Fixed increment, period, unused minimum, unused maximum")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser](const std::array<Precision, 4>& data) {
-                    logging::error(!std::isnan(data[0]) && data[0] > Precision(0)
-                                && !std::isnan(data[1]) && data[1] > Precision(0),
-                        "DYNAMIC, DIRECT requires positive increment and step period");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<Precision, 4>("DATA", "Fixed increment, period, unused minimum, unused maximum")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser](const std::array<Precision, 4>& data) {
+                logging::error(!std::isnan(data[0]) && data[0] > Precision(0)
+                            && !std::isnan(data[1]) && data[1] > Precision(0),
+                    "DYNAMIC, DIRECT requires positive increment and step period");
 
-                    auto* active_loadcase = parser.active_loadcase();
-                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::Transient>() : nullptr;
-                    loadcase->dt      = data[0];
-                    loadcase->t_start = Precision(0);
-                    loadcase->t_end   = data[1];
-                    parser.step_state().step_period = data[1];
-                })
-            )
+                auto* active_loadcase = parser.active_loadcase();
+                auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::Transient>() : nullptr;
+                loadcase->dt      = data[0];
+                loadcase->t_start = Precision(0);
+                loadcase->t_end   = data[1];
+                parser.step_state().step_period = data[1];
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 
@@ -414,64 +395,58 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             parser.begin_loadcase(std::move(loadcase));
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<Precision, 5>().name("DATA")
-                        .desc("Lower frequency, upper frequency, point count, bias, scale factor")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser, frequency_scale](const std::array<Precision, 5>& data) {
-                    auto* active_loadcase = parser.active_loadcase();
-                    auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearHarmonic>() : nullptr;
-                    logging::error(loadcase != nullptr && !std::isnan(data[0]) && data[0] >= Precision(0),
-                        "STEADY STATE DYNAMICS requires a non-negative lower frequency");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<Precision, 5>("DATA", "Lower frequency, upper frequency, point count, bias, scale factor")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser, frequency_scale](const std::array<Precision, 5>& data) {
+                auto* active_loadcase = parser.active_loadcase();
+                auto* loadcase = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearHarmonic>() : nullptr;
+                logging::error(loadcase != nullptr && !std::isnan(data[0]) && data[0] >= Precision(0),
+                    "STEADY STATE DYNAMICS requires a non-negative lower frequency");
 
-                    const Precision bias = std::isnan(data[3]) ? Precision(1) : data[3];
-                    logging::error(std::abs(bias - Precision(1)) <= Precision(1e-12),
-                        "Biased steady-state frequency spacing is not supported");
-                    logging::error(std::isnan(data[4])
-                                || std::abs(data[4] - Precision(1)) <= Precision(1e-12),
-                        "Steady-state frequency scale factors other than 1 are not supported");
+                const Precision bias = std::isnan(data[3]) ? Precision(1) : data[3];
+                logging::error(std::abs(bias - Precision(1)) <= Precision(1e-12),
+                    "Biased steady-state frequency spacing is not supported");
+                logging::error(std::isnan(data[4])
+                            || std::abs(data[4] - Precision(1)) <= Precision(1e-12),
+                    "Steady-state frequency scale factors other than 1 are not supported");
 
-                    const Precision lower = data[0];
-                    const Precision upper = std::isnan(data[1]) ? Precision(0) : data[1];
-                    if (upper == Precision(0)) {
-                        loadcase->frequencies.push_back(lower);
-                        return;
+                const Precision lower = data[0];
+                const Precision upper = std::isnan(data[1]) ? Precision(0) : data[1];
+                if (upper == Precision(0)) {
+                    loadcase->frequencies.push_back(lower);
+                    return;
+                }
+
+                logging::error(upper >= lower,
+                    "Steady-state frequency range requires upper >= lower");
+
+                int count = 20;
+                if (!std::isnan(data[2])) {
+                    const int requested = static_cast<int>(std::llround(data[2]));
+                    logging::error(std::abs(data[2] - static_cast<Precision>(requested)) <= Precision(1e-12),
+                        "Steady-state frequency point count must be an integer");
+                    if (requested >= 2) {
+                        count = requested;
                     }
+                }
 
-                    logging::error(upper >= lower,
-                        "Steady-state frequency range requires upper >= lower");
+                logging::error(*frequency_scale != "LOGARITHMIC" || lower > Precision(0),
+                    "Logarithmic steady-state frequency ranges require a positive lower frequency");
 
-                    int count = 20;
-                    if (!std::isnan(data[2])) {
-                        const int requested = static_cast<int>(std::llround(data[2]));
-                        logging::error(std::abs(data[2] - static_cast<Precision>(requested)) <= Precision(1e-12),
-                            "Steady-state frequency point count must be an integer");
-                        if (requested >= 2) {
-                            count = requested;
-                        }
+                for (int i = 0; i < count; ++i) {
+                    const Precision xi = static_cast<Precision>(i) /
+                                         static_cast<Precision>(count - 1);
+                    if (*frequency_scale == "LINEAR") {
+                        loadcase->frequencies.push_back(lower + xi * (upper - lower));
+                    } else {
+                        loadcase->frequencies.push_back(std::exp(
+                            std::log(lower) + xi * (std::log(upper) - std::log(lower))
+                        ));
                     }
-
-                    logging::error(*frequency_scale != "LOGARITHMIC" || lower > Precision(0),
-                        "Logarithmic steady-state frequency ranges require a positive lower frequency");
-
-                    for (int i = 0; i < count; ++i) {
-                        const Precision xi = static_cast<Precision>(i) /
-                                             static_cast<Precision>(count - 1);
-                        if (*frequency_scale == "LINEAR") {
-                            loadcase->frequencies.push_back(lower + xi * (upper - lower));
-                        } else {
-                            loadcase->frequencies.push_back(std::exp(
-                                std::log(lower) + xi * (std::log(upper) - std::log(lower))
-                            ));
-                        }
-                    }
-                })
-            )
+                }
+            }
         );
     });
 

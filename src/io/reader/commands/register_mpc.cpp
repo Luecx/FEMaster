@@ -53,36 +53,32 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                 "MPC: constraints require a compiled model");
         });
 
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TYPE")
-                    .one<std::string>().name("NODE1")
-                    .one<std::string>().name("NODE2")
-                )
-                .bind([&model](const std::string& type,
-                               const std::string& node_1,
-                               const std::string& node_2) {
-                    constraint::Mpc::Type mpc_type = constraint::Mpc::Type::Beam;
-                    if (type == "BEAM") {
-                        mpc_type = constraint::Mpc::Type::Beam;
-                    } else if (type == "TIE") {
-                        mpc_type = constraint::Mpc::Type::Tie;
-                    } else if (type == "PIN") {
-                        mpc_type = constraint::Mpc::Type::Pin;
-                    } else {
-                        logging::error(false,
-                            "MPC: unsupported type ", type, "; supported types are BEAM, TIE and PIN");
-                    }
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TYPE")
+                .one<std::string>("NODE1")
+                .one<std::string>("NODE2"),
+            [&model](const std::string& type,
+                           const std::string& node_1,
+                           const std::string& node_2) {
+                constraint::Mpc::Type mpc_type = constraint::Mpc::Type::Beam;
+                if (type == "BEAM") {
+                    mpc_type = constraint::Mpc::Type::Beam;
+                } else if (type == "TIE") {
+                    mpc_type = constraint::Mpc::Type::Tie;
+                } else if (type == "PIN") {
+                    mpc_type = constraint::Mpc::Type::Pin;
+                } else {
+                    logging::error(false,
+                        "MPC: unsupported type ", type, "; supported types are BEAM, TIE and PIN");
+                }
 
-                    model._data->mpcs.emplace_back(
-                        model.compiled_node_id(node_1),
-                        model.compiled_node_id(node_2),
-                        mpc_type
-                    );
-                })
-            )
+                model._data->mpcs.emplace_back(
+                    model.compiled_node_id(node_1),
+                    model.compiled_node_id(node_2),
+                    mpc_type
+                );
+            }
         );
     });
 }

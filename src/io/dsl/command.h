@@ -76,6 +76,16 @@ struct Command {
     }
 
     /**
+     * @brief Registers the common case of one variant with one data segment.
+     */
+    template<class F>
+    Command& data(Pattern pattern, F&& callback, LineRange range = {}) {
+        auto entry = Variant::make();
+        entry.data(std::move(pattern), std::forward<F>(callback), range);
+        return variant(std::move(entry));
+    }
+
+    /**
      * @brief Sets the short description shown by DSL documentation output.
      */
     Command& doc(std::string description) {

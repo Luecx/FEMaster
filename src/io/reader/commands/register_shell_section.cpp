@@ -58,15 +58,13 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"INTEGRATED"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Precision>().name("THICKNESS")
-                        .on_missing(Precision{1}).on_empty(Precision{1})
-                    .one<int>().name("INTEGRATIONPOINTS")
-                        .on_missing(5).on_empty(5)
-                )
-                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness, int integration_points) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<Precision>("THICKNESS")
+                        .defaults(Precision{1})
+                    .one<int>("INTEGRATIONPOINTS")
+                        .defaults(5),
+                [&model, material, elset, orientation, csys_axis](Precision local_thickness, int integration_points) {
                     const auto part = model._data->parts.get();
                     logging::error(integration_points == 5,
                         "SHELLSECTION: exactly 5 integration points are supported");
@@ -88,19 +86,18 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                         orientation->empty() ? nullptr : model._data->coordinate_systems.get(*orientation),
                         *csys_axis
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ABD"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(8))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<Precision, 40>().name("DATA")
-                )
-                .bind([&model, material, elset, orientation, thickness, csys_axis](const std::array<Precision, 40>& values) {
+                    .fixed<Precision, 40>("DATA"),
+                [&model, material, elset, orientation, thickness, csys_axis](const std::array<Precision, 40>& values) {
                     const auto part = model._data->parts.get();
                     logging::error(part != nullptr,
                         "SHELLSECTION: no active part is available");
@@ -129,7 +126,8 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                         orientation->empty() ? nullptr : model._data->coordinate_systems.get(*orientation),
                         *csys_axis
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(8)
             )
         );
     });

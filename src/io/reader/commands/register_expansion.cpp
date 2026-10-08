@@ -69,19 +69,16 @@ void register_expansion(fem::io::dsl::Registry& registry, model::Model& model) {
             });
 
             // Transfer alpha to the active material; the keyword has no load state.
-            command.variant(fem::io::dsl::Variant::make()
-                .segment(fem::io::dsl::Segment::make()
-                    .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                    .pattern(fem::io::dsl::Pattern::make()
-                        .one<fem::Precision>().name("ALPHA").desc("Thermal expansion coefficient")
-                    )
-                    .bind([&model, name](fem::Precision alpha) {
-                        auto material = model._data->materials.get();
-                        logging::error(material != nullptr,
-                            name, " requires an active material context");
-                        material->set_thermal_expansion(alpha);
-                    })
-                )
+            command.data(
+                fem::io::dsl::Pattern::make()
+                    .one<fem::Precision>("ALPHA", "Thermal expansion coefficient"),
+                [&model, name](fem::Precision alpha) {
+                    auto material = model._data->materials.get();
+                    logging::error(material != nullptr,
+                        name, " requires an active material context");
+                    material->set_thermal_expansion(alpha);
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             );
         });
     }

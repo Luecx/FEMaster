@@ -77,18 +77,13 @@ void register_field_list(io::dsl::Registry& registry,
         command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(description);
 
-        command.variant(io::dsl::Variant::make()
-            .segment(io::dsl::Segment::make()
-                .range(io::dsl::LineRange{}.min(1))
-                .pattern(io::dsl::Pattern::make()
-                    .fixed<std::string, 32>().name("FIELD")
-                        .desc("Requested Abaqus/CalculiX/FEMaster output variables")
-                        .on_missing(std::string{}).on_empty(std::string{})
-                )
-                .bind([&parser](const std::array<std::string, 32>& fields) {
-                    request_tokens(parser, fields);
-                })
-            )
+        command.data(
+            io::dsl::Pattern::make()
+                .fixed<std::string, 32>("FIELD", "Requested Abaqus/CalculiX/FEMaster output variables")
+                    .defaults(std::string{}),
+            [&parser](const std::array<std::string, 32>& fields) {
+                request_tokens(parser, fields);
+            }
         );
     });
 }
@@ -139,15 +134,12 @@ void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
             command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
             command.doc("Accept and ignore a textual PRINT output request.");
 
-            command.variant(io::dsl::Variant::make()
-                .segment(io::dsl::Segment::make()
-                    .range(io::dsl::LineRange{}.min(0))
-                    .pattern(io::dsl::Pattern::make()
-                        .fixed<std::string, 32>().name("FIELD")
-                            .on_missing(std::string{}).on_empty(std::string{})
-                    )
-                    .bind([](const std::array<std::string, 32>&) {})
-                )
+            command.data(
+                io::dsl::Pattern::make()
+                    .fixed<std::string, 32>("FIELD")
+                        .defaults(std::string{}),
+                [](const std::array<std::string, 32>&) {},
+                io::dsl::LineRange{}.min(0)
             );
         });
     };

@@ -110,37 +110,32 @@ void register_vload(dsl::Registry& registry, Parser& parser) {
 
         // Keep the body-force-density field in its element region. Nodal
         // TRANSFORM assignments apply to nodal quantities and do not alter it.
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string   >().name("TARGET").desc("Compiled element set or scalar reference")
-                    .fixed<Precision, 3>().name("LOAD"  ).desc("Three load components")
-                        .on_missing(Precision{0})
-                        .on_empty  (Precision{0})
-                )
-                .bind([&parser, orientation, amplitude, collector](
-                    const std::string&              target,
-                    const std::array<Precision, 3>& values
-                ) {
-                    auto& model = parser.model();
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string   >("TARGET", "Compiled element set or scalar reference")
+                .fixed<Precision, 3>("LOAD", "Three load components")
+                    .defaults(Precision{0}),
+            [&parser, orientation, amplitude, collector](
+                const std::string&              target,
+                const std::array<Precision, 3>& values
+            ) {
+                auto& model = parser.model();
 
-                    // Resolve the target through the model and retain nominal values
-                    // and shared modifiers for integration during load assembly.
-                    auto load = std::make_shared<bc::VLoad>();
-                    load->region_      = model.resolve_element_region(target);
-                    load->values_      = Vec3{values[0], values[1], values[2]};
-                    load->orientation_ = *orientation;
-                    load->amplitude_   = *amplitude;
+                // Resolve the target through the model and retain nominal values
+                // and shared modifiers for integration during load assembly.
+                auto load = std::make_shared<bc::VLoad>();
+                load->region_      = model.resolve_element_region(target);
+                load->values_      = Vec3{values[0], values[1], values[2]};
+                load->orientation_ = *orientation;
+                load->amplitude_   = *amplitude;
 
-                    // Named definitions and direct history are mutually exclusive targets
-                    if (*collector) {
-                        (*collector)->add(std::move(load));
-                    } else {
-                        parser.select_collector_condition(bc::VLOAD, std::move(load));
-                    }
-                })
-            )
+                // Named definitions and direct history are mutually exclusive targets
+                if (*collector) {
+                    (*collector)->add(std::move(load));
+                } else {
+                    parser.select_collector_condition(bc::VLOAD, std::move(load));
+                }
+            }
         );
     });
 }

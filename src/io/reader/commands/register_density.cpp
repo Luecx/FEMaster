@@ -44,21 +44,18 @@ void register_density(fem::io::dsl::Registry& registry, model::Model& model) {
         command.doc("Assign density to the active material.");
 
         // Parse one scalar density value and apply it to the active material
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("RHO").desc("Density value")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                )
-                .bind([&model](fem::Precision rho) {
-                    // Resolve the material selected by the surrounding command
-                    auto material = model._data->materials.get();
-                    logging::error(material != nullptr,
-                        "DENSITY requires an active material context");
-                    material->set_density(rho);
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<fem::Precision>("RHO", "Density value")
+                    .defaults(fem::Precision{0}),
+            [&model](fem::Precision rho) {
+                // Resolve the material selected by the surrounding command
+                auto material = model._data->materials.get();
+                logging::error(material != nullptr,
+                    "DENSITY requires an active material context");
+                material->set_density(rho);
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

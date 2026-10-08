@@ -44,41 +44,37 @@ void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Assign named load collectors to the active analysis step.");
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<std::string, 16>().name("LOAD").desc("Load collector names")
-                        .on_missing(std::string{}).on_empty(std::string{})
-                )
-                .bind([&parser](const std::array<std::string, 16>& names) {
-                    auto* base = parser.active_loadcase();
-                    logging::error(base != nullptr,
-                        "LOADS must appear inside an active analysis step");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<std::string, 16>("LOAD", "Load collector names")
+                    .defaults(std::string{}),
+            [&parser](const std::array<std::string, 16>& names) {
+                auto* base = parser.active_loadcase();
+                logging::error(base != nullptr,
+                    "LOADS must appear inside an active analysis step");
 
-                    // Resolve every user-supplied name now. The solver later reads
-                    // only the resulting ConditionManager state.
-                    auto& model_data = *parser.model()._data;
-                    for (const auto& name : names) {
-                        if (name.empty()) {
-                            continue;
-                        }
-
-                        logging::error(model_data.load_cols.has(name),
-                            "LOADS: collector ", name, " does not exist");
-                        const auto collector = model_data.load_cols.get(name);
-                        logging::error(collector != nullptr,
-                            "LOADS: collector ", name, " is not initialized");
-
-                        // Select reusable definitions for this analysis only.
-                        // The parser suppresses repeated (family, pointer)
-                        // selections before the temporary manager insertion.
-                        for (const auto& condition : *collector) {
-                            parser.select_collector_condition(bc::CLOAD, condition);
-                        }
+                // Resolve every user-supplied name now. The solver later reads
+                // only the resulting ConditionManager state.
+                auto& model_data = *parser.model()._data;
+                for (const auto& name : names) {
+                    if (name.empty()) {
+                        continue;
                     }
-                })
-            )
+
+                    logging::error(model_data.load_cols.has(name),
+                        "LOADS: collector ", name, " does not exist");
+                    const auto collector = model_data.load_cols.get(name);
+                    logging::error(collector != nullptr,
+                        "LOADS: collector ", name, " is not initialized");
+
+                    // Select reusable definitions for this analysis only.
+                    // The parser suppresses repeated (family, pointer)
+                    // selections before the temporary manager insertion.
+                    for (const auto& condition : *collector) {
+                        parser.select_collector_condition(bc::CLOAD, condition);
+                    }
+                }
+            }
         );
     });
 }

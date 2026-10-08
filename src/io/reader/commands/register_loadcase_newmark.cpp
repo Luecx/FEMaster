@@ -36,18 +36,11 @@ void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser)
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: β, γ")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 2>()
-                                .name("NEWMARK")
-                                .desc("β, γ parameters for Newmark-β.")
-                                .on_missing(fem::Precision{0})
-                                .on_empty  (fem::Precision{0})
-                        )
-                        .bind([&parser](const std::array<fem::Precision, 2>& bg) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .fixed<fem::Precision, 2>("NEWMARK", "β, γ parameters for Newmark-β.")
+                                .defaults(fem::Precision{0}),
+                    [&parser](const std::array<fem::Precision, 2>& bg) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "NEWMARK must appear inside *LOADCASE.");
 
@@ -57,7 +50,8 @@ void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser)
                             }
 
                             logging::error(false, "NEWMARK not supported for loadcase type " + base->type_name());
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
     });

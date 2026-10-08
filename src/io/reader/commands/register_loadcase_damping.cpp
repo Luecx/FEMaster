@@ -54,18 +54,11 @@ void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& parser)
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: alpha, beta coefficients for Rayleigh damping.")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 2>()
-                                .name("RAYLEIGH")
-                                .desc("alpha, beta mass- and stiffness-proportional coefficients.")
-                                .on_missing(fem::Precision{0})
-                                .on_empty(fem::Precision{0})
-                        )
-                        .bind([&parser, type](const std::array<fem::Precision, 2>& ab) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .fixed<fem::Precision, 2>("RAYLEIGH", "alpha, beta mass- and stiffness-proportional coefficients.")
+                                .defaults(fem::Precision{0}),
+                    [&parser, type](const std::array<fem::Precision, 2>& ab) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "DAMPING must appear inside *LOADCASE.");
                             logging::error(*type == "RAYLEIGH", "DAMPING TYPE must be RAYLEIGH.");
@@ -85,7 +78,8 @@ void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& parser)
                             logging::error(false,
                                            "DAMPING not supported for loadcase type " +
                                            base->type_name());
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
     });

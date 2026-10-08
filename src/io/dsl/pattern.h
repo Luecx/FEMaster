@@ -84,8 +84,10 @@ struct Pattern {
      * @return Reference to `*this` for fluent chaining.
      */
     template<class T, std::size_t N>
-    Pattern& fixed() {
+    Pattern& fixed(const std::string& name = {}, const std::string& description = {}) {
         _elems.emplace_back(std::make_shared<Fixed<T, N>>());
+        if (!name.empty()) this->name(name);
+        if (!description.empty()) this->desc(description);
         return *this;
     }
 
@@ -96,9 +98,8 @@ struct Pattern {
      * @return Reference to `*this` for fluent chaining.
      */
     template<class T>
-    Pattern& one() {
-        _elems.emplace_back(std::make_shared<Fixed<T, 1>>());
-        return *this;
+    Pattern& one(const std::string& name = {}, const std::string& description = {}) {
+        return fixed<T, 1>(name, description);
     }
 
     /**
@@ -169,6 +170,14 @@ struct Pattern {
             throw std::runtime_error("Pattern::on_missing(): type mismatch for last element");
         }
         return *this;
+    }
+
+    /**
+     * @brief Uses one default for both empty and missing tokens of the last element.
+     */
+    template<class T>
+    Pattern& defaults(const T& value) {
+        return on_missing(value).on_empty(value);
     }
 
     /**

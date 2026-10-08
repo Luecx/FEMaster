@@ -98,18 +98,16 @@ void register_element(dsl::Registry& registry, model::Model& model) {
 
             command.variant(dsl::Variant::make()
                 .when(dsl::Condition::key_equals("TYPE", types))
-                .segment(dsl::Segment::make()
-                    .range(dsl::LineRange{}.min(1))
-                    .pattern(dsl::Pattern::make()
+                .data(
+                    dsl::Pattern::make()
                         .allow_multiline()
-                        .one<ID>().name("ID")
-                        .fixed<ID, N>().name("N")
-                    )
-                    .bind([&model](ID id, const std::array<ID, N>& nodes) {
+                        .one<ID>("ID")
+                        .fixed<ID, N>("N"),
+                    [&model](ID id, const std::array<ID, N>& nodes) {
                         std::apply([&](auto... node_ids) {
                             model.set_element<Element>(id, node_ids...);
                         }, nodes);
-                    })
+                    }
                 )
             );
         };

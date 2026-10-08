@@ -69,13 +69,11 @@ void register_rotary_inertia(dsl::Registry& registry, model::Model& model) {
         // every Instance by the ordinary section-expansion path.
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is({"ROOT", "PART"}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make()
-                    .fixed<Precision, 6>().name("INERTIA").desc("I11,I22,I33,I12,I13,I23")
-                        .on_missing(Precision(0)).on_empty(Precision(0))
-                )
-                .bind([&model, elset](const std::array<Precision, 6>& values) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<Precision, 6>("INERTIA", "I11,I22,I33,I12,I13,I23")
+                        .defaults(Precision(0)),
+                [&model, elset](const std::array<Precision, 6>& values) {
                     logging::error(!model._data->compiled,
                         "ROTARY INERTIA: ROOT/PART assignment must be processed before model compilation");
 
@@ -109,20 +107,19 @@ void register_rotary_inertia(dsl::Registry& registry, model::Model& model) {
                     const Vec3 inertia{values[0], values[1], values[2]};
                     model.add_section(std::make_shared<PointMassSection>(
                         region, Precision(0), inertia));
-                })
+                },
+                dsl::LineRange{}.min(1).max(1)
             )
         );
 
         // Assembly assignments resolve dense element ids after compile().
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is("ASSEMBLY"))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make()
-                    .fixed<Precision, 6>().name("INERTIA").desc("I11,I22,I33,I12,I13,I23")
-                        .on_missing(Precision(0)).on_empty(Precision(0))
-                )
-                .bind([&model, elset](const std::array<Precision, 6>& values) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<Precision, 6>("INERTIA", "I11,I22,I33,I12,I13,I23")
+                        .defaults(Precision(0)),
+                [&model, elset](const std::array<Precision, 6>& values) {
                     logging::error(model._data->compiled,
                         "ROTARY INERTIA: ASSEMBLY assignment requires a compiled model");
                     logging::error(model._data->elem_sets.has(*elset),
@@ -150,7 +147,8 @@ void register_rotary_inertia(dsl::Registry& registry, model::Model& model) {
                     const Vec3 inertia{values[0], values[1], values[2]};
                     model.add_section(std::make_shared<PointMassSection>(
                         region, Precision(0), inertia));
-                })
+                },
+                dsl::LineRange{}.min(1).max(1)
             )
         );
     });

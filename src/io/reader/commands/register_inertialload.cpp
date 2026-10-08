@@ -86,43 +86,39 @@ void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
             }
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string        >().name("TARGET"    )
-                    .fixed<fem::Precision, 3>().name("CENTER"    )
-                    .fixed<fem::Precision, 3>().name("CENTER_ACC")
-                    .fixed<fem::Precision, 3>().name("OMEGA"     )
-                    .fixed<fem::Precision, 3>().name("ALPHA"     )
-                )
-                .bind([&parser, consider_point_masses, collector](
-                    const std::string&                  target,
-                    const std::array<fem::Precision, 3>& center,
-                    const std::array<fem::Precision, 3>& center_acc,
-                    const std::array<fem::Precision, 3>& omega,
-                    const std::array<fem::Precision, 3>& alpha
-                ) {
-                    auto& model = parser.model();
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<std::string        >("TARGET")
+                .fixed<fem::Precision, 3>("CENTER")
+                .fixed<fem::Precision, 3>("CENTER_ACC")
+                .fixed<fem::Precision, 3>("OMEGA")
+                .fixed<fem::Precision, 3>("ALPHA"),
+            [&parser, consider_point_masses, collector](
+                const std::string&                  target,
+                const std::array<fem::Precision, 3>& center,
+                const std::array<fem::Precision, 3>& center_acc,
+                const std::array<fem::Precision, 3>& omega,
+                const std::array<fem::Precision, 3>& alpha
+            ) {
+                auto& model = parser.model();
 
-                    // Keep all rigid-body kinematics in the global basis. The model
-                    // maps the region while InertialLoad assembles its mass response.
-                    auto load = std::make_shared<bc::InertialLoad>();
-                    load->region_                = model.resolve_element_region(target);
-                    load->center_                = Vec3{center    [0], center    [1], center    [2]};
-                    load->center_acc_            = Vec3{center_acc[0], center_acc[1], center_acc[2]};
-                    load->omega_                 = Vec3{omega     [0], omega     [1], omega     [2]};
-                    load->alpha_                 = Vec3{alpha     [0], alpha     [1], alpha     [2]};
-                    load->consider_point_masses_ = *consider_point_masses;
+                // Keep all rigid-body kinematics in the global basis. The model
+                // maps the region while InertialLoad assembles its mass response.
+                auto load = std::make_shared<bc::InertialLoad>();
+                load->region_                = model.resolve_element_region(target);
+                load->center_                = Vec3{center    [0], center    [1], center    [2]};
+                load->center_acc_            = Vec3{center_acc[0], center_acc[1], center_acc[2]};
+                load->omega_                 = Vec3{omega     [0], omega     [1], omega     [2]};
+                load->alpha_                 = Vec3{alpha     [0], alpha     [1], alpha     [2]};
+                load->consider_point_masses_ = *consider_point_masses;
 
-                    // Named definitions and direct history are mutually exclusive targets
-                    if (*collector) {
-                        (*collector)->add(std::move(load));
-                    } else {
-                        parser.select_collector_condition(bc::INERTIAL_LOAD, std::move(load));
-                    }
-                })
-            )
+                // Named definitions and direct history are mutually exclusive targets
+                if (*collector) {
+                    (*collector)->add(std::move(load));
+                } else {
+                    parser.select_collector_condition(bc::INERTIAL_LOAD, std::move(load));
+                }
+            }
         );
     });
 }

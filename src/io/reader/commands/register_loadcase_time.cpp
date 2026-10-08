@@ -37,18 +37,11 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: t_start, t_end, dt")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 3>()
-                                .name("TIME")
-                                .desc("t_start, t_end, dt")
-                                .on_missing(fem::Precision{0})
-                                .on_empty  (fem::Precision{0})
-                        )
-                        .bind([&parser](const std::array<fem::Precision, 3>& T) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .fixed<fem::Precision, 3>("TIME", "t_start, t_end, dt")
+                                .defaults(fem::Precision{0}),
+                    [&parser](const std::array<fem::Precision, 3>& T) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
 
@@ -61,7 +54,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                             }
 
                             logging::error(false, "TIME not supported for loadcase type " + base->type_name());
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
 
@@ -69,18 +63,11 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: t_end, dt")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 2>()
-                                .name("TIME")
-                                .desc("t_end, dt")
-                                .on_missing(fem::Precision{0})
-                                .on_empty  (fem::Precision{0})
-                        )
-                        .bind([&parser](const std::array<fem::Precision, 2>& T) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .fixed<fem::Precision, 2>("TIME", "t_end, dt")
+                                .defaults(fem::Precision{0}),
+                    [&parser](const std::array<fem::Precision, 2>& T) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
 
@@ -92,7 +79,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                             }
 
                             logging::error(false, "TIME not supported for loadcase type " + base->type_name());
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
     });

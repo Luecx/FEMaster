@@ -78,70 +78,67 @@ void register_transform(fem::io::dsl::Registry& registry, Parser& parser) {
         // Parse the two points defining the local coordinate system
         // ---------------------------------------------------------------------
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 6>().name("DATA").desc("Coordinates of points a and b")
-                )
-                .bind([&parser, nset, type](const std::array<fem::Precision, 6>& data) {
-                    auto& model      = parser.model();
-                    auto& transforms = parser.node_transforms;
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<fem::Precision, 6>("DATA", "Coordinates of points a and b"),
+            [&parser, nset, type](const std::array<fem::Precision, 6>& data) {
+                auto& model      = parser.model();
+                auto& transforms = parser.node_transforms;
 
-                    const fem::Vec3      a{data[0], data[1], data[2]};
-                    const fem::Vec3      b{data[3], data[4], data[5]};
-                    const fem::Precision eps = std::numeric_limits<fem::Precision>::epsilon();
-                    const std::string    orientation = "__TRANSFORM_" + *nset;
+                const fem::Vec3      a{data[0], data[1], data[2]};
+                const fem::Vec3      b{data[3], data[4], data[5]};
+                const fem::Precision eps = std::numeric_limits<fem::Precision>::epsilon();
+                const std::string    orientation = "__TRANSFORM_" + *nset;
 
-                    // Resolve the compiled node set before constructing the
-                    // coordinate system assigned to its nodes.
-                    logging::error(model._data->node_sets.has(*nset),
-                        "TRANSFORM: node set ", *nset, " is not defined");
-                    logging::error(!model._data->coordinate_systems.has(orientation),
-                        "TRANSFORM: node set ", *nset, " is defined more than once");
+                // Resolve the compiled node set before constructing the
+                // coordinate system assigned to its nodes.
+                logging::error(model._data->node_sets.has(*nset),
+                    "TRANSFORM: node set ", *nset, " is not defined");
+                logging::error(!model._data->coordinate_systems.has(orientation),
+                    "TRANSFORM: node set ", *nset, " is defined more than once");
 
-                    // Construct the FEMaster coordinate-system representation
-                    // corresponding to the requested TRANSFORM type.
-                    if (*type == "R") {
-                        const fem::Precision norm_a = a.norm();
-                        const fem::Precision norm_b = b.norm();
-                        const fem::Precision cross  = a.cross(b).norm();
+                // Construct the FEMaster coordinate-system representation
+                // corresponding to the requested TRANSFORM type.
+                if (*type == "R") {
+                    const fem::Precision norm_a = a.norm();
+                    const fem::Precision norm_b = b.norm();
+                    const fem::Precision cross  = a.cross(b).norm();
 
-                        logging::error(norm_a > eps && norm_b > eps && cross > eps * norm_a * norm_b,
-                            "TRANSFORM TYPE=R requires nonzero, non-collinear points a and b");
+                    logging::error(norm_a > eps && norm_b > eps && cross > eps * norm_a * norm_b,
+                        "TRANSFORM TYPE=R requires nonzero, non-collinear points a and b");
 
-                        model.add_coordinate_system(
-                            std::make_shared<cos::RectangularSystem>(orientation, a, b)
-                        );
-                    } else {
-                        const fem::Vec3 axis = b - a;
+                    model.add_coordinate_system(
+                        std::make_shared<cos::RectangularSystem>(orientation, a, b)
+                    );
+                } else {
+                    const fem::Vec3 axis = b - a;
 
-                        logging::error(axis.norm() > eps,
-                            "TRANSFORM TYPE=C requires distinct axis points a and b");
+                    logging::error(axis.norm() > eps,
+                        "TRANSFORM TYPE=C requires distinct axis points a and b");
 
-                        const fem::Vec3 axial      = axis.normalized();
-                        const fem::Vec3 radial     = axial.unitOrthogonal();
-                        const fem::Vec3 tangential = axial.cross(radial).normalized();
+                    const fem::Vec3 axial      = axis.normalized();
+                    const fem::Vec3 radial     = axial.unitOrthogonal();
+                    const fem::Vec3 tangential = axial.cross(radial).normalized();
 
-                        model.add_coordinate_system(
-                            std::make_shared<cos::CylindricalSystem>(
-                                orientation, a, a + radial, a + tangential)
-                        );
-                    }
+                    model.add_coordinate_system(
+                        std::make_shared<cos::CylindricalSystem>(
+                            orientation, a, a + radial, a + tangential)
+                    );
+                }
 
-                    // Store the resolved nodal assignment. Loads and supports
-                    // later use this mapping instead of transforming the nodal
-                    // degrees of freedom themselves.
-                    auto nodes = model._data->node_sets.get(*nset);
+                // Store the resolved nodal assignment. Loads and supports
+                // later use this mapping instead of transforming the nodal
+                // degrees of freedom themselves.
+                auto nodes = model._data->node_sets.get(*nset);
 
-                    for (const fem::ID node_id : *nodes) {
-                        auto [it, inserted] = transforms.emplace(node_id, orientation);
+                for (const fem::ID node_id : *nodes) {
+                    auto [it, inserted] = transforms.emplace(node_id, orientation);
 
-                        logging::error(inserted || it->second == orientation,
-                            "TRANSFORM: node ", node_id, " belongs to multiple incompatible definitions");
-                    }
-                })
-            )
+                    logging::error(inserted || it->second == orientation,
+                        "TRANSFORM: node ", node_id, " belongs to multiple incompatible definitions");
+                }
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

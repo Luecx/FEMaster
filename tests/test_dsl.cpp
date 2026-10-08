@@ -273,3 +273,38 @@ TEST(DSL_DeckParser, OnEnterDoesNotRunWhenNoVariantMatches) {
 
     std::filesystem::remove(input_path);
 }
+
+TEST(DSL_Shortcuts, PatternMetadataDefaultsAndData) {
+    auto pattern = io::dsl::Pattern::make()
+        .one<int>("ID", "Identifier")
+        .fixed<double, 2>("VALUE", "Two values").defaults(0.0);
+
+    ASSERT_EQ(pattern._elems.size(), 2u);
+    EXPECT_EQ(pattern._elems[0]->name_base(), "ID");
+    EXPECT_EQ(pattern._elems[0]->description(), "Identifier");
+    EXPECT_EQ(pattern._elems[1]->name_base(), "VALUE");
+    EXPECT_EQ(pattern._elems[1]->description(), "Two values");
+
+    std::vector<std::string> tokens{"1", "2.5"};
+    std::string error;
+    ASSERT_TRUE(pattern.normalize_and_complete_tokens(tokens, error));
+    ASSERT_EQ(tokens.size(), 3u);
+    EXPECT_DOUBLE_EQ(std::stod(tokens[2]), 0.0);
+
+    tokens = {"1", "2.5", ""};
+    ASSERT_TRUE(pattern.normalize_and_complete_tokens(tokens, error));
+    EXPECT_DOUBLE_EQ(std::stod(tokens[2]), 0.0);
+
+    io::dsl::Command command("SHORT");
+    command.data(pattern, [](int, const std::array<double, 2>&) {},
+        io::dsl::LineRange{}.min(0).max(1));
+    ASSERT_EQ(command.variants_.size(), 1u);
+    ASSERT_EQ(command.variants_[0]._segments.size(), 1u);
+    EXPECT_EQ(command.variants_[0]._segments[0]._range.min_, 0u);
+    EXPECT_EQ(command.variants_[0]._segments[0]._range.max_, 1u);
+
+    io::dsl::Variant variant;
+    variant.data(pattern, [](int, const std::array<double, 2>&) {});
+    ASSERT_EQ(variant._segments.size(), 1u);
+    EXPECT_EQ(variant._segments[0]._range.min_, 1u);
+}

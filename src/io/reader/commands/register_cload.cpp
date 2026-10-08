@@ -192,53 +192,44 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
         // ---------------------------------------------------------------------
         // FEMaster format: TARGET, Fx, Fy, Fz [, Mx, My, Mz]
         // ---------------------------------------------------------------------
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string   >().name("TARGET").desc("Compiled node set or scalar node reference")
-                    .fixed<Precision, 3>().name("FORCE" ).desc("Fx, Fy, Fz")
-                    .fixed<Precision, 3>().name("MOMENT").desc("Mx, My, Mz")
-                        .on_missing(Precision{0})
-                        .on_empty  (Precision{0})
-                )
-                .bind([add_load](const std::string&              target,
-                                 const std::array<Precision, 3>& force,
-                                 const std::array<Precision, 3>& moment) {
-                    // Normalize translational and rotational components in
-                    // their common selected basis into the generalized vector.
-                    Vec6 values;
-                    values << force[0], force[1], force[2], moment[0], moment[1], moment[2];
-                    add_load(target, values, false);
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string   >("TARGET", "Compiled node set or scalar node reference")
+                .fixed<Precision, 3>("FORCE", "Fx, Fy, Fz")
+                .fixed<Precision, 3>("MOMENT", "Mx, My, Mz")
+                    .defaults(Precision{0}),
+            [add_load](const std::string&              target,
+                             const std::array<Precision, 3>& force,
+                             const std::array<Precision, 3>& moment) {
+                // Normalize translational and rotational components in
+                // their common selected basis into the generalized vector.
+                Vec6 values;
+                values << force[0], force[1], force[2], moment[0], moment[1], moment[2];
+                add_load(target, values, false);
+            }
         );
 
         // ---------------------------------------------------------------------
         // Abaqus-compatible format: TARGET, DOF, MAGNITUDE
         // ---------------------------------------------------------------------
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET"   ).desc("Compiled node set or scalar node reference")
-                    .one<int        >().name("DOF"      ).desc("Loaded degree of freedom, 1 through 6")
-                    .one<Precision  >().name("MAGNITUDE").desc("Load magnitude")
-                )
-                .bind([add_load](const std::string& target, int dof, Precision magnitude) {
-                    // Abaqus numbers translations 1..3 and rotations 4..6.
-                    // Validate before indexing the zero-based generalized vector.
-                    logging::error(dof >= 1 && dof <= 6,
-                        "CLOAD: DOF must be in [1,6]");
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TARGET", "Compiled node set or scalar node reference")
+                .one<int        >("DOF", "Loaded degree of freedom, 1 through 6")
+                .one<Precision  >("MAGNITUDE", "Load magnitude"),
+            [add_load](const std::string& target, int dof, Precision magnitude) {
+                // Abaqus numbers translations 1..3 and rotations 4..6.
+                // Validate before indexing the zero-based generalized vector.
+                logging::error(dof >= 1 && dof <= 6,
+                    "CLOAD: DOF must be in [1,6]");
 
-                    // Preserve the selected DOF as condition identity. NaN marks
-                    // components that are not part of this CLOAD definition and
-                    // therefore must not be replaced by a later independent DOF.
-                    Vec6 values = Vec6::Constant(NAN);
-                    values[dof - 1] = magnitude;
-                    add_load(target, values, true);
-                })
-            )
+                // Preserve the selected DOF as condition identity. NaN marks
+                // components that are not part of this CLOAD definition and
+                // therefore must not be replaced by a later independent DOF.
+                Vec6 values = Vec6::Constant(NAN);
+                values[dof - 1] = magnitude;
+                add_load(target, values, true);
+            }
         );
     });
 }

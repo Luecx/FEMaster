@@ -68,24 +68,20 @@ void register_plastic(fem::io::dsl::Registry& registry, model::Model& model) {
             material->set_elasticity<fem::material::IsotropicJ2Elasticity>(youngs, poisson);
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("YIELD_STRESS").desc("Uniaxial true (Cauchy) yield stress")
-                    .one<fem::Precision>().name("PEEQ").desc("Equivalent plastic strain")
-                )
-                .bind([&model](fem::Precision yield_stress, fem::Precision peeq) {
-                    auto material = model._data->materials.get();
-                    logging::error(material != nullptr && material->has_elasticity(),
-                                   "PLASTIC data require an active material context");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<fem::Precision>("YIELD_STRESS", "Uniaxial true (Cauchy) yield stress")
+                .one<fem::Precision>("PEEQ", "Equivalent plastic strain"),
+            [&model](fem::Precision yield_stress, fem::Precision peeq) {
+                auto material = model._data->materials.get();
+                logging::error(material != nullptr && material->has_elasticity(),
+                               "PLASTIC data require an active material context");
 
-                    auto* j2 = material->elasticity()->as<fem::material::IsotropicJ2Elasticity>();
-                    logging::error(j2 != nullptr,
-                                   "PLASTIC data do not match the active material law");
-                    j2->add_yield_point(yield_stress, peeq);
-                })
-            )
+                auto* j2 = material->elasticity()->as<fem::material::IsotropicJ2Elasticity>();
+                logging::error(j2 != nullptr,
+                               "PLASTIC data do not match the active material law");
+                j2->add_yield_point(yield_stress, peeq);
+            }
         );
     });
 }

@@ -128,16 +128,13 @@ void register_solid_section(fem::io::dsl::Registry& registry, model::Model& mode
             }
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Precision>().name("AREA")
-                )
-                .bind([area](Precision value) {
-                    *area = value;
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<Precision>("AREA"),
+            [area](Precision value) {
+                *area = value;
+            },
+            fem::io::dsl::LineRange{}.min(0).max(1)
         );
     });
 }

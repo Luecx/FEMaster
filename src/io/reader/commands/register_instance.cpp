@@ -115,23 +115,20 @@ void register_instance(fem::io::dsl::Registry& registry, model::Model& model) {
         // Translation followed by rotation about a global two-point axis
         command.variant(fem::io::dsl::Variant::make()
             .rank(30)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 3>().name("TRANSLATION")
-                )
-                .bind([instance](const std::array<fem::Precision, 3>& values) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 3>("TRANSLATION"),
+                [instance](const std::array<fem::Precision, 3>& values) {
                     logging::error(*instance != nullptr,
                         "INSTANCE: internal instance state is not initialized");
                     (*instance)->translation = Vec3{values[0], values[1], values[2]};
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 7>().name("ROTATION")
-                )
-                .bind([instance, build_rotation](const std::array<fem::Precision, 7>& values) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 7>("ROTATION"),
+                [instance, build_rotation](const std::array<fem::Precision, 7>& values) {
                     logging::error(*instance != nullptr,
                         "INSTANCE: internal instance state is not initialized");
 
@@ -144,19 +141,18 @@ void register_instance(fem::io::dsl::Registry& registry, model::Model& model) {
                     (*instance)->rotation     = rotation;
                     (*instance)->translation = rotation * (*instance)->translation
                                              + point_a - rotation * point_a;
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
         // Rotation without a preceding translation
         command.variant(fem::io::dsl::Variant::make()
             .rank(20)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 7>().name("ROTATION")
-                )
-                .bind([instance, build_rotation](const std::array<fem::Precision, 7>& values) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 7>("ROTATION"),
+                [instance, build_rotation](const std::array<fem::Precision, 7>& values) {
                     logging::error(*instance != nullptr,
                         "INSTANCE: internal instance state is not initialized");
 
@@ -168,23 +164,23 @@ void register_instance(fem::io::dsl::Registry& registry, model::Model& model) {
 
                     (*instance)->rotation    = rotation;
                     (*instance)->translation = point_a - rotation * point_a;
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
         // Translation without a following rotation
         command.variant(fem::io::dsl::Variant::make()
             .rank(10)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 3>().name("TRANSLATION")
-                )
-                .bind([instance](const std::array<fem::Precision, 3>& values) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 3>("TRANSLATION"),
+                [instance](const std::array<fem::Precision, 3>& values) {
                     logging::error(*instance != nullptr,
                         "INSTANCE: internal instance state is not initialized");
                     (*instance)->translation = Vec3{values[0], values[1], values[2]};
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 

@@ -29,20 +29,17 @@ void register_loadcase_topoexponent(fem::io::dsl::Registry& registry, Parser& pa
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set penalization exponent for LINEARSTATICTOPO loadcases.");
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("EXPONENT").desc("Penalization exponent")
-                )
-                .bind([&parser](fem::Precision exponent) {
-                    auto* active_loadcase = parser.active_loadcase();
-                    auto* lc = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearStaticTopo>() : nullptr;
-                    logging::error(lc != nullptr,
-                        "TOPOEXPONENT only valid for LINEARSTATICTOPO loadcases");
-                    lc->exponent = exponent;
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<fem::Precision>("EXPONENT", "Penalization exponent"),
+            [&parser](fem::Precision exponent) {
+                auto* active_loadcase = parser.active_loadcase();
+                auto* lc = active_loadcase != nullptr ? active_loadcase->as<loadcase::LinearStaticTopo>() : nullptr;
+                logging::error(lc != nullptr,
+                    "TOPOEXPONENT only valid for LINEARSTATICTOPO loadcases");
+                lc->exponent = exponent;
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

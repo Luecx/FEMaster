@@ -94,14 +94,12 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({part_scope, generated}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START")
-                    .one<ID>().name("END")
-                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
-                )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+            .data(
+                dsl::Pattern::make()
+                    .one<ID>("START")
+                    .one<ID>("END")
+                    .one<ID>("INC").defaults(ID{1}),
+                [&model, ctx](ID first, ID last, ID inc) {
                     logging::error(ctx->instance.empty(),
                         "NSET: INSTANCE is only valid at assembly level");
                     logging::error(inc != 0,
@@ -121,7 +119,7 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
                         const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
                     }
-                })
+                }
             )
         );
 
@@ -129,14 +127,12 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({assembly_scope, generated}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START")
-                    .one<ID>().name("END")
-                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
-                )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+            .data(
+                dsl::Pattern::make()
+                    .one<ID>("START")
+                    .one<ID>("END")
+                    .one<ID>("INC").defaults(ID{1}),
+                [&model, ctx](ID first, ID last, ID inc) {
                     logging::error(inc != 0,
                         "NSET/GENERATE: increment must not be zero");
                     if (!model._data->compiled) return;
@@ -155,7 +151,7 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
                         const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
                     }
-                })
+                }
             )
         );
 
@@ -164,13 +160,11 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
         // Resolve listed part-local node or node-set references in the active Part
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({part_scope, listed}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(0))
-                .pattern(dsl::Pattern::make()
-                    .fixed<std::string, 32>().name("TARGET")
-                        .on_missing(missing_token).on_empty(missing_token)
-                )
-                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<std::string, 32>("TARGET")
+                        .defaults(missing_token),
+                [&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
                     logging::error(ctx->instance.empty(),
                         "NSET: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
@@ -179,20 +173,19 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
                         if (target == missing_token) continue;
                         model.add_nodes_to_part_set(ctx->name, target);
                     }
-                })
+                },
+                dsl::LineRange{}.min(0)
             )
         );
 
         // Resolve listed assembly references with optional Instance qualification
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({assembly_scope, listed}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(0))
-                .pattern(dsl::Pattern::make()
-                    .fixed<std::string, 32>().name("TARGET")
-                        .on_missing(missing_token).on_empty(missing_token)
-                )
-                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<std::string, 32>("TARGET")
+                        .defaults(missing_token),
+                [&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
                     if (!model._data->compiled) return;
 
                     logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
@@ -203,7 +196,8 @@ void register_nset(dsl::Registry& registry, model::Model& model) {
                         const std::string reference = io::reader::qualify_reference(target, ctx->instance);
                         model.add_nodes_to_assembly_set(ctx->name, reference);
                     }
-                })
+                },
+                dsl::LineRange{}.min(0)
             )
         );
     });

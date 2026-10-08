@@ -49,19 +49,16 @@ void register_node(dsl::Registry& registry, model::Model& model) {
         });
 
         // Read sparse node coordinates
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(0))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("ID")
-                    .one<Precision>().name("X").on_empty(Precision{0}).on_missing(Precision{0})
-                    .one<Precision>().name("Y").on_empty(Precision{0}).on_missing(Precision{0})
-                    .one<Precision>().name("Z").on_empty(Precision{0}).on_missing(Precision{0})
-                )
-                .bind([&model](ID id, Precision x, Precision y, Precision z) {
-                    model.set_node(id, x, y, z);
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .one<ID>("ID")
+                .one<Precision>("X").defaults(Precision{0})
+                .one<Precision>("Y").defaults(Precision{0})
+                .one<Precision>("Z").defaults(Precision{0}),
+            [&model](ID id, Precision x, Precision y, Precision z) {
+                model.set_node(id, x, y, z);
+            },
+            dsl::LineRange{}.min(0)
         );
     });
 }

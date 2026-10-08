@@ -104,33 +104,28 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
 
         // Keep distributed loads in their physical region; nodal TRANSFORM does not
         // change the prescribed field or, for pressure, its surface-normal direction.
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Compiled surface set or scalar reference")
-                    .one<Precision  >().name("P"     ).desc("Pressure positive opposite to the surface normal")
-                        .on_missing(Precision{0})
-                        .on_empty  (Precision{0})
-                )
-                .bind([&parser, amplitude, collector](const std::string& target, Precision value) {
-                    auto& model = parser.model();
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TARGET", "Compiled surface set or scalar reference")
+                .one<Precision  >("P", "Pressure positive opposite to the surface normal")
+                    .defaults(Precision{0}),
+            [&parser, amplitude, collector](const std::string& target, Precision value) {
+                auto& model = parser.model();
 
-                    // Resolve the target through the model and retain nominal values
-                    // and shared modifiers for integration during load assembly.
-                    auto load = std::make_shared<bc::PLoad>();
-                    load->region_    = model.resolve_surface_region(target);
-                    load->pressure_  = value;
-                    load->amplitude_ = *amplitude;
+                // Resolve the target through the model and retain nominal values
+                // and shared modifiers for integration during load assembly.
+                auto load = std::make_shared<bc::PLoad>();
+                load->region_    = model.resolve_surface_region(target);
+                load->pressure_  = value;
+                load->amplitude_ = *amplitude;
 
-                    // Named definitions and direct history are mutually exclusive targets
-                    if (*collector) {
-                        (*collector)->add(std::move(load));
-                    } else {
-                        parser.select_collector_condition(bc::PLOAD, std::move(load));
-                    }
-                })
-            )
+                // Named definitions and direct history are mutually exclusive targets
+                if (*collector) {
+                    (*collector)->add(std::move(load));
+                } else {
+                    parser.select_collector_condition(bc::PLOAD, std::move(load));
+                }
+            }
         );
     });
 }

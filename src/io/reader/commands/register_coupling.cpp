@@ -207,13 +207,11 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         // carries the six boolean-like generalized DOF selectors.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_present("TYPE"))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 6>().name("DOF")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                )
-                .bind([ctx, emit](const std::array<fem::Precision, 6>& raw) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 6>("DOF")
+                        .defaults(fem::Precision{0}),
+                [ctx, emit](const std::array<fem::Precision, 6>& raw) {
                     Dofs dofs;
                     for (Index i = 0; i < 6; ++i) {
                         dofs(i) = raw[static_cast<std::size_t>(i)] > Precision(0);
@@ -223,7 +221,8 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                         ? constraint::CouplingType::KINEMATIC
                         : constraint::CouplingType::STRUCTURAL;
                     emit(dofs, type);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
@@ -261,17 +260,14 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             emit(*kinematic_dofs, constraint::CouplingType::KINEMATIC);
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Index>().name("FIRST")
-                    .one<Index>().name("LAST").on_missing(static_cast<Index>(-1)).on_empty(static_cast<Index>(-1))
-                )
-                .bind([kinematic_dofs, kinematic_has_range, add_dof_range](Index first, Index last) {
-                    add_dof_range(*kinematic_dofs, *kinematic_has_range, first, last, "KINEMATIC");
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<Index>("FIRST")
+                .one<Index>("LAST").defaults(static_cast<Index>(-1)),
+            [kinematic_dofs, kinematic_has_range, add_dof_range](Index first, Index last) {
+                add_dof_range(*kinematic_dofs, *kinematic_has_range, first, last, "KINEMATIC");
+            },
+            fem::io::dsl::LineRange{}.min(0)
         );
     });
 
@@ -306,17 +302,14 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             emit(*distributing_dofs, constraint::CouplingType::STRUCTURAL);
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Index>().name("FIRST")
-                    .one<Index>().name("LAST").on_missing(static_cast<Index>(-1)).on_empty(static_cast<Index>(-1))
-                )
-                .bind([distributing_dofs, distributing_has_range, add_dof_range](Index first, Index last) {
-                    add_dof_range(*distributing_dofs, *distributing_has_range, first, last, "DISTRIBUTING");
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<Index>("FIRST")
+                .one<Index>("LAST").defaults(static_cast<Index>(-1)),
+            [distributing_dofs, distributing_has_range, add_dof_range](Index first, Index last) {
+                add_dof_range(*distributing_dofs, *distributing_has_range, first, last, "DISTRIBUTING");
+            },
+            fem::io::dsl::LineRange{}.min(0)
         );
     });
 }

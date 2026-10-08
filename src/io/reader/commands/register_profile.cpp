@@ -52,56 +52,53 @@ void register_profile(fem::io::dsl::Registry& registry, model::Model& model) {
             *profile_name = keys.raw("PROFILE");
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 1>().name("A").desc("Cross-section area A")
-                    .fixed<fem::Precision, 1>().name("IY").desc("Second moment of area about local y-axis (Iy)")
-                    .fixed<fem::Precision, 1>().name("IZ").desc("Second moment of area about local z-axis (Iz)")
-                    .fixed<fem::Precision, 1>().name("JT").desc("Torsional constant (Jt)")
-                    .fixed<fem::Precision, 1>().name("IYZ").desc("Product of inertia: Iyz = integral_A(y*z*dA), no minus sign")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("EY").desc("Offset in local y: ey = y(SP) - y(SMP)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("EZ").desc("Offset in local z: ez = z(SP) - z(SMP)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("REFY").desc("Reference-line offset in local y: refy = y(REF) - y(SMP)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("REFZ").desc("Reference-line offset in local z: refz = z(REF) - z(SMP)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("ASY").desc("Effective transverse shear area in local y (default 5A/6)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .fixed<fem::Precision, 1>().name("ASZ").desc("Effective transverse shear area in local z (default 5A/6)")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                )
-                .bind([&model, profile_name](fem::Precision area,
-                                             fem::Precision inertia_y,
-                                             fem::Precision inertia_z,
-                                             fem::Precision torsion,
-                                             fem::Precision product_yz,
-                                             fem::Precision offset_y,
-                                             fem::Precision offset_z,
-                                             fem::Precision reference_y,
-                                             fem::Precision reference_z,
-                                             fem::Precision shear_area_y,
-                                             fem::Precision shear_area_z) {
-                    model.add_profile(std::make_shared<Profile>(
-                        *profile_name,
-                        area,
-                        inertia_y,
-                        inertia_z,
-                        torsion,
-                        product_yz,
-                        offset_y,
-                        offset_z,
-                        reference_y,
-                        reference_z,
-                        shear_area_y,
-                        shear_area_z
-                    ));
-                })
-            )
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<fem::Precision, 1>("A", "Cross-section area A")
+                .fixed<fem::Precision, 1>("IY", "Second moment of area about local y-axis (Iy)")
+                .fixed<fem::Precision, 1>("IZ", "Second moment of area about local z-axis (Iz)")
+                .fixed<fem::Precision, 1>("JT", "Torsional constant (Jt)")
+                .fixed<fem::Precision, 1>("IYZ", "Product of inertia: Iyz = integral_A(y*z*dA), no minus sign")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("EY", "Offset in local y: ey = y(SP) - y(SMP)")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("EZ", "Offset in local z: ez = z(SP) - z(SMP)")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("REFY", "Reference-line offset in local y: refy = y(REF) - y(SMP)")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("REFZ", "Reference-line offset in local z: refz = z(REF) - z(SMP)")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("ASY", "Effective transverse shear area in local y (default 5A/6)")
+                    .defaults(fem::Precision{0})
+                .fixed<fem::Precision, 1>("ASZ", "Effective transverse shear area in local z (default 5A/6)")
+                    .defaults(fem::Precision{0}),
+            [&model, profile_name](fem::Precision area,
+                                         fem::Precision inertia_y,
+                                         fem::Precision inertia_z,
+                                         fem::Precision torsion,
+                                         fem::Precision product_yz,
+                                         fem::Precision offset_y,
+                                         fem::Precision offset_z,
+                                         fem::Precision reference_y,
+                                         fem::Precision reference_z,
+                                         fem::Precision shear_area_y,
+                                         fem::Precision shear_area_z) {
+                model.add_profile(std::make_shared<Profile>(
+                    *profile_name,
+                    area,
+                    inertia_y,
+                    inertia_z,
+                    torsion,
+                    product_yz,
+                    offset_y,
+                    offset_z,
+                    reference_y,
+                    reference_z,
+                    shear_area_y,
+                    shear_area_z
+                ));
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

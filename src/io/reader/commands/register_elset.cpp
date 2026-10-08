@@ -129,15 +129,13 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({part_scope, generated}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START").desc("First Part-local element identifier")
-                    .one<ID>().name("END"  ).desc("Last Part-local element identifier")
-                    .one<ID>().name("INC"  ).desc("Non-zero identifier increment")
-                        .on_missing(ID{1}).on_empty(ID{1})
-                )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+            .data(
+                dsl::Pattern::make()
+                    .one<ID>("START", "First Part-local element identifier")
+                    .one<ID>("END", "Last Part-local element identifier")
+                    .one<ID>("INC", "Non-zero identifier increment")
+                        .defaults(ID{1}),
+                [&model, ctx](ID first, ID last, ID inc) {
                     // Validate the Part scope and arithmetic progression
                     logging::error(ctx->instance.empty(),
                         "ELSET: INSTANCE is only valid at assembly level");
@@ -158,7 +156,7 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                         const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
                     }
-                })
+                }
             )
         );
 
@@ -166,15 +164,13 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({assembly_scope, generated}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START").desc("First Instance-local element identifier")
-                    .one<ID>().name("END"  ).desc("Last Instance-local element identifier")
-                    .one<ID>().name("INC"  ).desc("Non-zero identifier increment")
-                        .on_missing(ID{1}).on_empty(ID{1})
-                )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+            .data(
+                dsl::Pattern::make()
+                    .one<ID>("START", "First Instance-local element identifier")
+                    .one<ID>("END", "Last Instance-local element identifier")
+                    .one<ID>("INC", "Non-zero identifier increment")
+                        .defaults(ID{1}),
+                [&model, ctx](ID first, ID last, ID inc) {
                     // Validate the compiled scope and arithmetic progression
                     logging::error(inc != 0,
                         "ELSET/GENERATE: increment must not be zero");
@@ -195,7 +191,7 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                         const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
                     }
-                })
+                }
             )
         );
 
@@ -205,14 +201,11 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
         // Resolve listed part-local element or element-set references in the active Part
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({part_scope, listed}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(0))
-                .pattern(dsl::Pattern::make()
-                    .fixed<std::string, 32>().name("TARGET")
-                        .desc("Part-local element identifier or element-set name")
-                        .on_missing(missing_token).on_empty(missing_token)
-                )
-                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<std::string, 32>("TARGET", "Part-local element identifier or element-set name")
+                        .defaults(missing_token),
+                [&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
                     // Process this variant only in semantic Part space
                     logging::error(ctx->instance.empty(),
                         "ELSET: INSTANCE is only valid at assembly level");
@@ -223,21 +216,19 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                         if (target == missing_token) continue;
                         model.add_elements_to_part_set(ctx->name, target);
                     }
-                })
+                },
+                dsl::LineRange{}.min(0)
             )
         );
 
         // Resolve listed assembly references with optional Instance qualification
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({assembly_scope, listed}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(0))
-                .pattern(dsl::Pattern::make()
-                    .fixed<std::string, 32>().name("TARGET")
-                        .desc("Assembly element reference or element-set name")
-                        .on_missing(missing_token).on_empty(missing_token)
-                )
-                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+            .data(
+                dsl::Pattern::make()
+                    .fixed<std::string, 32>("TARGET", "Assembly element reference or element-set name")
+                        .defaults(missing_token),
+                [&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
                     // Process this variant only after assembly compilation
                     if (!model._data->compiled) return;
 
@@ -251,7 +242,8 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                         const std::string reference = io::reader::qualify_reference(target, ctx->instance);
                         model.add_elements_to_assembly_set(ctx->name, reference);
                     }
-                })
+                },
+                dsl::LineRange{}.min(0)
             )
         );
     });

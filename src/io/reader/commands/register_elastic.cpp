@@ -69,18 +69,17 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ISO", "ISOTROPIC"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("E").desc("Young's modulus")
-                    .one<fem::Precision>().name("NU").desc("Poisson ratio")
-                )
-                .bind([&model](fem::Precision E, fem::Precision nu) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<fem::Precision>("E", "Young's modulus")
+                    .one<fem::Precision>("NU", "Poisson ratio"),
+                [&model](fem::Precision E, fem::Precision nu) {
                     auto material = model._data->materials.get();
                     logging::error(material != nullptr,
                         "ELASTIC requires an active material context");
                     material->set_elasticity<fem::material::IsotropicElasticity>(E, nu);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
@@ -88,32 +87,28 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
             .when(fem::io::dsl::Condition::key_equals(
                 "TYPE", {"GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO"}
             ))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("E").desc("Young's modulus")
-                    .one<fem::Precision>().name("NU").desc("Poisson ratio")
-                    .one<fem::Precision>().name("G").desc("Independent shear modulus")
-                )
-                .bind([&model](fem::Precision E, fem::Precision nu, fem::Precision G) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<fem::Precision>("E", "Young's modulus")
+                    .one<fem::Precision>("NU", "Poisson ratio")
+                    .one<fem::Precision>("G", "Independent shear modulus"),
+                [&model](fem::Precision E, fem::Precision nu, fem::Precision G) {
                     auto material = model._data->materials.get();
                     logging::error(material != nullptr,
                         "ELASTIC requires an active material context");
                     material->set_elasticity<fem::material::GeneralisedIsotropicElasticity>(E, nu, G);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ENGINEERINGCONSTANTS"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(2))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 9>().name("DATA")
-                        .desc("E1,E2,E3,nu12,nu13,nu23,G12,G13,G23")
-                )
-                .bind([&model](const std::array<fem::Precision, 9>& data) {
+                    .fixed<fem::Precision, 9>("DATA", "E1,E2,E3,nu12,nu13,nu23,G12,G13,G23"),
+                [&model](const std::array<fem::Precision, 9>& data) {
                     auto material = model._data->materials.get();
                     logging::error(material != nullptr,
                         "ELASTIC requires an active material context");
@@ -123,20 +118,18 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
                         data[3], data[4], data[5],
                         data[6], data[7], data[8]
                     );
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(2)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ORTHO", "ORTHOTROPIC"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(2))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 9>().name("DATA")
-                        .desc("D1111,D1122,D2222,D1133,D2233,D3333,D1212,D1313,D2323")
-                )
-                .bind([&model](const std::array<fem::Precision, 9>& data) {
+                    .fixed<fem::Precision, 9>("DATA", "D1111,D1122,D2222,D1133,D2233,D3333,D1212,D1313,D2323"),
+                [&model](const std::array<fem::Precision, 9>& data) {
                     auto material = model._data->materials.get();
                     logging::error(material != nullptr,
                         "ELASTIC requires an active material context");
@@ -170,7 +163,8 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
                     material->set_elasticity<fem::material::OrthotropicElasticity>(
                         E1, E2, E3, nu12, nu13, nu23, G12, G13, G23
                     );
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(2)
             )
         );
     });

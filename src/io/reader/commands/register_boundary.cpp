@@ -83,83 +83,79 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
             }
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .one<int>().name("FIRST_DOF")
-                    .one<int>().name("LAST_DOF").on_missing(-1).on_empty(-1)
-                    .one<Precision>().name("MAGNITUDE").on_missing(Precision{0}).on_empty(Precision{0})
-                )
-                .bind([&parser, amplitude](const std::string& target,
-                                           int first_dof,
-                                           int last_dof,
-                                           Precision magnitude) {
-                    if (last_dof < 0) last_dof = first_dof;
-                    logging::error(first_dof >= 1 && first_dof <= 6
-                                && last_dof >= first_dof && last_dof <= 6,
-                        "BOUNDARY: structural DOFs must be in [1,6]");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<std::string>("TARGET")
+                .one<int>("FIRST_DOF")
+                .one<int>("LAST_DOF").defaults(-1)
+                .one<Precision>("MAGNITUDE").defaults(Precision{0}),
+            [&parser, amplitude](const std::string& target,
+                                       int first_dof,
+                                       int last_dof,
+                                       Precision magnitude) {
+                if (last_dof < 0) last_dof = first_dof;
+                logging::error(first_dof >= 1 && first_dof <= 6
+                            && last_dof >= first_dof && last_dof <= 6,
+                    "BOUNDARY: structural DOFs must be in [1,6]");
 
-                    if (parser.step_state().step_active && magnitude != Precision(0)) {
-                        const std::string procedure = parser.active_loadcase()->type_name();
-                        logging::error(procedure == "LINEARSTATIC"
-                                    || procedure == "NONLINEARSTATIC",
-                            "BOUNDARY: nonzero values are supported only for static procedures");
-                        if (!amplitude->empty()) {
-                            logging::error(procedure == "LINEARSTATIC",
-                                "BOUNDARY: nonzero AMPLITUDE is supported only for linear static procedures");
-                            magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(
-                                parser.step_state().step_period);
-                        }
+                if (parser.step_state().step_active && magnitude != Precision(0)) {
+                    const std::string procedure = parser.active_loadcase()->type_name();
+                    logging::error(procedure == "LINEARSTATIC"
+                                || procedure == "NONLINEARSTATIC",
+                        "BOUNDARY: nonzero values are supported only for static procedures");
+                    if (!amplitude->empty()) {
+                        logging::error(procedure == "LINEARSTATIC",
+                            "BOUNDARY: nonzero AMPLITUDE is supported only for linear static procedures");
+                        magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(
+                            parser.step_state().step_period);
+                    }
+                }
+
+                Vec6 values;
+                values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
+                for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
+
+                auto& model = parser.model();
+                const std::string identifier =
+                    (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+                std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
+
+                const auto add_node = [&](ID node_id) {
+                    cos::CoordinateSystem::Ptr orientation = nullptr;
+                    const auto transform = parser.node_transforms.find(node_id);
+                    if (transform != parser.node_transforms.end()) {
+                        logging::error(model._data->coordinate_systems.has(transform->second),
+                            "BOUNDARY: coordinate system ", transform->second, " does not exist");
+                        orientation = model._data->coordinate_systems.get(transform->second);
                     }
 
-                    Vec6 values;
-                    values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
-                    for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
+                    auto region = std::make_shared<model::NodeRegion>("INTERNAL");
+                    region->add(node_id);
 
-                    auto& model = parser.model();
-                    const std::string identifier =
-                        (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
-                    std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
-
-                    const auto add_node = [&](ID node_id) {
-                        cos::CoordinateSystem::Ptr orientation = nullptr;
-                        const auto transform = parser.node_transforms.find(node_id);
-                        if (transform != parser.node_transforms.end()) {
-                            logging::error(model._data->coordinate_systems.has(transform->second),
-                                "BOUNDARY: coordinate system ", transform->second, " does not exist");
-                            orientation = model._data->coordinate_systems.get(transform->second);
-                        }
-
-                        auto region = std::make_shared<model::NodeRegion>("INTERNAL");
-                        region->add(node_id);
-
-                        for (Dim dof = 0; dof < 6; ++dof) {
-                            if (std::isnan(values[dof])) continue;
-
-                            Vec6 component_values = Vec6::Constant(NAN);
-                            component_values[dof] = values[dof];
-                            replacements[dof].push_back(std::make_shared<bc::Support>(
-                                region, component_values, orientation
-                            ));
-                        }
-                    };
-
-                    if (model._data->node_sets.has(target)) {
-                        for (const ID node_id : *model._data->node_sets.get(target)) add_node(node_id);
-                    } else {
-                        add_node(model.compiled_node_id(target));
-                    }
-
-                    // A node set is one logical source for each DOF, even when
-                    // individual nodes use different TRANSFORM bases.
                     for (Dim dof = 0; dof < 6; ++dof) {
-                        if (replacements[dof].empty()) continue;
-                        parser.modify_conditions(bc::SUPPORT, identifier, std::move(replacements[dof]));
+                        if (std::isnan(values[dof])) continue;
+
+                        Vec6 component_values = Vec6::Constant(NAN);
+                        component_values[dof] = values[dof];
+                        replacements[dof].push_back(std::make_shared<bc::Support>(
+                            region, component_values, orientation
+                        ));
                     }
-                })
-            )
+                };
+
+                if (model._data->node_sets.has(target)) {
+                    for (const ID node_id : *model._data->node_sets.get(target)) add_node(node_id);
+                } else {
+                    add_node(model.compiled_node_id(target));
+                }
+
+                // A node set is one logical source for each DOF, even when
+                // individual nodes use different TRANSFORM bases.
+                for (Dim dof = 0; dof < 6; ++dof) {
+                    if (replacements[dof].empty()) continue;
+                    parser.modify_conditions(bc::SUPPORT, identifier, std::move(replacements[dof]));
+                }
+            }
         );
     });
 }

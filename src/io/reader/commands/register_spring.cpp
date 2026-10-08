@@ -62,14 +62,12 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
         // every Instance by the ordinary section-expansion path.
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is({"ROOT", "PART"}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(2).max(2))
-                .pattern(dsl::Pattern::make()
+            .data(
+                dsl::Pattern::make()
                     .allow_multiline()
-                    .one<ID>().name("DOF").desc("Nodal degree of freedom 1..6")
-                    .one<Precision>().name("STIFFNESS").desc("Linear spring stiffness")
-                )
-                .bind([&model, elset](ID dof, Precision stiffness) {
+                    .one<ID>("DOF", "Nodal degree of freedom 1..6")
+                    .one<Precision>("STIFFNESS", "Linear spring stiffness"),
+                [&model, elset](ID dof, Precision stiffness) {
                     logging::error(!model._data->compiled,
                         "SPRING: ROOT/PART assignment must be processed before model compilation");
 
@@ -108,21 +106,20 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
 
                     model.add_section(std::make_shared<PointMassSection>(
                         region, Precision(0), Vec3::Zero(), spring, rotary_spring));
-                })
+                },
+                dsl::LineRange{}.min(2).max(2)
             )
         );
 
         // Assembly stiffness resolves dense compiled element ids after compile().
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is("ASSEMBLY"))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(2).max(2))
-                .pattern(dsl::Pattern::make()
+            .data(
+                dsl::Pattern::make()
                     .allow_multiline()
-                    .one<ID>().name("DOF").desc("Nodal degree of freedom 1..6")
-                    .one<Precision>().name("STIFFNESS").desc("Linear spring stiffness")
-                )
-                .bind([&model, elset](ID dof, Precision stiffness) {
+                    .one<ID>("DOF", "Nodal degree of freedom 1..6")
+                    .one<Precision>("STIFFNESS", "Linear spring stiffness"),
+                [&model, elset](ID dof, Precision stiffness) {
                     logging::error(model._data->compiled,
                         "SPRING: ASSEMBLY assignment requires a compiled model");
                     logging::error(model._data->elem_sets.has(*elset),
@@ -155,7 +152,8 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
 
                     model.add_section(std::make_shared<PointMassSection>(
                         region, Precision(0), Vec3::Zero(), spring, rotary_spring));
-                })
+                },
+                dsl::LineRange{}.min(2).max(2)
             )
         );
     });

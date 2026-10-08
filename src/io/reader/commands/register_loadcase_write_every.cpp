@@ -52,16 +52,10 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: either integer steps (TYPE=STEPS) or Δt_write seconds (TYPE=TIME).")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .one<fem::Precision>()
-                                .name("VALUE")
-                                .desc("N (steps) or Δt_write (seconds), depending on TYPE.")
-                        )
-                        .bind([&parser, type](fem::Precision value) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .one<fem::Precision>("VALUE", "N (steps) or Δt_write (seconds), depending on TYPE."),
+                    [&parser, type](fem::Precision value) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "WRITE EVERY must appear inside *LOADCASE.");
 
@@ -77,7 +71,8 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
                             }
 
                             logging::error(false, "WRITE EVERY not supported for loadcase type " + base->type_name());
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
     });

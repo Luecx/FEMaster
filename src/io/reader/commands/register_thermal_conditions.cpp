@@ -65,23 +65,19 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 parser.clear_conditions(bc::TEMPERATURE);
             }
         });
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Compiled node set or scalar node reference")
-                    .one<Precision>().name("TEMPERATURE").desc("Absolute prescribed temperature")
-                )
-                .bind([&parser](const std::string& target, Precision value) {
-                    // Replace only the matching nodal target in temperature history
-                    auto temperature = std::make_shared<bc::Temperature>(
-                        parser.model().resolve_node_region(target), value
-                    );
-                    parser.modify_conditions(bc::TEMPERATURE,
-                        (parser.model()._data->node_sets.has(target) ? "NSET:" : "NODE:") + target,
-                        {std::move(temperature)});
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TARGET", "Compiled node set or scalar node reference")
+                .one<Precision>("TEMPERATURE", "Absolute prescribed temperature"),
+            [&parser](const std::string& target, Precision value) {
+                // Replace only the matching nodal target in temperature history
+                auto temperature = std::make_shared<bc::Temperature>(
+                    parser.model().resolve_node_region(target), value
+                );
+                parser.modify_conditions(bc::TEMPERATURE,
+                    (parser.model()._data->node_sets.has(target) ? "NSET:" : "NODE:") + target,
+                    {std::move(temperature)});
+            }
         );
     });
 
@@ -108,22 +104,18 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 parser.clear_conditions(bc::HEAT_FLUX);
             }
         });
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Compiled surface set or scalar surface reference")
-                    .one<Precision>().name("HEAT_FLUX").desc("Heat density positive into the thermal balance")
-                )
-                .bind([&parser, amplitude](const std::string& target, Precision value) {
-                    // Keep nominal heat input and shared amplitude for later assembly
-                    auto heat_flux = std::make_shared<bc::HeatFlux>();
-                    heat_flux->region_    = parser.model().resolve_surface_region(target);
-                    heat_flux->heat_flux_ = value;
-                    heat_flux->amplitude_ = *amplitude;
-                    parser.modify_conditions(bc::HEAT_FLUX, "SURFACE:" + target, {std::move(heat_flux)});
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TARGET", "Compiled surface set or scalar surface reference")
+                .one<Precision>("HEAT_FLUX", "Heat density positive into the thermal balance"),
+            [&parser, amplitude](const std::string& target, Precision value) {
+                // Keep nominal heat input and shared amplitude for later assembly
+                auto heat_flux = std::make_shared<bc::HeatFlux>();
+                heat_flux->region_    = parser.model().resolve_surface_region(target);
+                heat_flux->heat_flux_ = value;
+                heat_flux->amplitude_ = *amplitude;
+                parser.modify_conditions(bc::HEAT_FLUX, "SURFACE:" + target, {std::move(heat_flux)});
+            }
         );
     });
 
@@ -150,24 +142,20 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 parser.clear_conditions(bc::CONVECTION);
             }
         });
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Compiled surface set or scalar surface reference")
-                    .one<Precision>().name("FILM_COEFFICIENT").desc("Non-negative Newton cooling coefficient")
-                    .one<Precision>().name("AMBIENT_TEMPERATURE").desc("Absolute ambient temperature")
-                )
-                .bind([&parser, amplitude](const std::string& target, Precision film, Precision ambient) {
-                    // Replace the surface cooling prescription within its own family
-                    auto convection = std::make_shared<bc::Convection>();
-                    convection->region_              = parser.model().resolve_surface_region(target);
-                    convection->film_coefficient_    = film;
-                    convection->ambient_temperature_ = ambient;
-                    convection->amplitude_            = *amplitude;
-                    parser.modify_conditions(bc::CONVECTION, "SURFACE:" + target, {std::move(convection)});
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string>("TARGET", "Compiled surface set or scalar surface reference")
+                .one<Precision>("FILM_COEFFICIENT", "Non-negative Newton cooling coefficient")
+                .one<Precision>("AMBIENT_TEMPERATURE", "Absolute ambient temperature"),
+            [&parser, amplitude](const std::string& target, Precision film, Precision ambient) {
+                // Replace the surface cooling prescription within its own family
+                auto convection = std::make_shared<bc::Convection>();
+                convection->region_              = parser.model().resolve_surface_region(target);
+                convection->film_coefficient_    = film;
+                convection->ambient_temperature_ = ambient;
+                convection->amplitude_            = *amplitude;
+                parser.modify_conditions(bc::CONVECTION, "SURFACE:" + target, {std::move(convection)});
+            }
         );
     });
 }

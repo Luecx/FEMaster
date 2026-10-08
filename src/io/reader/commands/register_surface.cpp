@@ -127,14 +127,12 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(20)
             .when(dsl::Condition::all_of({part_scope, element_surface}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<ID>().name("ID")
-                    .one<ID>().name("ELEM_ID")
-                    .one<std::string>().name("SIDE")
-                )
-                .bind([&model, ctx, parse_side](ID id, ID element_id, const std::string& side_token) {
+            .data(
+                dsl::Pattern::make()
+                    .one<ID>("ID")
+                    .one<ID>("ELEM_ID")
+                    .one<std::string>("SIDE"),
+                [&model, ctx, parse_side](ID id, ID element_id, const std::string& side_token) {
                     logging::error(ctx->instance.empty(),
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
@@ -146,7 +144,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                     part->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
 
                     model.set_surface(id, element_id, parse_side(side_token));
-                })
+                }
             )
         );
 
@@ -154,13 +152,11 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({part_scope, element_surface}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .one<std::string>().name("SIDE")
-                )
-                .bind([&model, ctx, parse_side](const std::string& target, const std::string& side_token) {
+            .data(
+                dsl::Pattern::make()
+                    .one<std::string>("TARGET")
+                    .one<std::string>("SIDE"),
+                [&model, ctx, parse_side](const std::string& target, const std::string& side_token) {
                     logging::error(ctx->instance.empty(),
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
@@ -178,7 +174,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                     } else {
                         model.set_surface(-1, io::reader::parse_local_id(target, "SURFACE"), side);
                     }
-                })
+                }
             )
         );
 
@@ -186,13 +182,11 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
         command.variant(dsl::Variant::make()
             .rank(10)
             .when(dsl::Condition::all_of({assembly_scope, element_surface}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .one<std::string>().name("SIDE")
-                )
-                .bind([&model, ctx, parse_side, add_compiled_boundary](const std::string& target,
+            .data(
+                dsl::Pattern::make()
+                    .one<std::string>("TARGET")
+                    .one<std::string>("SIDE"),
+                [&model, ctx, parse_side, add_compiled_boundary](const std::string& target,
                                                                        const std::string& side_token) {
                     if (!model._data->compiled) return;
 
@@ -213,40 +207,36 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                     } else {
                         add_compiled_boundary(model.compiled_element_id(reference), side, ctx->name);
                     }
-                })
+                }
             )
         );
 
         // Populate a part-local node-based surface through sparse node references
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({part_scope, node_surface}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .one<Precision>().name("AREA").on_missing(Precision{1}).on_empty(Precision{1})
-                )
-                .bind([&model, ctx](const std::string& target, Precision area) {
+            .data(
+                dsl::Pattern::make()
+                    .one<std::string>("TARGET")
+                    .one<Precision>("AREA").defaults(Precision{1}),
+                [&model, ctx](const std::string& target, Precision area) {
                     (void) area;
                     logging::error(ctx->instance.empty(),
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
 
                     model.add_nodes_to_part_set(ctx->name, target);
-                })
+                }
             )
         );
 
         // Populate an assembly node-based surface through compiled node references
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::all_of({assembly_scope, node_surface}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .one<Precision>().name("AREA").on_missing(Precision{1}).on_empty(Precision{1})
-                )
-                .bind([&model, ctx](const std::string& target, Precision area) {
+            .data(
+                dsl::Pattern::make()
+                    .one<std::string>("TARGET")
+                    .one<Precision>("AREA").defaults(Precision{1}),
+                [&model, ctx](const std::string& target, Precision area) {
                     (void) area;
                     if (!model._data->compiled) return;
 
@@ -255,7 +245,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
 
                     const std::string reference = io::reader::qualify_reference(target, ctx->instance);
                     model.add_nodes_to_assembly_set(ctx->name, reference);
-                })
+                }
             )
         );
     });

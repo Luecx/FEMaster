@@ -42,16 +42,10 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
         command.variant(
             fem::io::dsl::Variant::make()
                 .doc("One data line: start_frequency, end_frequency, number_of_points.")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 3>()
-                                .name("FREQUENCIES")
-                                .desc("start, end, number_of_points")
-                        )
-                        .bind([&parser](const std::array<fem::Precision, 3>& values) {
+                .data(
+                    fem::io::dsl::Pattern::make()
+                                .fixed<fem::Precision, 3>("FREQUENCIES", "start, end, number_of_points"),
+                    [&parser](const std::array<fem::Precision, 3>& values) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr,
                                 "FREQUENCIES must appear inside *LOADCASE.");
@@ -86,7 +80,8 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
                             for (int i = 0; i < points; ++i) {
                                 lc->frequencies[i] = start + fem::Precision(i) * increment;
                             }
-                        })
+                        },
+                    fem::io::dsl::LineRange{}.min(1).max(1)
                 )
         );
     });

@@ -117,47 +117,42 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
         });
 
         // NaN marks omitted direction components so pressure can reject them.
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string   >().name("SURFACE"  )
-                    .one<std::string   >().name("TYPE"     )
-                    .one<Precision     >().name("MAGNITUDE")
-                    .fixed<Precision, 3>().name("DIRECTION")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser, amplitude, collector](
-                    const std::string&              surface,
-                    const std::string&              type,
-                    Precision                       magnitude,
-                    const std::array<Precision, 3>& direction
-                ) {
-                    logging::error(type != "TRVEC",
-                        "DSLOAD: TRVEC is not supported");
-                    logging::error(type == "P",
-                        "DSLOAD: only P is supported");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<std::string   >("SURFACE")
+                .one<std::string   >("TYPE")
+                .one<Precision     >("MAGNITUDE")
+                .fixed<Precision, 3>("DIRECTION")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser, amplitude, collector](
+                const std::string&              surface,
+                const std::string&              type,
+                Precision                       magnitude,
+                const std::array<Precision, 3>& direction
+            ) {
+                logging::error(type != "TRVEC",
+                    "DSLOAD: TRVEC is not supported");
+                logging::error(type == "P",
+                    "DSLOAD: only P is supported");
 
-                    const auto* loadcase = parser.active_loadcase();
-                    logging::error(loadcase == nullptr || loadcase->type_name() != "NONLINEARSTATIC",
-                        "DSLOAD: follower pressure is not supported in nonlinear steps");
-                    logging::error(std::isnan(direction[0]) && std::isnan(direction[1]) && std::isnan(direction[2]),
-                        "DSLOAD: P accepts no direction components");
+                const auto* loadcase = parser.active_loadcase();
+                logging::error(loadcase == nullptr || loadcase->type_name() != "NONLINEARSTATIC",
+                    "DSLOAD: follower pressure is not supported in nonlinear steps");
+                logging::error(std::isnan(direction[0]) && std::isnan(direction[1]) && std::isnan(direction[2]),
+                    "DSLOAD: P accepts no direction components");
 
-                    // Pressure follows the surface normal. Its current formulation
-                    // supports linear analyses only, including named definitions.
-                    auto load = std::make_shared<bc::PLoad>();
-                    load->region_    = parser.model().resolve_surface_region(surface);
-                    load->pressure_  = magnitude;
-                    load->amplitude_ = *amplitude;
-                    if (*collector) {
-                        (*collector)->add(std::move(load));
-                    } else {
-                        parser.modify_conditions(bc::DSLOAD, "SURFACE:" + surface + ":" + type, {std::move(load)});
-                    }
-                })
-            )
+                // Pressure follows the surface normal. Its current formulation
+                // supports linear analyses only, including named definitions.
+                auto load = std::make_shared<bc::PLoad>();
+                load->region_    = parser.model().resolve_surface_region(surface);
+                load->pressure_  = magnitude;
+                load->amplitude_ = *amplitude;
+                if (*collector) {
+                    (*collector)->add(std::move(load));
+                } else {
+                    parser.modify_conditions(bc::DSLOAD, "SURFACE:" + surface + ":" + type, {std::move(load)});
+                }
+            }
         );
     });
 }

@@ -44,41 +44,37 @@ void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Assign named support collectors to the active analysis step.");
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<std::string, 16>().name("SUPP").desc("Support collector names")
-                        .on_missing(std::string{}).on_empty(std::string{})
-                )
-                .bind([&parser](const std::array<std::string, 16>& names) {
-                    auto* base = parser.active_loadcase();
-                    logging::error(base != nullptr,
-                        "SUPPORTS must appear inside an active analysis step");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .fixed<std::string, 16>("SUPP", "Support collector names")
+                    .defaults(std::string{}),
+            [&parser](const std::array<std::string, 16>& names) {
+                auto* base = parser.active_loadcase();
+                logging::error(base != nullptr,
+                    "SUPPORTS must appear inside an active analysis step");
 
-                    // Resolve every user-supplied name now. The solver later reads
-                    // only the resulting ConditionManager state.
-                    auto& model_data = *parser.model()._data;
-                    for (const auto& name : names) {
-                        if (name.empty()) {
-                            continue;
-                        }
-
-                        logging::error(model_data.supp_cols.has(name),
-                            "SUPPORTS: collector ", name, " does not exist");
-                        const auto collector = model_data.supp_cols.get(name);
-                        logging::error(collector != nullptr,
-                            "SUPPORTS: collector ", name, " is not initialized");
-
-                        // Select reusable support definitions for this analysis.
-                        // The parser suppresses duplicate pointer selections
-                        // before temporary insertion into the SUPPORT family.
-                        for (const auto& condition : *collector) {
-                            parser.select_collector_condition(bc::SUPPORT, condition);
-                        }
+                // Resolve every user-supplied name now. The solver later reads
+                // only the resulting ConditionManager state.
+                auto& model_data = *parser.model()._data;
+                for (const auto& name : names) {
+                    if (name.empty()) {
+                        continue;
                     }
-                })
-            )
+
+                    logging::error(model_data.supp_cols.has(name),
+                        "SUPPORTS: collector ", name, " does not exist");
+                    const auto collector = model_data.supp_cols.get(name);
+                    logging::error(collector != nullptr,
+                        "SUPPORTS: collector ", name, " is not initialized");
+
+                    // Select reusable support definitions for this analysis.
+                    // The parser suppresses duplicate pointer selections
+                    // before temporary insertion into the SUPPORT family.
+                    for (const auto& condition : *collector) {
+                        parser.select_collector_condition(bc::SUPPORT, condition);
+                    }
+                }
+            }
         );
     });
 }

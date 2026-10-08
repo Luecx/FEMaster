@@ -163,6 +163,16 @@ struct Variant {
     }
 
     /**
+     * @brief Adds a data segment without explicitly constructing Segment.
+     */
+    template<class F>
+    Variant& data(Pattern pattern, F&& callback, LineRange range = {}) {
+        auto entry = Segment::make();
+        entry.range(range).pattern(std::move(pattern)).bind(std::forward<F>(callback));
+        return segment(std::move(entry));
+    }
+
+    /**
      * @brief Sets a human-readable description for this variant (shown in help output).
      * @param d Short description text.
      * @return Reference to `*this` for fluent chaining.

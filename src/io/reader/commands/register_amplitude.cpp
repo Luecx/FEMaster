@@ -82,34 +82,29 @@ void register_amplitude(dsl::Registry& registry, model::Model& model) {
         });
 
         // Decode each physical line as up to four independent time/value pairs.
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .fixed<Precision, 8>().name("DATA").desc("Up to four time/value pairs")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty(std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([amplitude](const std::array<Precision, 8>& data) {
-                    // Ensure that the keyword created an amplitude before data is consumed
-                    logging::error(*amplitude != nullptr,
-                        "AMPLITUDE: no active amplitude is available");
+        command.data(
+            dsl::Pattern::make()
+                .fixed<Precision, 8>("DATA", "Up to four time/value pairs")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [amplitude](const std::array<Precision, 8>& data) {
+                // Ensure that the keyword created an amplitude before data is consumed
+                logging::error(*amplitude != nullptr,
+                    "AMPLITUDE: no active amplitude is available");
 
-                    // Preserve pair order; absent pairs carry NaN in both positions.
-                    bool added = false;
-                    for (std::size_t i = 0; i < data.size(); i += 2) {
-                        const bool has_time  = !std::isnan(data[i]);
-                        const bool has_value = !std::isnan(data[i + 1]);
-                        if (!has_time && !has_value) continue;
-                        logging::error(has_time && has_value,
-                            "AMPLITUDE: incomplete time/value pair");
-                        (*amplitude)->add_sample(data[i], data[i + 1]);
-                        added = true;
-                    }
-                    logging::error(added,
-                        "AMPLITUDE: data line contains no time/value pair");
-                })
-            )
+                // Preserve pair order; absent pairs carry NaN in both positions.
+                bool added = false;
+                for (std::size_t i = 0; i < data.size(); i += 2) {
+                    const bool has_time  = !std::isnan(data[i]);
+                    const bool has_value = !std::isnan(data[i + 1]);
+                    if (!has_time && !has_value) continue;
+                    logging::error(has_time && has_value,
+                        "AMPLITUDE: incomplete time/value pair");
+                    (*amplitude)->add_sample(data[i], data[i + 1]);
+                    added = true;
+                }
+                logging::error(added,
+                    "AMPLITUDE: data line contains no time/value pair");
+            }
         );
     });
 }

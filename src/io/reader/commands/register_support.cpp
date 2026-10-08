@@ -86,44 +86,39 @@ void register_support(fem::io::dsl::Registry& registry, Parser& parser) {
             }
         });
 
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET")
-                    .fixed<fem::Precision, 6>().name("DOF")
-                        .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
-                        .on_empty(std::numeric_limits<fem::Precision>::quiet_NaN())
-                )
-                .bind([&parser, orientation, collector](
-                    const std::string&                  target,
-                    const std::array<fem::Precision, 6>& values
-                ) {
-                    auto& model = parser.model();
-                    auto region = model.resolve_node_region(target);
-                    // Nodal TRANSFORM takes precedence over ORIENTATION.
-                    // Unnamed native supports apply only in this analysis.
-                    for (auto& [support_region, support_orientation] :
-                         group_by_orientation(parser, std::move(region), *orientation)) {
-                        for (Dim dof = 0; dof < 6; ++dof) {
-                            const Precision value = values[static_cast<std::size_t>(dof)];
-                            if (std::isnan(value)) continue;
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<std::string>("TARGET")
+                .fixed<fem::Precision, 6>("DOF")
+                    .defaults(std::numeric_limits<fem::Precision>::quiet_NaN()),
+            [&parser, orientation, collector](
+                const std::string&                  target,
+                const std::array<fem::Precision, 6>& values
+            ) {
+                auto& model = parser.model();
+                auto region = model.resolve_node_region(target);
+                // Nodal TRANSFORM takes precedence over ORIENTATION.
+                // Unnamed native supports apply only in this analysis.
+                for (auto& [support_region, support_orientation] :
+                     group_by_orientation(parser, std::move(region), *orientation)) {
+                    for (Dim dof = 0; dof < 6; ++dof) {
+                        const Precision value = values[static_cast<std::size_t>(dof)];
+                        if (std::isnan(value)) continue;
 
-                            Vec6 constraint = Vec6::Constant(NAN);
-                            constraint[dof] = value;
+                        Vec6 constraint = Vec6::Constant(NAN);
+                        constraint[dof] = value;
 
-                            auto support = std::make_shared<bc::Support>(
-                                support_region, constraint, support_orientation
-                            );
-                            if (*collector) {
-                                (*collector)->add(std::move(support));
-                            } else {
-                                parser.select_collector_condition(bc::SUPPORT, std::move(support));
-                            }
+                        auto support = std::make_shared<bc::Support>(
+                            support_region, constraint, support_orientation
+                        );
+                        if (*collector) {
+                            (*collector)->add(std::move(support));
+                        } else {
+                            parser.select_collector_condition(bc::SUPPORT, std::move(support));
                         }
                     }
-                })
-            )
+                }
+            }
         );
     });
 }

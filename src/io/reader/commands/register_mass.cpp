@@ -66,12 +66,10 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
         // every Instance by the ordinary section-expansion path.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Precision>().name("MASS").desc("Isotropic mass magnitude")
-                )
-                .bind([&model, elset](Precision mass) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<Precision>("MASS", "Isotropic mass magnitude"),
+                [&model, elset](Precision mass) {
                     logging::error(!model._data->compiled,
                         "MASS: ROOT/PART assignment must be processed before model compilation");
 
@@ -94,7 +92,8 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
                     }
 
                     model.add_section(std::make_shared<PointMassSection>(region, mass));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
@@ -102,12 +101,10 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
         // compile() and are assigned directly to the compiled point elements.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::parent_is("ASSEMBLY"))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Precision>().name("MASS").desc("Isotropic mass magnitude")
-                )
-                .bind([&model, elset](Precision mass) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<Precision>("MASS", "Isotropic mass magnitude"),
+                [&model, elset](Precision mass) {
                     logging::error(model._data->compiled,
                         "MASS: ASSEMBLY assignment requires a compiled model");
                     logging::error(model._data->elem_sets.has(*elset),
@@ -127,7 +124,8 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
                     }
 
                     model.add_section(std::make_shared<PointMassSection>(region, mass));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
     });

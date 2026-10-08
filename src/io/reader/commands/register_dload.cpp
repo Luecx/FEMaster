@@ -229,164 +229,154 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
         // FEMaster format: SURFACE, tx, ty, tz
         // ---------------------------------------------------------------------
 
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string   >().name("TARGET").desc("Compiled surface set or scalar reference")
-                    .fixed<Precision, 3>().name("LOAD"  ).desc("Traction components tx, ty, tz")
-                        .on_missing(Precision{0})
-                        .on_empty  (Precision{0})
-                )
-                .bind([&parser, orientation, amplitude, collector](
-                    const std::string&              target,
-                    const std::array<Precision, 3>& values
-                ) {
-                    auto& model = parser.model();
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string   >("TARGET", "Compiled surface set or scalar reference")
+                .fixed<Precision, 3>("LOAD", "Traction components tx, ty, tz")
+                    .defaults(Precision{0}),
+            [&parser, orientation, amplitude, collector](
+                const std::string&              target,
+                const std::array<Precision, 3>& values
+            ) {
+                auto& model = parser.model();
 
-                    // Native DLOAD addresses an existing surface region directly.
-                    auto load = std::make_shared<bc::DLoad>();
-                    load->region_      = model.resolve_surface_region(target);
-                    load->values_      = Vec3{values[0], values[1], values[2]};
-                    load->orientation_ = *orientation;
-                    load->amplitude_   = *amplitude;
-                    // Named definitions and direct history are mutually exclusive targets
-                    if (*collector) {
-                        (*collector)->add(std::move(load));
-                    } else {
-                        parser.select_collector_condition(bc::DLOAD, std::move(load));
-                    }
-                })
-            )
+                // Native DLOAD addresses an existing surface region directly.
+                auto load = std::make_shared<bc::DLoad>();
+                load->region_      = model.resolve_surface_region(target);
+                load->values_      = Vec3{values[0], values[1], values[2]};
+                load->orientation_ = *orientation;
+                load->amplitude_   = *amplitude;
+                // Named definitions and direct history are mutually exclusive targets
+                if (*collector) {
+                    (*collector)->add(std::move(load));
+                } else {
+                    parser.select_collector_condition(bc::DLOAD, std::move(load));
+                }
+            }
         );
 
         // ---------------------------------------------------------------------
         // Abaqus format: ELEMENT, TYPE, MAGNITUDE [, dx, dy, dz]
         // ---------------------------------------------------------------------
 
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .one<std::string   >().name("TARGET"   ).desc("Compiled element set or scalar element reference")
-                        .on_empty  (std::string{})
-                    .one<std::string   >().name("TYPE"     ).desc("Abaqus distributed-load label")
-                    .one<Precision     >().name("MAGNITUDE").desc("Load magnitude")
-                    .fixed<Precision, 3>().name("DIRECTION").desc("Optional direction components")
-                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
-                )
-                .bind([&parser, orientation, amplitude, parse_face_id, materialize_face_region, collector](
-                    const std::string&              target,
-                    const std::string&              type,
-                    Precision                       magnitude,
-                    const std::array<Precision, 3>& direction
-                ) {
-                    auto& model = parser.model();
+        command.data(
+            dsl::Pattern::make()
+                .one<std::string   >("TARGET", "Compiled element set or scalar element reference")
+                    .on_empty  (std::string{})
+                .one<std::string   >("TYPE", "Abaqus distributed-load label")
+                .one<Precision     >("MAGNITUDE", "Load magnitude")
+                .fixed<Precision, 3>("DIRECTION", "Optional direction components")
+                    .defaults(std::numeric_limits<Precision>::quiet_NaN()),
+            [&parser, orientation, amplitude, parse_face_id, materialize_face_region, collector](
+                const std::string&              target,
+                const std::string&              type,
+                Precision                       magnitude,
+                const std::array<Precision, 3>& direction
+            ) {
+                auto& model = parser.model();
 
-                    // Preserve whether TARGET was omitted. All-element GRAV also
-                    // includes auxiliary POINTMASS objects outside the ELSET namespace;
-                    // an explicit target, including EALL, selects only its region.
-                    const bool        all_elements   = target.empty();
-                    const std::string element_target = all_elements ? "EALL" : target;
-                    const std::string identifier = "ELEMENT:" + element_target + ":" + type;
+                // Preserve whether TARGET was omitted. All-element GRAV also
+                // includes auxiliary POINTMASS objects outside the ELSET namespace;
+                // an explicit target, including EALL, selects only its region.
+                const bool        all_elements   = target.empty();
+                const std::string element_target = all_elements ? "EALL" : target;
+                const std::string identifier = "ELEMENT:" + element_target + ":" + type;
 
-                    const bool direction_omitted  =  std::isnan(direction[0]) &&  std::isnan(direction[1]) &&  std::isnan(direction[2]);
-                    const bool direction_complete = !std::isnan(direction[0]) && !std::isnan(direction[1]) && !std::isnan(direction[2]);
+                const bool direction_omitted  =  std::isnan(direction[0]) &&  std::isnan(direction[1]) &&  std::isnan(direction[2]);
+                const bool direction_complete = !std::isnan(direction[0]) && !std::isnan(direction[1]) && !std::isnan(direction[2]);
 
-                    logging::error(type.compare(0, 5, "TRVEC") != 0,
-                        "DLOAD: TRVEC is not supported");
-                    logging::error(std::isfinite(magnitude),
-                        "DLOAD: magnitude must be finite");
+                logging::error(type.compare(0, 5, "TRVEC") != 0,
+                    "DLOAD: TRVEC is not supported");
+                logging::error(std::isfinite(magnitude),
+                    "DLOAD: magnitude must be finite");
 
-                    // BX/BY/BZ are force densities in the fixed global basis.
-                    // They map directly to the corresponding component of VLoad.
-                    if (type == "BX" || type == "BY" || type == "BZ") {
-                        logging::error(direction_omitted,
-                            "DLOAD: ", type, " accepts no direction components");
+                // BX/BY/BZ are force densities in the fixed global basis.
+                // They map directly to the corresponding component of VLoad.
+                if (type == "BX" || type == "BY" || type == "BZ") {
+                    logging::error(direction_omitted,
+                        "DLOAD: ", type, " accepts no direction components");
 
-                        // Preserve the DLOAD component as history identity.
-                        // NaN marks axes not prescribed by this BX/BY/BZ entry;
-                        // VLoad converts them to zero only during assembly.
-                        Vec3 body_force = Vec3::Constant(NAN);
-                        if (type == "BX") body_force[0] = magnitude;
-                        if (type == "BY") body_force[1] = magnitude;
-                        if (type == "BZ") body_force[2] = magnitude;
+                    // Preserve the DLOAD component as history identity.
+                    // NaN marks axes not prescribed by this BX/BY/BZ entry;
+                    // VLoad converts them to zero only during assembly.
+                    Vec3 body_force = Vec3::Constant(NAN);
+                    if (type == "BX") body_force[0] = magnitude;
+                    if (type == "BY") body_force[1] = magnitude;
+                    if (type == "BZ") body_force[2] = magnitude;
 
-                        auto load = std::make_shared<bc::VLoad>();
-                        load->region_    = model.resolve_element_region(element_target);
-                        load->values_    = body_force;
-                        load->amplitude_ = *amplitude;
-                        // Named definitions and direct history are mutually exclusive targets
-                        if (*collector) {
-                            (*collector)->add(std::move(load));
-                        } else {
-                            parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
-                        }
-                        return;
+                    auto load = std::make_shared<bc::VLoad>();
+                    load->region_    = model.resolve_element_region(element_target);
+                    load->values_    = body_force;
+                    load->amplitude_ = *amplitude;
+                    // Named definitions and direct history are mutually exclusive targets
+                    if (*collector) {
+                        (*collector)->add(std::move(load));
+                    } else {
+                        parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
                     }
+                    return;
+                }
 
-                    // GRAV is an acceleration and therefore uses density-scaled
-                    // inertia integration. InertialLoad applies -rho*a, so the
-                    // prescribed gravity vector enters as the negative body
-                    // acceleration to reproduce +rho*g as the external load.
-                    if (type == "GRAV") {
-                        const Vec3 gravity_direction{direction[0], direction[1], direction[2]};
-                        const Precision direction_norm = gravity_direction.norm();
+                // GRAV is an acceleration and therefore uses density-scaled
+                // inertia integration. InertialLoad applies -rho*a, so the
+                // prescribed gravity vector enters as the negative body
+                // acceleration to reproduce +rho*g as the external load.
+                if (type == "GRAV") {
+                    const Vec3 gravity_direction{direction[0], direction[1], direction[2]};
+                    const Precision direction_norm = gravity_direction.norm();
 
-                        logging::error(direction_complete,
-                            "DLOAD: GRAV requires three direction components");
-                        logging::error(direction_norm > Precision(0) && std::isfinite(direction_norm),
-                            "DLOAD: GRAV direction must be finite and nonzero");
+                    logging::error(direction_complete,
+                        "DLOAD: GRAV requires three direction components");
+                    logging::error(direction_norm > Precision(0) && std::isfinite(direction_norm),
+                        "DLOAD: GRAV direction must be finite and nonzero");
 
-                        auto load = std::make_shared<bc::InertialLoad>();
-                        load->region_                = model.resolve_element_region(element_target);
-                        load->center_                = Vec3::Zero();
-                        load->center_acc_            = -magnitude * gravity_direction;
-                        load->omega_                 = Vec3::Zero();
-                        load->alpha_                 = Vec3::Zero();
-                        load->amplitude_             = *amplitude;
-                        load->consider_point_masses_ = all_elements;
-                        // Named definitions and direct history are mutually exclusive targets
-                        if (*collector) {
-                            (*collector)->add(std::move(load));
-                        } else {
-                            parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
-                        }
-                        return;
+                    auto load = std::make_shared<bc::InertialLoad>();
+                    load->region_                = model.resolve_element_region(element_target);
+                    load->center_                = Vec3::Zero();
+                    load->center_acc_            = -magnitude * gravity_direction;
+                    load->omega_                 = Vec3::Zero();
+                    load->alpha_                 = Vec3::Zero();
+                    load->amplitude_             = *amplitude;
+                    load->consider_point_masses_ = all_elements;
+                    // Named definitions and direct history are mutually exclusive targets
+                    if (*collector) {
+                        (*collector)->add(std::move(load));
+                    } else {
+                        parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
                     }
+                    return;
+                }
 
-                    const auto* loadcase  = parser.active_loadcase();
-                    const bool nonlinear = loadcase != nullptr && loadcase->type_name() == "NONLINEARSTATIC";
+                const auto* loadcase  = parser.active_loadcase();
+                const bool nonlinear = loadcase != nullptr && loadcase->type_name() == "NONLINEARSTATIC";
 
-                    // P<n> addresses face n of every target element. Pressure is
-                    // follower loading in Abaqus; the current PLoad does not
-                    // provide the nonlinear load-stiffness contribution.
-                    if (type.size() > 1 && type[0] == 'P') {
-                        logging::error(direction_omitted,
-                            "DLOAD: ", type, " accepts no direction components");
-                        logging::error(!nonlinear,
-                            "DLOAD: follower pressure is not supported in nonlinear steps");
+                // P<n> addresses face n of every target element. Pressure is
+                // follower loading in Abaqus; the current PLoad does not
+                // provide the nonlinear load-stiffness contribution.
+                if (type.size() > 1 && type[0] == 'P') {
+                    logging::error(direction_omitted,
+                        "DLOAD: ", type, " accepts no direction components");
+                    logging::error(!nonlinear,
+                        "DLOAD: follower pressure is not supported in nonlinear steps");
 
-                        const ID face_id = parse_face_id(type, "P");
+                    const ID face_id = parse_face_id(type, "P");
 
-                        auto load = std::make_shared<bc::PLoad>();
-                        load->region_    = materialize_face_region(element_target, face_id);
-                        load->pressure_  = magnitude;
-                        load->amplitude_ = *amplitude;
-                        // Named definitions and direct history are mutually exclusive targets
-                        if (*collector) {
-                            (*collector)->add(std::move(load));
-                        } else {
-                            parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
-                        }
-                        return;
+                    auto load = std::make_shared<bc::PLoad>();
+                    load->region_    = materialize_face_region(element_target, face_id);
+                    load->pressure_  = magnitude;
+                    load->amplitude_ = *amplitude;
+                    // Named definitions and direct history are mutually exclusive targets
+                    if (*collector) {
+                        (*collector)->add(std::move(load));
+                    } else {
+                        parser.modify_conditions(bc::DLOAD, identifier, {std::move(load)});
                     }
+                    return;
+                }
 
-                    logging::error(false,
-                        "DLOAD: supported Abaqus load types are BX, BY, BZ, GRAV and P<n>");
-                })
-            )
+                logging::error(false,
+                    "DLOAD: supported Abaqus load types are BX, BY, BZ, GRAV and P<n>");
+            }
         );
     });
 }

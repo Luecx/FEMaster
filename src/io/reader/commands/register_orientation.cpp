@@ -62,73 +62,69 @@ void register_orientation(fem::io::dsl::Registry& registry, model::Model& model)
 
         command.variant(fem::io::dsl::Variant::make()
             .when(native_rectangular)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(3))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 9>().name("DATA").desc("Rectangular system vectors")
-                )
-                .bind([&model, name](const std::array<fem::Precision, 9>& values) {
+                    .fixed<fem::Precision, 9>("DATA", "Rectangular system vectors"),
+                [&model, name](const std::array<fem::Precision, 9>& values) {
                     model.add_coordinate_system(std::make_shared<cos::RectangularSystem>(
                         *name,
                         fem::Vec3{values[0], values[1], values[2]},
                         fem::Vec3{values[3], values[4], values[5]},
                         fem::Vec3{values[6], values[7], values[8]}
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(3)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(native_rectangular)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(2))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 6>().name("DATA").desc("Rectangular system vectors (two vectors)")
-                )
-                .bind([&model, name](const std::array<fem::Precision, 6>& values) {
+                    .fixed<fem::Precision, 6>("DATA", "Rectangular system vectors (two vectors)"),
+                [&model, name](const std::array<fem::Precision, 6>& values) {
                     model.add_coordinate_system(std::make_shared<cos::RectangularSystem>(
                         *name,
                         fem::Vec3{values[0], values[1], values[2]},
                         fem::Vec3{values[3], values[4], values[5]}
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(2)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(native_rectangular)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::Precision, 3>().name("DATA").desc("Rectangular system vector")
-                )
-                .bind([&model, name](const std::array<fem::Precision, 3>& values) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 3>("DATA", "Rectangular system vector"),
+                [&model, name](const std::array<fem::Precision, 3>& values) {
                     model.add_coordinate_system(std::make_shared<cos::RectangularSystem>(
                         *name,
                         fem::Vec3{values[0], values[1], values[2]}
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"CYLINDRICAL"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(3))
-                .pattern(fem::io::dsl::Pattern::make()
+            .data(
+                fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 9>().name("DATA").desc("Cylindrical system vectors")
-                )
-                .bind([&model, name](const std::array<fem::Precision, 9>& values) {
+                    .fixed<fem::Precision, 9>("DATA", "Cylindrical system vectors"),
+                [&model, name](const std::array<fem::Precision, 9>& values) {
                     model.add_coordinate_system(std::make_shared<cos::CylindricalSystem>(
                         *name,
                         fem::Vec3{values[0], values[1], values[2]},
                         fem::Vec3{values[3], values[4], values[5]},
                         fem::Vec3{values[6], values[7], values[8]}
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(3)
             )
         );
 
@@ -140,23 +136,21 @@ void register_orientation(fem::io::dsl::Registry& registry, model::Model& model)
 
         command.variant(fem::io::dsl::Variant::make()
             .when(abaqus_rectangular)
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("A1").desc("Point a, global x")
-                    .one<fem::Precision>().name("A2").desc("Point a, global y")
-                    .one<fem::Precision>().name("A3").desc("Point a, global z")
-                    .one<fem::Precision>().name("B1").desc("Point b, global x")
-                    .one<fem::Precision>().name("B2").desc("Point b, global y")
-                    .one<fem::Precision>().name("B3").desc("Point b, global z")
-                    .one<fem::Precision>().name("C1").desc("Point c, global x")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .one<fem::Precision>().name("C2").desc("Point c, global y")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                    .one<fem::Precision>().name("C3").desc("Point c, global z")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
-                )
-                .bind([&model, name](fem::Precision a1,
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<fem::Precision>("A1", "Point a, global x")
+                    .one<fem::Precision>("A2", "Point a, global y")
+                    .one<fem::Precision>("A3", "Point a, global z")
+                    .one<fem::Precision>("B1", "Point b, global x")
+                    .one<fem::Precision>("B2", "Point b, global y")
+                    .one<fem::Precision>("B3", "Point b, global z")
+                    .one<fem::Precision>("C1", "Point c, global x")
+                        .defaults(fem::Precision{0})
+                    .one<fem::Precision>("C2", "Point c, global y")
+                        .defaults(fem::Precision{0})
+                    .one<fem::Precision>("C3", "Point c, global z")
+                        .defaults(fem::Precision{0}),
+                [&model, name](fem::Precision a1,
                                      fem::Precision a2,
                                      fem::Precision a3,
                                      fem::Precision b1,
@@ -187,7 +181,8 @@ void register_orientation(fem::io::dsl::Registry& registry, model::Model& model)
                         axis_1,
                         in_plane
                     ));
-                })
+                },
+                fem::io::dsl::LineRange{}.min(1).max(1)
             )
         );
     });

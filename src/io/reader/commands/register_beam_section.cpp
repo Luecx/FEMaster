@@ -106,17 +106,14 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
         });
 
         // Read the required n1 direction in the active Part coordinate system
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make()
-                    .fixed<Precision, 3>().name("N1").desc("Beam-section orientation direction")
-                )
-                .bind([orientation](const std::array<Precision, 3>& values) {
-                    // Retain the parsed direction until the exit callback creates the section
-                    *orientation = Vec3{values[0], values[1], values[2]};
-                })
-            )
+        command.data(
+            dsl::Pattern::make()
+                .fixed<Precision, 3>("N1", "Beam-section orientation direction"),
+            [orientation](const std::array<Precision, 3>& values) {
+                // Retain the parsed direction until the exit callback creates the section
+                *orientation = Vec3{values[0], values[1], values[2]};
+            },
+            dsl::LineRange{}.min(1).max(1)
         );
     });
 }

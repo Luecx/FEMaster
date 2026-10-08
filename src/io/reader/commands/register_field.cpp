@@ -161,55 +161,51 @@ void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"NODE", "ELEMENT"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("ID or INSTANCE.ID")
-                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
-                        .on_empty(kSkipToken).on_missing(kSkipToken)
-                )
-                .bind([&model, ctx, assign_values](const std::string& target,
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<std::string>("TARGET", "ID or INSTANCE.ID")
+                    .fixed<std::string, detail::kMaxFieldCols>("V", "Values")
+                        .defaults(kSkipToken),
+                [&model, ctx, assign_values](const std::string& target,
                                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
                     const ID row = ctx->field->domain == model::FieldDomain::NODE
                         ? model.compiled_node_id(target)
                         : model.compiled_element_id(target);
                     assign_values(static_cast<Index>(row), values);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL", "ELEMENTNODAL"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
-                    .one<ID>().name("LOCAL_NODE").desc("Zero-based local node index")
-                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
-                        .on_empty(kSkipToken).on_missing(kSkipToken)
-                )
-                .bind([get_element, assign_values](const std::string& target,
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<std::string>("ELEMENT", "Element ID or INSTANCE.ID")
+                    .one<ID>("LOCAL_NODE", "Zero-based local node index")
+                    .fixed<std::string, detail::kMaxFieldCols>("V", "Values")
+                        .defaults(kSkipToken),
+                [get_element, assign_values](const std::string& target,
                                                    ID local_node,
                                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
                     const auto element = get_element(target);
                     logging::error(local_node >= 0 && local_node < element->n_nodes(),
                         "FIELD: local node ", local_node, " is out of bounds for element ", target);
                     assign_values(static_cast<Index>(element->elem_nodal_offset + local_node), values);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_IP", "ELEMENTIP", "IP"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
-                    .one<ID>().name("LOCAL_IP").desc("Zero-based local integration-point index")
-                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
-                        .on_empty(kSkipToken).on_missing(kSkipToken)
-                )
-                .bind([get_element, assign_values](const std::string& target,
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<std::string>("ELEMENT", "Element ID or INSTANCE.ID")
+                    .one<ID>("LOCAL_IP", "Zero-based local integration-point index")
+                    .fixed<std::string, detail::kMaxFieldCols>("V", "Values")
+                        .defaults(kSkipToken),
+                [get_element, assign_values](const std::string& target,
                                                    ID local_ip,
                                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
                     const auto element = get_element(target);
@@ -217,22 +213,21 @@ void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
                         "FIELD: local integration point ", local_ip,
                         " is out of bounds for element ", target);
                     assign_values(element->ip_index(static_cast<Index>(local_ip)), values);
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0)
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_MP", "ELEMENTMP", "MP"}))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
-                    .one<ID>().name("LOCAL_IP").desc("Zero-based local integration-point index")
-                    .one<ID>().name("LOCAL_MP").desc("Zero-based local material-point index")
-                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
-                        .on_empty(kSkipToken).on_missing(kSkipToken)
-                )
-                .bind([get_element, assign_values](const std::string& target,
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .one<std::string>("ELEMENT", "Element ID or INSTANCE.ID")
+                    .one<ID>("LOCAL_IP", "Zero-based local integration-point index")
+                    .one<ID>("LOCAL_MP", "Zero-based local material-point index")
+                    .fixed<std::string, detail::kMaxFieldCols>("V", "Values")
+                        .defaults(kSkipToken),
+                [get_element, assign_values](const std::string& target,
                                                    ID local_ip,
                                                    ID local_mp,
                                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
@@ -247,7 +242,8 @@ void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
                         element->mp_index(static_cast<Index>(local_ip), static_cast<Index>(local_mp)),
                         values
                     );
-                })
+                },
+                fem::io::dsl::LineRange{}.min(0)
             )
         );
     });

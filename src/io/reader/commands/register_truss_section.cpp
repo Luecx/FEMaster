@@ -41,30 +41,27 @@ void register_truss_section(fem::io::dsl::Registry& registry, model::Model& mode
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
         });
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<Precision>().name("AREA")
-                )
-                .bind([&model, material, elset](Precision area) {
-                    const auto part = model._data->parts.get();
-                    logging::error(part != nullptr,
-                        "TRUSSSECTION: no active part is available");
-                    logging::error(part->elem_sets.has(*elset),
-                        "TRUSSSECTION: element set ", *elset, " is not defined in part ", part->name);
-                    logging::error(model._data->materials.has(*material),
-                        "TRUSSSECTION: material ", *material, " is not defined");
-                    logging::error(area > Precision(0),
-                        "TRUSSSECTION: area must be positive");
+        command.data(
+            fem::io::dsl::Pattern::make()
+                .one<Precision>("AREA"),
+            [&model, material, elset](Precision area) {
+                const auto part = model._data->parts.get();
+                logging::error(part != nullptr,
+                    "TRUSSSECTION: no active part is available");
+                logging::error(part->elem_sets.has(*elset),
+                    "TRUSSSECTION: element set ", *elset, " is not defined in part ", part->name);
+                logging::error(model._data->materials.has(*material),
+                    "TRUSSSECTION: material ", *material, " is not defined");
+                logging::error(area > Precision(0),
+                    "TRUSSSECTION: area must be positive");
 
-                    model.add_section(std::make_shared<TrussSection>(
-                        model._data->materials.get(*material),
-                        part->elem_sets.get(*elset),
-                        area
-                    ));
-                })
-            )
+                model.add_section(std::make_shared<TrussSection>(
+                    model._data->materials.get(*material),
+                    part->elem_sets.get(*elset),
+                    area
+                ));
+            },
+            fem::io::dsl::LineRange{}.min(1).max(1)
         );
     });
 }

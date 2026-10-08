@@ -82,13 +82,11 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
             // Every physical line is normalized to twelve string fields. A line with
             // only the first field populated starts a new equation; all other lines
             // contain up to four (target, dof, coefficient) triples.
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<std::string, 12>().name("DATA")
-                        .on_missing(std::string{}).on_empty(std::string{})
-                )
-                .bind([&model, ctx](const std::array<std::string, 12>& data) {
+            .data(
+                fem::io::dsl::Pattern::make()
+                    .fixed<std::string, 12>("DATA")
+                        .defaults(std::string{}),
+                [&model, ctx](const std::array<std::string, 12>& data) {
                     if (data[1].empty()) {
                         logging::error(ctx->remaining == 0,
                             "EQUATION: fewer terms provided than declared");
@@ -190,7 +188,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         model._data->equations.push_back(std::move(equation));
                     }
                     ctx->equations.clear();
-                })
+                }
             )
         );
     });
