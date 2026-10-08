@@ -26,11 +26,8 @@
 #pragma once
 
 #include "../bc/amplitude.h"
-#include "../bc/load.h"
-#include "../bc/load_collector.h"
-#include "../bc/dirichlet/support.h"
-#include "../bc/support_collector.h"
-#include "../bc/thermal_collector.h"
+#include "../bc/condition_manager.h"
+#include "../bc/collector.h"
 #include "../constraints/types/connector.h"
 #include "../constraints/types/contact.h"
 #include "../constraints/types/coupling.h"
@@ -85,6 +82,11 @@ struct Instance;
  * positions, material history and shell reference normals. A dedicated handle
  * may also refer to a registered named field; the registry and handle therefore
  * share ownership rather than duplicate values.
+ *
+ * The model-owned ConditionManager contains only active condition definitions,
+ * grouped by independent input families. The parser owns identifier lookup,
+ * replacement semantics and analysis-local selection of named collectors.
+ * Load cases never own condition histories; they assemble the current model state.
  *
  * The `compiled` flag is monotonic. Once set, semantic topology must no longer be
  * changed because all dense identifiers, regions, offsets and dependent fields
@@ -167,9 +169,12 @@ struct ModelData {
     std::vector<constraint::Rbm>       rbms;
     std::vector<constraint::Equation>  equations;
 
-    // Named structural and thermal boundary-condition collectors. Thermal
-    // collectors keep prescribed temperatures, heat fluxes and mixed conditions
-    // together while retaining their separate algebraic assembly passes.
+    // Active condition pointers stored directly in a set for each family.
+    // The parser resolves input identifiers and selects named definitions.
+    bc::ConditionManager conditions;
+
+    // Reusable named definitions remain separate from active model conditions.
+    // The parser selects their entries for an individual analysis.
     Sets<bc::SupportCollector> supp_cols;
     Sets<bc::LoadCollector>    load_cols;
     Sets<bc::ThermalCollector> thermal_cols;

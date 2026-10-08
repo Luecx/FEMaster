@@ -9,6 +9,13 @@
  * @see src/solve/sparse/solve_sparse.h
  * @author Finn Eggers
  * @date 06.03.2025
+ *
+ * Solves K u = f with the configured constraint transformer and sparse backend.
+ * Loads and prescribed displacements are assembled from the current ModelData
+ * history and collector-derived activations during run(). Only solver, output and free-body
+ * balancing settings belong to this analysis; reusable condition definitions
+ * remain model-owned. Temporary inertia-relief RBMs are removed after constraint
+ * collection and do not modify persistent support history.
  */
 
 #pragma once
@@ -18,7 +25,6 @@
 #include "../solve/sparse/solve_sparse.h"
 
 #include <string>
-#include <vector>
 
 namespace fem {
 namespace loadcase {
@@ -28,13 +34,12 @@ namespace loadcase {
  * @brief Executes a linear static analysis on the model.
  */
 struct LinearStatic : public LoadCase {
-    std::vector<std::string> supps; ///< Support identifiers applied to the model.
-    std::vector<std::string> loads; ///< Load identifiers applied to the model.
     solver::SolverDevice device = solver::CPU; ///< Solver device selection.
     solver::SolverMethod method = solver::DIRECT; ///< Solver method selection.
     constraint::ConstraintTransformer::Method constraint_method =
         constraint::ConstraintTransformer::Method::NullSpace; ///< Constraint backend selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
+    Precision step_period = Precision(1); ///< Step-end time for evaluating prescribed load amplitudes.
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
     bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
 	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).

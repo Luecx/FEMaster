@@ -42,7 +42,9 @@
 
 #include "inertia_relief.h"
 
-#include "../../bc/neumann/load_inertial.h"
+#include "../../bc/structural/load_inertial.h"
+#include "../../constraints/types/equation.h"
+#include "../../core/types_eig.h"
 #include "../../core/logging.h"
 #include "../../model/element/element_structural.h"
 #include "../../model/element/point.h"
@@ -662,7 +664,18 @@ void apply_inertia_relief(model::ModelData& model_data,
     // The InertialLoad implementation owns the established FEMaster sign
     // convention. The resulting field therefore already contains the signed
     // balancing inertia forces.
-    inertia_load.apply(model_data, inertial_loads, Precision(0));
+    constraint::Equations equations{};
+    SystemDofIds           system_dof_ids{};
+    TripletList            matrix{};
+
+    inertia_load.apply(
+        model_data,
+        inertial_loads,
+        equations,
+        system_dof_ids,
+        matrix,
+        Precision(0)
+    );
 
     // Superimpose the balancing inertia loads onto the externally applied loads
     global_load_mat += inertial_loads;

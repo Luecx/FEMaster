@@ -1,6 +1,6 @@
 /**
  * @file register_amplitude.cpp
- * @brief Registers shared tabular AMPLITUDE input for both readers.
+ * @brief Registers shared tabular AMPLITUDE input for the unified reader.
  *
  * The root-level `AMPLITUDE` command creates named time-dependent scalar
  * functions from up to four `(time, value)` pairs per data line. FEMaster's
@@ -38,7 +38,7 @@ namespace dsl = fem::io::dsl;
  *
  * The command creates the named amplitude when its keyword line is entered.
  * Subsequent data lines append one to four `(time, value)` samples to the active
- * amplitude. Both readers use the same grammar and `bc::Amplitude` state.
+ * amplitude. The supported input dialects share the same grammar and `bc::Amplitude` state.
  * Omitted pairs are ignored, while incomplete pairs are rejected.
  *
  * @param registry Stage-local DSL registry.

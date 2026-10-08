@@ -113,6 +113,19 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
 
 } // anonymous namespace
 
+/**
+ * Solves the harmonic response for each configured excitation frequency.
+ *
+ * Supports and topology constraints are assembled from the current ModelData.
+ * The constrained stiffness/mass operators and Rayleigh damping define the real
+ * block representation of (K - omega^2 M + i omega C) u_hat = f_hat. The model
+ * evaluates current direct loads and collector-activated conditions at each frequency,
+ * preserving existing amplitude semantics and generalized-force transformations.
+ *
+ * Complex displacement components are expanded into global nodal fields for
+ * stress, strain and requested harmonic output. This analysis owns the frequency
+ * sweep and solver parameters, while condition history remains unchanged.
+ */
 void LinearHarmonic::run() {
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
@@ -139,7 +152,7 @@ void LinearHarmonic::run() {
         "generating active_dof_idx_mat index matrix");
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat); },
         "building constraints");
 
     report_constraint_groups(groups);
@@ -202,7 +215,7 @@ void LinearHarmonic::run() {
             // Abaqus-style amplitudes use frequency as STEP TIME in a frequency
             // domain procedure. Rebuild only the load vector for each frequency;
             // K, M, C and the constraint transformation remain unchanged.
-            model::Field global_load_mat = model->build_load_matrix(loads, frequency);
+            model::Field global_load_mat = model->build_load_matrix(frequency);
             const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
             const DynamicVector fr = transformer->assemble_system_rhs(K, f);
 

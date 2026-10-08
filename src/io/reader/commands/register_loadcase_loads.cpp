@@ -2,14 +2,15 @@
  * @file register_loadcase_loads.cpp
  * @brief Registers load-collector selection for active load cases.
  *
- * The `LOADS` child command reads one or more load-collector names and appends
- * every non-empty token to the active analysis. It supports the static,
- * buckling, transient, harmonic and nonlinear load cases that assemble external
- * forces from named model collectors.
+ * The LOADS child command resolves named load collectors immediately against
+ * ModelData::load_cols and activates their shared condition definitions in the
+ * model-owned ConditionManager. It remains available in native LOADCASE and
+ * Abaqus STEP scopes independently of persistent direct condition history.
  *
- * Collector existence and formulation-specific load assembly remain load-case
- * responsibilities. This registration layer validates the active analysis type
- * and preserves the order in which collector names appear in the deck.
+ * Entering a new analysis clears only collector-derived activations. Named
+ * definitions and persistent direct history remain model-owned and are unaffected.
+ * Missing names are reported by the DSL before the solver runs; no analysis class
+ * owns collector identifiers or performs deferred name resolution.
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -20,29 +21,28 @@
 
 #include <array>
 #include <string>
-#include <vector>
 
 #include "../parser.h"
 
 #include "../../../core/logging.h"
-#include "../../../loadcase/linear_buckling.h"
-#include "../../../loadcase/linear_harmonic.h"
-#include "../../../loadcase/linear_static.h"
-#include "../../../loadcase/linear_transient.h"
-#include "../../../loadcase/nonlinear_static.h"
+#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
+/**
+ * Registers immediate named loads selection in the current model state.
+ *
+ * Each non-empty token must identify an existing collector. The callback expands
+ * its entries directly into the current load activations in ConditionManager.
+ * Definition storage and persistent direct condition history are not modified.
+ *
+ * @param registry Registry receiving the analysis child command.
+ * @param parser Parser supplying the model and active analysis scope.
+ */
 void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
-    const auto append_tokens = [](const std::array<std::string, 16>& tokens, std::vector<std::string>& out) {
-        for (const auto& token : tokens) {
-            if (!token.empty()) out.push_back(token);
-        }
-    };
-
     registry.command("LOADS", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Assign load collectors to the active loadcase.");
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.doc("Assign named load collectors to the active analysis step.");
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
@@ -51,33 +51,32 @@ void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
                     .fixed<std::string, 16>().name("LOAD").desc("Load collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, append_tokens](const std::array<std::string, 16>& names) {
+                .bind([&parser](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
                     logging::error(base != nullptr,
-                        "LOADS must appear inside *LOADCASE");
+                        "LOADS must appear inside an active analysis step");
 
-                    if (auto* lc = base->as<loadcase::LinearBuckling>()) {
-                        append_tokens(names, lc->loads);
-                        return;
+                    // Resolve every user-supplied name now. The solver later reads
+                    // only the resulting ConditionManager state.
+                    auto& model_data = *parser.model()._data;
+                    for (const auto& name : names) {
+                        if (name.empty()) {
+                            continue;
+                        }
+
+                        logging::error(model_data.load_cols.has(name),
+                            "LOADS: collector ", name, " does not exist");
+                        const auto collector = model_data.load_cols.get(name);
+                        logging::error(collector != nullptr,
+                            "LOADS: collector ", name, " is not initialized");
+
+                        // Select reusable definitions for this analysis only.
+                        // The parser suppresses repeated (family, pointer)
+                        // selections before the temporary manager insertion.
+                        for (const auto& condition : *collector) {
+                            parser.select_collector_condition(bc::CLOAD, condition);
+                        }
                     }
-                    if (auto* lc = base->as<loadcase::LinearStatic>()) {
-                        append_tokens(names, lc->loads);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
-                        append_tokens(names, lc->loads);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearHarmonic>()) {
-                        append_tokens(names, lc->loads);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::Transient>()) {
-                        append_tokens(names, lc->loads);
-                        return;
-                    }
-                    logging::error(false,
-                        "LOADS not supported for loadcase type ", base->type_name());
                 })
             )
         );

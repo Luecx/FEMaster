@@ -2,14 +2,15 @@
  * @file register_loadcase_supports.cpp
  * @brief Registers support and constraint collectors for active load cases.
  *
- * The `SUPPORTS` child command appends non-empty collector names to every
- * supported structural analysis, including static, buckling, eigenfrequency,
- * transient, harmonic and nonlinear formulations. Input order is retained so
- * downstream constraint construction remains deterministic.
+ * The SUPPORTS child command resolves named support collectors immediately
+ * against ModelData::supp_cols and activates their shared definitions in the
+ * model-owned ConditionManager. It remains available in native LOADCASE and
+ * Abaqus STEP scopes independently of persistent direct condition history.
  *
- * Resolution of support, tie and coupling collectors and construction of the
- * resulting constraint equations remain responsibilities of the load case and
- * model constraint subsystem.
+ * Entering a new analysis clears only collector-derived activations. Named
+ * definitions and persistent direct history remain model-owned and are unaffected.
+ * Missing names are reported by the DSL before the solver runs; no analysis class
+ * owns collector identifiers or performs deferred name resolution.
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -20,31 +21,28 @@
 
 #include <array>
 #include <string>
-#include <vector>
 
 #include "../parser.h"
 
 #include "../../../core/logging.h"
-#include "../../../loadcase/linear_buckling.h"
-#include "../../../loadcase/linear_eigenfreq.h"
-#include "../../../loadcase/linear_harmonic.h"
-#include "../../../loadcase/linear_static.h"
-#include "../../../loadcase/linear_static_topo.h"
-#include "../../../loadcase/linear_transient.h"
-#include "../../../loadcase/nonlinear_static.h"
+#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
+/**
+ * Registers immediate named supports selection in the current model state.
+ *
+ * Each non-empty token must identify an existing collector. The callback expands
+ * its entries directly into the current support activations in ConditionManager.
+ * Definition storage and persistent direct condition history are not modified.
+ *
+ * @param registry Registry receiving the analysis child command.
+ * @param parser Parser supplying the model and active analysis scope.
+ */
 void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser) {
-    const auto append_tokens = [](const std::array<std::string, 16>& tokens, std::vector<std::string>& out) {
-        for (const auto& token : tokens) {
-            if (!token.empty()) out.push_back(token);
-        }
-    };
-
     registry.command("SUPPORTS", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Assign support collectors to the active loadcase.");
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.doc("Assign named support collectors to the active analysis step.");
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
@@ -53,42 +51,32 @@ void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser
                     .fixed<std::string, 16>().name("SUPP").desc("Support collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, append_tokens](const std::array<std::string, 16>& names) {
+                .bind([&parser](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
                     logging::error(base != nullptr,
-                        "SUPPORTS must appear inside *LOADCASE");
+                        "SUPPORTS must appear inside an active analysis step");
 
-                    if (auto* lc = base->as<loadcase::LinearBuckling>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearStaticTopo>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearStatic>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::LinearHarmonic>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
-                    if (auto* lc = base->as<loadcase::Transient>()) {
-                        append_tokens(names, lc->supps);
-                        return;
-                    }
+                    // Resolve every user-supplied name now. The solver later reads
+                    // only the resulting ConditionManager state.
+                    auto& model_data = *parser.model()._data;
+                    for (const auto& name : names) {
+                        if (name.empty()) {
+                            continue;
+                        }
 
-                    logging::error(false,
-                        "SUPPORTS not supported for loadcase type ", base->type_name());
+                        logging::error(model_data.supp_cols.has(name),
+                            "SUPPORTS: collector ", name, " does not exist");
+                        const auto collector = model_data.supp_cols.get(name);
+                        logging::error(collector != nullptr,
+                            "SUPPORTS: collector ", name, " is not initialized");
+
+                        // Select reusable support definitions for this analysis.
+                        // The parser suppresses duplicate pointer selections
+                        // before temporary insertion into the SUPPORT family.
+                        for (const auto& condition : *collector) {
+                            parser.select_collector_condition(bc::SUPPORT, condition);
+                        }
+                    }
                 })
             )
         );

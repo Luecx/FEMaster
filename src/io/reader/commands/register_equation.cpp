@@ -18,7 +18,6 @@
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../parser_abq.h"
 
 #include <array>
 #include <cmath>
@@ -45,7 +44,7 @@ namespace fem::io::reader::commands {
  * been consumed; leaving the command with remaining terms is an input error.
  *
  * @param registry Parser registry receiving the command definition.
- * @param parser Abaqus parser owning the compiled model and analysis state.
+ * @param model Compiled model receiving the constraint equations.
  */
 void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("EQUATION", [&](fem::io::dsl::Command& command) {

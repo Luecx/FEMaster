@@ -28,7 +28,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_topodensity(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("TOPODENSITY", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Select the element density field for LINEARSTATICTOPO loadcases.");
 
         command.keyword(

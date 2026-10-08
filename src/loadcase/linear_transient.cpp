@@ -1,6 +1,16 @@
 /**
- * @file transient.cpp
+ * @file linear_transient.cpp
  * @brief Linear transient analysis (implicit Newmark-β) using affine null-space map u = u_p + T q.
+ *
+ * The transient procedure reduces structural stiffness, mass and damping through
+ * the affine constraint transformation and integrates reduced dynamics with
+ * implicit Newmark stepping. Current ModelData conditions supply supports and
+ * amplitude-dependent forces. Spatial load bases are derived numerical fields;
+ * input-history definitions remain owned exclusively by the model.
+ *
+ * @see Transient
+ * @see Model::build_load_basis
+ * @see constraint::ConstraintTransformer
  */
 
 #include "linear_transient.h"
@@ -20,6 +30,20 @@ namespace fem { namespace loadcase {
 
 using fem::constraint::ConstraintTransformer;
 
+/**
+ * Integrates linear dynamics using the current model conditions and amplitudes.
+ *
+ * Current support history and collector-derived activations define the affine kinematic map;
+ * only homogeneous prescriptions are supported by this time integration path.
+ * Stiffness, mass and optional Rayleigh damping are reduced before implicit
+ * Newmark stepping. Current loads are decomposed into nominal spatial fields
+ * grouped by shared amplitude so time scaling avoids repeated geometric assembly.
+ *
+ * Initial displacement/velocity state is mapped to reduced coordinates. Solver
+ * callbacks evaluate the external RHS at each time, expand converged frames and
+ * write requested fields according to the configured cadence. Numerical bases
+ * and response frames retain no condition definitions or condition activations.
+ */
 void Transient::run() {
     // Banner
     logging::info(true, "");
@@ -41,7 +65,7 @@ void Transient::run() {
     // (2) Constraint equations
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat);
             //report_constraint_groups(groups); // enable if you want full print like buckling
             return groups.flatten();
         },
@@ -119,14 +143,14 @@ void Transient::run() {
                            &active_dof_idx_mat,
                            CT_ptr = CT.get(),
                            &K](double time) -> DynamicVector {
-        auto load_matrix = model->build_load_matrix(this->loads, time);
+        auto load_matrix = model->build_load_matrix(time);
         auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
         return CT_ptr->assemble_system_rhs(K, f_active);
     };
 
     solver::NewmarkForceBasis reduced_force_basis;
     if (device == solver::GPU) {
-        auto load_basis = model->build_load_basis(this->loads);
+        auto load_basis = model->build_load_basis();
         reduced_force_basis.reserve(load_basis.size());
         for (auto& [amplitude, load_matrix] : load_basis) {
             auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);

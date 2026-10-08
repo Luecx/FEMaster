@@ -30,7 +30,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("NEWMARK", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set Newmark-β integration parameters (β, γ). Defaults are 0.25, 0.5.");
 
         command.variant(

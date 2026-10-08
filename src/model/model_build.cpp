@@ -35,6 +35,7 @@
 #include "model.h"
 #include "solid/element_solid.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <string>
@@ -298,26 +299,47 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
 }
 
 /**
- * Assembles selected load collectors into one global nodal load field.
+ * Assembles the current structural condition state into global nodal forces.
  *
- * Each named collector evaluates its loads at `time`, including any attached
- * amplitude and coordinate-system transformation, into a six-component nodal
- * field. Couplings then redistribute generalized master-node loads to their
- * slave topology while preserving the supported resultant.
+ * Active structural conditions are traversed by family. The parser has already
+ * resolved input history and selected named collectors for this analysis.
+ * Each condition contributes its transformed, amplitude-scaled force or moment.
  *
- * @param load_sets Names of load collectors applied to the field.
+ * Current structural loads write only the six-component RHS. Empty equation,
+ * numbering and triplet outputs satisfy the common Condition::apply interface;
+ * no follower-load tangent is assembled. Couplings redistribute the complete
+ * generalized master-node loads only after all contributions have been summed.
+ *
  * @param time Evaluation time supplied to load amplitudes.
- * @return Six-component global nodal load field.
+ * @return Six-component global nodal load field for the current model state.
  */
-Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
+Field Model::build_load_matrix(Precision time, Precision step_progress) {
+    // Initialize global generalized forces and the unused common outputs
     Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
     load_matrix.set_zero();
 
-    for (auto& key : load_sets) {
-        auto data = _data->load_cols.get(key);
-        data->apply(*_data, load_matrix, time);
+    constraint::Equations equations{};
+    SystemDofIds          system_dof_ids{};
+    TripletList           matrix{};
+
+    // Input-history families identify structural loads without physical RTTI.
+    // DLOAD and DSLOAD may each contain several concrete load implementations.
+    const bc::ConditionFamily load_families[] = {
+        bc::CLOAD,
+        bc::DLOAD,
+        bc::DSLOAD,
+        bc::PLOAD,
+        bc::VLOAD,
+        bc::INERTIAL_LOAD
+    };
+    for (const auto family : load_families) {
+        for (const auto& condition : _data->conditions.get(family)) {
+            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
+                             time, false, step_progress);
+        }
     }
 
+    // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
         coupling.apply_loads(*_data, load_matrix);
     }
@@ -326,42 +348,60 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
 }
 
 /**
- * Decomposes selected loads into amplitude-independent spatial basis fields.
+ * Decomposes current structural loads into unscaled spatial amplitude bases.
  *
- * Loads sharing the same amplitude pointer contribute to one six-component
- * nodal basis field; loads without an amplitude share the null-amplitude entry.
- * Each load is evaluated with amplitude scaling disabled so a later transient or
- * harmonic procedure can multiply the returned spatial field by the associated
- * scalar history. Coupling load redistribution is applied independently to every
- * completed basis field.
+ * Current structural families supply precisely the same active definitions
+ * as build_load_matrix(). Loads sharing an amplitude pointer
+ * contribute to one six-component nodal field; conditions without amplitude
+ * share the null entry. Evaluation through Condition::apply bypasses amplitude
+ * scaling, so the transient procedure can multiply each spatial basis by its
+ * scalar time history without repeating geometric integration.
  *
- * @param load_sets Names of load collectors included in the decomposition.
- * @return Pairs of amplitude pointers and their unscaled global nodal load fields.
+ * These fields are derived numerical data for the running analysis. They retain
+ * no condition definitions or condition activations. Coupling redistribution is
+ * applied independently to every completed spatial basis.
+ *
+ * @return Amplitude pointers paired with unscaled global nodal load fields.
  */
-std::vector<std::pair<bc::Amplitude::Ptr, Field>>
-Model::build_load_basis(std::vector<std::string> load_sets) {
+std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
+    // Prepare the numerical spatial bases and outputs unused by structural loads
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
+    constraint::Equations equations{};
+    SystemDofIds          system_dof_ids{};
+    TripletList           matrix{};
 
-    auto field_for = [this, &basis](const bc::Amplitude::Ptr& amplitude) -> Field& {
-        for (auto& entry : basis) {
-            if (entry.first == amplitude) return entry.second;
+    // Reuse one field for each shared scalar amplitude, including the null history
+    auto add_condition = [&](const bc::Condition::Ptr& condition) {
+        auto entry = std::find_if(basis.begin(), basis.end(), [&](const auto& candidate) {
+            return candidate.first == condition->amplitude_;
+        });
+        if (entry == basis.end()) {
+            Field load_matrix{"LOAD_BASIS", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
+            load_matrix.set_zero();
+            basis.emplace_back(condition->amplitude_, std::move(load_matrix));
+            entry = std::prev(basis.end());
         }
 
-        Field load_matrix{"LOAD_BASIS", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
-        load_matrix.set_zero();
-        basis.emplace_back(amplitude, std::move(load_matrix));
-        return basis.back().second;
+        // Retain nominal magnitudes; the transient solver evaluates time scaling
+        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix, Precision(0), true);
     };
 
-    for (auto& key : load_sets) {
-        auto data = _data->load_cols.get(key);
-        for (const auto& load : data->entries()) {
-            if (!load) continue;
-            auto& load_matrix = field_for(load->amplitude_);
-            load->apply(*_data, load_matrix, Precision(0), true);
+    // Use the same independent structural input families as direct RHS assembly
+    const bc::ConditionFamily load_families[] = {
+        bc::CLOAD,
+        bc::DLOAD,
+        bc::DSLOAD,
+        bc::PLOAD,
+        bc::VLOAD,
+        bc::INERTIAL_LOAD
+    };
+    for (const auto family : load_families) {
+        for (const auto& condition : _data->conditions.get(family)) {
+            add_condition(condition);
         }
     }
 
+    // Redistribute every spatial basis before later scalar time multiplication
     for (auto& entry : basis) {
         for (auto& coupling : _data->couplings) {
             coupling.apply_loads(*_data, entry.second);
@@ -372,48 +412,45 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
 }
 
 /**
- * Generates and categorizes all linear constraint equations for the model.
+ * Generates and categorizes the current model's linear constraint equations.
  *
- * When no support collector names are supplied, the aggregate support collection
- * is used when available; otherwise only the named collectors participate.
- * Connector, coupling, tie and rigid-body-mode objects generate their equations
- * in model order. Manually stored equations are copied into the fallback group.
+ * Current SUPPORT conditions contribute prescribed displacements and rotations.
+ * Inactive reusable collector definitions do not impose constraints. Each prescription is
+ * expanded through the common Condition::apply interface and annotated with its
+ * origin for rank diagnostics and constraint reporting.
+ *
+ * Connector, MPC, coupling, tie and rigid-body-mode objects then generate their
+ * equations in model order. Manually stored equations enter the fallback group.
+ * Algebraic reduction and enforcement remain with the constraint transformer.
  *
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
- * @param supp_sets Optional names of support collectors to include.
  * @return Constraint equations grouped and annotated by their origin.
  */
-constraint::ConstraintGroups Model::collect_constraints(
-    SystemDofIds&                   system_dof_ids,
-    const std::vector<std::string>& supp_sets
-) {
+constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids) {
+    // Prepare grouped equations and outputs unused by support prescriptions
     constraint::ConstraintGroups groups{};
+    Field                       rhs{};
+    TripletList                 matrix{};
+    Index                       support_idx = 0;
 
-    Index support_idx = 0;
-    if (supp_sets.empty() && _data->supp_cols.has_all()) {
-        if (auto all = _data->supp_cols.all()) {
-            auto eqs = all->get_equations(*_data);
-            for (auto& eq : eqs) {
-                eq.source       = constraint::EquationSourceKind::Support;
-                eq.source_index = support_idx;
-                groups.supports.push_back(std::move(eq));
-            }
-            ++support_idx;
+    // Expand one support and preserve its origin on every generated equation row
+    auto add_support = [&](const bc::Condition::Ptr& condition) {
+        constraint::Equations equations;
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+        for (auto& equation : equations) {
+            equation.source       = constraint::EquationSourceKind::Support;
+            equation.source_index = support_idx;
+            groups.supports.push_back(std::move(equation));
         }
+        ++support_idx;
+    };
+
+    // All currently active supports are stored in the support family
+    for (const auto& condition : _data->conditions.get(bc::SUPPORT)) {
+        add_support(condition);
     }
 
-    for (const auto& key : supp_sets) {
-        if (auto data = _data->supp_cols.get(key)) {
-            auto eqs = data->get_equations(*_data);
-            for (auto& eq : eqs) {
-                eq.source       = constraint::EquationSourceKind::Support;
-                eq.source_index = support_idx;
-                groups.supports.push_back(std::move(eq));
-            }
-            ++support_idx;
-        }
-    }
-
+    // Generate topology-dependent constraints in their established model order
     Index connector_idx = 0;
     for (auto& connector : _data->connectors) {
         auto eqs = connector.get_equations(system_dof_ids, *_data);

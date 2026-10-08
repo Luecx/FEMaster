@@ -29,6 +29,8 @@
 #pragma once
 
 #include "../bc/amplitude.h"
+#include "../bc/condition.h"
+#include "../bc/structural/support.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
 #include "../cos/coordinate_system.h"
@@ -115,6 +117,15 @@ struct Model {
     ID compiled_element_id(const std::string& reference) const;
     ID compiled_surface_id(const std::string& reference) const;
 
+    // Resolution of named compiled regions or scalar entity references.
+    // Named node, element and surface sets are returned directly, while scalar references
+    // are mapped through the corresponding compiled assembly identifier and wrapped
+    // in a private single-entity region. References may be given as unqualified IDs
+    // or as instance-qualified `INSTANCE.ID` expressions.
+    NodeRegion::Ptr    resolve_node_region   (const std::string& reference) const;
+    ElementRegion::Ptr resolve_element_region(const std::string& reference) const;
+    SurfaceRegion::Ptr resolve_surface_region(const std::string& reference) const;
+
     // Named-region population in explicit semantic identifier spaces. Part
     // operations use the active Part and retain sparse local identifiers;
     // assembly operations use compiled regions and map scalar `ID` or
@@ -147,14 +158,13 @@ struct Model {
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    // Boundary-condition resources and collector entries. Structural loads and
-    // supports retain their established collectors, while every thermal boundary
-    // condition is stored in one ThermalCollector irrespective of its algebraic
-    // Dirichlet, Neumann or Mixed category.
-    void add_load             (bc::Load::Ptr load);
+    // Condition resources and collector entries. Structural loads, supports and
+    // thermal boundaries all derive from Condition; the selected Model method
+    // determines the named collector receiving the shared definition.
+    void add_load             (bc::Condition::Ptr condition);
     void add_amplitude        (bc::Amplitude::Ptr amplitude);
-    void add_support          (bc::Support support);
-    void add_thermal_condition(bc::ThermalCondition::Ptr condition);
+    void add_support          (bc::Support::Ptr support);
+    void add_thermal_condition(bc::Condition::Ptr condition);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal
@@ -180,23 +190,21 @@ struct Model {
     SystemDofIds build_thermal_dof_index_matrix();
     SparseMatrix build_thermal_conductivity_matrix(
         const SystemDofIds& system_dof_ids);
-    Field build_thermal_load_matrix(
-        const std::vector<std::string>& thermal_sets,
-        Precision time = 0);
-    SparseMatrix build_thermal_boundary_matrix(
-        const SystemDofIds& system_dof_ids,
-        const std::vector<std::string>& thermal_sets,
-        Precision time = 0);
-    constraint::Equations collect_thermal_constraints(
-        const std::vector<std::string>& thermal_sets);
-    Field build_load_matrix(
-        std::vector<std::string> load_sets = {},
-        Precision time = 0);
-    constraint::ConstraintGroups collect_constraints(
-        SystemDofIds& system_dof_ids,
-        const std::vector<std::string>& supp_sets = {});
-    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(
-        std::vector<std::string> load_sets = {});
+
+    // Thermal passes use direct thermal history and optional named thermal
+    // selections in ModelData. Each pass supplies complete valid apply outputs
+    // and retains only the contribution required by the caller.
+    Field build_thermal_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
+    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, Precision time = 0);
+    constraint::Equations collect_thermal_constraints();
+
+    // Structural conditions are read from the current direct history and named
+    // selections in ModelData; callers supply only assembly/analysis parameters.
+    Field build_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
+    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids);
+    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis();
+
+    // Element operators use active numbering and optional element scaling
     SparseMatrix build_stiffness_matrix(
         SystemDofIds& indices,
         const Field* base_temperature = nullptr,

@@ -231,6 +231,10 @@ static void write_results(std::vector<ModalMode>& modes,
  * -------
  * Mirroring LinearStatic, all heavyweight steps are wrapped with Timer::measure
  * for consistent performance diagnostics in your logs.
+ *
+ * Constraint construction reads current direct SUPPORT history and explicitly
+ * collector-activated conditions from ModelData. The analysis owns eigenvalue and solver
+ * settings only; condition definitions and collector identifiers are not retained.
  */
 void LinearEigenfrequency::run() {
     // Banner
@@ -253,7 +257,7 @@ void LinearEigenfrequency::run() {
     // (2) Constraints from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat);
             report_constraint_groups(groups);
             return groups.flatten();
         },

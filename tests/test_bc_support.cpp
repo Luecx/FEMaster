@@ -13,8 +13,10 @@
  * @date 18.08.2026
  */
 
-#include "../src/bc/dirichlet/support.h"
-#include "../src/bc/support_collector.h"
+#include "../src/bc/structural/support.h"
+#include "../src/bc/collector.h"
+#include "../src/constraints/types/equation.h"
+#include "../src/core/types_eig.h"
 #include "../src/cos/rectangular_system.h"
 #include "../src/model/model.h"
 
@@ -34,8 +36,13 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     auto nset = std::make_shared<model::NodeRegion>("S");
     nset->add(0);
     bc::Support s_id(nset, Vec6(0, NAN, NAN, NAN, NAN, NAN));
-    constraint::Equations eqs_id;
-    s_id.apply(*mdl._data, eqs_id);
+
+    model::Field          rhs{};
+    constraint::Equations eqs_id{};
+    SystemDofIds           system_dof_ids{};
+    TripletList            matrix{};
+
+    s_id.apply(*mdl._data, rhs, eqs_id, system_dof_ids, matrix, Precision(0), true);
     ASSERT_EQ(eqs_id.size(), 1u);
     ASSERT_EQ(eqs_id[0].entries.size(), 1u);
     EXPECT_EQ(eqs_id[0].entries[0].node_id, 0);
@@ -45,8 +52,8 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     // Rotated orientation by +90deg around Z: local x aligns with global +y
     cos::RectangularSystem rot("R", Vec3(0,1,0), Vec3(-1,0,0));
     bc::Support s_rot(nset, Vec6(0, NAN, NAN, NAN, NAN, NAN), std::make_shared<cos::RectangularSystem>(rot));
-    constraint::Equations eqs_rot;
-    s_rot.apply(*mdl._data, eqs_rot);
+    constraint::Equations eqs_rot{};
+    s_rot.apply(*mdl._data, rhs, eqs_rot, system_dof_ids, matrix, Precision(0), true);
     // Should produce one equation with 3 entries (projection of local x onto global xyz)
     ASSERT_EQ(eqs_rot.size(), 1u);
     ASSERT_EQ(eqs_rot[0].entries.size(), 3u);
@@ -63,4 +70,30 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     EXPECT_NEAR(cx, 0.0, 1e-12);
     EXPECT_NEAR(cy, 1.0, 1e-12);
     EXPECT_NEAR(cz, 0.0, 1e-12);
+}
+
+TEST(BC_Collectors, NamedDomainsRemainIndependent) {
+    model::Model model;
+
+    const auto loads    = model._data->load_cols.activate("SHARED");
+    const auto supports = model._data->supp_cols.activate("SHARED");
+    const auto thermal  = model._data->thermal_cols.activate("SHARED");
+
+    ASSERT_NE(loads,    nullptr);
+    ASSERT_NE(supports, nullptr);
+    ASSERT_NE(thermal,  nullptr);
+
+    EXPECT_NE(loads,    supports);
+    EXPECT_NE(loads,    thermal);
+    EXPECT_NE(supports, thermal);
+
+    auto region = std::make_shared<model::NodeRegion>("NODES");
+    auto condition = std::make_shared<bc::Support>(
+        region, Vec6(0, NAN, NAN, NAN, NAN, NAN)
+    );
+    loads->add(condition);
+
+    EXPECT_EQ(loads->size(),    1u);
+    EXPECT_EQ(supports->size(), 0u);
+    EXPECT_EQ(thermal->size(),  0u);
 }

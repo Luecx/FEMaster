@@ -24,8 +24,10 @@
 #include "../../dsl/registry.h"
 
 #include <array>
+#include <initializer_list>
 #include <string>
-#include <utility>
+#include <tuple>
+#include <type_traits>
 
 #include "../../../model/beam/b31.h"
 #include "../../../model/beam/b33.h"
@@ -40,6 +42,7 @@
 #include "../../../model/solid/c3d20.h"
 #include "../../../model/solid/c3d20r.h"
 #include "../../../model/solid/c3d4.h"
+#include "../../../model/solid/c3d5.h"
 #include "../../../model/solid/c3d6.h"
 #include "../../../model/solid/c3d8.h"
 #include "../../../model/solid/c3d8i.h"
@@ -53,19 +56,6 @@ namespace fem::io::reader::commands {
 
 namespace dsl = fem::io::dsl;
 
-template<class Elem, std::size_t N, std::size_t... I>
-inline void set_regular_element_impl(model::Model& model,
-                                     ID id,
-                                     const std::array<ID, N>& nodes,
-                                     std::index_sequence<I...>) {
-    model.set_element<Elem>(id, nodes[I]...);
-}
-
-template<class Elem, std::size_t N>
-inline void set_regular_element(model::Model& model, ID id, const std::array<ID, N>& nodes) {
-    set_regular_element_impl<Elem, N>(model, id, nodes, std::make_index_sequence<N>{});
-}
-
 /**
  * @brief Registers sparse finite-element connectivity before model compilation.
  */
@@ -75,96 +65,81 @@ void register_element(dsl::Registry& registry, model::Model& model) {
         command.allow_if(dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
 
         // Define the destination element set and concrete element formulation
-        command.keyword(
-            dsl::KeywordSpec::make()
-                .key("ELSET").optional("EALL")
-                .key("TYPE").required().allowed({
-                    "C3D4", "C3D5", "C3D6", "C3D8", "C3D8I", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                    "B31", "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
-                    "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS", "ROTARYI", "SPRING1"
-                })
+        command.keyword(dsl::KeywordSpec::make()
+            .key("ELSET").optional("EALL")
+            .key("TYPE").required().allowed({
+                "C3D4"     , "C3D5"     , "C3D6"     , "C3D8"     ,
+                "C3D8I"    , "C3D8R"    , "C3D10"    , "C3D15"    ,
+                "C3D20"    , "C3D20R"   ,
+                "B31"      , "B33"      , "T3"       , "T3D2"     ,
+                "S3"       , "S3R"      , "S4"       , "S4R"      ,
+                "S6"       , "S6R"      , "S8"       , "S8R"      ,
+                "MITC4"    , "MITC8"    , "MITC3FRT" , "MITC4FRT" ,
+                "MITC6FRT" , "MITC8FRT" , "QSPT"     ,
+                "MASS"     , "ROTARYI"  , "SPRING1"
+            })
         );
 
-        // Prepare the active element set before processing connectivity rows
         command.on_enter([&model](const dsl::Keys& keys) {
-            logging::error(model._data != nullptr && !model._data->compiled,
-                "ELEMENT: elements cannot be added after compile()");
-
             const auto part = model._data->parts.get();
+
+            logging::error(!model._data->compiled,
+                "ELEMENT: elements cannot be added after compile()");
             logging::error(part != nullptr,
                 "ELEMENT: no active part is available");
 
             part->elem_sets.activate(keys.raw("ELSET"));
         });
 
-#define FEM_ADD_ELEMENT_VARIANT(KEY, ELEM, COUNT) \
-        command.variant(dsl::Variant::make() \
-            .when(dsl::Condition::key_equals("TYPE", {KEY})) \
-            .segment(dsl::Segment::make() \
-                .range(dsl::LineRange{}.min(1)) \
-                .pattern(dsl::Pattern::make() \
-                    .allow_multiline() \
-                    .one<ID>().name("ID") \
-                    .fixed<ID, COUNT>().name("N") \
-                ) \
-                .bind([&model](ID id, const std::array<ID, COUNT>& nodes) { \
-                    set_regular_element<model::ELEM>(model, id, nodes); \
-                }) \
-            ) \
-        );
+        // Local generic lambda: the array tag encodes type and connectivity size.
+        auto register_variant = [&](auto tag, std::initializer_list<std::string> types) {
+            using Element = std::remove_pointer_t<typename decltype(tag)::value_type>;
+            constexpr std::size_t N = std::tuple_size_v<decltype(tag)>;
 
-        // Register regular formulations with direct connectivity mapping
-        FEM_ADD_ELEMENT_VARIANT("C3D4", C3D4, 4);
-        FEM_ADD_ELEMENT_VARIANT("C3D6", C3D6, 6);
-        FEM_ADD_ELEMENT_VARIANT("C3D8", C3D8, 8);
-        FEM_ADD_ELEMENT_VARIANT("C3D8I", C3D8I, 8);
-        FEM_ADD_ELEMENT_VARIANT("C3D8R", C3D8R, 8);
-        FEM_ADD_ELEMENT_VARIANT("C3D10", C3D10, 10);
-        FEM_ADD_ELEMENT_VARIANT("C3D15", C3D15, 15);
-        FEM_ADD_ELEMENT_VARIANT("C3D20", C3D20, 20);
-        FEM_ADD_ELEMENT_VARIANT("C3D20R", C3D20R, 20);
-
-        FEM_ADD_ELEMENT_VARIANT("B31", B31, 2);
-        FEM_ADD_ELEMENT_VARIANT("B33", B33, 2);
-        FEM_ADD_ELEMENT_VARIANT("T3", T3, 2);
-        FEM_ADD_ELEMENT_VARIANT("T3D2", T3, 2);
-
-        FEM_ADD_ELEMENT_VARIANT("S3", FRTShellS3, 3);
-        FEM_ADD_ELEMENT_VARIANT("S4", FRTShellS4, 4);
-        FEM_ADD_ELEMENT_VARIANT("S6", FRTShellS6, 6);
-        FEM_ADD_ELEMENT_VARIANT("S8", FRTShellS8, 8);
-        FEM_ADD_ELEMENT_VARIANT("QSPT", QSPT, 4);
-        FEM_ADD_ELEMENT_VARIANT("MITC4", FRTShellS4, 4);
-        FEM_ADD_ELEMENT_VARIANT("MITC3FRT", FRTShellS3, 3);
-        FEM_ADD_ELEMENT_VARIANT("MITC4FRT", FRTShellS4, 4);
-        FEM_ADD_ELEMENT_VARIANT("MITC6FRT", FRTShellS6, 6);
-        FEM_ADD_ELEMENT_VARIANT("MITC8FRT", FRTShellS8, 8);
-        FEM_ADD_ELEMENT_VARIANT("MITC8", FRTShellS8, 8);
-
-        // All supported one-node concentrated formulations share PointElement.
-        FEM_ADD_ELEMENT_VARIANT("MASS", PointElement, 1);
-        FEM_ADD_ELEMENT_VARIANT("ROTARYI", PointElement, 1);
-        FEM_ADD_ELEMENT_VARIANT("SPRING1", PointElement, 1);
-
-#undef FEM_ADD_ELEMENT_VARIANT
-
-        // Expand the five-node pyramid into the supported degenerate C3D8 topology
-        command.variant(dsl::Variant::make()
-            .when(dsl::Condition::key_equals("TYPE", {"C3D5"}))
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1))
-                .pattern(dsl::Pattern::make()
-                    .allow_multiline()
-                    .one<ID>().name("ID")
-                    .fixed<ID, 5>().name("N")
+            command.variant(dsl::Variant::make()
+                .when(dsl::Condition::key_equals("TYPE", types))
+                .segment(dsl::Segment::make()
+                    .range(dsl::LineRange{}.min(1))
+                    .pattern(dsl::Pattern::make()
+                        .allow_multiline()
+                        .one<ID>().name("ID")
+                        .fixed<ID, N>().name("N")
+                    )
+                    .bind([&model](ID id, const std::array<ID, N>& nodes) {
+                        std::apply([&](auto... node_ids) {
+                            model.set_element<Element>(id, node_ids...);
+                        }, nodes);
+                    })
                 )
-                .bind([&model](ID id, const std::array<ID, 5>& nodes) {
-                    model.set_element<model::C3D8>(id,
-                        nodes[0], nodes[1], nodes[2], nodes[3],
-                        nodes[4], nodes[4], nodes[4], nodes[4]);
-                })
-            )
-        );
+            );
+        };
+
+        // Solids
+        register_variant(std::array<model::C3D4*,    4>{}, {"C3D4"});
+        register_variant(std::array<model::C3D5*,    5>{}, {"C3D5"});
+        register_variant(std::array<model::C3D6*,    6>{}, {"C3D6"});
+        register_variant(std::array<model::C3D8*,    8>{}, {"C3D8"});
+        register_variant(std::array<model::C3D8I*,   8>{}, {"C3D8I"});
+        register_variant(std::array<model::C3D8R*,   8>{}, {"C3D8R"});
+        register_variant(std::array<model::C3D10*,  10>{}, {"C3D10"});
+        register_variant(std::array<model::C3D15*,  15>{}, {"C3D15"});
+        register_variant(std::array<model::C3D20*,  20>{}, {"C3D20"});
+        register_variant(std::array<model::C3D20R*, 20>{}, {"C3D20R"});
+
+        // Beams and trusses
+        register_variant(std::array<model::B31*, 2>{}, {"B31"});
+        register_variant(std::array<model::B33*, 2>{}, {"B33"});
+        register_variant(std::array<model::T3*,  2>{}, {"T3", "T3D2"});
+
+        // Shells
+        register_variant(std::array<model::FRTShellS3*, 3>{}, {"S3", "S3R", "MITC3FRT"});
+        register_variant(std::array<model::FRTShellS4*, 4>{}, {"S4", "S4R", "MITC4", "MITC4FRT"});
+        register_variant(std::array<model::FRTShellS6*, 6>{}, {"S6", "S6R", "MITC6FRT"});
+        register_variant(std::array<model::FRTShellS8*, 8>{}, {"S8", "S8R", "MITC8", "MITC8FRT"});
+        register_variant(std::array<model::QSPT*,       4>{}, {"QSPT"});
+
+        // Point elements
+        register_variant(std::array<model::PointElement*, 1>{}, {"MASS", "ROTARYI", "SPRING1"});
     });
 }
 

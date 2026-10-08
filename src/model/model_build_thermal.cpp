@@ -4,8 +4,9 @@
  *
  * The thermal system uses one scalar primary variable per active node. Volume
  * conduction is assembled from the conductivity matrices supplied by
- * `ThermalElement`, while the selected `ThermalCollector` objects contribute
- * prescribed heat flow, mixed boundary operators and temperature constraints.
+ * `ThermalElement`. Direct thermal histories in ModelData::conditions and optional
+ * selected ThermalCollector entries contribute prescribed heat flow, convection
+ * operators and temperature constraints through Condition::apply.
  *
  * For a stationary conduction problem the resulting unconstrained system is
  *
@@ -15,9 +16,9 @@
  *
  *     K_T = sum_e integral_Omega_e grad(N)^T k grad(N) dOmega
  *
- * is the material conductivity operator, `K_b` contains unknown-dependent mixed
- * boundary terms such as convection, and `q_b` contains prescribed thermal
- * boundary sources. Essential temperatures remain separate equations `C T = d`
+ * is the material conductivity operator, `K_b` contains unknown-dependent
+ * convection terms, and `q_b` contains prescribed thermal boundary sources.
+ * Prescribed temperatures remain separate equations `C T = d`
  * and are applied later by the constraint transformer.
  *
  * @see ThermalElement
@@ -196,74 +197,64 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
 }
 
 /**
- * Assembles the prescribed thermal boundary contribution into a scalar nodal RHS.
+ * Assembles the current scalar thermal source field.
  *
- * Each selected `ThermalCollector` superimposes its load-like conditions into
- * one one-component NODE field. Pure Neumann heat flux contributes directly, and
- * Mixed conditions contribute only their prescribed source part during this
- * pass. Unknown-dependent Mixed terms are assembled separately by
- * `build_thermal_boundary_matrix()`.
+ * Direct HEAT_FLUX and CONVECTION history and collector-activated thermal conditions
+ * superimpose prescribed heat flow in a one-component NODE field. Convection
+ * supplies q_h = integral_Gamma h T_inf N^T dGamma through the common apply
+ * interface. Its simultaneous matrix contribution is discarded here because the
+ * thermal solver obtains that operator from build_thermal_boundary_matrix().
  *
- * The resulting field is intentionally kept in nodal form so the later thermal
- * loadcase can reduce it through the active scalar DOF map using the same common
- * matrix-to-vector utility as structural analyses.
+ * A valid thermal numbering is supplied when evaluating mixed conditions. This
+ * keeps Condition::apply complete without RTTI, capability bases or special
+ * collector dispatch. The returned nodal source is reduced to active equations
+ * by the thermal analysis using the common matrix-to-vector utilities.
  *
- * @param thermal_sets Names of thermal collectors participating in the analysis.
- * @param time Analysis time forwarded to amplitude-dependent boundary conditions.
- * @return Scalar nodal thermal RHS field.
+ * @param time Analysis time supplied to amplitude-dependent conditions.
+ * @return Scalar nodal thermal RHS for the current model state.
  */
-Field Model::build_thermal_load_matrix(
-    const std::vector<std::string>& thermal_sets,
-    Precision time
-) {
+Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) {
+    // Validate the scalar nodal domain before preparing common assembly outputs
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
-    Field rhs{
-        "THERMAL_LOAD",
-        FieldDomain::NODE,
-        _data->field_rows(FieldDomain::NODE),
-        1
-    };
+    Field rhs{"THERMAL_LOAD", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
     rhs.set_zero();
 
-    // Superimpose all selected thermal boundary source terms in user-provided
-    // collector order.
-    for (const std::string& name : thermal_sets) {
-        logging::error(_data->thermal_cols.has(name),
-            "Model: thermal collector ", name, " does not exist");
+    const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();
+    constraint::Equations equations{};
+    TripletList           matrix{};
 
-        const auto collector = _data->thermal_cols.get(name);
-        logging::error(collector != nullptr,
-            "Model: thermal collector ", name, " is not initialized");
-
-        collector->apply_rhs(*_data, rhs, time);
+    // Heat flux and convection occupy separate active history families;
+    // the parser has already selected any applicable collector definitions.
+    for (const auto family : {bc::HEAT_FLUX, bc::CONVECTION}) {
+        for (const auto& condition : _data->conditions.get(family)) {
+            condition->apply(*_data, rhs, equations, system_dof_ids, matrix,
+                             time, false, step_progress);
+        }
     }
 
     return rhs;
 }
 
 /**
- * Assembles the unknown-dependent operator contribution of mixed thermal BCs.
+ * Assembles the current unknown-dependent thermal boundary operator.
  *
- * Mixed conditions such as convection contribute a boundary matrix of the form
+ * Active CONVECTION conditions append triplets for the boundary operator
+ * K_h = integral_Gamma h N N^T dGamma in active scalar equation numbering.
+ * Condition::apply also evaluates the ambient source into a temporary nodal RHS;
+ * only the matrix is retained by this pass. The reader has already grouped
+ * active thermal definitions into the appropriate ConditionManager families.
  *
- *     K_b^e = integral_Gamma_e h N N^T dGamma.
- *
- * Each selected collector appends sparse triplets in the active scalar thermal
- * numbering. Duplicate entries generated by neighboring boundary faces are
- * summed by Eigen while the final sparse matrix is constructed.
+ * Eigen sums overlapping entries while constructing the final sparse operator.
+ * Temperature and heat-flux conditions are assembled in their own families.
  *
  * @param system_dof_ids Scalar node-to-system thermal equation mapping.
- * @param thermal_sets Names of thermal collectors participating in the analysis.
- * @param time Analysis time forwarded to amplitude-dependent boundary conditions.
- * @return Assembled mixed thermal boundary operator `K_b`.
+ * @param time Analysis time supplied to amplitude-dependent conditions.
+ * @return Thermal boundary operator K_h for the current model state.
  */
-SparseMatrix Model::build_thermal_boundary_matrix(
-    const SystemDofIds&             system_dof_ids,
-    const std::vector<std::string>& thermal_sets,
-    Precision                       time
-) {
+SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, Precision time) {
+    // Validate the scalar equation numbering and compiled nodal domain
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
     logging::error(static_cast<Index>(system_dof_ids.rows()) == _data->positions->rows,
@@ -271,25 +262,19 @@ SparseMatrix Model::build_thermal_boundary_matrix(
     logging::error(system_dof_ids.cols() == 1,
         "Model: thermal DOF map must contain exactly one component");
 
-    const int system_size = system_dof_ids.size() == 0
-        ? 0
-        : system_dof_ids.maxCoeff() + 1;
+    const int system_size = system_dof_ids.size() == 0 ? 0 : system_dof_ids.maxCoeff() + 1;
+    Field rhs{"THERMAL_BOUNDARY_SOURCE", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
+    rhs.set_zero();
 
-    TripletList triplets;
+    constraint::Equations equations{};
+    TripletList           triplets{};
 
-    // Mixed conditions append their local boundary operators directly in active
-    // global thermal equation numbering.
-    for (const std::string& name : thermal_sets) {
-        logging::error(_data->thermal_cols.has(name),
-            "Model: thermal collector ", name, " does not exist");
-
-        const auto collector = _data->thermal_cols.get(name);
-        logging::error(collector != nullptr,
-            "Model: thermal collector ", name, " is not initialized");
-
-        collector->apply_matrix(*_data, system_dof_ids, triplets, time);
+    // Active convection contributes both source and film operator; retain K_h
+    for (const auto& condition : _data->conditions.get(bc::CONVECTION)) {
+        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, time);
     }
 
+    // Sum duplicate boundary entries into the global active thermal operator
     SparseMatrix matrix(system_size, system_size);
     matrix.setFromTriplets(triplets.begin(), triplets.end());
     matrix.makeCompressed();
@@ -297,40 +282,31 @@ SparseMatrix Model::build_thermal_boundary_matrix(
 }
 
 /**
- * Collects prescribed-temperature equations from selected thermal collectors.
+ * Collects current prescribed-temperature equations C T = d.
  *
- * Thermal essential conditions are kept distinct from structural supports and
- * kinematic constraints. For the current thermal boundary-condition set each
- * `Temperature` object contributes rows
+ * Active TEMPERATURE conditions contribute scalar prescriptions T_i = T_bar.
+ * These equations remain separate from
+ * structural supports, MPCs and other structural kinematic constraints.
  *
- *     T_i = T_bar.
+ * Complete temporary RHS and numbering outputs preserve the common apply
+ * interface. Contributions other than prescribed temperature equations are
+ * discarded by this pass. The thermal analysis passes the collected equations
+ * to its constraint transformer after assembling the material and film operators.
  *
- * The returned equations are not transformed or reduced here. A thermal
- * loadcase can pass them directly to `ConstraintTransformer` after the complete
- * material and mixed boundary operators have been assembled.
- *
- * @param thermal_sets Names of thermal collectors participating in the analysis.
- * @return Concatenated scalar thermal Dirichlet equations.
+ * @return Scalar temperature equations for the current model state.
  */
-constraint::Equations Model::collect_thermal_constraints(
-    const std::vector<std::string>& thermal_sets
-) {
-    constraint::Equations equations;
+constraint::Equations Model::collect_thermal_constraints() {
+    // Prepare all common outputs, retaining only prescribed-temperature rows
+    Field rhs{"THERMAL_CONSTRAINT_SOURCE", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
+    rhs.set_zero();
 
-    for (const std::string& name : thermal_sets) {
-        logging::error(_data->thermal_cols.has(name),
-            "Model: thermal collector ", name, " does not exist");
+    const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();
+    constraint::Equations equations{};
+    TripletList           matrix{};
 
-        const auto collector = _data->thermal_cols.get(name);
-        logging::error(collector != nullptr,
-            "Model: thermal collector ", name, " is not initialized");
-
-        auto collector_equations = collector->get_equations(*_data);
-        equations.reserve(equations.size() + collector_equations.size());
-
-        for (auto& equation : collector_equations) {
-            equations.push_back(std::move(equation));
-        }
+    // Initial and analysis-local temperatures share the same persistent history
+    for (const auto& condition : _data->conditions.get(bc::TEMPERATURE)) {
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
     }
 
     return equations;

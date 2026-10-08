@@ -28,7 +28,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_inertiarelief(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("INERTIARELIEF", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Enable inertia relief for the active linear static load case. "
                     "CONSIDER_POINT_MASSES controls whether POINTMASS features are included.");
 

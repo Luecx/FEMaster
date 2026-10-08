@@ -257,10 +257,10 @@ void Amplitude::add_sample(Precision time, Precision value) {
  * histories dispatch to the configured step, nearest-neighbor or linear rule.
  *
  * @param time Requested analysis time.
- * @return The amplitude multiplier applied to the associated load.
+ * @return The amplitude multiplier applied to the associated condition.
  */
 Precision Amplitude::evaluate(Precision time) const {
-    // An empty optional amplitude must leave the nominal load unchanged.
+    // An empty optional amplitude leaves the nominal condition unchanged.
     if (samples_.empty()) {
         return 1.0;
     }

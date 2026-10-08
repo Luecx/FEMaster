@@ -7,6 +7,7 @@
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
+#include "../src/model/solid/c3d5.h"
 #include "../src/model/shell/frt_shell_s4.h"
 #include "../src/model/truss/truss.h"
 #include "../src/section/section_shell_abd.h"
@@ -44,6 +45,42 @@ fem::model::Model build_qspt_model(bool with_density) {
 }
 
 } // namespace
+
+TEST(Elements_C3D5, CollapsedHexConnectivityPreservesPyramidType) {
+    fem::model::Model model;
+
+    model.set_node(10, 0.0, 0.0, 0.0);
+    model.set_node(11, 1.0, 0.0, 0.0);
+    model.set_node(12, 1.0, 1.0, 0.0);
+    model.set_node(13, 0.0, 1.0, 0.0);
+    model.set_node(14, 0.5, 0.5, 1.0);
+    model.set_element<fem::model::C3D5>(77, 10, 11, 12, 13, 14);
+
+    // Part topology and polymorphic copies retain the concrete C3D5 type.
+    auto source = model._data->parts.get()->elements.at(77);
+    ASSERT_NE(source->as<fem::model::C3D5>(), nullptr);
+    auto copy = source->copy();
+    ASSERT_NE(copy->as<fem::model::C3D5>(), nullptr);
+    EXPECT_EQ(copy->type_name(), "C3D5");
+
+    model.compile();
+
+    auto* pyramid = model._data->elements.at(model.compiled_element_id(77))->as<fem::model::C3D5>();
+    ASSERT_NE(pyramid, nullptr);
+    EXPECT_EQ(pyramid->type_name(), "C3D5");
+    EXPECT_EQ(pyramid->n_nodes(), 8);
+
+    // Four distinct base references; all upper hexahedral corners share the apex.
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(pyramid->node_ids[i], model.compiled_node_id(10 + i));
+    }
+    for (int i = 4; i < 8; ++i) {
+        EXPECT_EQ(pyramid->node_ids[i], model.compiled_node_id(14));
+    }
+
+    // The degenerate C3D8 quadrature integrates a unit-base, unit-height pyramid.
+    EXPECT_NEAR(pyramid->volume(), 1.0 / 3.0, 1e-12);
+}
 
 TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
     auto model = build_qspt_model(true);
