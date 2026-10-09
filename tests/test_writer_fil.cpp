@@ -51,6 +51,7 @@ TEST(FilWriter, WritesModelAndTwoFramesWithEightyColumnRecords) {
     EXPECT_NE(text.find("I 41921"), std::string::npos);
     EXPECT_NE(text.find("I 41901"), std::string::npos);
     EXPECT_NE(text.find("I 42000"), std::string::npos);
+    EXPECT_NE(text.find("I 41902I 11I 12I 13I 10I 10I 10"), std::string::npos);
     EXPECT_NE(text.find("I 3101"), std::string::npos);
     EXPECT_NE(text.find("I 42001"), std::string::npos);
     EXPECT_NE(text.find("D 2.500000000000000D-01"), std::string::npos);
