@@ -23,6 +23,10 @@ ResultWriters::ResultWriters(const std::string& job_base_name,
         frd_writer.reset(new FrdWriter(job_base_name + ".frd"));
     }
 
+    if (options.fil) {
+        fil_writer.reset(new FilWriter(job_base_name + ".fil"));
+    }
+
     if (options.femr) {
         femr_writer.reset(new FemrWriter(job_base_name + ".femr"));
     }
@@ -35,6 +39,7 @@ ResultWriters::~ResultWriters() {
 ResultWriters::ResultWriters(ResultWriters&& other) noexcept
     : res_writer(std::move(other.res_writer)),
       frd_writer(std::move(other.frd_writer)),
+      fil_writer(std::move(other.fil_writer)),
       femr_writer(std::move(other.femr_writer)) {}
 
 ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
@@ -43,6 +48,7 @@ ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
 
         res_writer = std::move(other.res_writer);
         frd_writer = std::move(other.frd_writer);
+        fil_writer = std::move(other.fil_writer);
         femr_writer = std::move(other.femr_writer);
     }
 
@@ -57,6 +63,9 @@ void ResultWriters::close() {
     if (frd_writer) {
         frd_writer->close();
     }
+    if (fil_writer) {
+        fil_writer->close();
+    }
 
     if (femr_writer) {
         femr_writer->close();
@@ -66,6 +75,9 @@ void ResultWriters::close() {
 void ResultWriters::write_model_data(const model::ModelData& model_data) {
     if (frd_writer) {
         frd_writer->write_model_data(model_data);
+    }
+    if (fil_writer) {
+        fil_writer->write_model_data(model_data);
     }
     if (femr_writer) {
         femr_writer->write_model_data(model_data);
@@ -80,9 +92,20 @@ void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
     if (frd_writer) {
         frd_writer->add_loadcase(id, step_type);
     }
+    if (fil_writer) {
+        fil_writer->add_loadcase(id, step_type);
+    }
     if (femr_writer) {
         femr_writer->add_loadcase(id, step_type);
     }
+}
+
+void ResultWriters::begin_frame(Precision value) {
+    if (fil_writer) fil_writer->begin_frame(value);
+}
+
+void ResultWriters::end_frame() {
+    if (fil_writer) fil_writer->end_frame();
 }
 
 void ResultWriters::write_field(const model::Field& field,
@@ -95,6 +118,9 @@ void ResultWriters::write_field(const model::Field& field,
 
     if (frd_writer) {
         frd_writer->write_field(field, field_name, model_data, frame_value);
+    }
+    if (fil_writer) {
+        fil_writer->write_field(field, field_name, model_data, frame_value);
     }
     if (femr_writer) {
         femr_writer->write_field(field, field_name, model_data, frame_value);
