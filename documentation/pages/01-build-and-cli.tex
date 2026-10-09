@@ -65,6 +65,7 @@ FEMaster model.inp --ncpus 8
 FEMaster model.inp --format abaqus
 FEMaster model.inp --output-format res
 FEMaster model.inp --output-format frd femr
+FEMaster model.inp --output-format fil
 \end{shellcmd}
 
 \begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
@@ -73,16 +74,22 @@ FEMaster model.inp --output-format frd femr
 \midrule
 \endhead
 \file{input_file} & Path to the input deck. If no \file{.inp} suffix is supplied, it is added automatically. \\
-\key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, \file{.femr}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
+\key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, \file{.femr}, \file{.fil}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
 \key{--ncpus N} & Number of threads allowed for parallel assembly and compute sections. \\
 \key{--format femaster|abaqus} & Select the native or supported Abaqus input parser; the default is \val{femaster}. This option is independent of the output formats. \\
-\key{--output-format} & Selects one or more result formats from \key{res}, \key{frd}, and \key{femr}. \\
+\key{--output-format} & Selects one or more result formats from \key{res}, \key{frd}, \key{femr}, and \key{fil}. \\
 \bottomrule
 \end{longtable}
 
 By default the \file{.res} and \file{.frd} writers are enabled. Supplying
 \key{--output-format} replaces that default selection. FEMR version 1 uses LZ4
-compression for independently loadable field chunks.
+compression for independently loadable field chunks. The \file{.fil} writer
+produces Abaqus-compatible ASCII results using 80-column records. It supports
+mesh definitions, static increment headers, and nodal U/V/A/RF/CF/NT output.
+Six-component solid stress and strain results are written at element nodes
+or integration points, according to their field domain. This initial writer
+does not support harmonic, buckling or eigenfrequency steps, or shell/beam
+section-point results.
 
 At the end of a regular solver run, FEMaster prints a process timing summary in hours, minutes, seconds, milliseconds, and total milliseconds. This timing covers the full executable run, including parsing, solving, result writing, and shutdown.
 

@@ -221,12 +221,14 @@ model::Field& OutputRequestHandler::resolve(OutputField field) {
  * Writes every requested frame-lifetime quantity.
  */
 void OutputRequestHandler::write_frame(ResultWriters& writer, const model::ModelData* model_data) {
+    writer.begin_frame(frame_value_);
     for (std::size_t i = 0; i < field_count; ++i) {
         const auto field = static_cast<OutputField>(i);
         if (!requests_[i] || output_field_is_step_field(field)) continue;
 
         write(field, writer, model_data, frame_suffix_, frame_value_);
     }
+    writer.end_frame();
 }
 
 /**

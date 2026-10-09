@@ -106,6 +106,13 @@ No Abaqus output-request card maps to this FEMaster constraint diagnostic.
 
 FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
+With \key{--output-format fil}, FEMaster writes an Abaqus ASCII \file{.fil}
+results file. The first implementation supports static increments and common
+nodal results, plus six-component stress and strain for 3D solids at the
+field's element-nodal or integration-point locations. Complex harmonic output,
+modal/buckling records and shell/beam section-point results are not supported.
+Unlike \file{.frd}, this format uses Abaqus record keys and 80-column lines.
+
 The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
 
 The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does not itself change the request set. The actual selection is performed by the following node/element output cards.
