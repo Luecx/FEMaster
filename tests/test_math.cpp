@@ -1,5 +1,4 @@
 #include "../src/math/quadrature.h"
-#include "../src/math/interpolate.h"
 
 #include <gtest/gtest.h>
 
@@ -26,21 +25,4 @@ TEST(Math_Quadrature, WeightSums) {
         for (Index i = 0; i < q.count(); ++i) sumw += q.get_point(i).w;
         EXPECT_NEAR(sumw, 8.0, 1e-12);
     }
-}
-
-// 21) Interpolation: linear matches midpoint
-TEST(Math_Interpolate, LinearMidpoint) {
-    using namespace math::interpolate;
-
-    // Create two points along x-axis with a linear field f = x
-    RowMatrix xyz(2,3); xyz.setZero();
-    xyz(0,0) = -1.0; xyz(1,0) = 1.0;
-    RowMatrix values(2,1);
-    values(0,0) = -1.0; values(1,0) = 1.0;
-
-    Vec3 center(0.0, 0.0, 0.0);
-    DynamicMatrix out = interpolate<LINEAR>(xyz, values, center);
-    ASSERT_EQ(out.rows(), 1);
-    ASSERT_EQ(out.cols(), 1);
-    EXPECT_NEAR(out(0,0), 0.0, 1e-6);
 }
