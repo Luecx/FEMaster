@@ -20,7 +20,7 @@
 
 #include "../../core/logging.h"
 #include "../../material/isotropic_j2_elasticity.h"
-#include "../../material/strain/volume_strain_green_lagrange.h"
+#include "../../material/strain/volume_strain.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../math/extrapolate.h"
 #include "../../math/vec_util.h"
@@ -260,7 +260,7 @@ void FRTShell<N>::physical_stress_strain_at(
                             + z * generalized_strain.template segment<3>(curvature_start);
     const Vec2 shear_strain = generalized_strain.template segment<2>(shear_strain_start);
 
-    VolumeStrainGreenLagrange strain_local;
+    VolumeStrain strain_local;
     strain_local[VolumeStrain::Component::XX]      = plane_strain(0);
     strain_local[VolumeStrain::Component::YY]      = plane_strain(1);
     strain_local[VolumeStrain::Component::GammaYZ] = shear_strain(1);
@@ -269,7 +269,7 @@ void FRTShell<N>::physical_stress_strain_at(
 
     const Mat3 reference_basis       = reference_basis_global(r, s);
     const Mat3 green_lagrange_global = reference_basis * strain_local.tensor() * reference_basis.transpose();
-    strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
+    strain_out = VolumeStrain(green_lagrange_global).voigt();
 
     const Mat3 deformation_gradient_base = deformation_gradient_at(data.state, r, s, z);
     const Mat3 deformation_gradient_increment =

@@ -25,7 +25,7 @@
 #include "../src/loadcase/linear_static.h"
 #include "../src/loadcase/nonlinear_static.h"
 #include "../src/material/orthotropic_elasticity.h"
-#include "../src/material/strain/shell_material_strain_green_lagrange.h"
+#include "../src/material/strain/shell_material_strain.h"
 #include "../src/material/stress/shell_material_stress_pk2.h"
 #include "../src/model/model.h"
 #include "../src/section/section_solid.h"
@@ -835,7 +835,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
         12.0, 13.0, 23.0
     );
 
-    ShellMaterialStrainGreenLagrange strain;
+    ShellMaterialStrain strain;
     ShellMaterialStressPK2             stress;
     Mat5                               tangent;
     Precision old_state = Precision(0);

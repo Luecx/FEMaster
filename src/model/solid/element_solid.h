@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "../../material/strain/volume_strain_green_lagrange.h"
+#include "../../material/strain/volume_strain.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"
 #include "../element/element_structural.h"
@@ -116,7 +116,7 @@ public:
         Precision                        r,
         Precision                        s,
         Precision                        t,
-        const VolumeStrainGreenLagrange&  global_strain,
+        const VolumeStrain&              global_strain,
         const Precision*                 old_state,
         Precision*                       new_state,
         VolumeStressPK2&                 global_stress,

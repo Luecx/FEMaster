@@ -19,7 +19,7 @@
 #include "section.h"
 
 #include "../cos/coordinate_system.h"
-#include "../material/strain/volume_strain_green_lagrange.h"
+#include "../material/strain/volume_strain.h"
 #include "../material/stress/volume_stress_pk2.h"
 
 #include <array>
@@ -46,7 +46,7 @@ struct SolidSection : Section {
     // into the global reference basis without changing their stress measure.
     void evaluate(const Vec3&                      position_reference,
                   const Mat3&                      additional_rotation,
-                  const VolumeStrainGreenLagrange& strain_global,
+                  const VolumeStrain&              strain_global,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress_global,
@@ -57,7 +57,7 @@ struct SolidSection : Section {
     // allows expensive constitutive tangent work to be omitted.
     void evaluate(const Vec3&                      position_reference,
                   const Mat3&                      additional_rotation,
-                  const VolumeStrainGreenLagrange& strain_global,
+                  const VolumeStrain&              strain_global,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress_global,

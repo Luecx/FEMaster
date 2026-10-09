@@ -1,12 +1,18 @@
 /**
  * @file axial_strain.h
- * @brief Declares the base type for scalar axial strain measures.
+ * @brief Declares axial Green-Lagrange strain and its increments.
  *
- * `AxialStrain` stores the single normal-strain component required by truss
- * material models. Derived types distinguish linearized and Green-Lagrange
- * kinematics while sharing the same scalar storage and component interface.
+ * The material kinematics subsystem uses AxialStrain for the scalar reference
+ * strain E_xx = 0.5 * (lambda^2 - 1), work-conjugate to axial PK2 stress.
+ * Elements construct total strains or their linearized increments; constitutive
+ * evaluation and ownership of material history remain with the material model
+ * and its caller. This file provides storage, component access and construction
+ * from the axial stretch ratio.
  *
  * @see axial_strain.cpp
+ *
+ * @author Finn Eggers
+ * @date 09.10.2026
  */
 
 #pragma once
@@ -15,7 +21,16 @@
 
 namespace fem {
 
-// Common storage interface for a scalar axial strain
+/**
+ * @brief Scalar axial Green-Lagrange strain in the reference member direction.
+ *
+ * Stores E_xx, or an increment/variation dE_xx, with identical component access.
+ * The caller distinguishes total strains from increments and supplies a total
+ * state to nonlinear constitutive evaluation; increments enter through dS/dE.
+ * Linearization about the undeformed state gives the infinitesimal axial strain.
+ * The scalar is owned by value, initialized to zero, and carries no material
+ * history. AxialStressPK2 is its work-conjugate stress representation.
+ */
 struct AxialStrain {
     // Named access to the single available strain component
     enum class Component : Index {
@@ -28,6 +43,9 @@ struct AxialStrain {
     // Constructs an axial strain from its scalar value
     explicit AxialStrain(Precision value);
 
+    // Computes E_xx = 0.5 * (stretch^2 - 1) from the axial stretch
+    static AxialStrain from_stretch(Precision stretch);
+
     // Returns the selected component by mutable or constant access
     Precision& operator[](Component component);
     Precision  operator[](Component component) const;
@@ -36,8 +54,8 @@ struct AxialStrain {
     [[nodiscard]] Precision  value() const;
     [[nodiscard]] Precision& value();
 
-protected:
-    // Stored axial strain component
+private:
+    // Total E_xx or its increment/variation
     Precision value_{};
 };
 

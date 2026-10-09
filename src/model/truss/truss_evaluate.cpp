@@ -259,7 +259,7 @@ MapMatrix T3::evaluate(
     // Green-Lagrange strain:
     //
     //     E0 = 1/2 (lambda0^2 - 1).
-    const AxialStrainGreenLagrange strain_base = AxialStrainGreenLagrange::from_stretch(stretch_base);
+    const AxialStrain strain_base = AxialStrain::from_stretch(stretch_base);
 
     // Thermal expansion is evaluated independently for the base and target
     // temperature states. A null temperature denotes the material stress-free
@@ -288,7 +288,7 @@ MapMatrix T3::evaluate(
     // The complete tangent is evaluated at the thermo-mechanical base state
     //
     //     E_mech,0 = E0 - E_th(T0).
-    const AxialStrainGreenLagrange mechanical_strain_base(
+    const AxialStrain mechanical_strain_base(
         strain_base.value() - thermal_strain_base);
 
     AxialStressPK2 stress_base;
@@ -307,7 +307,7 @@ MapMatrix T3::evaluate(
     //     E_mech,T = E0 - E_th(T).
     AxialStressPK2 stress_target_base = stress_base;
     if ((with_force || with_geometric) && target_temperature != base_temperature) {
-        const AxialStrainGreenLagrange mechanical_strain_target(
+        const AxialStrain mechanical_strain_target(
             strain_base.value() - thermal_strain_target);
 
         elasticity->evaluate(

@@ -38,10 +38,9 @@
 #include "isotropic_j2_elasticity.h"
 
 #include "../core/logging.h"
-#include "strain/axial_strain_green_lagrange.h"
-#include "strain/shell_material_strain_green_lagrange.h"
+#include "strain/axial_strain.h"
+#include "strain/shell_material_strain.h"
 #include "strain/volume_strain.h"
-#include "strain/volume_strain_green_lagrange.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_pk2.h"
 #include "stress/volume_stress.h"
@@ -238,7 +237,7 @@ void IsotropicJ2Elasticity::initialize_state(Precision* state) const {
  * @param stress Second Piola-Kirchhoff stress.
  * @param tangent Optional symmetric algorithmic approximation of `dS/dE`.
  */
-void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
+void IsotropicJ2Elasticity::evaluate(const VolumeStrain&              strain,
                                      const Precision*                 old_state,
                                      Precision*                       new_state,
                                      VolumeStressPK2&                 stress,
@@ -305,7 +304,7 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
  * @param stress Plane-stress shell PK2 stress.
  * @param tangent Optional condensed symmetric algorithmic shell tangent.
  */
-void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
+void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrain&              strain,
                                      const Precision*                        old_state,
                                      Precision*                              new_state,
                                      ShellMaterialStressPK2&                 stress,
@@ -402,7 +401,7 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& str
  * @param stress Axial second Piola-Kirchhoff stress.
  * @param tangent Optional algorithmic scalar derivative `dS11/dE11`.
  */
-void IsotropicJ2Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
+void IsotropicJ2Elasticity::evaluate(const AxialStrain&              strain,
                                      const Precision*                old_state,
                                      Precision*                      new_state,
                                      AxialStressPK2&                 stress,

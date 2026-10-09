@@ -43,7 +43,7 @@ void SolidElement<N>::evaluate_material(
     Precision                        r,
     Precision                        s,
     Precision                        t,
-    const VolumeStrainGreenLagrange&  global_strain,
+    const VolumeStrain&              global_strain,
     const Precision*                 old_state,
     Precision*                       new_state,
     VolumeStressPK2&                 global_stress,
@@ -174,8 +174,8 @@ void SolidElement<N>::compute_stress_strain(
             reference_coords, point.r, point.s, point.t, det0);
         const Mat3 F = this->deformation_gradient(
             reference_coords, current_coords, point.r, point.s, point.t);
-        const VolumeStrainGreenLagrange green =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const VolumeStrain green =
+            VolumeStrain::from_deformation_gradient(F);
 
         const auto shape = this->shape_function(point.r, point.s, point.t);
         const Precision free_base   = shape.dot(thermal_base);
@@ -189,7 +189,7 @@ void SolidElement<N>::compute_stress_strain(
         Mat6            material_tangent;
         evaluate_material(
             point.r, point.s, point.t,
-            VolumeStrainGreenLagrange(constitutive_strain_base),
+            VolumeStrain(constitutive_strain_base),
             old_state, nullptr, stress_base,
             exact_displacement ? nullptr : &material_tangent);
 
@@ -201,7 +201,7 @@ void SolidElement<N>::compute_stress_strain(
 
             evaluate_material(
                 point.r, point.s, point.t,
-                VolumeStrainGreenLagrange(constitutive_strain_target),
+                VolumeStrain(constitutive_strain_target),
                 old_state, nullptr, stress_target_base, nullptr);
         }
 
@@ -213,7 +213,7 @@ void SolidElement<N>::compute_stress_strain(
             // Differentiate E and sigma = F S F^T / det(F) in the same direction
             const Mat3 delta_F = local_delta.transpose() * dN_dX;
             const Mat3 delta_E = Precision(0.5) * (F.transpose() * delta_F + delta_F.transpose() * F);
-            const Vec6 delta_strain = VolumeStrainGreenLagrange(delta_E).voigt();
+            const Vec6 delta_strain = VolumeStrain(delta_E).voigt();
             recovered_strain += delta_strain;
             // Temperature is fixed during the displacement perturbation:
             //
@@ -468,8 +468,8 @@ MapMatrix SolidElement<N>::evaluate(
         // Evaluate the Green-Lagrange strain at the linearization state,
         //
         //     E0 = 1/2 (F^T F - I).
-        const VolumeStrainGreenLagrange strain =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const VolumeStrain strain =
+            VolumeStrain::from_deformation_gradient(F);
 
         const auto shape = this->shape_function(point.r, point.s, point.t);
         const Precision thermal_strain_base   = shape.dot(thermal_base);
@@ -498,7 +498,7 @@ MapMatrix SolidElement<N>::evaluate(
         Mat6            material_tangent;
         evaluate_material(
             point.r, point.s, point.t,
-            VolumeStrainGreenLagrange(constitutive_strain_base),
+            VolumeStrain(constitutive_strain_base),
             old_state, new_state, stress_base,
             need_material ? &material_tangent : nullptr);
 
@@ -511,7 +511,7 @@ MapMatrix SolidElement<N>::evaluate(
 
             evaluate_material(
                 point.r, point.s, point.t,
-                VolumeStrainGreenLagrange(constitutive_strain_target),
+                VolumeStrain(constitutive_strain_target),
                 old_state, nullptr, stress_target_base, nullptr);
         }
 

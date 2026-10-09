@@ -1,13 +1,18 @@
 /**
  * @file volume_strain.h
- * @brief Declares three-dimensional strain storage and tensor transformations.
+ * @brief Declares volume Green-Lagrange strain storage and transformations.
  *
- * `VolumeStrain` stores normal strains and engineering shear strains in a
- * six-component Voigt vector. It converts between Voigt and symmetric tensor
- * representations and transforms strains between coordinate-system bases for
- * solid material evaluation.
+ * The material kinematics subsystem stores E = 0.5 * (F^T F - I) and its
+ * increments in a six-component engineering-shear Voigt vector. This file
+ * defines component access, symmetric tensor conversion, basis transformations
+ * and construction from a deformation gradient. Elements and sections supply
+ * the kinematics and reference bases; material models evaluate work-conjugate
+ * PK2 stress and own no strain storage or element kinematics.
  *
  * @see volume_strain.cpp
+ *
+ * @author Finn Eggers
+ * @date 09.10.2026
  */
 
 #pragma once
@@ -18,7 +23,18 @@
 
 namespace fem {
 
-// Common six-component representation of a symmetric volume strain tensor
+/**
+ * @brief Symmetric Green-Lagrange strain expressed in a reference basis.
+ *
+ * The owned Voigt vector uses [E_xx, E_yy, E_zz, 2E_yz, 2E_xz, 2E_xy].
+ * Tensor conversion and orthonormal basis transformations preserve this
+ * engineering-shear convention and apply equally to total strains and their
+ * increments or variations. The caller distinguishes these roles; nonlinear
+ * material evaluation requires a total state, while its tangent maps dE to dS.
+ * Linearization about F = I recovers infinitesimal strain. Default construction
+ * gives zero components without material history or external storage ownership.
+ * VolumeStressPK2 supplies the work-conjugate stress representation.
+ */
 struct VolumeStrain {
     // Voigt component order, using engineering shear strains
     enum class Component : Index {
@@ -54,12 +70,15 @@ struct VolumeStrain {
     [[nodiscard]] VolumeStrain transformed(const cos::Basis& from_basis,
                                            const cos::Basis& to_basis) const;
 
+    // Computes E = 0.5 * (F^T F - I) in the reference configuration
+    static VolumeStrain from_deformation_gradient(const Mat3& deformation_gradient);
+
     // Builds the engineering-strain Voigt transformation matrix
     static Mat6 get_transformation_matrix(const cos::Basis& from_basis,
                                           const cos::Basis& to_basis);
 
-protected:
-    // [epsilon_xx, epsilon_yy, epsilon_zz, gamma_yz, gamma_xz, gamma_xy]
+private:
+    // [E_xx, E_yy, E_zz, 2E_yz, 2E_xz, 2E_xy], or their increments/variations
     Vec6 voigt_{Vec6::Zero()};
 };
 

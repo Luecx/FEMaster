@@ -56,7 +56,7 @@ struct NeoHookeElasticity : Elasticity {
     // Finite axial response reduced from the full three-dimensional potential.
     // The local traction-free solve requires a full tangent internally; the
     // condensed axial tangent is returned only when requested.
-    void evaluate(const AxialStrainGreenLagrange& strain,
+    void evaluate(const AxialStrain&              strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
@@ -64,7 +64,7 @@ struct NeoHookeElasticity : Elasticity {
 
     // Full finite-strain response. Green-Lagrange strain is mapped to C = I+2E;
     // the expensive analytic tangent is assembled only when requested.
-    void evaluate(const VolumeStrainGreenLagrange& strain,
+    void evaluate(const VolumeStrain&              strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
@@ -72,7 +72,7 @@ struct NeoHookeElasticity : Elasticity {
 
     // Finite-strain shell response. The thickness metric is solved so S33 = 0;
     // the condensed tangent is copied to the caller only when requested.
-    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    void evaluate(const ShellMaterialStrain&              strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,

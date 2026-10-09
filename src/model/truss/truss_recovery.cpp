@@ -157,8 +157,8 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
     const Precision lambda0 = length_base / L0;
     const Vec3      n0      = axis_base / length_base;
 
-    const AxialStrainGreenLagrange strain_base =
-        AxialStrainGreenLagrange::from_stretch(lambda0);
+    const AxialStrain strain_base =
+        AxialStrain::from_stretch(lambda0);
 
     // -------------------------------------------------------------------------
     // thermal contribution
@@ -185,9 +185,9 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
         return alpha * (temperature - T_zero);
     };
 
-    const AxialStrainGreenLagrange mechanical_strain_base(
+    const AxialStrain mechanical_strain_base(
         strain_base.value() - thermal_strain(base_temperature));
-    const AxialStrainGreenLagrange mechanical_strain_target(
+    const AxialStrain mechanical_strain_target(
         strain_base.value() - thermal_strain(target_temperature));
 
     // -------------------------------------------------------------------------
