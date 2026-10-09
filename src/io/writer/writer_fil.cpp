@@ -60,6 +60,7 @@ void FilWriter::open(const std::string& filename) {
     model_data_ = nullptr;
     model_written_ = false;
     frame_open_ = false;
+    rotations_ = false;
     step_ = 1;
     increment_ = 0;
     step_type_ = WriterStepType::Static;
@@ -141,12 +142,18 @@ void FilWriter::write_model_data(const model::ModelData& model_data) {
 
     model_data_ = &model_data;
 
+    std::size_t supported_elements = 0;
+    for (const auto& element : model_data.elements) {
+        if (element && !element->type_name().empty() && element->type_name().size() <= 8)
+            ++supported_elements;
+    }
+
     // Model header: release, date (2 words), time, element count, node count,
     // characteristic length. Global dense identifiers are 1-based in .fil.
     record(1921, 7);
     string("FEMASTER");
     string(""); string(""); string("");
-    integer(static_cast<long long>(model_data.elements.size()));
+    integer(static_cast<long long>(supported_elements));
     integer(static_cast<long long>(positions.rows));
     real(0.0);
 
@@ -173,8 +180,9 @@ void FilWriter::write_model_data(const model::ModelData& model_data) {
     }
 
     // Global DOF position map. Nonrotational models expose three components.
+    rotations_ = rotations;
     record(1902, 6);
-    for (int i = 0; i < 6; ++i) integer(i < 3 || rotations ? i + 1 : 0);
+    for (int i = 0; i < 6; ++i) integer(i < 3 || rotations_ ? i + 1 : 0);
     model_written_ = true;
 }
 
@@ -190,6 +198,9 @@ void FilWriter::add_loadcase(int id, WriterStepType type) {
 void FilWriter::begin_frame(Precision value) {
     logging::error(file_.is_open(), "FilWriter: file not open");
     logging::error(model_written_, "FilWriter: mesh must be written before results");
+    logging::error(step_type_ != WriterStepType::Eigenfrequency &&
+                   step_type_ != WriterStepType::Buckling,
+                   "FilWriter: modal records (1980) are not implemented");
     end_frame();
 
     const double time = std::isfinite(value) ? static_cast<double>(value) : 0.;
@@ -246,11 +257,15 @@ void FilWriter::element_header(int element, int point, int location) {
 void FilWriter::write_nodal(const model::Field& field, int key) {
     logging::error(field.rows == model_data_->positions->rows,
                    "FilWriter: nodal field row count mismatch");
+    // Abaqus 1902 maps active DOFs: do not emit artificial zero rotations
+    // from FEMaster's six-component storage for a solid-only model.
+    const Index count = key == 201 ? 1 : std::min<Index>(field.components, rotations_ ? 6 : 3);
+    logging::error(field.components >= count, "FilWriter: insufficient nodal components");
     output_request(true);
     for (Index row = 0; row < field.rows; ++row) {
-        record(key, static_cast<std::size_t>(field.components) + 1);
+        record(key, static_cast<std::size_t>(count) + 1);
         integer(static_cast<long long>(row) + 1);
-        for (Index c = 0; c < field.components; ++c) real(field(row, c));
+        for (Index c = 0; c < count; ++c) real(field(row, c));
     }
 }
 
@@ -289,7 +304,7 @@ void FilWriter::write_field(const model::Field& field, const std::string& name,
 
     const std::string key = normalize(name);
     int record_key = 0;
-    if      (key == "DISPLACEMENT" || key == "MODESHAPE" || key == "BUCKLINGMODE") record_key = 101;
+    if      (key == "DISPLACEMENT")       record_key = 101;
     else if (key == "VELOCITY")           record_key = 102;
     else if (key == "ACCELERATION")       record_key = 103;
     else if (key == "REACTIONFORCES")     record_key = 104;
