@@ -1,11 +1,17 @@
 /**
  * @file shell_material_strain.cpp
- * @brief Implements storage and component access for shell material strains.
+ * @brief Implements shell Green-Lagrange material strain storage and rotation.
  *
- * This file maps named shell material components onto the five-entry vector
- * exchanged between integrated shell sections and material models.
+ * This material kinematics implementation provides the five-component
+ * engineering-shear representation and its in-plane reference-basis rotation.
+ * Total strains and their increments share this representation. Sections perform
+ * thickness reconstruction and integration; constitutive models supply PK2
+ * stress and enforce the missing thickness-normal plane-stress condition.
  *
  * @see shell_material_strain.h
+ *
+ * @author Finn Eggers
+ * @date 09.10.2026
  */
 
 #include "shell_material_strain.h"
@@ -62,6 +68,22 @@ const Vec5& ShellMaterialStrain::values() const {
 
 Vec5& ShellMaterialStrain::values() {
     return values_;
+}
+
+/**
+ * @brief Expresses shell Green-Lagrange components in a rotated in-plane basis.
+ *
+ * The in-plane symmetric tensor and transverse shear vector are rotated using
+ * the same engineering-shear convention as the stored components. The operation
+ * applies equally to total strains and their increments or variations and
+ * leaves the source strain and material history unchanged.
+ *
+ * @param rotation Target in-plane basis vectors expressed in the current basis.
+ * @return Shell material strain components expressed in the target basis.
+ */
+ShellMaterialStrain ShellMaterialStrain::transformed(const Mat2& rotation) const {
+    // Rotate the in-plane tensor components and transverse shear components.
+    return ShellMaterialStrain(transformation(rotation) * values_);
 }
 
 } // namespace fem

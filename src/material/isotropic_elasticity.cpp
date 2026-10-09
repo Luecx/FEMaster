@@ -16,9 +16,9 @@
 #include "isotropic_elasticity.h"
 
 #include "../core/logging.h"
-#include "strain/axial_strain_green_lagrange.h"
-#include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/volume_strain_green_lagrange.h"
+#include "strain/axial_strain.h"
+#include "strain/shell_material_strain.h"
+#include "strain/volume_strain.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_cauchy.h"
@@ -113,7 +113,7 @@ Mat6 IsotropicElasticity::volume_tangent() const {
  * @param stress Axial second Piola-Kirchhoff stress.
  * @param tangent Optional material derivative `dS/dE`.
  */
-void IsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
+void IsotropicElasticity::evaluate(const AxialStrain&              strain,
                                    const Precision*                old_state,
                                    Precision*                      new_state,
                                    AxialStressPK2&                 stress,
@@ -138,7 +138,7 @@ void IsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
  * @param stress Second Piola-Kirchhoff stress in material coordinates.
  * @param tangent Optional material derivative `dS/dE`.
  */
-void IsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
+void IsotropicElasticity::evaluate(const VolumeStrain&              strain,
                                    const Precision*                 old_state,
                                    Precision*                       new_state,
                                    VolumeStressPK2&                 stress,
@@ -164,7 +164,7 @@ void IsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
  * @param stress Shell second Piola-Kirchhoff stress.
  * @param tangent Optional reduced material derivative.
  */
-void IsotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
+void IsotropicElasticity::evaluate(const ShellMaterialStrain&              strain,
                                    const Precision*                        old_state,
                                    Precision*                              new_state,
                                    ShellMaterialStressPK2&                 stress,

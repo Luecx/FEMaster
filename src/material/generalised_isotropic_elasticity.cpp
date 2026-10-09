@@ -3,9 +3,9 @@
  * @brief Implements generalized isotropic linear elasticity.
  *
  * Constant constitutive tangents combine isotropic normal coupling with the
- * independently prescribed engineering shear modulus. Linearized and
- * Green-Lagrange overloads differ only in their explicit work-conjugate stress
- * types because the underlying material law is linear in the supplied strain.
+ * independently prescribed engineering shear modulus. Constitutive evaluation
+ * maps Green-Lagrange strain to work-conjugate PK2 stress; linearized callers
+ * apply the same constant tangent to strain increments about the base state.
  *
  * @see GeneralisedIsotropicElasticity
  *
@@ -16,9 +16,9 @@
 #include "generalised_isotropic_elasticity.h"
 
 #include "../core/logging.h"
-#include "strain/axial_strain_green_lagrange.h"
-#include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/volume_strain_green_lagrange.h"
+#include "strain/axial_strain.h"
+#include "strain/shell_material_strain.h"
+#include "strain/volume_strain.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_cauchy.h"
@@ -117,7 +117,7 @@ Mat6 GeneralisedIsotropicElasticity::volume_tangent() const {
  * @param stress Axial second Piola-Kirchhoff stress.
  * @param tangent Optional constant material derivative equal to Young's modulus.
  */
-void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
+void GeneralisedIsotropicElasticity::evaluate(const AxialStrain&              strain,
                                               const Precision*                old_state,
                                               Precision*                      new_state,
                                               AxialStressPK2&                 stress,
@@ -141,7 +141,7 @@ void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& st
  * @param stress Second Piola-Kirchhoff stress in material coordinates.
  * @param tangent Optional material derivative `dS/dE`.
  */
-void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
+void GeneralisedIsotropicElasticity::evaluate(const VolumeStrain&              strain,
                                               const Precision*                 old_state,
                                               Precision*                       new_state,
                                               VolumeStressPK2&                 stress,
@@ -166,7 +166,7 @@ void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& s
  * @param stress Shell second Piola-Kirchhoff stress.
  * @param tangent Optional reduced material derivative.
  */
-void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
+void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrain&              strain,
                                               const Precision*                        old_state,
                                               Precision*                              new_state,
                                               ShellMaterialStressPK2&                 stress,

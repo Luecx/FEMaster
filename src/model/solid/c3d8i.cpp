@@ -403,12 +403,12 @@ MapMatrix C3D8I::stiffness_geom(
         //     Delta E_th   = 0,
         //     Delta E_mech = Delta E.
         const Vec6 mechanical_increment =
-            VolumeStrainGreenLagrange(delta_E).voigt();
+            VolumeStrain(delta_E).voigt();
 
-        const VolumeStrainGreenLagrange strain_base =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F);
-        const VolumeStrainGreenLagrange strain_target =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F_target);
+        const VolumeStrain strain_base =
+            VolumeStrain::from_deformation_gradient(F);
+        const VolumeStrain strain_target =
+            VolumeStrain::from_deformation_gradient(F_target);
 
         const auto shape = this->shape_function(
             point.natural(0), point.natural(1), point.natural(2));
@@ -432,12 +432,12 @@ MapMatrix C3D8I::stiffness_geom(
         Mat6            material_tangent;
         evaluate_material(
             point.natural(0), point.natural(1), point.natural(2),
-            VolumeStrainGreenLagrange(constitutive_strain_base),
+            VolumeStrain(constitutive_strain_base),
             old_state, nullptr, stress_base, &material_tangent);
 
         evaluate_material(
             point.natural(0), point.natural(1), point.natural(2),
-            VolumeStrainGreenLagrange(constitutive_strain_target),
+            VolumeStrain(constitutive_strain_target),
             old_state, nullptr, stress_target, nullptr);
 
         const Mat3 stress_increment =
@@ -661,8 +661,8 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
         const StaticMatrix<N, D> enhanced_shape_derivatives = dN_dX * enhancement;
 
         // Evaluate the work-conjugate PK2 material response in the reference configuration
-        const VolumeStrainGreenLagrange strain =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        const VolumeStrain strain =
+            VolumeStrain::from_deformation_gradient(F);
 
         Vec6 constitutive_strain_values = strain.voigt();
         if (thermal_strain) {
@@ -672,7 +672,7 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
                     .dot(*thermal_strain);
             constitutive_strain_values.head<3>().array() -= free;
         }
-        const VolumeStrainGreenLagrange constitutive_strain(
+        const VolumeStrain constitutive_strain(
             constitutive_strain_values);
 
         const Index      state_row = this->mp_index(ip);
@@ -1145,10 +1145,10 @@ void C3D8I::compute_stress_strain(
         const Mat3 F_base   = point.compatible * enhancement_base;
         const Mat3 F_target = point.compatible * enhancement_target;
 
-        const VolumeStrainGreenLagrange green_base =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F_base);
-        const VolumeStrainGreenLagrange green_target =
-            VolumeStrainGreenLagrange::from_deformation_gradient(F_target);
+        const VolumeStrain green_base =
+            VolumeStrain::from_deformation_gradient(F_base);
+        const VolumeStrain green_target =
+            VolumeStrain::from_deformation_gradient(F_target);
 
         const auto shape = this->shape_function(
             point.natural(0), point.natural(1), point.natural(2));
@@ -1170,7 +1170,7 @@ void C3D8I::compute_stress_strain(
         Mat6            tangent;
         evaluate_material(
             point.natural(0), point.natural(1), point.natural(2),
-            VolumeStrainGreenLagrange(constitutive_strain_base),
+            VolumeStrain(constitutive_strain_base),
             old_state, nullptr, stress_base,
             exact_displacement ? nullptr : &tangent);
 
@@ -1178,7 +1178,7 @@ void C3D8I::compute_stress_strain(
         if (target_temperature != base_temperature) {
             evaluate_material(
                 point.natural(0), point.natural(1), point.natural(2),
-                VolumeStrainGreenLagrange(constitutive_strain_target),
+                VolumeStrain(constitutive_strain_target),
                 old_state, nullptr, stress_target, nullptr);
         }
 
@@ -1197,7 +1197,7 @@ void C3D8I::compute_stress_strain(
                 Precision(0.5)
                 * (F_base.transpose() * delta_F + delta_F.transpose() * F_base);
             const Vec6 delta_strain =
-                VolumeStrainGreenLagrange(delta_E).voigt();
+                VolumeStrain(delta_E).voigt();
 
             recovered_strain += delta_strain;
 

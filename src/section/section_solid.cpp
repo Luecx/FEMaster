@@ -63,7 +63,7 @@ Mat3 SolidSection::section_orientation_basis(const Vec3& position_reference) con
  */
 void SolidSection::evaluate(const Vec3&                      position_reference,
                             const Mat3&                      additional_rotation,
-                            const VolumeStrainGreenLagrange& strain_global,
+                            const VolumeStrain&              strain_global,
                             const Precision*                 old_state,
                             Precision*                       new_state,
                             VolumeStressPK2&                 stress_global,
@@ -98,7 +98,7 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
  */
 void SolidSection::evaluate(const Vec3&                      position_reference,
                             const Mat3&                      additional_rotation,
-                            const VolumeStrainGreenLagrange& strain_global,
+                            const VolumeStrain&              strain_global,
                             const Precision*                 old_state,
                             Precision*                       new_state,
                             VolumeStressPK2&                 stress_global,
@@ -117,9 +117,9 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
         VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
 
     // Materialize the transformed strain vector before constructing the typed
-    // Green-Lagrange wrapper. This selects the Vec6 constructor unambiguously.
+    // Green-Lagrange strain. This selects the Vec6 constructor unambiguously.
     const Vec6 strain_material_values = strain_transform * strain_global.voigt();
-    const VolumeStrainGreenLagrange strain_material(strain_material_values);
+    const VolumeStrain strain_material(strain_material_values);
 
     // Forward tangent optionality into the material evaluation. The local tangent
     // object is touched only when global tangent output is requested.
@@ -186,7 +186,7 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     // Evaluate the local material tangent at zero strain. This sensitivity cannot
     // use a stress-only constitutive query because C_material is the differentiated
     // operator's central factor.
-    VolumeStrainGreenLagrange zero_strain;
+    VolumeStrain zero_strain;
     VolumeStressPK2            zero_stress;
     Mat6                       tangent_material;
 
