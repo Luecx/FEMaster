@@ -1,6 +1,5 @@
-#pragma once
 /**
- * @file transient.h
+ * @file linear_transient.h
  * @brief Linear transient analysis (implicit Newmark-β) using affine null-space constraints.
  *
  * Pipeline (homogeneous supports assumed, u_p = 0):
@@ -18,6 +17,8 @@
  *  (11) expand snapshots to node×DOF and write with selected cadence
  */
 
+#pragma once
+
 #include "loadcase.h"
 #include "../solve/newmark/solve_newmark.h"   // NewmarkOpts, newmark_linear
 #include "tools/rayleigh_damping.h"           // RayleighDamping
@@ -30,11 +31,17 @@
 
 namespace fem { namespace loadcase {
 
+/**
+ * @brief Integrates linear structural dynamics with implicit Newmark stepping.
+ *
+ * The current ModelData supplies supports, initial state and external loads
+ * when run() starts. Amplitude-independent spatial bases are numerical fields
+ * derived for this solve; they retain no condition definitions or selections.
+ * Newmark parameters, damping, time interval and output cadence belong to the
+ * analysis. Direct history and named groups remain owned by ModelData, while
+ * time integration evolves reduced displacement, velocity and acceleration.
+ */
 struct Transient : public LoadCase {
-    // User inputs
-    std::vector<std::string> supps;   ///< supports/ties/couplings
-    std::vector<std::string> loads;   ///< load collectors (time-independent)
-
     // Integrator parameters (fixed step)
     double dt      = 1e-3;
     double t_start = 0.0;

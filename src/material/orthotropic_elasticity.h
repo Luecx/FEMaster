@@ -71,7 +71,7 @@ struct OrthotropicElasticity : Elasticity {
 
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
-    void evaluate(const VolumeStrainGreenLagrange& strain,
+    void evaluate(const VolumeStrain&              strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
@@ -79,7 +79,7 @@ struct OrthotropicElasticity : Elasticity {
 
     // Finite-strain shell response returning PK2 components work-conjugate to
     // the five supplied Green-Lagrange strain components. State remains unchanged.
-    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    void evaluate(const ShellMaterialStrain&              strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,

@@ -26,7 +26,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_rebalance(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("REBALANCELOADS", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Enable rigid-body rebalancing of external loads (sum F=M=0) for the active linear static load case.");
 
         // Toggle only; no additional keywords

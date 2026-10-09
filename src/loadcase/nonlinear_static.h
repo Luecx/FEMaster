@@ -40,19 +40,15 @@ enum class NonlinearControl {
  * The current implementation is intended for updated-Lagrangian nonlinear
  * analyses, where the structural state is updated incrementally after each
  * converged load step.
+ *
+ * run() evaluates active ModelData loads at each trial load factor, using
+ * condition-defined start/target histories and the physical amplitude time. The object retains only
+ * solver, increment, convergence, path-control and output settings. Condition
+ * history is distinct from material trial/committed state and is never copied
+ * into the analysis when an input scope opens or closes.
  */
 struct NonlinearStatic : public LoadCase {
     using ConstraintMethod = constraint::ConstraintTransformer::Method;
-
-    /**
-     * @brief Names of support collectors active in this load case.
-     */
-    std::vector<std::string> supps;
-
-    /**
-     * @brief Names of load collectors active in this load case.
-     */
-    std::vector<std::string> loads;
 
     /**
      * @brief Solver device used for the linearized systems.
@@ -80,6 +76,10 @@ struct NonlinearStatic : public LoadCase {
      * internally into an arc-length radius.
      */
     NonlinearControl control = NonlinearControl::LoadControl;
+
+    // Physical duration of the step used when evaluating named load amplitudes.
+    // The solver's load factor remains dimensionless and runs from zero to one.
+    Precision step_period = Precision(1);
 
     /**
      * @brief Optional file path for exporting stiffness data.

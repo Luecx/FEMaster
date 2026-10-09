@@ -1,6 +1,16 @@
 /**
  * @file linear_static_topo.cpp
  * @brief Implements topology-aware linear static analysis.
+ *
+ * Topology density and orientation settings affect structural stiffness and
+ * sensitivity recovery. Current ModelData conditions supply loads and prescribed
+ * components using the same assembly path as LinearStatic. Temporary scaling
+ * fields belong to this numerical solve; direct history and named definitions
+ * remain model-owned. Constraint reduction and sparse solution reuse existing
+ * structural analysis utilities.
+ *
+ * @see LinearStaticTopo
+ * @see LinearStatic
  */
 
 #include "linear_static_topo.h"
@@ -23,6 +33,19 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
+/**
+ * Executes density/orientation-dependent equilibrium for current model conditions.
+ *
+ * Topology parameters establish element stiffness scaling and material bases.
+ * Current direct conditions and collector-activated conditions supply the structural RHS
+ * and prescribed components. Free-body balancing validates actual support state
+ * and may temporarily add an RBM for inertia relief during constraint collection.
+ *
+ * The reduced linear solve uses the scaled stiffness operator. Global recovery
+ * supplies displacement, stress, strain and topology sensitivities for requested
+ * output. Temporary model field handles and element caches are restored after
+ * writing; persistent condition history remains owned by ModelData.
+ */
 void LinearStaticTopo::run() {
     logging::info(true, "");
     logging::info(true, "");
@@ -31,6 +54,7 @@ void LinearStaticTopo::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
+    // Prepare section assignments and analysis-local element state
     model->assign_sections();
 
     logging::error(density != nullptr,
@@ -49,20 +73,26 @@ void LinearStaticTopo::run() {
     model->_data->material_orientation    = orientation;
     model->step_begin();
 
+    // Enumerate the current structural system in global generalized coordinates
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 
+    // Assemble direct history and collector-activated conditions from the current model
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
+        [&]() { return model->build_load_matrix(); },
         "constructing load matrix (node x 6)"
     );
 
+    // Free-body load balancing requires the complete active support state to be empty
+    const bool supports_active =
+        !model->_data->conditions.get(bc::SUPPORT).empty();
+
     if (inertia_relief) {
-        logging::error(supps.empty(),
-            "InertiaRelief: cannot be used with *SUPPORT in this load case. "
-            "Remove all referenced support collectors.");
+        logging::error(!supports_active,
+            "InertiaRelief: requires no active structural supports. "
+            "Clear direct SUPPORT history and remove active support collector definitions.");
 
         Timer::measure(
             [&]() {
@@ -85,9 +115,9 @@ void LinearStaticTopo::run() {
     }
 
     if (rebalance_loads) {
-        logging::error(supps.empty(),
-            "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
-            "Remove all referenced support collectors.");
+        logging::error(!supports_active,
+            "Rebalancing Loads: requires no active structural supports. "
+            "Clear direct SUPPORT history and deselect non-empty support collectors.");
 
         Timer::measure(
             [&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
@@ -96,7 +126,7 @@ void LinearStaticTopo::run() {
     }
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat); },
         "building constraints"
     );
     report_constraint_groups(groups);

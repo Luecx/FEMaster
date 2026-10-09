@@ -23,7 +23,7 @@
 #include "section_shell_integrated.h"
 
 #include "../core/logging.h"
-#include "../material/strain/shell_material_strain_green_lagrange.h"
+#include "../material/strain/shell_material_strain.h"
 #include "../material/stress/shell_material_stress_cauchy.h"
 #include "../material/stress/shell_material_stress_pk2.h"
 
@@ -212,14 +212,13 @@ void IntegratedShellSection::evaluate(
             ? new_material_state + mp * material_state_stride
             : nullptr;
 
-        const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
-        ShellMaterialStressPK2                 material_stress_pk2;
-        Mat5                                   material_tangent;
+        ShellMaterialStressPK2 material_stress_pk2;
+        Mat5                  material_tangent;
 
         // The section is always evaluated at an exact Green-Lagrange base state.
         // Linear continuation away from that state is handled by the shell element.
         material_->elasticity()->evaluate(
-            material_strain_gl,
+            material_strain,
             old_state,
             new_state,
             material_stress_pk2,
@@ -382,11 +381,10 @@ VolumeStressCauchy IntegratedShellSection::recover_stress(
 
     const Precision* old_state = old_material_state + state_mp * material_state_stride;
 
-    const ShellMaterialStrainGreenLagrange strain_gl(material_strain_base.values());
-    ShellMaterialStressPK2                 stress_base;
-    Mat5                                   material_tangent;
+    ShellMaterialStressPK2 stress_base;
+    Mat5                  material_tangent;
 
-    elasticity->evaluate(strain_gl, old_state, nullptr, stress_base, &material_tangent);
+    elasticity->evaluate(material_strain_base, old_state, nullptr, stress_base, &material_tangent);
 
     const ShellMaterialStressPK2 stress_increment(Vec5(material_tangent * material_strain_increment.values()));
 

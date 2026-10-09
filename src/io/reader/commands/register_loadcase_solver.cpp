@@ -33,7 +33,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("SOLVER", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STEP"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Configure solver options for the active loadcase.\n"
             "\n"

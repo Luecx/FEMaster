@@ -63,9 +63,15 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Precision>().name("THICKNESS")
                         .on_missing(Precision{1}).on_empty(Precision{1})
+                    .one<int>().name("INTEGRATIONPOINTS")
+                        .on_missing(5).on_empty(5)
                 )
-                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness) {
+                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness, int integration_points) {
                     const auto part = model._data->parts.get();
+                    logging::error(integration_points == 5,
+                        "SHELLSECTION: exactly 5 integration points are supported");
+                    logging::error(local_thickness > Precision(0),
+                        "SHELLSECTION: thickness must be positive");
                     logging::error(part != nullptr,
                         "SHELLSECTION: no active part is available");
                     logging::error(part->elem_sets.has(*elset),

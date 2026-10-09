@@ -3,11 +3,14 @@
  * @brief Tests load accumulation, point masses and inertia relief on compiled models.
  */
 
-#include "../src/bc/neumann/load_c.h"
-#include "../src/bc/load_collector.h"
-#include "../src/bc/neumann/load_inertial.h"
-#include "../src/bc/neumann/load_v.h"
+#include "../src/bc/structural/load_c.h"
+#include "../src/bc/structural/load_inertial.h"
+#include "../src/bc/structural/load_v.h"
+#include "../src/constraints/types/equation.h"
+#include "../src/core/types_eig.h"
 #include "../src/loadcase/tools/inertia_relief.h"
+#include "../src/io/reader/parser.h"
+#include "../src/bc/structural/support.h"
 #include "../src/material/material.h"
 #include "../src/model/model.h"
 #include "../src/model/element/point.h"
@@ -21,13 +24,73 @@
 
 using namespace fem;
 
+TEST(BC_Loads, ConditionManagerFamilyIsolation) {
+    bc::ConditionManager manager;
+    auto load         = std::make_shared<bc::CLoad>();
+    auto other_load   = std::make_shared<bc::CLoad>();
+    auto support      = std::make_shared<bc::Support>();
+
+    EXPECT_TRUE(manager.add(bc::CLOAD, load));
+    EXPECT_TRUE(manager.add(bc::SUPPORT, support));
+
+    EXPECT_TRUE(manager.contains(bc::CLOAD, load));
+    EXPECT_TRUE(manager.contains(bc::SUPPORT, support));
+    EXPECT_FALSE(manager.contains(bc::SUPPORT, load));
+    EXPECT_FALSE(manager.contains(bc::CLOAD, other_load));
+
+    EXPECT_FALSE(manager.add(bc::CLOAD, load));
+    EXPECT_EQ(manager.get(bc::CLOAD).size(), 1u);
+
+    EXPECT_TRUE(manager.remove(bc::CLOAD, load));
+    EXPECT_FALSE(manager.remove(bc::CLOAD, load));
+    EXPECT_FALSE(manager.contains(bc::CLOAD, load));
+    EXPECT_TRUE(manager.contains(bc::SUPPORT, support));
+
+    manager.clear(bc::SUPPORT);
+    EXPECT_TRUE(manager.get(bc::SUPPORT).empty());
+}
+
+TEST(BC_Loads, ParserMatchesOnlySelectedIdentifierAndComponent) {
+    io::reader::Parser parser;
+
+    auto region = std::make_shared<model::NodeRegion>("TEST");
+    region->add(0);
+
+    auto original = std::make_shared<bc::CLoad>();
+    original->region_     = region;
+    original->values_     = Vec6(NAN, NAN, NAN, NAN, NAN, NAN);
+    original->values_[0]  = 100;
+
+    auto unrelated = std::make_shared<bc::CLoad>(*original);
+
+    auto other_dof = std::make_shared<bc::CLoad>(*original);
+    other_dof->values_    = Vec6(NAN, NAN, NAN, NAN, NAN, NAN);
+    other_dof->values_[1] = 300;
+
+    parser.add_condition(bc::CLOAD, original,   "NSET:A");
+    parser.add_condition(bc::CLOAD, unrelated,  "NSET:B");
+    parser.add_condition(bc::CLOAD, other_dof,  "NSET:A");
+
+    auto replacement = std::make_shared<bc::CLoad>(*original);
+    replacement->values_[0] = 200;
+    parser.modify_conditions(bc::CLOAD, "NSET:A", {replacement});
+
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, original));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, unrelated));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, other_dof));
+
+    parser.clear_conditions(bc::CLOAD);
+    EXPECT_TRUE(parser.conditions().get(bc::CLOAD).empty());
+}
+
 TEST(BC_Loads, CLoadAdditiveOverlap) {
     model::Model mdl;
     mdl.set_node(0, 0,0,0);
     mdl.set_node(1, 1,0,0);
     mdl.compile();
 
-    bc::LoadCollector lc("L1");
+    // Define the reusable named group independently of solve selection
+    const auto collector = mdl._data->load_cols.activate("L1");
 
     auto r0 = std::make_shared<model::NodeRegion>("R0");
     r0->add(0);
@@ -36,17 +99,19 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
     L1->region_ = r0;
     L1->values_ = Vec6(NAN, NAN, NAN, NAN, NAN, NAN);
     L1->values_[0] = 1.5;
-    lc.add(L1);
+    collector->add(L1);
 
     auto L2 = std::make_shared<bc::CLoad>();
     L2->region_ = r0;
     L2->values_ = Vec6(NAN, NAN, NAN, NAN, NAN, NAN);
     L2->values_[0] = 2.0;
-    lc.add(L2);
+    collector->add(L2);
 
-    model::Field bc{"BC", model::FieldDomain::NODE, 2, 6};
-    bc.set_zero();
-    lc.apply(*mdl._data, bc, 0.0);
+    // The DSL-equivalent activation expands collector definitions into model state
+    for (const auto& condition : *collector) {
+        mdl._data->conditions.add(bc::CLOAD, condition);
+    }
+    const model::Field bc = mdl.build_load_matrix();
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -84,9 +149,13 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     load.region_ = region;
     load.values_ = Vec3(2.0, 0.0, 0.0);
 
-    model::Field rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    model::Field          rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    constraint::Equations equations{};
+    SystemDofIds           system_dof_ids{};
+    TripletList            matrix{};
+
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -134,9 +203,13 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     load.center_acc_ = Vec3(-2.0, 0.0, 0.0);
     load.amplitude_  = amplitude;
 
-    model::Field rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    model::Field          rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    constraint::Equations equations{};
+    SystemDofIds           system_dof_ids{};
+    TripletList            matrix{};
+
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, 1.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0);
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -147,7 +220,7 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     EXPECT_NEAR(total_x, 7.0, 1e-12);
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, 1.0, true);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0, true);
     total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
@@ -179,16 +252,20 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     load.omega_      = Vec3::Zero();
     load.alpha_      = Vec3::Zero();
 
-    model::Field rhs{"RHS", model::FieldDomain::NODE, 1, 6};
+    model::Field          rhs{"RHS", model::FieldDomain::NODE, 1, 6};
+    constraint::Equations equations{};
+    SystemDofIds           system_dof_ids{};
+    TripletList            matrix{};
+
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);

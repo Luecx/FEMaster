@@ -2,8 +2,9 @@
  * @file loadcase.h
  * @brief Declares the base class for load-case execution.
  *
- * Load cases encapsulate the application of supports and loads on a model while
- * delegating solver specifics to derived classes.
+ * Load cases contain analysis settings and execute the associated solution
+ * procedure. Loads, supports and their active named groups belong to ModelData;
+ * run() assembles exactly the model state present when the analysis executes.
  *
  * @see src/loadcase/loadcase.cpp
  * @author Finn Eggers
@@ -38,6 +39,10 @@ namespace loadcase {
  * command can observe it. Derived classes provide the canonical input-deck type
  * name and implement the actual analysis in @ref run.
  *
+ * Conditions and collector-activated conditions belong exclusively to ModelData. Derived
+ * analyses assemble that current state during run(), without storing collector
+ * lists, direct-condition copies or input-history transitions.
+ *
  * Castable provides mutable and const runtime access to concrete implementations.
  *
  * The writer and model pointers are non-owning. Their lifetime is controlled by
@@ -69,11 +74,7 @@ struct LoadCase : public Castable {
     ID get_id() const { return id; }
 
 protected:
-    /**
-     * @brief Logs a summary of the active constraint groups.
-     *
-     * @param groups Constraint groups extracted from the model.
-     */
+    // Log the equation origins and sizes collected from the current model state
     void report_constraint_groups(const constraint::ConstraintGroups& groups) const;
 };
 } // namespace loadcase

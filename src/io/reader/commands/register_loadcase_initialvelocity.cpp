@@ -31,7 +31,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("INITIALVELOCITY", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set initial velocity for transient analysis from a node FIELD. Usage: *INITIALVELOCITY, FIELD=NAME");
 
         command.keyword(

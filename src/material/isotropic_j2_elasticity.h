@@ -97,19 +97,19 @@ struct IsotropicJ2Elasticity : Elasticity {
     void  initialize_state(Precision* state) const override;
     Precision equivalent_plastic_strain(const Precision* state) const;
 
-    void evaluate(const AxialStrainGreenLagrange& strain,
+    void evaluate(const AxialStrain&              strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
                   Precision*                      tangent = nullptr) const override;
 
-    void evaluate(const VolumeStrainGreenLagrange& strain,
+    void evaluate(const VolumeStrain&              strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6*                            tangent = nullptr) const override;
 
-    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    void evaluate(const ShellMaterialStrain&              strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,

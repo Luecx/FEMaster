@@ -34,9 +34,9 @@
 
 namespace fem {
 
-struct AxialStrainGreenLagrange;
-struct VolumeStrainGreenLagrange;
-struct ShellMaterialStrainGreenLagrange;
+struct AxialStrain;
+struct VolumeStrain;
+struct ShellMaterialStrain;
 
 struct AxialStressPK2;
 struct VolumeStressCauchy;
@@ -49,8 +49,12 @@ namespace material {
  * @brief Polymorphic interface for axial, solid, beam and shell elasticity.
  *
  * Axial, volume and shell constitutive evaluation uses Green-Lagrange strain
- * with work-conjugate second Piola-Kirchhoff stress. Unsupported dimensional
- * reductions are rejected by the corresponding base `evaluate()` overload.
+ * with work-conjugate second Piola-Kirchhoff stress. AxialStrain, VolumeStrain
+ * and ShellMaterialStrain may also store increments or variations, but these
+ * evaluate() overloads require total constitutive strain states. Linearized
+ * callers evaluate the base state and apply the returned dS/dE to increments.
+ * Unsupported dimensional reductions are rejected by the corresponding base
+ * `evaluate()` overload.
  *
  * Castable provides mutable and const runtime access to concrete implementations.
  *
@@ -86,7 +90,7 @@ struct Elasticity : public Castable {
     // Finite-strain axial response in the reference material direction. Stress
     // is second Piola-Kirchhoff stress work-conjugate to Green-Lagrange strain;
     // the optional tangent is the consistent derivative dS/dE.
-    virtual void evaluate(const AxialStrainGreenLagrange& strain,
+    virtual void evaluate(const AxialStrain&              strain,
                           const Precision*                old_state,
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
@@ -95,7 +99,7 @@ struct Elasticity : public Castable {
     // Total-Lagrangian three-dimensional response in the reference material
     // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;
     // the owning section handles transformations to and from global coordinates.
-    virtual void evaluate(const VolumeStrainGreenLagrange& strain,
+    virtual void evaluate(const VolumeStrain&              strain,
                           const Precision*                 old_state,
                           Precision*                       new_state,
                           VolumeStressPK2&                 stress,
@@ -104,7 +108,7 @@ struct Elasticity : public Castable {
     // Finite-strain shell material response at one physical thickness point.
     // The five-component Green-Lagrange input returns work-conjugate PK2 stress
     // and, when requested, the consistently reduced tangent under S33 = 0.
-    virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    virtual void evaluate(const ShellMaterialStrain&              strain,
                           const Precision*                        old_state,
                           Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,

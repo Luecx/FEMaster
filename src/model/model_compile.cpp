@@ -825,4 +825,75 @@ ID Model::compiled_line_id(ID id, const std::string& instance) const {
     return it->second;
 }
 
+/**
+ * @brief Resolves a compiled node set or scalar node reference into a node region.
+ *
+ * Named node sets are returned directly. Scalar references may be given as an
+ * unqualified node ID or as `INSTANCE.ID` and are mapped to the corresponding
+ * compiled assembly identifier before a private single-node region is created.
+ *
+ * @param reference Named node set or scalar node reference.
+ * @return Compiled node region represented by the reference.
+ */
+NodeRegion::Ptr Model::resolve_node_region(const std::string& reference) const {
+    // Reuse an existing compiled node set whenever the reference names one.
+    if (_data->node_sets.has(reference)) {
+        return _data->node_sets.get(reference);
+    }
+
+    // Scalar node references are mapped into compiled assembly space and
+    // represented by a private single-node region.
+    auto region = std::make_shared<NodeRegion>("INTERNAL");
+    region->add(compiled_node_id(reference));
+
+    return region;
+}
+
+/**
+ * @brief Resolves a compiled element set or scalar element reference into an element region.
+ *
+ * Named element sets are returned directly. Scalar references may be given as
+ * an unqualified element ID or as `INSTANCE.ID` and are mapped to the corresponding
+ * compiled assembly identifier before a private single-element region is created.
+ *
+ * @param reference Named element set or scalar element reference.
+ * @return Compiled element region represented by the reference.
+ */
+ElementRegion::Ptr Model::resolve_element_region(const std::string& reference) const {
+    // Reuse an existing compiled element set whenever the reference names one.
+    if (_data->elem_sets.has(reference)) {
+        return _data->elem_sets.get(reference);
+    }
+
+    // Scalar element references are mapped into compiled assembly space and
+    // represented by a private single-element region.
+    auto region = std::make_shared<ElementRegion>("INTERNAL");
+    region->add(compiled_element_id(reference));
+
+    return region;
+}
+
+/**
+ * @brief Resolves a compiled surface set or scalar surface reference into a region.
+ *
+ * Named surface sets are returned directly. Scalar references may be given as
+ * an unqualified surface ID or as INSTANCE.ID and are mapped to the compiled
+ * assembly identifier before a private single-surface region is created.
+ * Reference validation and instance mapping remain in compiled_surface_id().
+ *
+ * @param reference Named surface set or scalar surface reference.
+ * @return Compiled surface region represented by the reference.
+ */
+SurfaceRegion::Ptr Model::resolve_surface_region(const std::string& reference) const {
+    // Preserve shared named regions instead of copying their surface IDs.
+    if (_data->surface_sets.has(reference)) {
+        return _data->surface_sets.get(reference);
+    }
+
+    // Map scalar references into assembly space before creating a private region.
+    auto region = std::make_shared<SurfaceRegion>("INTERNAL");
+    region->add(compiled_surface_id(reference));
+    return region;
+}
+
 } // namespace fem::model

@@ -1,17 +1,16 @@
 /**
  * @file register_functions.h
- * @brief Declares all native and Abaqus parser command registration functions.
+ * @brief Declares unified FEMaster and Abaqus command registration functions.
  *
  * The command implementations are split into one translation unit per input
- * command. This header is the single declaration point used by the native and
- * Abaqus parsers as well as by those implementation files.
+ * command. This header declares the grammar used by the unified reader
+ * and its command implementation files.
  *
  * Registration only constructs the DSL grammar. The parser owns semantic
  * execution order, while the registered callbacks translate parsed command
  * data into model and load-case state.
  *
  * @see Parser
- * @see ParserAbq
  * @see io::dsl::Registry
  *
  * @author Finn Eggers
@@ -30,7 +29,6 @@ struct Model;
 
 namespace fem::io::reader {
 class Parser;
-class ParserAbq;
 }
 
 namespace fem::io::reader::commands {
@@ -38,13 +36,15 @@ namespace fem::io::reader::commands {
 // Native model and topology commands
 void register_amplitude        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_assembly         (fem::io::dsl::Registry& registry);
+void register_boundary         (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_beam_section     (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_cload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_cload            (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_connector        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_contact          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_coupling         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_density          (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_dload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_dload            (fem::io::dsl::Registry& registry,            Parser& parser);
+void register_dsload           (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_elastic          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_element          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_expansion        (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -56,7 +56,7 @@ void register_equation         (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_field            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_heading          (fem::io::dsl::Registry& registry);
 void register_hyperelastic     (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_inertialload     (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_inertialload     (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_initial_condition(fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_instance         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_mass             (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -69,7 +69,7 @@ void register_orientation      (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_overview         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_part             (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_plastic          (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_pload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_pload            (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_point_mass       (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_profile          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_rbm              (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -78,14 +78,19 @@ void register_sfset            (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_shell_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_solid_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_spring           (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_support          (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_support          (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_surface          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tie              (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_transform        (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_truss_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_vload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_vload            (fem::io::dsl::Registry& registry,            Parser& parser);
+
+// Direct thermal history commands update ModelData independently of named groups
+void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parser);
 
 // Native load-case commands operating on parser-owned analysis state
 void register_loadcase_begin            (fem::io::dsl::Registry& registry, Parser& parser);
+void register_step                      (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_constraintmethod (fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_constraintsummary(fem::io::dsl::Registry& registry, Parser& parser);
 void register_loadcase_damping          (fem::io::dsl::Registry& registry, Parser& parser);
@@ -110,21 +115,3 @@ void register_loadcase_topoorient       (fem::io::dsl::Registry& registry, Parse
 void register_loadcase_write_every      (fem::io::dsl::Registry& registry, Parser& parser);
 
 } // namespace fem::io::reader::commands
-
-namespace fem::io::reader::commands_abq {
-
-// Abaqus syntax translations backed directly by the FEMaster model
-void register_element      (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_orientation  (fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_shell_section(fem::io::dsl::Registry& registry, fem::model::Model& model);
-void register_solid_section(fem::io::dsl::Registry& registry, fem::model::Model& model);
-
-// Abaqus commands operating on parser-owned step and load state
-void register_boundary (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_cload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_dload    (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_dsload   (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_step     (fem::io::dsl::Registry& registry, ParserAbq& parser);
-void register_transform(fem::io::dsl::Registry& registry, ParserAbq& parser);
-
-} // namespace fem::io::reader::commands_abq

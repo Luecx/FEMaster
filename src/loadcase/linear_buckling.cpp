@@ -173,6 +173,12 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
  *   performance diagnostics (same style as LinearStatic and LinearEigenfrequency).
  * - The ConstraintTransformer creation is wrapped for timing, and diagnostics
  *   (rank, homogeneity, feasibility) are printed.
+ *
+ * Constraint construction reads current direct SUPPORT history and explicitly
+ * collector-activated conditions from ModelData. The analysis owns eigenvalue and solver
+ * settings only; condition definitions and collector identifiers are not retained.
+ * The static preload likewise uses current structural load history before
+ * stress recovery and geometric-stiffness assembly for the eigenproblem.
  */
 void LinearBuckling::run() {
     // Banner
@@ -195,7 +201,7 @@ void LinearBuckling::run() {
     // (2) Build constraint equations from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -204,7 +210,7 @@ void LinearBuckling::run() {
 
     // (3) Global load matrix (node x 6) -> keep for reporting if you like
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
+        [&]() { return model->build_load_matrix(Precision(1)); },
         "building global load matrix"
     );
 

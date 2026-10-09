@@ -13,9 +13,9 @@
 
 #include "elasticity.h"
 
-#include "strain/axial_strain_green_lagrange.h"
-#include "strain/shell_material_strain_green_lagrange.h"
-#include "strain/volume_strain_green_lagrange.h"
+#include "strain/axial_strain.h"
+#include "strain/shell_material_strain.h"
+#include "strain/volume_strain.h"
 #include "stress/axial_stress_cauchy.h"
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_cauchy.h"
@@ -33,7 +33,7 @@ void Elasticity::initialize_state(Precision* state) const {
     (void) state;
 }
 
-void Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
+void Elasticity::evaluate(const AxialStrain&              strain,
                           const Precision*                old_state,
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
@@ -48,7 +48,7 @@ void Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
         "Elasticity model does not support Green-Lagrange axial evaluation");
 }
 
-void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
+void Elasticity::evaluate(const VolumeStrain&              strain,
                           const Precision*                 old_state,
                           Precision*                       new_state,
                           VolumeStressPK2&                 stress,
@@ -63,7 +63,7 @@ void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
         "Elasticity model does not support Green-Lagrange volume evaluation");
 }
 
-void Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
+void Elasticity::evaluate(const ShellMaterialStrain&              strain,
                           const Precision*                        old_state,
                           Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,

@@ -44,7 +44,7 @@ struct GeneralisedIsotropicElasticity : Elasticity {
                                    Precision shear_in);
 
     // Total-Lagrangian axial response S = E E_GL with optional constant tangent E.
-    void evaluate(const AxialStrainGreenLagrange& strain,
+    void evaluate(const AxialStrain&              strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
@@ -52,7 +52,7 @@ struct GeneralisedIsotropicElasticity : Elasticity {
 
     // Finite-strain response with the identical constant material operator,
     // interpreted as the mapping from Green-Lagrange strain to PK2 stress.
-    void evaluate(const VolumeStrainGreenLagrange& strain,
+    void evaluate(const VolumeStrain&              strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
@@ -60,7 +60,7 @@ struct GeneralisedIsotropicElasticity : Elasticity {
 
     // Finite-strain shell response returning PK2 components. The reduced
     // material derivative is written only when requested.
-    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    void evaluate(const ShellMaterialStrain&              strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,

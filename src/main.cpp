@@ -1,17 +1,15 @@
 /**
  * @file main.cpp
- * @brief Defines the FEMaster command-line entry point and input-format selection.
+ * @brief Defines the FEMaster command-line entry point and unified input parsing.
  *
  * The executable parses command-line options, configures global runtime settings
- * and dispatches regular analysis input either to the native FEMaster reader or
- * the Abaqus syntax reader through `--format`. Both readers feed the same model
- * and solver infrastructure; only the accepted input-deck syntax differs.
+ * and passes both native FEMaster and supported Abaqus syntax through one parser.
+ * The --format switch remains available as a backwards-compatible CLI alias.
  *
- * Documentation mode remains tied to the native FEMaster command registry and
+ * Documentation mode uses the unified FEMaster/Abaqus command registry and
  * is handled before regular input-file validation and parser dispatch.
  *
  * @see fem::io::reader::Parser
- * @see fem::io::reader::ParserAbq
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -29,16 +27,14 @@
 #include "core/logging.h"
 #include "core/version.h"
 #include "io/reader/parser.h"
-#include "io/reader/parser_abq.h"
 
 /**
  * Runs FEMaster in documentation or solver mode.
  *
  * Command-line parsing is completed before any model reader is constructed.
- * Documentation requests use the native FEMaster parser registry, while regular
- * solver runs validate the input/output paths and select either native FEMaster
- * or Abaqus syntax from `--format`. Writer settings and global thread limits are
- * independent of the selected input syntax.
+ * Documentation requests use the unified FEMaster parser registry, while regular
+ * solver runs validate the input/output paths and invoke the unified parser.
+ * The --format alias, writer settings and thread limits are independent.
  *
  * @param argc Number of command-line arguments.
  * @param argv Command-line argument values.
@@ -72,7 +68,7 @@ int main(int argc, char** argv) {
     program.add_argument("--format")
         .default_value(std::string{"femaster"})
         .choices("femaster", "abaqus")
-        .help("Input deck syntax (default: femaster).");
+        .help("Input format alias (femaster or abaqus); both use the unified parser.");
 
     program.add_argument("--output-format")
         .nargs(argparse::nargs_pattern::at_least_one)
@@ -255,15 +251,10 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "Write .femr: ", writer_formats.femr ? "yes" : "no");
     fem::logging::info(true, "");
 
-    // Dispatch only the input syntax; both readers share FEMaster model/solver behavior
+    // Both format aliases use the same native/Abaqus-compatible grammar.
     try {
-        if (format == "abaqus") {
-            fem::io::reader::ParserAbq parser;
-            parser.run(input_path.string(), output_file, writer_formats);
-        } else {
-            fem::io::reader::Parser parser;
-            parser.run(input_path.string(), output_file, writer_formats);
-        }
+        fem::io::reader::Parser parser;
+        parser.run(input_path.string(), output_file, writer_formats);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;

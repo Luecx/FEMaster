@@ -573,7 +573,7 @@ LocalLinearization local_linearization(const FinitePoint& point,
  * convergence the physical state is written directly back into the supplied state
  * vector as Cp_{n+1} and alpha_{n+1}.
  *
- * @param green_lagrange Generic VolumeStrain containing Green-Lagrange components.
+ * @param green_lagrange Total Green-Lagrange VolumeStrain in the reference basis.
  * @param state Working copy of the committed seven-component state, overwritten by
  *              the converged candidate state.
  * @param shear Elastic shear modulus G.

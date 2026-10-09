@@ -13,6 +13,12 @@
  * @see src/loadcase/linear_harmonic.cpp
  * @author Finn Eggers
  * @date 05.08.2026
+ *
+ * Evaluates (K - omega^2 M + i omega C) u_hat = f_hat over the supplied
+ * frequencies using a real block representation and Rayleigh damping. run()
+ * obtains supports and amplituded loads from the current ModelData state.
+ * This object owns frequency, damping, solver and output settings, while direct
+ * condition history and collector-activated conditions remain with the model.
  */
 
 #pragma once
@@ -33,8 +39,6 @@ namespace loadcase {
  * @brief Executes a direct linear harmonic response analysis.
  */
 struct LinearHarmonic : public LoadCase {
-    std::vector<std::string> supps; ///< Support identifiers applied to the model.
-    std::vector<std::string> loads; ///< Harmonic load-amplitude identifiers.
     std::vector<Precision> frequencies; ///< Excitation frequencies.
 
     solver::SolverDevice device = solver::CPU;

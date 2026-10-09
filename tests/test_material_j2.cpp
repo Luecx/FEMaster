@@ -3,8 +3,8 @@
 #include "../src/io/dsl/registry.h"
 #include "../src/io/reader/commands/register_functions.h"
 #include "../src/material/isotropic_j2_elasticity.h"
-#include "../src/material/strain/axial_strain_green_lagrange.h"
-#include "../src/material/strain/volume_strain_green_lagrange.h"
+#include "../src/material/strain/axial_strain.h"
+#include "../src/material/strain/volume_strain.h"
 #include "../src/material/stress/axial_stress_pk2.h"
 #include "../src/material/stress/volume_stress_pk2.h"
 #include "../src/model/model.h"
@@ -53,7 +53,7 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
     // A sufficiently large deviatoric strain drives the material into plasticity.
     Vec6 strain_values = Vec6::Zero();
     strain_values(0) = Precision(0.01);
-    const VolumeStrainGreenLagrange strain(strain_values);
+    const VolumeStrain strain(strain_values);
 
     std::vector<Precision> trial_a(committed.size());
     std::vector<Precision> trial_b(committed.size());
@@ -107,7 +107,7 @@ TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
 
     VolumeStressPK2 stress;
     j2.evaluate(
-        VolumeStrainGreenLagrange(strain_values),
+        VolumeStrain(strain_values),
         committed.data(),
         trial.data(),
         stress,
@@ -144,7 +144,7 @@ TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {
 
     VolumeStressPK2 stress;
     j2.evaluate(
-        VolumeStrainGreenLagrange(strain_values),
+        VolumeStrain(strain_values),
         committed.data(),
         trial.data(),
         stress,
@@ -174,7 +174,7 @@ TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
     VolumeStressPK2 preload_stress;
     Mat6 preload_tangent;
     j2.evaluate(
-        VolumeStrainGreenLagrange(preload_values),
+        VolumeStrain(preload_values),
         initial.data(),
         committed.data(),
         preload_stress,
@@ -192,7 +192,7 @@ TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
     VolumeStressPK2 stress;
     Mat6 tangent;
     j2.evaluate(
-        VolumeStrainGreenLagrange(strain_values),
+        VolumeStrain(strain_values),
         committed.data(),
         nullptr,
         stress,
@@ -213,14 +213,14 @@ TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
         VolumeStressPK2 stress_plus;
         VolumeStressPK2 stress_minus;
         j2.evaluate(
-            VolumeStrainGreenLagrange(plus),
+            VolumeStrain(plus),
             committed.data(),
             nullptr,
             stress_plus,
             nullptr
         );
         j2.evaluate(
-            VolumeStrainGreenLagrange(minus),
+            VolumeStrain(minus),
             committed.data(),
             nullptr,
             stress_minus,
@@ -255,7 +255,7 @@ TEST(Material_J2, FiniteAxialTangentRemainsConsistentWithReducedStress) {
     AxialStressPK2 preload_stress;
     Precision preload_tangent = Precision(0);
     j2.evaluate(
-        AxialStrainGreenLagrange(Precision(0.012)),
+        AxialStrain(Precision(0.012)),
         initial.data(),
         committed.data(),
         preload_stress,
@@ -267,7 +267,7 @@ TEST(Material_J2, FiniteAxialTangentRemainsConsistentWithReducedStress) {
     AxialStressPK2 stress;
     Precision tangent = Precision(0);
     j2.evaluate(
-        AxialStrainGreenLagrange(strain_value),
+        AxialStrain(strain_value),
         committed.data(),
         nullptr,
         stress,
@@ -279,14 +279,14 @@ TEST(Material_J2, FiniteAxialTangentRemainsConsistentWithReducedStress) {
     AxialStressPK2 stress_minus;
 
     j2.evaluate(
-        AxialStrainGreenLagrange(strain_value + h),
+        AxialStrain(strain_value + h),
         committed.data(),
         nullptr,
         stress_plus,
         nullptr
     );
     j2.evaluate(
-        AxialStrainGreenLagrange(strain_value - h),
+        AxialStrain(strain_value - h),
         committed.data(),
         nullptr,
         stress_minus,

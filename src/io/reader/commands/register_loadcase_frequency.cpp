@@ -31,7 +31,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("FREQUENCIES", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Define a linearly spaced excitation-frequency sweep.");
 
         command.keyword(

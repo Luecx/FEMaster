@@ -30,7 +30,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("TIME", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Set time window and step for transient analysis. Accepts either: (t_start, t_end, dt) or (t_end, dt).");
 
         // Variant A: three values → t_start, t_end, dt

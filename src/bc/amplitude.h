@@ -4,8 +4,8 @@
  *
  * An `Amplitude` stores a named, time-ordered sequence of scalar support points
  * and evaluates the corresponding multiplier at an arbitrary analysis time.
- * Loads can reference the same amplitude object to share a prescribed temporal
- * evolution without duplicating interpolation or storage logic. The concrete
+ * Conditions can reference the same amplitude object to share a prescribed
+ * temporal evolution without duplicating interpolation or storage logic. The concrete
  * interpolation algorithms, sorted insertion and endpoint handling are
  * implemented in `amplitude.cpp`.
  *
@@ -56,11 +56,11 @@ enum class Interpolation {
  * already represented time replaces the existing value instead of introducing
  * a duplicate support point. An empty amplitude evaluates to the neutral
  * multiplier `1.0`, allowing optional amplitudes to be used without special
- * handling in every load implementation.
+ * handling in every condition implementation.
  */
 struct Amplitude : fem::Namable {
-    // Shared ownership type used by loads and input-data collectors. Multiple
-    // boundary conditions may intentionally reference the same time history.
+    // Shared ownership type used by conditions and input-data collectors.
+    // Multiple condition definitions may reference the same time history.
     using Ptr = std::shared_ptr<Amplitude>;
 
     /**

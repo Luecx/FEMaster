@@ -28,12 +28,17 @@ namespace loadcase {
  * This class performs linear eigenfrequency analysis on a finite element model
  * to compute natural frequencies and mode shapes. It extends the LoadCase class,
  * implementing a run function for solving the eigenvalue problem.
+ *
+ * The reduced eigenproblem (T^T K T) phi = lambda (T^T M T) phi uses the
+ * supports and model kinematic constraints currently active when run() begins.
+ * Eigenvalue count/range, solver choices and mode output belong to the analysis;
+ * condition history and condition activation belong to ModelData. External load
+ * history remains stored in the model and is not used as an eigenproblem RHS.
  */
 struct LinearEigenfrequency : public LoadCase {
     //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
-    std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
     int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
     bool      use_eigenvalue_range = false;
     Precision min_eigenvalue       = 0;

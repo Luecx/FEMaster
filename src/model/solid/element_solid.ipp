@@ -290,7 +290,7 @@ auto SolidElement<N>::material_tangent_reference(
     Precision*       new_state)
     -> StaticMatrix<n_strain, n_strain> {
     // Query the zero-strain PK2 tangent with the caller-selected history pointers
-    VolumeStrainGreenLagrange zero_strain;
+    VolumeStrain zero_strain;
     VolumeStressPK2           zero_stress;
     Mat6                      tangent;
     evaluate_material(r, s, t, zero_strain, old_state, new_state, zero_stress, &tangent);

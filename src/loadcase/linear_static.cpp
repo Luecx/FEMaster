@@ -1,6 +1,16 @@
 /**
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
+ *
+ * The structural analysis reads loads and support prescriptions directly from
+ * ModelData, reduces K u = f through the chosen constraint map and recovers
+ * global response fields. Optional inertia relief and load rebalancing use the
+ * actual active support state. Condition replacement semantics belong to the DSL;
+ * model assembly owns physical load integration and equation construction.
+ *
+ * @see Model::build_load_matrix
+ * @see Model::collect_constraints
+ * @see constraint::ConstraintTransformer
  */
 
 #include "linear_static.h"
@@ -29,6 +39,21 @@ namespace loadcase {
 
 using constraint::ConstraintTransformer;
 
+/**
+ * Executes constrained linear equilibrium against the current model state.
+ *
+ * Sections and element caches are prepared before enumerating global DOFs.
+ * Direct structural history and collector-activated conditions supply f and C u = d.
+ * Optional inertia relief or load rebalancing requires empty structural support
+ * state; balancing changes only the assembled force field, and the temporary
+ * inertia-relief RBM is removed after constraint collection.
+ *
+ * The affine constraint map reduces K u = f to the configured sparse backend.
+ * Expanded global displacements drive stress/strain and reaction recovery, then
+ * requested result fields are written and analysis-local element caches released.
+ * Model condition definitions and collector-derived activations are read, never copied into
+ * the analysis or modified by this procedure.
+ */
 void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
@@ -37,21 +62,28 @@ void LinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
+    // Prepare section assignments and analysis-local element state
     model->assign_sections();
     model->step_begin();
 
+    // Enumerate the current structural system in global generalized coordinates
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
+    // Assemble direct history and collector-activated conditions from the current model
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
+        [&]() { return model->build_load_matrix(step_period); },
         "constructing load matrix (node x 6)");
 
+    // Free-body load balancing requires the complete active support state to be empty
+    const bool supports_active =
+        !model->_data->conditions.get(bc::SUPPORT).empty();
+
     if (inertia_relief) {
-        logging::error(supps.empty(),
-            "InertiaRelief: cannot be used with *SUPPORT in this load case. "
-            "Remove all referenced support collectors.");
+        logging::error(!supports_active,
+            "InertiaRelief: requires no active structural supports. "
+            "Clear direct SUPPORT history and remove active support collector definitions.");
 
         Timer::measure(
             [&]() {
@@ -74,9 +106,9 @@ void LinearStatic::run() {
     }
 
     if (rebalance_loads) {
-        logging::error(supps.empty(),
-            "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
-            "Remove all referenced support collectors.");
+        logging::error(!supports_active,
+            "Rebalancing Loads: requires no active structural supports. "
+            "Clear direct SUPPORT history and deselect non-empty support collectors.");
 
         Timer::measure(
             [&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
@@ -84,7 +116,7 @@ void LinearStatic::run() {
     }
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat); },
         "building constraints");
 
     report_constraint_groups(groups);

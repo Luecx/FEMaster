@@ -30,7 +30,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_request_stiffness(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("REQUESTSTIFFNESS", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Request stiffness matrix output for supported loadcases.");
 
         command.keyword(

@@ -113,6 +113,22 @@ Precision calculate_relative_force_residual(
 
 } // namespace
 
+/**
+ * Follows nonlinear equilibrium using current model loads and prescriptions.
+ *
+ * ModelData's active conditions define the initial and target external loads.
+ * Each trial evaluates condition-defined interpolation at its actual load
+ * factor; affine prescribed displacements retain their existing constraints.
+ * Incremental load control or arc-length control solves the reduced residual
+ * using updated structural tangents and the established contact contributions.
+ * Condition matrix outputs do not introduce follower-load tangents here.
+ *
+ * Trial material state is separate from condition history and is accepted only
+ * with a converged increment. Global fields and requested output are recovered
+ * for accepted states, then temporary geometry/state handles and element caches
+ * are restored according to the existing nonlinear lifecycle. The analysis
+ * retains solver and path settings, never a copy of condition definitions.
+ */
 void NonlinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
@@ -121,6 +137,8 @@ void NonlinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
+    logging::error(step_period > Precision(0) && std::isfinite(step_period),
+        "NONLINEARSTATIC requires a positive finite STEP PERIOD");
     logging::error(max_increments > 0,
         "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
     logging::error(initial_increment > Precision(0),
@@ -152,6 +170,20 @@ void NonlinearStatic::run() {
         "NONLINEARSTATIC currently supports only NULLSPACE constraints");
     logging::error(method == solver::DIRECT,
         "NONLINEARSTATIC currently supports only DIRECT solver method");
+    // Arc-length uses a fixed proportional reference load and does not
+    // linearize arbitrary prescribed amplitude histories with respect to lambda.
+    if (control == NonlinearControl::ArcLength) {
+        const bc::ConditionFamily load_families[] = {
+            bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
+            bc::VLOAD, bc::INERTIAL_LOAD
+        };
+        for (const auto family : load_families) {
+            for (const auto& condition : model->_data->conditions.get(family)) {
+                logging::error(condition->amplitude_ == nullptr,
+                    "NONLINEARSTATIC: named load AMPLITUDE is not supported with RIKS arc-length control");
+            }
+        }
+    }
     logging::error(model->_data->positions != nullptr,
         "NonlinearStatic: positions field not initialized");
     logging::error(model->_data->positions_reference != nullptr,
@@ -182,18 +214,19 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    auto global_load_total = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
-        "constructing total load matrix (node x 6)"
-    );
+    // Assemble the load derivative for the proportional path controllers.
+    // A carried-over force already acts at lambda=0, so the predictor direction
+    // is the difference between the target and initial load, not the target.
+    const auto global_load_start = model->build_load_matrix(Precision(0), Precision(0));
+    const auto global_load_total = model->build_load_matrix(step_period, Precision(1));
+    auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
 
-    auto f_total = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_total); },
-        "reducing total load matrix -> active RHS vector f"
+    const DynamicVector f_total = mattools::reduce_mat_to_vec(
+        active_dof_idx_mat, global_load_delta
     );
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat); },
         "building constraints"
     );
 
@@ -357,8 +390,13 @@ void NonlinearStatic::run() {
         const DynamicVector internal_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
 
-        const DynamicVector external_force = lambda * f_total;
-        const DynamicVector full_residual  = external_force - internal_force;
+        // Every Newton trial evaluates the condition-defined transition at
+        // the actual trial load factor. Do not multiply the assembled load by
+        // lambda again: apply() has already interpolated start and target values.
+        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const DynamicVector external_force =
+            mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
+        const DynamicVector full_residual = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
 
@@ -431,8 +469,13 @@ void NonlinearStatic::run() {
         const DynamicVector internal_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
 
-        const DynamicVector external_force = lambda * f_total;
-        const DynamicVector full_residual  = external_force - internal_force;
+        // Every Newton trial evaluates the condition-defined transition at
+        // the actual trial load factor. Do not multiply the assembled load by
+        // lambda again: apply() has already interpolated start and target values.
+        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const DynamicVector external_force =
+            mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
+        const DynamicVector full_residual = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
 
@@ -643,8 +686,7 @@ void NonlinearStatic::run() {
             &active_dof_idx_mat
         );
 
-        auto increment_external = global_load_total;
-        increment_external *= lambda;
+        auto increment_external = model->build_load_matrix(lambda * step_period, lambda);
 
         auto increment_reaction_full = subtract_field(
             increment_internal,
@@ -874,8 +916,7 @@ void NonlinearStatic::run() {
         io::writer::write_mtx(stiffness_file + "_A.mtx", final_A);
     }
 
-    auto global_load_final = global_load_total;
-    global_load_final *= load_factor;
+    auto global_load_final = model->build_load_matrix(load_factor * step_period, load_factor);
     auto reaction_full = subtract_field(
         final_internal,
         global_load_final,

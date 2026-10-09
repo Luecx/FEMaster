@@ -42,7 +42,7 @@ struct IsotropicElasticity : Elasticity {
 
     // Total-Lagrangian axial Hooke response S = E E_GL. The optional tangent is
     // the constant derivative dS/dE = E.
-    void evaluate(const AxialStrainGreenLagrange& strain,
+    void evaluate(const AxialStrain&              strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
@@ -50,7 +50,7 @@ struct IsotropicElasticity : Elasticity {
 
     // Finite-strain response using the same constant Hooke operator. Input is
     // Green-Lagrange strain and output is second Piola-Kirchhoff stress.
-    void evaluate(const VolumeStrainGreenLagrange& strain,
+    void evaluate(const VolumeStrain&              strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
@@ -58,7 +58,7 @@ struct IsotropicElasticity : Elasticity {
 
     // Green-Lagrange five-component shell response with PK2 output. The material
     // state remains unchanged and the reduced tangent is optional.
-    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+    void evaluate(const ShellMaterialStrain&              strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,

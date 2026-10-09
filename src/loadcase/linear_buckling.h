@@ -34,10 +34,18 @@
 
 namespace fem { namespace loadcase {
 
+/**
+ * @brief Executes linear eigenvalue buckling about the current model preload.
+ *
+ * run() solves the constrained static preload from current ModelData conditions
+ * and collector-derived activations, recovers stresses and assembles geometric stiffness.
+ * The homogeneous reduced eigenproblem K phi = lambda (-K_g) phi then returns
+ * the requested buckling factors and modes. This object retains eigenvalue,
+ * solver and diagnostic settings; condition history and reusable named groups
+ * remain model-owned throughout both phases.
+ */
 struct LinearBuckling : public LoadCase {
     // User inputs
-    std::vector<std::string> supps;           ///< Support/coupling identifiers → constraints.
-    std::vector<std::string> loads;           ///< Load identifiers → preload (for K_g).
     int num_eigenvalues = 10;                 ///< Number of buckling modes requested.
     Precision sigma = 0;                      ///< Target shift for eigenvalue search (0 = smallest).
 
