@@ -159,10 +159,6 @@ public:
     bool remove(ConditionFamily family, const Condition::Ptr& condition);
     bool contains(ConditionFamily family, const Condition::Ptr& condition) const;
 
-    // Discard every active manager reference in the selected history family.
-    // No external collector or parser-owned shared pointer is modified.
-    void clear(ConditionFamily family);
-
     // Read the live active set without copying it. Readers must not retain
     // iterators across later insertions or removals of this family.
     const Conditions& get(ConditionFamily family) const;

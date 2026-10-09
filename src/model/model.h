@@ -158,13 +158,8 @@ struct Model {
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    // Condition resources and collector entries. Structural loads, supports and
-    // thermal boundaries all derive from Condition; the selected Model method
-    // determines the named collector receiving the shared definition.
-    void add_load             (bc::Condition::Ptr condition);
-    void add_amplitude        (bc::Amplitude::Ptr amplitude);
-    void add_support          (bc::Support::Ptr support);
-    void add_thermal_condition(bc::Condition::Ptr condition);
+    // Register a named, reusable time-history definition.
+    void add_amplitude(bc::Amplitude::Ptr amplitude);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal

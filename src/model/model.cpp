@@ -315,30 +315,6 @@ void Model::add_surfaces_to_assembly_set(const std::string& set, const std::stri
 }
 
 /**
- * Transfers one load into the currently active load collector.
- *
- * Structural load conditions reference compiled assembly regions, so
- * registration is permitted only after the semantic topology has been
- * flattened. The shared Condition pointer is stored in the active load
- * collector; collector membership supplies the structural-load grouping.
- *
- * @param condition Structural load condition to register.
- */
-void Model::add_load(bc::Condition::Ptr condition) {
-    // Validate the compiled model state, shared definition and collector target
-    logging::error(_data != nullptr && _data->compiled,
-        "Model: loads require a compiled model");
-    logging::error(condition != nullptr,
-        "Model: cannot add a null load condition");
-    logging::error(_data->load_cols.has_any() && _data->load_cols.get() != nullptr,
-        "Model: no load collector is active");
-
-    // Collector membership supplies the structural-load semantics; the stored
-    // object itself uses the common Condition interface.
-    _data->load_cols.get()->add(std::move(condition));
-}
-
-/**
  * Registers one named amplitude as a shared model definition.
  *
  * Amplitudes are independent of part/instance identifier flattening and may be
@@ -356,54 +332,6 @@ void Model::add_amplitude(bc::Amplitude::Ptr amplitude) {
 
     // Transfer the unique named definition into persistent model storage
     _data->amplitudes.add(std::move(amplitude));
-}
-
-/**
- * Transfers one support into the currently active support collector.
- *
- * Supports resolve compiled assembly regions when constraint equations are
- * collected. Registration therefore requires a compiled model and an active
- * collector. Shared ownership allows the same immutable support definition to
- * be retained by both a named collector and condition-history state.
- *
- * @param support Non-null support definition to register.
- */
-void Model::add_support(bc::Support::Ptr support) {
-    // Validate the compiled model state, ownership and collector target before
-    // publishing the shared definition.
-    logging::error(_data != nullptr && _data->compiled,
-        "Model: supports require a compiled model");
-    logging::error(support != nullptr,
-        "Model: cannot add a null support");
-    logging::error(_data->supp_cols.has_any() && _data->supp_cols.get() != nullptr,
-        "Model: no support collector is active");
-
-    // The collector stores another shared reference; no support object is copied.
-    _data->supp_cols.get()->add(std::move(support));
-}
-
-/**
- * Transfers one thermal boundary condition into the active thermal collector.
- *
- * Temperature, heat-flux and convection definitions all reference compiled
- * assembly regions. They are therefore registered only after model compilation
- * and share one physical-domain collector independent of their concrete
- * solver-facing contribution.
- *
- * @param condition Thermal boundary condition to register.
- */
-void Model::add_thermal_condition(bc::Condition::Ptr condition) {
-    // Thermal boundary definitions operate on compiled assembly topology
-    logging::error(_data != nullptr && _data->compiled,
-        "Model: thermal conditions require a compiled model");
-    logging::error(condition != nullptr,
-        "Model: cannot add a null thermal condition");
-    logging::error(_data->thermal_cols.has_any() && _data->thermal_cols.get() != nullptr,
-        "Model: no thermal collector is active");
-
-    // Collector membership supplies the thermal-domain grouping while the
-    // concrete object remains owned through the common Condition base.
-    _data->thermal_cols.get()->add(std::move(condition));
 }
 
 /**

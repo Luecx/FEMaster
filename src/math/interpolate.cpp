@@ -259,32 +259,6 @@ DynamicMatrix interpolate(const RowMatrix& xyz,
     }
     return interpolate<CUBIC>(xyz, values, center, r2_values);
 }
-
-Interpolator::Interpolator(InterpolationFunction method, float accuracy)
-    : m_method(method), m_accuracy(accuracy) {}
-
-void Interpolator::set_function(InterpolationFunction method) {
-    m_method = method;
-}
-
-InterpolationFunction Interpolator::get_function() const {
-    return m_method;
-}
-
-void Interpolator::set_accuracy(float accuracy) {
-    m_accuracy = accuracy;
-}
-
-float Interpolator::get_accuracy() const {
-    return m_accuracy;
-}
-
-DynamicMatrix Interpolator::operator()(const RowMatrix& xyz,
-                                       const RowMatrix& values,
-                                       const Vec3& center,
-                                       DynamicVector* r2_values) {
-    return interpolate(xyz, values, center, r2_values, m_accuracy, m_method);
-}
 } // namespace interpolate
 } // namespace math
 } // namespace fem
