@@ -52,6 +52,7 @@ private:
     const model::ModelData* model_data_ = nullptr;
     bool model_written_ = false;
     bool frame_open_ = false;
+    bool rotations_ = false;
     int step_ = 1;
     int increment_ = 0;
     WriterStepType step_type_ = WriterStepType::Static;
