@@ -5,7 +5,9 @@
  * The parser constructs the selected concrete coordinate-system type including
  * its intrinsic name and passes the finished object to
  * `Model::add_coordinate_system()`. This removes the templated coordinate-system
- * factory and duplicate name argument from the model API.
+ * factory and duplicate name argument from the model API. Native TYPE-based
+ * definitions accept DEFINITION as an unused legacy parameter; Abaqus point-based
+ * definitions without TYPE support only DEFINITION=COORDINATES.
  *
  * @see cos::RectangularSystem
  * @see cos::CylindricalSystem
@@ -34,6 +36,18 @@
 
 namespace fem::io::reader::commands {
 
+/**
+ * @brief Registers native vector and Abaqus point-based orientation syntax.
+ *
+ * TYPE selects native rectangular or cylindrical vector definitions, where
+ * DEFINITION remains an unused legacy parameter. Without TYPE, SYSTEM selects
+ * the supported rectangular Abaqus point definition, with optional
+ * DEFINITION=COORDINATES. TYPE and SYSTEM remain mutually exclusive.
+ * Executing a matched data variant adds the constructed system to the model.
+ *
+ * @param registry Registry receiving the orientation command and data variants.
+ * @param model Model receiving the named coordinate-system definitions.
+ */
 void register_orientation(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("ORIENTATION", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
@@ -45,15 +59,17 @@ void register_orientation(fem::io::dsl::Registry& registry, model::Model& model)
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").optional().allowed({"RECTANGULAR", "CYLINDRICAL"})
                 .key("SYSTEM").optional().allowed({"RECTANGULAR"})
-                .key("DEFINITION").optional().allowed({"COORDINATES"})
+                .key("DEFINITION").optional().doc("COORDINATES for Abaqus; unused legacy parameter with TYPE")
                 .key("NAME").required().doc("Coordinate system identifier")
         );
 
         command.on_enter([name](const fem::io::dsl::Keys& keys) {
+            // TYPE selects native vector semantics, while SYSTEM belongs to the
+            // Abaqus point definition. Legacy DEFINITION values do not alter TYPE.
             logging::error(!(keys.has("TYPE") && keys.has("SYSTEM")),
                 "ORIENTATION: TYPE and SYSTEM are mutually exclusive");
-            logging::error(!keys.has("DEFINITION") || !keys.has("TYPE"),
-                "ORIENTATION: DEFINITION=COORDINATES is incompatible with TYPE");
+            logging::error(keys.has("TYPE") || !keys.has("DEFINITION") || keys.raw("DEFINITION") == "COORDINATES",
+                "ORIENTATION: without TYPE, DEFINITION must be COORDINATES");
 
             *name = keys.raw("NAME");
         });

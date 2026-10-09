@@ -229,6 +229,8 @@ TEST(Reader_Parser, OrientationAcceptsTypeOrSystemButNotBoth) {
         std::ofstream out(input_path);
         ASSERT_TRUE(out.is_open());
         out << "*ORIENTATION, NAME=NATIVE, TYPE=RECTANGULAR\n1, 0, 0\n";
+        out << "*ORIENTATION, NAME=LEGACY, TYPE=RECTANGULAR, DEFINITION=VECTOR\n";
+        out << "0, 0, 1, 0, 1, 0\n";
         out << "*ORIENTATION, NAME=ABAQUS, SYSTEM=RECTANGULAR, DEFINITION=COORDINATES\n";
         out << "1, 0, 0, 0, 1, 0\n";
         out << "*ORIENTATION, NAME=DEFAULT\n";
@@ -240,6 +242,14 @@ TEST(Reader_Parser, OrientationAcceptsTypeOrSystemButNotBoth) {
     io::reader::Parser parser;
     ASSERT_NO_THROW(parser.run(input_path, output_path));
     EXPECT_TRUE(parser.model()._data->coordinate_systems.has("NATIVE"));
+    ASSERT_TRUE(parser.model()._data->coordinate_systems.has("LEGACY"));
+
+    // Preserve the direct vector interpretation used by the connector benchmarks.
+    const auto legacy_axes = parser.model()._data->coordinate_systems.get("LEGACY")->get_axes(Vec3::Zero());
+    EXPECT_NEAR(legacy_axes(0, 0), Precision(0), 1e-12);
+    EXPECT_NEAR(legacy_axes(1, 0), Precision(0), 1e-12);
+    EXPECT_NEAR(legacy_axes(2, 0), Precision(1), 1e-12);
+    EXPECT_NEAR(legacy_axes(1, 1), Precision(1), 1e-12);
     EXPECT_TRUE(parser.model()._data->coordinate_systems.has("ABAQUS"));
     ASSERT_TRUE(parser.model()._data->coordinate_systems.has("DEFAULT"));
     ASSERT_TRUE(parser.model()._data->coordinate_systems.has("COORDINATES"));
@@ -257,6 +267,14 @@ TEST(Reader_Parser, OrientationAcceptsTypeOrSystemButNotBoth) {
         ASSERT_TRUE(out.is_open());
         out << "*ORIENTATION, NAME=INVALID, TYPE=RECTANGULAR, SYSTEM=RECTANGULAR\n";
         out << "1, 0, 0, 0, 1, 0\n";
+    }
+    EXPECT_THROW(parser.run(input_path, output_path), std::exception);
+
+    {
+        std::ofstream out(input_path);
+        ASSERT_TRUE(out.is_open());
+        out << "*ORIENTATION, NAME=INVALID, SYSTEM=RECTANGULAR, DEFINITION=VECTOR\n";
+        out << "0, 0, 1, 0, 1, 0\n";
     }
     EXPECT_THROW(parser.run(input_path, output_path), std::exception);
 
