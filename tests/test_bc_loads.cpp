@@ -46,7 +46,7 @@ TEST(BC_Loads, ConditionManagerFamilyIsolation) {
     EXPECT_FALSE(manager.contains(bc::CLOAD, load));
     EXPECT_TRUE(manager.contains(bc::SUPPORT, support));
 
-    manager.clear(bc::SUPPORT);
+    EXPECT_TRUE(manager.remove(bc::SUPPORT, support));
     EXPECT_TRUE(manager.get(bc::SUPPORT).empty());
 }
 
