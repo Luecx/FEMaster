@@ -198,9 +198,9 @@ void FilWriter::add_loadcase(int id, WriterStepType type) {
 void FilWriter::begin_frame(Precision value) {
     logging::error(file_.is_open(), "FilWriter: file not open");
     logging::error(model_written_, "FilWriter: mesh must be written before results");
-    logging::error(step_type_ != WriterStepType::Eigenfrequency &&
-                   step_type_ != WriterStepType::Buckling,
-                   "FilWriter: modal records (1980) are not implemented");
+    logging::error(step_type_ == WriterStepType::Static,
+                   "FilWriter: only static results are supported; harmonic and modal "
+                   "steps need additional Abaqus .fil records");
     end_frame();
 
     const double time = std::isfinite(value) ? static_cast<double>(value) : 0.;
