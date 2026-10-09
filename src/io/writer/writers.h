@@ -1,6 +1,7 @@
 #pragma once
 
 #include "writer_frd.h"
+#include "writer_fil.h"
 #include "writer_femr.h"
 #include "writer_res.h"
 #include "writer_file_formats.h"
@@ -28,6 +29,7 @@ class ResultWriters {
     private:
     std::unique_ptr<ResWriter> res_writer;
     std::unique_ptr<FrdWriter> frd_writer;
+    std::unique_ptr<FilWriter> fil_writer;
     std::unique_ptr<FemrWriter> femr_writer;
 
     public:
@@ -47,6 +49,8 @@ class ResultWriters {
     void write_model_data(const model::ModelData& model_data);
 
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void begin_frame(Precision value);
+    void end_frame();
 
     void write_field(const model::Field& field,
                      const std::string& field_name,
