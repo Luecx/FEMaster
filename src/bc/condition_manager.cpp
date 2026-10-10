@@ -83,20 +83,6 @@ bool ConditionManager::contains(ConditionFamily family, const Condition::Ptr& co
 }
 
 /**
- * @brief Removes every active condition reference in one family.
- *
- * Clearing a family does not change the stored objects themselves, their
- * amplitudes or the conditions in other families. The input reader must
- * independently clear or update any identifier-to-pointer references used
- * to resolve subsequent input-history operations.
- *
- * @param family Independent history family to clear.
- */
-void ConditionManager::clear(ConditionFamily family) {
-    conditions_[family].clear();
-}
-
-/**
  * @brief Returns the currently active condition pointers for one family.
  *
  * Model assembly reads this set directly rather than materializing duplicate

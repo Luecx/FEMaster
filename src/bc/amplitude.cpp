@@ -211,16 +211,6 @@ Interpolation Amplitude::interpolation() const {
 }
 
 /**
- * Removes all support points from the amplitude history.
- *
- * The name and interpolation rule remain unchanged. Subsequent evaluations use
- * the neutral multiplier associated with an empty optional amplitude.
- */
-void Amplitude::clear_samples() {
-    samples_.clear();
-}
-
-/**
  * Inserts or replaces one amplitude support point while preserving time order.
  *
  * A sample within the configured equality tolerance is replaced; otherwise a

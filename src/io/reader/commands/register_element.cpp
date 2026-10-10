@@ -38,6 +38,7 @@
 #include "../../../model/shell/frt_shell_s8.h"
 #include "../../../model/shell/qspt.h"
 #include "../../../model/solid/c3d10.h"
+#include "../../../model/solid/c3d13.h"
 #include "../../../model/solid/c3d15.h"
 #include "../../../model/solid/c3d20.h"
 #include "../../../model/solid/c3d20r.h"
@@ -69,8 +70,8 @@ void register_element(dsl::Registry& registry, model::Model& model) {
             .key("ELSET").optional("EALL")
             .key("TYPE").required().allowed({
                 "C3D4"     , "C3D5"     , "C3D6"     , "C3D8"     ,
-                "C3D8I"    , "C3D8R"    , "C3D10"    , "C3D15"    ,
-                "C3D20"    , "C3D20R"   ,
+                "C3D8I"    , "C3D8R"    , "C3D10"    , "C3D13"    ,
+                "C3D15"    , "C3D20"    , "C3D20R"   ,
                 "B31"      , "B33"      , "T3"       , "T3D2"     ,
                 "S3"       , "S3R"      , "S4"       , "S4R"      ,
                 "S6"       , "S6R"      , "S8"       , "S8R"      ,
@@ -122,6 +123,7 @@ void register_element(dsl::Registry& registry, model::Model& model) {
         register_variant(std::array<model::C3D8I*,   8>{}, {"C3D8I"});
         register_variant(std::array<model::C3D8R*,   8>{}, {"C3D8R"});
         register_variant(std::array<model::C3D10*,  10>{}, {"C3D10"});
+        register_variant(std::array<model::C3D13*,  13>{}, {"C3D13"});
         register_variant(std::array<model::C3D15*,  15>{}, {"C3D15"});
         register_variant(std::array<model::C3D20*,  20>{}, {"C3D20"});
         register_variant(std::array<model::C3D20R*, 20>{}, {"C3D20R"});

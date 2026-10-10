@@ -89,10 +89,6 @@ struct Amplitude : fem::Namable {
     // Return the interpolation rule currently selected for this amplitude.
     [[nodiscard]] Interpolation interpolation() const;
 
-    // Remove all support points while preserving the amplitude name and the
-    // selected interpolation rule. This is used when redefining named input.
-    void clear_samples();
-
     // Insert a support point into the sorted sequence. A time that matches an
     // existing sample within the implementation tolerance updates that sample's
     // value instead of creating a second entry.
