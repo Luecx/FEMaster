@@ -15,6 +15,12 @@ K u=f,
 \]
 with the prescribed supports and kinematic constraints applied to the displacement vector \(u\).
 
+For a prescribed temperature state, the actual linear equilibrium is
+\[
+K_0u=f_{\mathrm{ext}}-f_{\mathrm{int}}(0,T),
+\]
+where \(K_0\) is the tangent at zero displacement and the material stress-free temperature. The temperature-dependent internal-force anchor is included once; it is not another mechanical collector. Total recovered stress includes the thermal initial-strain contribution.
+
 \textbf{Nonlinear static}
 \[
 r(u,\lambda)=f_\mathrm{int}(u)-\lambda f_\mathrm{ext}=0,
@@ -63,6 +69,8 @@ Native \cmd{LOADCASE} begins an analysis definition. \key{TYPE} selects one of t
 Commands inside the loadcase select support and load collectors and configure the numerical procedure. Their validity depends on the analysis type: for example, \cmd{TIME} and \cmd{NEWMARK} belong to \val{LINEARTRANSIENT}, \cmd{FREQUENCIES} belongs to \val{LINEARHARMONIC}, and \cmd{NONLINEAR} belongs to \val{NONLINEARSTATIC}.
 
 A deck may contain several native loadcases, allowing the same structural model to be evaluated under different loads or with different procedures. This does not by itself transfer a converged nonlinear material/geometry state from one loadcase to another; do not interpret successive \cmd{LOADCASE} blocks as a general multistep restart or a nonlinear-preload-to-buckling workflow.
+
+Temperature and initial velocity can be bound as model-level Fields through \cmd{INITIALCONDITION}. Their persistence is separate from nonlinear material-history commitment. In a nonlinear static step, the temperature is fixed while the proportional mechanical load factor evolves. Eigenfrequency, transient, and harmonic operators use the reference linear stiffness; these procedures do not automatically establish a thermally equilibrated prestress state.
 
 Each loadcase selects the previously defined collectors that participate in that analysis. A load that exists in the model but is not selected through \cmd{LOADS} does not contribute to the native loadcase.
 
@@ -286,6 +294,8 @@ The data line begins with the positive number of requested modes.
 
 The mode shapes \(\phi_i\) describe relative deformation patterns; their arbitrary scale is not a physical vibration amplitude. Frequencies are determined by both stiffness and mass, so density, concentrated masses, Sections, and support conditions must all be physically meaningful.
 
+Native input additionally supports \cmd{EIGENVALUERANGE} for an open interval of \(\lambda=\omega^2\), documented in Chapter~\ref{chap:numerical-controls}. The Abaqus procedure shown here selects a count.
+
 \key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} as supported Abaqus syntax. FEMaster's own eigensolution settings determine the numerical backend used for the calculation.
 
 \begin{keyworddata}
@@ -323,6 +333,8 @@ Abaqus \cmd{BUCKLE} selects linear eigenvalue buckling. The analysis first estab
 Depending on the sign convention used for \(K_G\), the equivalent generalized eigenproblem may be written with \(-K_G\) on the right-hand side.
 
 The eigenvalue \(\lambda_i\) is a multiplier on the reference preload, not an absolute force. If the preload corresponds to 10 kN and the first factor is 3.2, the linearized critical load associated with that mode is 32 kN. This interpretation is valid only within the assumptions of linear eigenvalue buckling; imperfections, material nonlinearity, contact changes, and nonlinear prebuckling deformation are not represented by the eigenvalue alone.
+
+With a prescribed temperature state, preload equilibrium includes \(f_{\mathrm{int}}(0,T)\), and geometric stiffness is obtained directly from the element's thermal/mechanical prestress at the recovered preload displacement. It is not reconstructed from averaged nodal stress. The factor scales the geometric contribution of that combined reference preload; it must not be interpreted as an independent mechanical-load multiplier at fixed thermal prestress.
 
 The first data value is the positive number of requested buckling modes. \key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} as supported Abaqus syntax.
 
