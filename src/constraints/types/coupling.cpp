@@ -13,6 +13,7 @@
 
 #include "coupling.h"
 
+#include "../../math/vec_util.h"
 #include "../../model/model_data.h"
 #include <sstream>
 #include <stdexcept>
@@ -192,26 +193,15 @@ void Coupling::apply_loads(model::ModelData& model_data, model::Field& load_matr
     // If you add weights, prefer scaling A's 3-column blocks by 1/sqrt(w_i) and
     // then build G = As * As^T for improved conditioning.
 
-    auto skew = [](Precision rx, Precision ry, Precision rz) {
-        Eigen::Matrix<Precision, 3, 3> S;
-        S <<  0,   -rz,  ry,
-              rz,   0,  -rx,
-             -ry,  rx,   0;
-        return S;
-    };
-
     for (std::size_t k = 0; k < n; ++k) {
         const ID i = ids[k];
         const Index row = static_cast<Index>(i);
         const Vec3 r = X.row_vec3(row) - master_pos;
-        const Precision rx = r(0);
-        const Precision ry = r(1);
-        const Precision rz = r(2);
 
         // Top block: ... I3 ...
         A.block<3,3>(0, 3 * (Eigen::Index)k).setIdentity();
         // Bottom block: ... [r_i]_x ...
-        A.block<3,3>(3, 3 * (Eigen::Index)k) = skew(rx, ry, rz);
+        A.block<3,3>(3, 3 * (Eigen::Index)k) = math::skew(r);
     }
 
     // Build Gram matrix G = A * W^{-1} * A^T; here W^{-1}=I -> G = A*A^T (6x6)
