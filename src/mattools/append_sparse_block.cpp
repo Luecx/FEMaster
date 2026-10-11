@@ -31,7 +31,8 @@ namespace mattools {
  * for summation by a subsequent Eigen setFromTriplets call.
  *
  * Offset and block extent validation precedes insertion to prevent overflow
- * when converting FEMaster's unsigned Index to Eigen's Triplet::StorageIndex.
+ * when converting FEMaster's unsigned Index to SparseMatrix::StorageIndex,
+ * which matches the storage index type of the core Triplet alias.
  * The destination matrix is not supplied, so its dimensions must be checked by
  * the caller. The caller also owns buffer capacity planning across all blocks.
  *
@@ -54,7 +55,7 @@ void append_sparse_block(TripletList&        triplets,
                          Index               col_offset,
                          Precision           factor) {
     // Validate offsets before subtraction, then verify the largest block indices.
-    using StorageIndex = Triplet::StorageIndex;
+    using StorageIndex = SparseMatrix::StorageIndex;
     const Index maximum_index = static_cast<Index>(std::numeric_limits<StorageIndex>::max());
     logging::error(row_offset <= maximum_index && col_offset <= maximum_index,
         "append_sparse_block: offsets exceed triplet storage index range");

@@ -23,7 +23,7 @@ namespace mattools {
 // (row_offset+i, col_offset+j). Support rectangular blocks and preserve existing
 // triplets, duplicate coordinates and explicitly stored zeros. Empty blocks add
 // nothing; nonfinite coefficients follow ordinary scalar multiplication.
-// Validate that offsets and block indices fit Triplet::StorageIndex before
+// Validate that offsets and block indices fit SparseMatrix::StorageIndex before
 // insertion. The caller reserves buffer capacity, checks destination dimensions
 // and constructs the final sparse matrix, where Eigen can sum duplicate entries.
 void append_sparse_block(TripletList&        triplets,
