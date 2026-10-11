@@ -20,6 +20,7 @@
 #include "../constraints/types/rbm.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.h"
+#include "../mattools/all_finite.h"
 #include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../solve/eigval/solve_eigval.h"
@@ -239,22 +240,11 @@ void LinearStaticTopo::run() {
         "assembling constraint system RHS"
     );
 
-    {
-        bool badA = false;
-        for (int k = 0; k < A.outerSize(); ++k) {
-            for (Eigen::SparseMatrix<Precision>::InnerIterator it(A, k); it; ++it) {
-                if (!std::isfinite(it.value())) {
-                    badA = true;
-                    break;
-                }
-            }
-            if (badA) break;
-        }
-        logging::error(!badA,
-            "Matrix A contains NaN/Inf entries");
-        logging::error(b.allFinite(),
-            "b contains NaN/Inf entries");
-    }
+    // Reject nonfinite system coefficients before passing them to the solver.
+    logging::error(mattools::all_finite(A),
+        "Matrix A contains NaN/Inf entries");
+    logging::error(b.allFinite(),
+        "b contains NaN/Inf entries");
 
     auto q = Timer::measure(
         [&]() { return solve(device, method, A, b, direct_matrix_type); },

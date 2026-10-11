@@ -20,6 +20,7 @@
 #include "arc_length_control.h"
 
 #include "../../core/logging.h"
+#include "../../mattools/append_sparse_block.h"
 
 #include <algorithm>
 #include <cmath>
@@ -255,11 +256,8 @@ bool ArcLengthControl::solve(
                           + 1
                         );
 
-                        for (Index col = 0; col < static_cast<Index>(tangent.outerSize()); ++col) {
-                            for (SparseMatrix::InnerIterator it(tangent, col); it; ++it) {
-                                triplets.emplace_back(it.row(), it.col(), it.value());
-                            }
-                        }
+                        // Embed the equilibrium tangent before adding load and arc-constraint couplings.
+                        mattools::append_sparse_block(triplets, tangent);
 
                         for (Index i = 0; i < n; ++i) {
                             if (reference_load(i) != Precision(0)) {

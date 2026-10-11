@@ -26,6 +26,7 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/append_sparse_block.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 
@@ -67,6 +68,18 @@ decltype(auto) run_quiet(Function&& function) {
     }
 }
 
+/**
+ * Builds the real representation [A,-B;B,A] of the complex operator A+iB.
+ *
+ * Both inputs must be square and equally sized. The first block coordinate
+ * holds real components and the second holds imaginary components. Scaled
+ * sparse blocks are collected in a shared triplet buffer before constructing
+ * an independent compressed matrix; neither input is modified.
+ *
+ * @param A Real part of the complex operator.
+ * @param B Imaginary part of the complex operator.
+ * @return Real sparse operator with twice the input row and column count.
+ */
 SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
     logging::error(A.rows() == A.cols(),
         "LinearHarmonic: A must be square");
@@ -75,25 +88,16 @@ SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
     logging::error(A.rows() == B.rows(),
         "LinearHarmonic: A and B size mismatch");
 
-    using Triplet = Eigen::Triplet<Precision, Index>;
-
+    // Reserve all four blocks before embedding real and imaginary coefficients.
     const Index n = static_cast<Index>(A.rows());
-    std::vector<Triplet> triplets;
+    TripletList triplets;
     triplets.reserve(2 * (A.nonZeros() + B.nonZeros()));
 
-    for (Index outer = 0; outer < static_cast<Index>(A.outerSize()); ++outer) {
-        for (SparseMatrix::InnerIterator it(A, outer); it; ++it) {
-            triplets.emplace_back(it.row(),     it.col(),     it.value());
-            triplets.emplace_back(it.row() + n, it.col() + n, it.value());
-        }
-    }
-
-    for (Index outer = 0; outer < static_cast<Index>(B.outerSize()); ++outer) {
-        for (SparseMatrix::InnerIterator it(B, outer); it; ++it) {
-            triplets.emplace_back(it.row(),     it.col() + n, -it.value());
-            triplets.emplace_back(it.row() + n, it.col(),      it.value());
-        }
-    }
+    // (A+iB)(u_r+i u_i) gives A*u_r-B*u_i and B*u_r+A*u_i.
+    mattools::append_sparse_block(triplets, A, 0, 0);
+    mattools::append_sparse_block(triplets, A, n, n);
+    mattools::append_sparse_block(triplets, B, 0, n, Precision(-1));
+    mattools::append_sparse_block(triplets, B, n, 0);
 
     SparseMatrix result(2 * n, 2 * n);
     result.setFromTriplets(triplets.begin(), triplets.end());

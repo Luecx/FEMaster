@@ -1,6 +1,24 @@
+/**
+ * @file constraint_transformer_lagrange.cpp
+ * @brief Implements Lagrange-multiplier system assembly and force recovery.
+ *
+ * The constraint transformer couples structural equilibrium K*u=f to C*u=d
+ * through a scaled saddle-point system. This file handles constraint row
+ * scaling, multiplier regularization and recovery of constraint forces.
+ * ConstraintSystem owns equation data; matrix tools provide sparse block
+ * insertion and diagonal magnitudes independently of constraint semantics.
+ *
+ * @see ConstraintTransformer
+ * @see ConstraintSystem
+ * @author Finn Eggers
+ * @date 11.10.2026
+ */
+
 #include "constraint_transformer.h"
 
 #include "../../core/logging.h"
+#include "../../mattools/append_sparse_block.h"
+#include "../../mattools/max_abs_diagonal.h"
 
 #include <Eigen/SparseCholesky>
 #include <Eigen/SparseQR>
@@ -44,25 +62,41 @@ DynamicVector ConstraintTransformer::scale_lagrange_rows(const DynamicVector& va
     return values;
 }
 
+/**
+ * Determines the multiplier regularization from the structural diagonal scale.
+ *
+ * Use the maximum absolute stiffness diagonal with a unit fallback for zero or
+ * nonfinite scales. No constraints or a disabled regularization return zero.
+ * The matrix and transformer state remain unchanged.
+ *
+ * @param K Structural stiffness matrix in full-system displacement coordinates.
+ * @return Configured regularization factor times the usable diagonal scale.
+ */
 Precision ConstraintTransformer::lagrange_regularization(const SparseMatrix& K) const {
     if (system_.equations == 0 || lagrange_regularization_ <= Precision(0)) {
         return Precision(0);
     }
 
-    Precision stiffness_scale = Precision(0);
-    for (int column = 0; column < K.outerSize(); ++column) {
-        for (SparseMatrix::InnerIterator entry(K, column); entry; ++entry) {
-            if (entry.row() == column) {
-                stiffness_scale = std::max(stiffness_scale, std::abs(entry.value()));
-            }
-        }
-    }
+    // Measure the diagonal scale; retain the local fallback for unusable values.
+    Precision stiffness_scale = mattools::max_abs_diagonal(K);
     if (!std::isfinite(stiffness_scale) || stiffness_scale <= Precision(0)) {
         stiffness_scale = Precision(1);
     }
     return lagrange_regularization_ * stiffness_scale;
 }
 
+/**
+ * Constructs the scaled saddle-point operator [K,C_s^T;C_s,-r*I].
+ *
+ * Displacement coordinates precede multiplier coordinates. C_s=D*C uses the
+ * stored constraint row scales, and r is the stiffness-scaled multiplier
+ * regularization. Validate the structural dimensions, collect all block
+ * contributions and return independent compressed sparse storage. Inputs and
+ * transformer state remain unchanged; a disabled r omits the diagonal block.
+ *
+ * @param K Full-system structural stiffness with one row and column per DOF.
+ * @return Coupled displacement/multiplier matrix.
+ */
 SparseMatrix ConstraintTransformer::assemble_lagrange_matrix(const SparseMatrix& K) const {
     logging::error(static_cast<Index>(K.rows()) == system_.dofs && static_cast<Index>(K.cols()) == system_.dofs,
         "[Lagrange] stiffness matrix size mismatch");
@@ -73,11 +107,8 @@ SparseMatrix ConstraintTransformer::assemble_lagrange_matrix(const SparseMatrix&
         K.nonZeros() + 2 * system_.C.nonZeros() + system_.equations
     ));
 
-    for (int column = 0; column < K.outerSize(); ++column) {
-        for (SparseMatrix::InnerIterator entry(K, column); entry; ++entry) {
-            entries.emplace_back(entry.row(), column, entry.value());
-        }
-    }
+    // Embed structural stiffness in the displacement block of the saddle-point system.
+    mattools::append_sparse_block(entries, K);
 
     for (int column = 0; column < system_.C.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
@@ -124,6 +155,21 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
     return solution.tail(system_.equations);
 }
 
+/**
+ * Recovers multipliers satisfying C^T*lambda=f-K*u in full-system coordinates.
+ *
+ * Solve the regularized normal equations (C*C^T+r*I)*lambda=C*(f-K*u)
+ * using sparse LDLT. Scale r from the largest absolute normal-matrix diagonal
+ * with a unit fallback for an unusable scale. If factorization or finite
+ * solution recovery fails, solve C^T*lambda=f-K*u through sparse QR instead.
+ * An unconstrained system returns an empty vector. Inputs and transformer
+ * state are unchanged.
+ *
+ * @param K Full-system structural stiffness.
+ * @param f Full-system external force vector.
+ * @param u Full-system displacement vector.
+ * @return Multipliers in the original, unscaled constraint row coordinates.
+ */
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
                                                        const DynamicVector& u) const {
@@ -137,14 +183,8 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
     SparseMatrix normal = system_.C * system_.C.transpose();
     normal.makeCompressed();
 
-    Precision max_diagonal = Precision(0);
-    for (int column = 0; column < normal.outerSize(); ++column) {
-        for (SparseMatrix::InnerIterator entry(normal, column); entry; ++entry) {
-            if (entry.row() == column) {
-                max_diagonal = std::max(max_diagonal, std::abs(entry.value()));
-            }
-        }
-    }
+    // Measure the diagonal scale; retain the local fallback for unusable values.
+    Precision max_diagonal = mattools::max_abs_diagonal(normal);
     if (!std::isfinite(max_diagonal) || max_diagonal <= Precision(0)) {
         max_diagonal = Precision(1);
     }
