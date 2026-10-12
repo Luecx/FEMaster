@@ -158,6 +158,10 @@ struct Field {
           Index       row_count,
           Index       component_count);
 
+    // Creates independent storage with this field's domain and dimensions.
+    [[nodiscard]] Field zeros_like(std::string field_name) const;
+    [[nodiscard]] Field nan_like(std::string field_name) const;
+
     // Returns a field component by mutable or constant access
     Precision& operator()(Index row, Index component);
     Precision  operator()(Index row, Index component) const;

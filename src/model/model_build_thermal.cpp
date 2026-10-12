@@ -218,7 +218,7 @@ Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) 
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
-    Field rhs{"THERMAL_LOAD", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
+    Field rhs = _data->create_field_("THERMAL_LOAD", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
     const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();
@@ -263,7 +263,7 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
         "Model: thermal DOF map must contain exactly one component");
 
     const int system_size = system_dof_ids.size() == 0 ? 0 : system_dof_ids.maxCoeff() + 1;
-    Field rhs{"THERMAL_BOUNDARY_SOURCE", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
+    Field rhs = _data->create_field_("THERMAL_BOUNDARY_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
     constraint::Equations equations{};
@@ -297,7 +297,7 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
  */
 constraint::Equations Model::collect_thermal_constraints() {
     // Prepare all common outputs, retaining only prescribed-temperature rows
-    Field rhs{"THERMAL_CONSTRAINT_SOURCE", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 1};
+    Field rhs = _data->create_field_("THERMAL_CONSTRAINT_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
     const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();

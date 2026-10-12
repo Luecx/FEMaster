@@ -234,7 +234,7 @@ Field::Ptr ModelData::create_field(const std::string& name,
 Field ModelData::create_field_(const std::string& name,
                                FieldDomain        domain,
                                Index              components,
-                               bool               fill_nan) {
+                               bool               fill_nan) const {
     // Validate and allocate temporary storage from the requested domain
     logging::error(!name.empty(),
         "Field name cannot be empty");
@@ -362,7 +362,7 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
 
     // Gather and normalize each global node independently. OpenMP partitions the
     // target rows, so no two workers can write the same nodal result entry.
-    Field nodal{name, FieldDomain::NODE, node_count, element_nodal.components};
+    Field nodal = create_field_(name, FieldDomain::NODE, element_nodal.components, false);
     nodal.set_zero();
 
     parallel::for_index(node_count, global_config.max_threads,

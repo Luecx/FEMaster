@@ -315,7 +315,7 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  */
 Field Model::build_load_matrix(Precision time, Precision step_progress) {
     // Initialize global generalized forces and the unused common outputs
-    Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
+    Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
 
     constraint::Equations equations{};
@@ -376,7 +376,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
             return candidate.first == condition->amplitude_;
         });
         if (entry == basis.end()) {
-            Field load_matrix{"LOAD_BASIS", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
+            Field load_matrix = _data->create_field_("LOAD_BASIS", FieldDomain::NODE, 6, false);
             load_matrix.set_zero();
             basis.emplace_back(condition->amplitude_, std::move(load_matrix));
             entry = std::prev(basis.end());
@@ -427,94 +427,69 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
  * @return Constraint equations grouped and annotated by their origin.
  */
 constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids) {
-    // Prepare grouped equations and outputs unused by support prescriptions
+    // Prepare grouped equations and temporary data required by support prescriptions
     constraint::ConstraintGroups groups{};
     Field                       rhs{};
     TripletList                 matrix{};
-    Index                       support_idx = 0;
 
-    // Expand one support and preserve its origin on every generated equation row
-    auto add_support = [&](const bc::Condition::Ptr& condition) {
-        constraint::Equations equations;
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
-        for (auto& equation : equations) {
-            equation.source       = constraint::EquationSourceKind::Support;
-            equation.source_index = support_idx;
-            groups.supports.push_back(std::move(equation));
+    // Collect equations from a sequence of constraint objects. Each generated
+    // equation retains the source type and index of its originating object.
+    auto collect = [&](auto& items, auto source, auto& target, auto get_equations) {
+        Index index = 0;
+        for (auto& item : items) {
+            // Generate all equations associated with the current constraint object
+            auto equations = get_equations(item);
+
+            // Assign the same source index to all equations from this object
+            // and move them into their corresponding constraint group
+            for (auto& equation : equations) {
+                equation.source       = source;
+                equation.source_index = index;
+                target.push_back(std::move(equation));
+            }
+
+            // Advance once per constraint object, not per generated equation
+            ++index;
         }
-        ++support_idx;
     };
 
-    // All currently active supports are stored in the support family
-    for (const auto& condition : _data->conditions.get(bc::SUPPORT)) {
-        add_support(condition);
-    }
+    // Generate equations from topology-dependent constraints using the active
+    // system DOF numbering and the current model data
+    auto get_equations = [&](auto& item) {
+        return item.get_equations(system_dof_ids, *_data);
+    };
 
-    // Generate topology-dependent constraints in their established model order
-    Index connector_idx = 0;
-    for (auto& connector : _data->connectors) {
-        auto eqs = connector.get_equations(system_dof_ids, *_data);
-        for (auto& eq : eqs) {
-            eq.source       = constraint::EquationSourceKind::Connector;
-            eq.source_index = connector_idx;
-            groups.connectors.push_back(std::move(eq));
-        }
-        ++connector_idx;
-    }
+    // Expand prescribed supports into equations using the condition interface.
+    // The temporary right-hand side and matrix are required by apply(), while
+    // the generated equations are returned for grouping.
+    auto get_supports = [&](const bc::Condition::Ptr& condition) {
+        constraint::Equations equations{};
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+        return equations;
+    };
 
-    Index mpc_idx = 0;
-    for (auto& mpc : _data->mpcs) {
-        auto eqs = mpc.get_equations(system_dof_ids, *_data);
-        for (auto& eq : eqs) {
-            eq.source       = constraint::EquationSourceKind::Mpc;
-            eq.source_index = mpc_idx;
-            groups.mpcs.push_back(std::move(eq));
-        }
-        ++mpc_idx;
-    }
+    // Collect active supports and topology-dependent constraints in model order.
+    // Each constraint family receives its own source indexing and output group.
+    using Source = constraint::EquationSourceKind;
 
-    Index coupling_idx = 0;
-    for (auto& coupling : _data->couplings) {
-        auto eqs = coupling.get_equations(system_dof_ids, *_data);
-        for (auto& eq : eqs) {
-            eq.source       = constraint::EquationSourceKind::Coupling;
-            eq.source_index = coupling_idx;
-            groups.couplings.push_back(std::move(eq));
-        }
-        ++coupling_idx;
-    }
+    collect(_data->conditions.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
+    collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
+    collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
+    collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
+    collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
+    collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
 
-    Index tie_idx = 0;
-    for (auto& tie : _data->ties) {
-        auto eqs = tie.get_equations(system_dof_ids, *_data);
-        for (auto& eq : eqs) {
-            eq.source       = constraint::EquationSourceKind::Tie;
-            eq.source_index = tie_idx;
-            groups.ties.push_back(std::move(eq));
+    // Append manually defined equations without regenerating their coefficients.
+    // Preserve explicitly assigned source types and mark unknown origins as manual.
+    Index manual_idx = 0;
+    for (auto equation : _data->equations) {
+        if (equation.source == Source::Unknown) {
+            equation.source = Source::Manual;
         }
-        ++tie_idx;
-    }
 
-    Index rbm_idx = 0;
-    for (auto& rbm : _data->rbms) {
-        auto eqs = rbm.get_equations(system_dof_ids, *_data);
-        for (auto& eq : eqs) {
-            eq.source       = constraint::EquationSourceKind::Rbm;
-            eq.source_index = rbm_idx;
-            groups.rbms.push_back(std::move(eq));
-        }
-        ++rbm_idx;
-    }
-
-    if (!_data->equations.empty()) {
-        Index manual_idx = 0;
-        for (auto eq : _data->equations) {
-            if (eq.source == constraint::EquationSourceKind::Unknown) {
-                eq.source = constraint::EquationSourceKind::Manual;
-            }
-            eq.source_index = manual_idx++;
-            groups.others.push_back(std::move(eq));
-        }
+        // Preserve the original ordering for diagnostics and source identification
+        equation.source_index = manual_idx++;
+        groups.others.push_back(std::move(equation));
     }
 
     return groups;
