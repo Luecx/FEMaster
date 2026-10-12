@@ -240,7 +240,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
 
     // CalculiX-style rigid body: a full kinematic coupling on an NSET.
     // ROT NODE is accepted for deck compatibility; no second rotation node is created.
-    registry.command("RIGID BODY", [&](fem::io::dsl::Command& command) {
+    registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
         command.doc("Rigidly couple a node set to one reference node.");
         command.keyword(
