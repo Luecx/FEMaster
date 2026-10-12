@@ -123,7 +123,7 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
     });
 
     // Abaqus generalized beam section with directly specified geometric properties
-    registry.command("BEAM GENERAL SECTION", [&](dsl::Command& command) {
+    registry.command("BEAMGENERALSECTION", [&](dsl::Command& command) {
         command.allow_if(dsl::Condition::parent_is({"ROOT", "PART"}));
         command.doc("Define A, I11, I12, I22 and J, using MATERIAL or direct E, G and alpha.");
 
@@ -188,6 +188,8 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
             // A density override is section-local and must not change the named material
             if (*density >= Precision(0)) {
                 if (!material->empty()) {
+                    logging::error(assigned->has_elasticity(),
+                        "BEAM GENERAL SECTION: DENSITY override requires material elasticity");
                     const auto* iso = assigned->elasticity()->as<material::IsotropicElasticity>();
                     logging::error(iso != nullptr,
                         "BEAM GENERAL SECTION: DENSITY override requires isotropic material");
