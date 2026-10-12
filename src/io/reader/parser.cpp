@@ -312,7 +312,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
         part->execute_children("SOLIDSECTION");
         part->execute_children("BEAMSECTION");
-    execute_children("BEAMGENERALSECTION");
+        part->execute_children("BEAMGENERALSECTION");
         part->execute_children("TRUSSSECTION");
         part->execute_children("SHELLSECTION");
 
