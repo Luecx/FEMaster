@@ -76,9 +76,20 @@ Precision BeamElement<N>::volume() {
 
 template<Index N>
 Mat3 BeamElement<N>::base_rotation_matrix() {
-    Vec3 x = (this->node_position(1) - this->node_position(0)).normalized();
+    // Validate the element axis before normalizing its direction
+    const Vec3 axis = this->node_position(1) - this->node_position(0);
+    logging::error(axis.norm() > Precision(1e-12),
+        "Beam element ", this->elem_id, ": degenerate beam axis");
+
+    Vec3 x = axis.normalized();
     Vec3 y = orientation_direction();
-    Vec3 z = x.cross(y).normalized();
+    Vec3 z = x.cross(y);
+
+    // Reject a section direction parallel to the element axis
+    logging::error(z.norm() > Precision(1e-12),
+        "Beam element ", this->elem_id, ": section n1 is parallel to the beam axis");
+
+    z.normalize();
     y = z.cross(x).normalized();
 
     Mat3 mat{};
