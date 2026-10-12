@@ -147,7 +147,8 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
     };
 
     // Common compiled reference and slave-region lookup for COUPLING and RIGID BODY.
-    const auto resolve = [&model, ctx](const std::string& master, const std::string& surface) {
+    const auto resolve = [&model, ctx](const std::string& master, const std::string& surface,
+                                        bool only_nodesets = false) {
         *ctx = Context{};
         ctx->master  = master;
         ctx->surface = surface;
@@ -167,7 +168,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
 
             // Resolve the common slave target once. A geometric surface wins if
             // the same name is also present in the node-set namespace.
-            if (model._data->surface_sets.has(ctx->surface)) {
+            if (!only_nodesets && model._data->surface_sets.has(ctx->surface)) {
                 ctx->slave_surfaces = model._data->surface_sets.get(ctx->surface);
                 logging::error(ctx->slave_surfaces != nullptr && ctx->slave_surfaces->size() > 0,
                     "COUPLING: slave surface ", ctx->surface, " is empty");
@@ -175,7 +176,8 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             }
 
             logging::error(model._data->node_sets.has(ctx->surface),
-                "COUPLING: target ", ctx->surface, " is neither a surface nor a node set");
+                "COUPLING: target ", ctx->surface,
+                only_nodesets ? " is not a node set" : " is neither a surface nor a node set");
             ctx->slave_nodes = model._data->node_sets.get(ctx->surface);
             logging::error(ctx->slave_nodes != nullptr && ctx->slave_nodes->size() > 0,
                 "COUPLING: slave node set ", ctx->surface, " is empty");
@@ -252,7 +254,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
             logging::error(!keys.has("ROTNODE"),
                 "RIGIDBODY: ROT NODE is not supported");
-            resolve(keys.raw("REFNODE"), keys.raw("NSET"));
+            resolve(keys.raw("REFNODE"), keys.raw("NSET"), true);
             emit(Dofs{true, true, true, true, true, true},
                  constraint::CouplingType::KINEMATIC);
         });
