@@ -179,7 +179,7 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                     "BEAM GENERAL SECTION: direct properties require positive E and G");
                 const Precision nu = E / (Precision(2) * G) - Precision(1);
                 logging::error(nu > Precision(-1) && nu < Precision(0.5),
-                    "BEAM GENERAL SECTION: E and G imply invalid Poisson ratio");
+                    "BEAM GENERAL SECTION: E and G are incompatible with isotropic elasticity");
                 assigned = std::make_shared<material::Material>("__BEAM_GENERAL_" + *elset);
                 assigned->set_elasticity<material::IsotropicElasticity>(E, nu);
                 assigned->set_thermal_expansion((*elastic)[2]);
