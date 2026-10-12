@@ -61,8 +61,7 @@ void LinearStaticTopo::run() {
     logging::error(density != nullptr,
         "LinearStaticTopo: density field not initialized");
 
-    model::Field::Ptr stiffness = std::make_shared<model::Field>(
-        "TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, density->rows, 1);
+    model::Field::Ptr stiffness = model->_data->create_field("TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, 1, false, false);
 
     for (Index i = 0; i < stiffness->rows; ++i) {
         if (!std::isnan((*density)(i)) && std::isfinite((*density)(i))) {
@@ -138,20 +137,10 @@ void LinearStaticTopo::run() {
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
-    model::Field reference_displacement{
-        "REFERENCE_DISPLACEMENT",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        6
-    };
+    model::Field reference_displacement = model->_data->create_field_("REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
 
-    model::Field reference_internal{
-        "REFERENCE_INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        6
-    };
+    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
     model->build_internal_force(
         reference_internal,
         reference_displacement,

@@ -205,7 +205,7 @@ struct ModelData {
         FieldDomain       domain,
         Index             components,
         bool              fill_nan = true
-    );
+    ) const;
 
     // Weighted projection from element-local nodal rows onto unique global
     // nodes. Element weights control participation and the relative contribution

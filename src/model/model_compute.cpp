@@ -59,13 +59,12 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate disjoint element-nodal recovery fields and participation weights
-    Field element_stress {"ELEMENT_NODAL_STRESS"  , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_strain {"ELEMENT_NODAL_STRAIN"  , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_weights{"STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    Field element_stress = _data->create_field_("ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, 6, false);
+    Field element_strain = _data->create_field_("ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, 6, false);
+    Field element_weights = _data->create_field_("STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
     element_stress .set_zero();
     element_strain .set_zero();
     element_weights.set_zero();
@@ -125,12 +124,11 @@ Field Model::compute_peeq_nodal() {
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate disjoint element-nodal PEEQ storage and participation weights
-    Field element_peeq   {"ELEMENT_NODAL_PEEQ", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
-    Field element_weights{"PEEQ_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    Field element_peeq = _data->create_field_("ELEMENT_NODAL_PEEQ", FieldDomain::ELEMENT_NODAL, 1, false);
+    Field element_weights = _data->create_field_("PEEQ_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
     element_peeq.set_zero();
     element_weights.set_zero();
 
@@ -176,13 +174,12 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate separate element-nodal fields for both faces and their weights
-    Field element_top    {"ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_bot    {"ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_weights{"STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    Field element_top = _data->create_field_("ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, 6, false);
+    Field element_bot = _data->create_field_("ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, 6, false);
+    Field element_weights = _data->create_field_("STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
     element_top.set_zero();
     element_bot.set_zero();
     element_weights.set_zero();
@@ -267,8 +264,8 @@ Field Model::compute_shell_resultants(
     thread_counts.reserve(static_cast<std::size_t>(thread_count));
 
     for (int thread = 0; thread < thread_count; ++thread) {
-        thread_resultants.emplace_back("SHELL_RESULTANTS_THREAD", FieldDomain::NODE, node_count, 8);
-        thread_counts.emplace_back("SHELL_RESULTANTS_COUNT_THREAD", FieldDomain::NODE, node_count, 1);
+        thread_resultants.push_back(_data->create_field_("SHELL_RESULTANTS_THREAD", FieldDomain::NODE, 8, false));
+        thread_counts.push_back(_data->create_field_("SHELL_RESULTANTS_COUNT_THREAD", FieldDomain::NODE, 1, false));
         thread_resultants.back().set_zero();
         thread_counts.back().set_zero();
     }
@@ -294,7 +291,7 @@ Field Model::compute_shell_resultants(
 
 
     // Reduce worker-local contributions independently for every global node
-    Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
+    Field resultants = _data->create_field_("SHELL_RESULTANTS", FieldDomain::NODE, 8, false);
     resultants.set_zero();
 
     parallel::for_index(node_count, global_config.max_threads,
@@ -334,8 +331,7 @@ Field Model::compute_shell_resultants(
  */
 Field Model::compute_compliance(Field& displacement) {
     // Allocate the element-domain result with zeros for unsupported entities
-    const Index element_count = static_cast<Index>(_data->elements.size());
-    Field compliance{"COMPLIANCE", FieldDomain::ELEMENT, element_count, 1};
+    Field compliance = _data->create_field_("COMPLIANCE", FieldDomain::ELEMENT, 1, false);
     compliance.set_zero();
 
     // Delegate compliance evaluation to every structural element
@@ -360,8 +356,7 @@ Field Model::compute_compliance(Field& displacement) {
  */
 Field Model::compute_compliance_angle_derivative(Field& displacement) {
     // Allocate the element-domain orientation gradient
-    const Index element_count = static_cast<Index>(_data->elements.size());
-    Field results{"ORIENTATION_GRAD", FieldDomain::ELEMENT, element_count, 3};
+    Field results = _data->create_field_("ORIENTATION_GRAD", FieldDomain::ELEMENT, 3, false);
     results.set_zero();
 
     // Delegate sensitivity evaluation to every structural element
@@ -385,8 +380,7 @@ Field Model::compute_compliance_angle_derivative(Field& displacement) {
  */
 Field Model::compute_volumes() {
     // Allocate the element-domain physical measure field
-    const Index element_count = static_cast<Index>(_data->elements.size());
-    Field volumes{"VOLUME", FieldDomain::ELEMENT, element_count, 1};
+    Field volumes = _data->create_field_("VOLUME", FieldDomain::ELEMENT, 1, false);
     volumes.set_zero();
 
     // Evaluate the physical measure of every compiled structural element
@@ -423,11 +417,10 @@ Field Model::compute_section_forces(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate zeroed storage for every compiled element-node row
-    Field beam_forces{"BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field beam_forces = _data->create_field_("BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, 6, false);
     beam_forces.set_zero();
 
     // Recover section forces into each element's disjoint nodal row range
@@ -464,11 +457,10 @@ Field Model::compute_shear_flow(Field& displacement) {
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate zeroed storage for every compiled element-node row
-    Field shear_flow{"SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
+    Field shear_flow = _data->create_field_("SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, 1, false);
     shear_flow.set_zero();
 
     // Recover shear flow into each element's disjoint nodal row range
@@ -517,24 +509,13 @@ Field Model::compute_heat_flux(const Field& temperature) {
     logging::error(_data->element_nodal_offsets != nullptr,
         "Model: element nodal offsets are not initialized");
 
-    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
     // Allocate disjoint element-local nodal storage and one participation weight
     // per dense element. Non-thermal elements retain zero weight and therefore do
     // not influence the global nodal average.
-    Field element_heat_flux{
-        "ELEMENT_NODAL_HEAT_FLUX",
-        FieldDomain::ELEMENT_NODAL,
-        total_element_nodes,
-        3
-    };
-    Field element_weights{
-        "HEAT_FLUX_ELEMENT_WEIGHTS",
-        FieldDomain::ELEMENT,
-        element_count,
-        1
-    };
+    Field element_heat_flux = _data->create_field_("ELEMENT_NODAL_HEAT_FLUX", FieldDomain::ELEMENT_NODAL, 3, false);
+    Field element_weights = _data->create_field_("HEAT_FLUX_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
     element_heat_flux.set_zero();
     element_weights.set_zero();
 

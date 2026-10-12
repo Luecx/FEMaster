@@ -172,6 +172,16 @@ Field::Field(std::string field_name,
         "Field '", name, "': components must be positive");
 }
 
+Field Field::zeros_like(std::string field_name) const {
+    return Field(std::move(field_name), domain, rows, components);
+}
+
+Field Field::nan_like(std::string field_name) const {
+    Field result = zeros_like(std::move(field_name));
+    result.fill_nan();
+    return result;
+}
+
 Precision& Field::operator()(Index row, Index component) {
     return values(row, component);
 }

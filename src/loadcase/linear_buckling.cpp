@@ -222,20 +222,10 @@ void LinearBuckling::run() {
 
     // (5) Evaluate the preload force anchor f_int(u0,T) at zero displacement.
     // The linear stiffness remains the base operator K(u0,T0).
-    model::Field reference_displacement{
-        "REFERENCE_DISPLACEMENT",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        6
-    };
+    model::Field reference_displacement = model->_data->create_field_("REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
 
-    model::Field reference_internal{
-        "REFERENCE_INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        6
-    };
+    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
 
     Timer::measure(
         [&]() {

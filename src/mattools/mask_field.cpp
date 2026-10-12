@@ -41,13 +41,7 @@ model::Field mask_field(const model::Field& field,
         "mask_field: field/mask shape mismatch");
 
     // Preserve metadata and initialize undefined entries before selection.
-    model::Field result{
-        name,
-        field.domain,
-        field.rows,
-        field.components
-    };
-    result.fill_nan();
+    model::Field result = field.nan_like(name);
 
     // Copy only selected values without modifying the source field.
     for (Index row = 0; row < field.rows; ++row) {
