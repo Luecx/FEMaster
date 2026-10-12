@@ -288,7 +288,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
     root.execute_children("SOLIDSECTION");
     root.execute_children("BEAMSECTION");
-    execute_children("BEAMGENERALSECTION");
+    root.execute_children("BEAMGENERALSECTION");
     root.execute_children("TRUSSSECTION");
     root.execute_children("SHELLSECTION");
 
