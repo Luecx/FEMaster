@@ -239,7 +239,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
     });
 
     // CalculiX-style rigid body: a full kinematic coupling on an NSET.
-    // ROT NODE is accepted for deck compatibility; no second rotation node is created.
+    // ROT NODE cannot be mapped to FEMaster reference-node rotations and is rejected.
     registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
         command.doc("Rigidly couple a node set to one reference node.");
@@ -247,9 +247,11 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             fem::io::dsl::KeywordSpec::make()
                 .key("NSET").required().doc("Slave node set")
                 .key("REFNODE").required().doc("Reference node or one-node set")
-                .key("ROTNODE").optional().doc("Accepted for CalculiX compatibility; ignored")
+                .key("ROTNODE").optional().doc("Unsupported CalculiX rotation node; rejected if supplied")
         );
         command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
+            logging::error(!keys.has("ROTNODE"),
+                "RIGIDBODY: ROT NODE is not supported");
             resolve(keys.raw("REFNODE"), keys.raw("NSET"));
             emit(Dofs{true, true, true, true, true, true},
                  constraint::CouplingType::KINEMATIC);
