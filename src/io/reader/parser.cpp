@@ -414,7 +414,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Couplings
     // ---------------------------------------------------------------------
-    root.execute_children("RIGID BODY");
+    root.execute_children("RIGIDBODY");
     for (const auto* coupling : root.children("COUPLING")) {
         coupling->enter();
 
@@ -425,7 +425,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     }
 
     for (const auto* assembly : root.children("ASSEMBLY")) {
-        assembly->execute_children("RIGID BODY");
+        assembly->execute_children("RIGIDBODY");
         for (const auto* coupling : assembly->children("COUPLING")) {
             coupling->enter();
 
