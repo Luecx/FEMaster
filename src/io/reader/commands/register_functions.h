@@ -2,8 +2,8 @@
  * @file register_functions.h
  * @brief Declares unified FEMaster and Abaqus command registration functions.
  *
- * The command implementations are split into one translation unit per input
- * command. This header declares the grammar used by the unified reader
+ * Command implementations are grouped into translation units by purpose.
+ * This header declares the grammar used by the unified reader
  * and its command implementation files.
  *
  * Registration only constructs the DSL grammar. The parser owns semantic
