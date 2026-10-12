@@ -148,7 +148,8 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
             elastic->fill(Precision(0));
             *direction = Vec3{0, 0, -1};
             *density = keys.has("DENSITY") ? keys.get<Precision>("DENSITY") : Precision(-1);
-            logging::error(*density >= Precision(0) || *density == Precision(-1),
+            // Distinguish an omitted density from an explicitly invalid negative value
+            logging::error(!keys.has("DENSITY") || *density >= Precision(0),
                 "BEAM GENERAL SECTION: DENSITY must be non-negative");
         });
 
@@ -256,11 +257,18 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                     *direction = Vec3{n1[0], n1[1], n1[2]};
                 })));
 
-        // Without MATERIAL, Abaqus requires a third line for E, G and optional alpha
+        // Without MATERIAL, try the explicit orientation before the elastic data
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::negate(dsl::Condition::key_present("MATERIAL")))
             .segment(geometry())
             .segment(orientation())
+            .segment(elastic_properties()));
+
+        // Abaqus also permits the orientation to be omitted. A separate variant
+        // is needed because both n1 and E/G/alpha can contain three numbers.
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::negate(dsl::Condition::key_present("MATERIAL")))
+            .segment(geometry())
             .segment(elastic_properties()));
     });
 
