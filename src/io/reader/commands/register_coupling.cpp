@@ -146,28 +146,12 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         }
     };
 
-    registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
-        command.doc("Define a coupling reference node and slave surface or node set.");
-
-        command.keyword(
-            fem::io::dsl::KeywordSpec::make()
-                .key("MASTER").alternative("REFNODE").required()
-                    .doc("Reference node or one-node node set")
-                .key("SURFACE").alternative("SLAVE").alternative("SFSET").required()
-                    .doc("Slave surface or node set")
-                .key("TYPE").optional().allowed({"KINEMATIC", "STRUCTURAL"})
-                    .doc("Legacy direct coupling type; omit to use a child scope")
-        );
-
-        command.on_enter([&model, ctx](const fem::io::dsl::Keys& keys) {
-            // Every parent definition owns a fresh context; child commands retain
-            // this exact object until the parent scope closes.
-            *ctx = Context{};
-            ctx->master  = keys.raw("MASTER");
-            ctx->surface = keys.raw("SURFACE");
-            ctx->type    = keys.has("TYPE") ? keys.raw("TYPE") : std::string{};
-
+    // Common compiled reference and slave-region lookup for COUPLING and RIGID BODY.
+    const auto resolve = [&model, ctx](const std::string& master, const std::string& surface,
+                                        bool only_nodesets = false) {
+        *ctx = Context{};
+        ctx->master  = master;
+        ctx->surface = surface;
             logging::error(model._data->compiled,
                 "COUPLING: constraints require a compiled model");
 
@@ -184,7 +168,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
 
             // Resolve the common slave target once. A geometric surface wins if
             // the same name is also present in the node-set namespace.
-            if (model._data->surface_sets.has(ctx->surface)) {
+            if (!only_nodesets && model._data->surface_sets.has(ctx->surface)) {
                 ctx->slave_surfaces = model._data->surface_sets.get(ctx->surface);
                 logging::error(ctx->slave_surfaces != nullptr && ctx->slave_surfaces->size() > 0,
                     "COUPLING: slave surface ", ctx->surface, " is empty");
@@ -192,10 +176,30 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             }
 
             logging::error(model._data->node_sets.has(ctx->surface),
-                "COUPLING: target ", ctx->surface, " is neither a surface nor a node set");
+                "COUPLING: target ", ctx->surface,
+                only_nodesets ? " is not a node set" : " is neither a surface nor a node set");
             ctx->slave_nodes = model._data->node_sets.get(ctx->surface);
             logging::error(ctx->slave_nodes != nullptr && ctx->slave_nodes->size() > 0,
                 "COUPLING: slave node set ", ctx->surface, " is empty");
+    };
+
+    registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.doc("Define a coupling reference node and slave surface or node set.");
+
+        command.keyword(
+            fem::io::dsl::KeywordSpec::make()
+                .key("MASTER").alternative("REFNODE").required()
+                    .doc("Reference node or one-node node set")
+                .key("SURFACE").alternative("SLAVE").alternative("SFSET").required()
+                    .doc("Slave surface or node set")
+                .key("TYPE").optional().allowed({"KINEMATIC", "STRUCTURAL"})
+                    .doc("Legacy direct coupling type; omit to use a child scope")
+        );
+
+        command.on_enter([ctx, resolve](const fem::io::dsl::Keys& keys) {
+            resolve(keys.raw("MASTER"), keys.raw("SURFACE"));
+            ctx->type = keys.has("TYPE") ? keys.raw("TYPE") : std::string{};
         });
 
         command.on_exit([ctx](const fem::io::dsl::Keys&) {
@@ -234,6 +238,27 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 fem::io::dsl::Condition::key_present("TYPE")
             ))
         );
+    });
+
+    // CalculiX-style rigid body: a full kinematic coupling on an NSET.
+    // ROT NODE cannot be mapped to FEMaster reference-node rotations and is rejected.
+    registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.doc("Rigidly couple a node set to one reference node.");
+        command.keyword(
+            fem::io::dsl::KeywordSpec::make()
+                .key("NSET").required().doc("Slave node set")
+                .key("REFNODE").required().doc("Reference node or one-node set")
+                .key("ROTNODE").optional().doc("Unsupported CalculiX rotation node; rejected if supplied")
+        );
+        command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
+            logging::error(!keys.has("ROTNODE"),
+                "RIGIDBODY: ROT NODE is not supported");
+            resolve(keys.raw("REFNODE"), keys.raw("NSET"), true);
+            emit(Dofs{true, true, true, true, true, true},
+                 constraint::CouplingType::KINEMATIC);
+        });
+        command.variant(fem::io::dsl::Variant::make());
     });
 
     // `KINEMATIC` is valid only as a child of a COUPLING without direct TYPE.
