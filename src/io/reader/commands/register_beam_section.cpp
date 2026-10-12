@@ -229,6 +229,20 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                 });
         };
 
+        // Read the direct elastic constants when no named material is supplied
+        auto elastic_properties = [&]() {
+            return dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1).max(1))
+                .pattern(dsl::Pattern::make()
+                    .one<Precision>().name("E")
+                    .one<Precision>().name("G")
+                    .one<Precision>().name("ALPHA")
+                        .on_missing(Precision(0)).on_empty(Precision(0)))
+                .bind([elastic](Precision E, Precision G, Precision alpha) {
+                    *elastic = {E, G, alpha};
+                });
+        };
+
         // With MATERIAL, Abaqus permits the n1 direction to be omitted
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::key_present("MATERIAL"))
@@ -245,16 +259,7 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
             .when(dsl::Condition::negate(dsl::Condition::key_present("MATERIAL")))
             .segment(geometry())
             .segment(orientation())
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make()
-                    .one<Precision>().name("E")
-                    .one<Precision>().name("G")
-                    .one<Precision>().name("ALPHA")
-                        .on_missing(Precision(0)).on_empty(Precision(0)))
-                .bind([elastic](Precision E, Precision G, Precision alpha) {
-                    *elastic = {E, G, alpha};
-                })));
+            .segment(elastic_properties()));
     });
 
 }
