@@ -69,8 +69,12 @@ Profile::Ptr Profile::General(Precision area, Precision i11, Precision i12,
     // Validate the finite elastic section properties before construction
     logging::error(std::isfinite(area) && area > 0,
         "PROFILE GENERAL: area must be finite and positive");
-    logging::error(std::isfinite(i11) && std::isfinite(i12) && std::isfinite(i22),
-        "PROFILE GENERAL: bending inertias must be finite");
+    logging::error(std::isfinite(i11),
+        "PROFILE GENERAL: I11 must be finite");
+    logging::error(std::isfinite(i12),
+        "PROFILE GENERAL: I12 must be finite");
+    logging::error(std::isfinite(i22),
+        "PROFILE GENERAL: I22 must be finite");
     logging::error(std::isfinite(torsion) && torsion > 0,
         "PROFILE GENERAL: torsional constant must be finite and positive");
 
@@ -163,10 +167,14 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision right,
         "PROFILE BOX: width must be finite and positive");
     logging::error(std::isfinite(height) && height > 0,
         "PROFILE BOX: height must be finite and positive");
-    logging::error(std::isfinite(right) && right > 0 && std::isfinite(left) && left > 0,
-        "PROFILE BOX: left and right wall thicknesses must be finite and positive");
-    logging::error(std::isfinite(top) && top > 0 && std::isfinite(bottom) && bottom > 0,
-        "PROFILE BOX: top and bottom wall thicknesses must be finite and positive");
+    logging::error(std::isfinite(right) && right > 0,
+        "PROFILE BOX: right wall thickness must be finite and positive");
+    logging::error(std::isfinite(left) && left > 0,
+        "PROFILE BOX: left wall thickness must be finite and positive");
+    logging::error(std::isfinite(top) && top > 0,
+        "PROFILE BOX: top wall thickness must be finite and positive");
+    logging::error(std::isfinite(bottom) && bottom > 0,
+        "PROFILE BOX: bottom wall thickness must be finite and positive");
     logging::error(right + left < width,
         "PROFILE BOX: side walls leave no positive interior width");
     logging::error(top + bottom < height,
@@ -253,12 +261,14 @@ Profile::Ptr Profile::I(Precision reference_height, Precision height,
         "PROFILE I: height must be finite and positive");
     logging::error(std::isfinite(web_thickness) && web_thickness > 0,
         "PROFILE I: web thickness must be finite and positive");
-    logging::error(std::isfinite(bottom_width) && bottom_width >= 0 &&
-                   std::isfinite(top_width) && top_width >= 0,
-        "PROFILE I: flange widths must be finite and non-negative");
-    logging::error(std::isfinite(bottom_thickness) && bottom_thickness >= 0 &&
-                   std::isfinite(top_thickness) && top_thickness >= 0,
-        "PROFILE I: flange thicknesses must be finite and non-negative");
+    logging::error(std::isfinite(bottom_width) && bottom_width >= 0,
+        "PROFILE I: lower flange width must be finite and non-negative");
+    logging::error(std::isfinite(top_width) && top_width >= 0,
+        "PROFILE I: upper flange width must be finite and non-negative");
+    logging::error(std::isfinite(bottom_thickness) && bottom_thickness >= 0,
+        "PROFILE I: lower flange thickness must be finite and non-negative");
+    logging::error(std::isfinite(top_thickness) && top_thickness >= 0,
+        "PROFILE I: upper flange thickness must be finite and non-negative");
     logging::error(bottom_thickness + top_thickness < height,
         "PROFILE I: flange thicknesses leave no positive web height");
     logging::error(lower || (bottom_width == 0 && bottom_thickness == 0),
@@ -320,8 +330,10 @@ Profile::Ptr Profile::Channel(Precision reference_height, Precision height,
                                Precision bottom_thickness, Precision top_thickness,
                                Precision web_thickness, Precision reference_width) {
     // Validate physical dimensions and reference offsets
-    logging::error(std::isfinite(reference_height) && std::isfinite(reference_width),
-        "PROFILE CHANNEL: reference offsets must be finite");
+    logging::error(std::isfinite(reference_height),
+        "PROFILE CHANNEL: reference height must be finite");
+    logging::error(std::isfinite(reference_width),
+        "PROFILE CHANNEL: reference width must be finite");
     logging::error(std::isfinite(height) && height > 0,
         "PROFILE CHANNEL: height must be finite and positive");
     logging::error(std::isfinite(web_thickness) && web_thickness > 0,
