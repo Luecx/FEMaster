@@ -1,7 +1,7 @@
 #include "../src/io/dsl/deck_parser.h"
 #include "../src/io/dsl/file.h"
 #include "../src/io/reader/parser.h"
-#include "../src/section/profile_geometry.h"
+#include "../src/section/profile.h"
 #include "../src/section/section_beam.h"
 #include "../src/model/model.h"
 
@@ -10,47 +10,45 @@
 #include <fstream>
 #include <string>
 #include <stdexcept>
-#include <vector>
 
 #include <gtest/gtest.h>
 
 using namespace fem;
 
 TEST(BeamSectionProfiles, RectAndCircularProperties) {
-    const auto rect = make_beam_geometry_profile("RECT_TEST", "RECT", {20, 40});
+    const auto rect = Profile::Rectangle(20, 40);
     EXPECT_DOUBLE_EQ(rect->area_, 800);
     EXPECT_NEAR(rect->inertia_y_, 20.0 * std::pow(40.0, 3) / 12, 0.1);
     EXPECT_NEAR(rect->inertia_z_, 40.0 * std::pow(20.0, 3) / 12, 0.1);
 
-    const auto circle = make_beam_geometry_profile("CIRC_TEST", "CIRC", {5});
+    const auto circle = Profile::Circle(5);
     EXPECT_NEAR(circle->area_, std::acos(-1.0) * 25, 1e-4);
     EXPECT_NEAR(circle->torsion_inertia_, 2 * circle->inertia_y_, 1e-4);
 
-    const auto pipe = make_beam_geometry_profile("PIPE_TEST", "PIPE", {5, 1});
+    const auto pipe = Profile::Pipe(5, 1);
     EXPECT_LT(pipe->area_, circle->area_);
     EXPECT_NEAR(pipe->torsion_inertia_, 2 * pipe->inertia_y_, 1e-4);
 }
 
 TEST(BeamSectionProfiles, BoxAndOpenSections) {
-    const auto box = make_beam_geometry_profile("BOX_TEST", "BOX", {100, 50, 5});
+    const auto box = Profile::Box(100, 50, 5);
     EXPECT_NEAR(box->area_, 100.0 * 50 - 90.0 * 40, 1e-4);
     EXPECT_GT(box->torsion_inertia_, 0);
 
-    const auto unequal = make_beam_geometry_profile("BOX_UNEQUAL", "BOX", {100, 50, 4, 5, 6, 7});
+    const auto unequal = Profile::Box(100, 50, 4, 5, 6, 7);
     EXPECT_GT(unequal->area_, 0);
     EXPECT_GT(unequal->inertia_y_, 0);
     EXPECT_GT(unequal->inertia_z_, 0);
 
-    const auto ibeam = make_beam_geometry_profile("I_TEST", "I", {50, 100, 60, 60, 10, 10, 8});
+    const auto ibeam = Profile::I(50, 100, 60, 60, 10, 10, 8);
     EXPECT_NEAR(ibeam->area_, 2 * 60.0 * 10 + 80.0 * 8, 1e-4);
     EXPECT_NEAR(ibeam->product_inertia_yz_, 0, 1e-4);
 
-    const auto channel = make_beam_geometry_profile(
-        "CHANNEL_TEST", "CHANNEL", {50, 100, 60, 60, 10, 10, 8, 4});
+    const auto channel = Profile::Channel(50, 100, 60, 60, 10, 10, 8, 4);
     EXPECT_NEAR(channel->area_, ibeam->area_, 1e-4);
     EXPECT_GT(channel->torsion_inertia_, 0);
 
-    const auto angle = make_beam_geometry_profile("L_TEST", "L", {60, 80, 8, 6});
+    const auto angle = Profile::Angle(60, 80, 8, 6);
     EXPECT_NEAR(angle->area_, 60.0 * 8 + 72.0 * 6, 1e-4);
     EXPECT_GT(angle->inertia_y_ * angle->inertia_z_ -
               angle->product_inertia_yz_ * angle->product_inertia_yz_, 0);
@@ -58,27 +56,22 @@ TEST(BeamSectionProfiles, BoxAndOpenSections) {
 
 TEST(BeamSectionProfiles, ISectionAlsoSupportsAbaqusTSections) {
     // Abaqus SECTION=I allows a T with either the lower or upper flange absent.
-    const auto top = make_beam_geometry_profile(
-        "T_TOP", "I", {0, 100, 0, 60, 0, 10, 8});
+    const auto top = Profile::I(0, 100, 0, 60, 0, 10, 8);
     EXPECT_NEAR(top->area_, 60.0 * 10 + 90.0 * 8, 1e-3);
     EXPECT_NEAR(top->product_inertia_yz_, 0, 1e-3);
     EXPECT_GT(top->inertia_y_, 0);
     EXPECT_GT(top->inertia_z_, 0);
     EXPECT_GT(top->torsion_inertia_, 0);
 
-    const auto bottom = make_beam_geometry_profile(
-        "T_BOTTOM", "I", {0, 100, 60, 0, 10, 0, 8});
+    const auto bottom = Profile::I(0, 100, 60, 0, 10, 0, 8);
     EXPECT_NEAR(bottom->area_, top->area_, 1e-3);
     EXPECT_NEAR(bottom->inertia_y_, top->inertia_y_, 1e-3);
     EXPECT_NEAR(bottom->inertia_z_, top->inertia_z_, 1e-3);
 
     // A partially specified flange or two missing flanges is not a section.
-    EXPECT_THROW(make_beam_geometry_profile(
-        "INVALID", "I", {0, 100, 0, 60, 10, 10, 8}), std::exception);
-    EXPECT_THROW(make_beam_geometry_profile(
-        "INVALID", "I", {0, 100, 60, 0, 0, 10, 8}), std::exception);
-    EXPECT_THROW(make_beam_geometry_profile(
-        "INVALID", "I", {0, 100, 0, 0, 0, 0, 8}), std::exception);
+    EXPECT_THROW(Profile::I(0, 100, 0, 60, 10, 10, 8), std::exception);
+    EXPECT_THROW(Profile::I(0, 100, 60, 0, 0, 10, 8), std::exception);
+    EXPECT_THROW(Profile::I(0, 100, 0, 0, 0, 0, 8), std::exception);
 }
 
 TEST(BeamSectionReader, BothKeywordsAcceptProfilesAndGeometry) {
