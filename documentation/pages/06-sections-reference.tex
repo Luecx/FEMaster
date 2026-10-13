@@ -164,7 +164,7 @@ There are three mutually exclusive section descriptions:
   \item \key{SECTION=RECT}, \val{CIRC}, \val{PIPE}, \val{BOX}, \val{I}, \val{CHANNEL}, or \val{L} reads a geometric data line and converts it to generalized section constants.
 \end{itemize}
 
-For geometric types, use Abaqus dimension order: \val{RECT}: \(a,b\); \val{CIRC}: radius; \val{PIPE}: outer radius, wall thickness; \val{BOX}: \(a,b,t\) for uniform walls or \(a,b,t_1,t_2,t_3,t_4\); \val{I}: \(l,h,b_1,b_2,t_1,t_2,t_3\); \val{CHANNEL}: \(l,h,b_1,b_2,t_1,t_2,t_3,o\); \val{L}: \(a,b,t_1,t_2\). Shapes not listed here, including \val{ARBITRARY}, \val{HEX}, \val{HAT}, and \val{TRAPEZOID}, are not yet supported.
+For geometric types, use Abaqus dimension order: \val{RECT}: \(a,b\); \val{CIRC}: radius; \val{PIPE}: outer radius, wall thickness; \val{BOX}: \(a,b,t\) for uniform walls or \(a,b,t_1,t_2,t_3,t_4\); \val{I}: \(l,h,b_1,b_2,t_1,t_2,t_3\), with a T-section represented by \(b_1=t_1=0\) or \(b_2=t_2=0\); \val{CHANNEL}: \(l,h,b_1,b_2,t_1,t_2,t_3,o\); \val{L}: \(a,b,t_1,t_2\). Shapes not listed here, including \val{ARBITRARY}, \val{HEX}, \val{HAT}, and \val{TRAPEZOID}, are not yet supported.
 
 For \val{GENERAL} and geometric input, the first data line is followed by an optional \((n_{1x},n_{1y},n_{1z})\) direction (default \(0,0,-1\)). When \key{MATERIAL} is omitted, provide a following data line with \(E,G,\alpha\); \(\alpha\) is optional. The solver currently represents these direct constants using an equivalent isotropic material, so they must imply a valid Poisson ratio.
 
