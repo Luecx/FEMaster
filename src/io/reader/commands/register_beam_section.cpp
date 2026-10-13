@@ -19,6 +19,7 @@
 #include "../../../section/section_beam.h"
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
