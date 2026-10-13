@@ -15,30 +15,34 @@
 #include "../../../material/isotropic_elasticity.h"
 #include "../../../material/material.h"
 #include "../../../model/model.h"
-#include "../../../section/profile_geometry.h"
+#include "../../../section/profile.h"
 #include "../../../section/section_beam.h"
 
 #include <array>
 #include <cmath>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace fem::io::reader::commands {
 namespace dsl = fem::io::dsl;
 
 namespace {
 
-template<std::size_t N>
-dsl::Segment dimensions(std::shared_ptr<std::vector<Precision>> values) {
+// Each data layout converts its typed dimensions into an ordinary Profile.
+// No geometry-specific state or string dispatch survives beyond this callback.
+template<std::size_t N, class Factory>
+dsl::Segment dimensions(std::shared_ptr<Profile::Ptr> profile, Factory factory) {
     auto segment = dsl::Segment::make()
         .range(dsl::LineRange{}.min(1).max(1))
         .pattern(dsl::Pattern::make().fixed<Precision, N>().name("DIMENSIONS"));
+
     if constexpr (N == 1) {
-        segment.bind([values](Precision value) { *values = {value}; });
+        segment.bind([profile, factory](Precision value) {
+            *profile = factory(std::array<Precision, 1>{value});
+        });
     } else {
-        segment.bind([values](const std::array<Precision, N>& data) {
-            values->assign(data.begin(), data.end());
+        segment.bind([profile, factory](const std::array<Precision, N>& values) {
+            *profile = factory(values);
         });
     }
     return segment;
@@ -66,12 +70,14 @@ dsl::Segment elastic_line(std::shared_ptr<std::array<Precision, 3>> elastic) {
         });
 }
 
-template<std::size_t N>
+// Register both Abaqus material forms for one known geometric data layout.
+template<std::size_t N, class Factory>
 void add_geometry_variants(dsl::Command& command,
                            const dsl::Condition& geometry_condition,
-                           std::shared_ptr<std::vector<Precision>> values,
+                           std::shared_ptr<Profile::Ptr> profile,
                            std::shared_ptr<Vec3> direction,
-                           std::shared_ptr<std::array<Precision, 3>> elastic) {
+                           std::shared_ptr<std::array<Precision, 3>> elastic,
+                           Factory factory) {
     const auto with_material = dsl::Condition::all_of({
         geometry_condition, dsl::Condition::key_present("MATERIAL")
     });
@@ -81,20 +87,20 @@ void add_geometry_variants(dsl::Command& command,
 
     command.variant(dsl::Variant::make()
         .when(with_material)
-        .segment(dimensions<N>(values))
+        .segment(dimensions<N>(profile, factory))
         .segment(direction_line(direction, true)));
 
     // n1 and direct E/G/alpha both have three components. Use separate
     // variants so an omitted n1 line is not mistaken for elastic data.
     command.variant(dsl::Variant::make()
         .when(without_material)
-        .segment(dimensions<N>(values))
+        .segment(dimensions<N>(profile, factory))
         .segment(direction_line(direction, false))
         .segment(elastic_line(elastic)));
 
     command.variant(dsl::Variant::make()
         .when(without_material)
-        .segment(dimensions<N>(values))
+        .segment(dimensions<N>(profile, factory))
         .segment(elastic_line(elastic)));
 }
 
@@ -111,8 +117,7 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
             auto elset     = std::make_shared<std::string>();
             auto material  = std::make_shared<std::string>();
             auto profile   = std::make_shared<std::string>();
-            auto shape     = std::make_shared<std::string>();
-            auto values    = std::make_shared<std::vector<Precision>>();
+            auto geometric = std::make_shared<Profile::Ptr>();
             auto direction = std::make_shared<Vec3>(Vec3{0, 0, -1});
             auto elastic   = std::make_shared<std::array<Precision, 3>>();
             auto density   = std::make_shared<Precision>(Precision(-1));
@@ -132,8 +137,7 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                 *elset = keys.raw("ELSET");
                 *material = keys.raw("MATERIAL");
                 *profile = keys.raw("PROFILE");
-                *shape = keys.raw("SECTION").empty() ? "GENERAL" : keys.raw("SECTION");
-                values->clear();
+                geometric->reset();
                 elastic->fill(Precision(0));
                 *direction = Vec3{0, 0, -1};
                 *density = keys.has("DENSITY") ? keys.get<Precision>("DENSITY") : Precision(-1);
@@ -187,23 +191,16 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                     assigned->set_density(*density);
                 }
 
+                // Named and geometric input forms both resolve to one Profile.
                 Profile::Ptr assigned_profile;
                 if (!profile->empty()) {
                     logging::error(model._data->profiles.has(*profile),
                         keyword_name, ": undefined PROFILE ", *profile);
                     assigned_profile = model._data->profiles.get(*profile);
-                } else if (*shape == "GENERAL") {
-                    logging::error(values->size() == 5,
-                        keyword_name, ": GENERAL requires A, I11, I12, I22, J");
-                    const auto& v = *values;
-                    logging::error(v[0] > 0 && v[1] > 0 && v[3] > 0 && v[4] > 0 &&
-                                   v[1] * v[3] > v[2] * v[2],
-                        keyword_name, ": invalid general section inertia values");
-                    assigned_profile = std::make_shared<Profile>(
-                        "__BEAM_" + *elset, v[0], v[1], v[3], v[4], v[2]);
                 } else {
-                    assigned_profile = make_beam_geometry_profile(
-                        "__BEAM_" + *elset, *shape, *values);
+                    logging::error(*geometric != nullptr,
+                        keyword_name, ": section properties were not initialized");
+                    assigned_profile = *geometric;
                 }
 
                 auto section = std::make_shared<BeamSection>();
@@ -227,7 +224,8 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                     dsl::Condition::key_equals("SECTION", "GENERAL")
                 })
             });
-            add_geometry_variants<5>(command, general_condition, values, direction, elastic);
+            add_geometry_variants<5>(command, general_condition, geometric, direction, elastic,
+                [](const auto& v) { return Profile::General(v[0], v[1], v[2], v[3], v[4]); });
 
             const auto shape_condition = [](const std::string& kind) {
                 return dsl::Condition::all_of({
@@ -236,14 +234,27 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
                 });
             };
 
-            add_geometry_variants<2>(command, shape_condition("RECT"), values, direction, elastic);
-            add_geometry_variants<1>(command, shape_condition("CIRC"), values, direction, elastic);
-            add_geometry_variants<2>(command, shape_condition("PIPE"), values, direction, elastic);
-            add_geometry_variants<3>(command, shape_condition("BOX"), values, direction, elastic);
-            add_geometry_variants<6>(command, shape_condition("BOX"), values, direction, elastic);
-            add_geometry_variants<7>(command, shape_condition("I"), values, direction, elastic);
-            add_geometry_variants<8>(command, shape_condition("CHANNEL"), values, direction, elastic);
-            add_geometry_variants<4>(command, shape_condition("L"), values, direction, elastic);
+            // Select typed Profile factories for each supported library shape.
+            add_geometry_variants<2>(command, shape_condition("RECT"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Rectangle(v[0], v[1]); });
+            add_geometry_variants<1>(command, shape_condition("CIRC"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Circle(v[0]); });
+            add_geometry_variants<2>(command, shape_condition("PIPE"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Pipe(v[0], v[1]); });
+            add_geometry_variants<3>(command, shape_condition("BOX"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Box(v[0], v[1], v[2]); });
+            add_geometry_variants<6>(command, shape_condition("BOX"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Box(v[0], v[1], v[2], v[3], v[4], v[5]); });
+            add_geometry_variants<7>(command, shape_condition("I"), geometric, direction, elastic,
+                [](const auto& v) {
+                    return Profile::I(v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+                });
+            add_geometry_variants<8>(command, shape_condition("CHANNEL"), geometric, direction, elastic,
+                [](const auto& v) {
+                    return Profile::Channel(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+                });
+            add_geometry_variants<4>(command, shape_condition("L"), geometric, direction, elastic,
+                [](const auto& v) { return Profile::Angle(v[0], v[1], v[2], v[3]); });
         });
     };
 
