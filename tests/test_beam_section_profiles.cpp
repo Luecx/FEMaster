@@ -1,3 +1,19 @@
+/**
+ * @file test_beam_section_profiles.cpp
+ * @brief Verifies generalized beam profile factories and section keyword parsing.
+ *
+ * Geometric factories produce ordinary Profiles with centroidal bending
+ * properties and approximate torsion, while both beam section keywords use
+ * the same material and profile assignment path. The tests also verify that
+ * Abaqus T sections with one omitted I-section flange remain accepted.
+ *
+ * @see Profile
+ * @see BeamSection
+ *
+ * @author Finn Eggers
+ * @date 13.10.2026
+ */
+
 #include "../src/io/dsl/deck_parser.h"
 #include "../src/io/dsl/file.h"
 #include "../src/io/reader/parser.h"
