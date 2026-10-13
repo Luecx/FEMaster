@@ -58,10 +58,13 @@ Precision rectangle_torsion(Precision a, Precision b) {
          Precision(0.052) * std::pow(ratio, 5)) / Precision(3);
 }
 
-void positive(const std::vector<Precision>& d) {
-    for (const Precision value : d) {
-        logging::error(std::isfinite(value) && value > 0,
-                       "BEAM SECTION: section dimensions must be finite and positive");
+void validate_dimensions(const std::string& shape, const std::vector<Precision>& d) {
+    for (std::size_t i = 0; i < d.size(); ++i) {
+        // I/CHANNEL section origin offsets l and o may legitimately be zero.
+        const bool offset = (shape == "I" || shape == "CHANNEL") &&
+                            (i == 0 || (shape == "CHANNEL" && i == 7));
+        logging::error(std::isfinite(d[i]) && (offset || d[i] > 0),
+                       "BEAM SECTION: dimensions must be finite, lengths/thicknesses positive");
     }
 }
 
@@ -70,7 +73,7 @@ void positive(const std::vector<Precision>& d) {
 Profile::Ptr make_beam_geometry_profile(const std::string& name,
                                         const std::string& shape,
                                         const std::vector<Precision>& d) {
-    positive(d);
+    validate_dimensions(shape, d);
 
     const Precision pi = std::acos(Precision(-1));
 
