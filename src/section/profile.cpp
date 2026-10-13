@@ -223,20 +223,30 @@ Profile::Ptr Profile::I(Precision reference_height, Precision height,
     // Validate section heights, flange pairs and the web
     const bool lower = bottom_width > 0 && bottom_thickness > 0;
     const bool upper = top_width > 0 && top_thickness > 0;
-    logging::error(std::isfinite(reference_height) && std::isfinite(height) &&
-                   std::isfinite(bottom_width) && std::isfinite(top_width) &&
-                   std::isfinite(bottom_thickness) && std::isfinite(top_thickness) &&
-                   std::isfinite(web_thickness) && height > 0 &&
-                   web_thickness > 0 && bottom_width >= 0 && top_width >= 0 &&
-                   bottom_thickness >= 0 && top_thickness >= 0 &&
-                   bottom_thickness + top_thickness < height &&
-                   (lower || (bottom_width == 0 && bottom_thickness == 0)) &&
-                   (upper || (top_width == 0 && top_thickness == 0)) &&
-                   (lower || upper),
-        "PROFILE I: invalid web or flange dimensions");
-    logging::error((!lower || web_thickness < bottom_width) &&
-                   (!upper || web_thickness < top_width),
-        "PROFILE I: web thickness must be smaller than each existing flange width");
+    logging::error(std::isfinite(reference_height),
+        "PROFILE I: reference height must be finite");
+    logging::error(std::isfinite(height) && height > 0,
+        "PROFILE I: height must be finite and positive");
+    logging::error(std::isfinite(web_thickness) && web_thickness > 0,
+        "PROFILE I: web thickness must be finite and positive");
+    logging::error(std::isfinite(bottom_width) && bottom_width >= 0 &&
+                   std::isfinite(top_width) && top_width >= 0,
+        "PROFILE I: flange widths must be finite and non-negative");
+    logging::error(std::isfinite(bottom_thickness) && bottom_thickness >= 0 &&
+                   std::isfinite(top_thickness) && top_thickness >= 0,
+        "PROFILE I: flange thicknesses must be finite and non-negative");
+    logging::error(bottom_thickness + top_thickness < height,
+        "PROFILE I: flange thicknesses leave no positive web height");
+    logging::error(lower || (bottom_width == 0 && bottom_thickness == 0),
+        "PROFILE I: lower flange must have both positive dimensions or both zero");
+    logging::error(upper || (top_width == 0 && top_thickness == 0),
+        "PROFILE I: upper flange must have both positive dimensions or both zero");
+    logging::error(lower || upper,
+        "PROFILE I: at least one flange is required");
+    logging::error(!lower || web_thickness < bottom_width,
+        "PROFILE I: web must be narrower than the lower flange");
+    logging::error(!upper || web_thickness < top_width,
+        "PROFILE I: web must be narrower than the upper flange");
 
     // Combine the disjoint bottom flange, top flange and web
     const Precision web_height = height - bottom_thickness - top_thickness;
@@ -249,19 +259,28 @@ Profile::Ptr Profile::I(Precision reference_height, Precision height,
     const Precision area       = a1 + a2 + a3;
     const Precision cz         = (a1 * z1 + a2 * z2 + a3 * z3) / area;
 
-    // The web and flanges share the centered local y-axis, hence Iyz = 0
-    const Precision iy = (bottom_width * std::pow(bottom_thickness, 3) +
-                          top_width * std::pow(top_thickness, 3) +
-                          web_thickness * std::pow(web_height, 3)) / 12 +
-                          a1 * std::pow(z1 - cz, 2) +
-                          a2 * std::pow(z2 - cz, 2) +
+    // Determine bending inertias separately for both flanges and the web.
+    // Only Iy requires a parallel-axis shift because all parts are centered in y.
+    const Precision iy1 = bottom_width * std::pow(bottom_thickness, 3) / 12 +
+                          a1 * std::pow(z1 - cz, 2);
+    const Precision iy2 = top_width * std::pow(top_thickness, 3) / 12 +
+                          a2 * std::pow(z2 - cz, 2);
+    const Precision iy3 = web_thickness * std::pow(web_height, 3) / 12 +
                           a3 * std::pow(z3 - cz, 2);
-    const Precision iz = (bottom_thickness * std::pow(bottom_width, 3) +
-                          top_thickness * std::pow(top_width, 3) +
-                          web_height * std::pow(web_thickness, 3)) / 12;
-    const Precision j  = (bottom_width * std::pow(bottom_thickness, 3) +
-                          top_width * std::pow(top_thickness, 3) +
-                          web_height * std::pow(web_thickness, 3)) / 3;
+
+    const Precision iz1 = bottom_thickness * std::pow(bottom_width, 3) / 12;
+    const Precision iz2 = top_thickness * std::pow(top_width, 3) / 12;
+    const Precision iz3 = web_height * std::pow(web_thickness, 3) / 12;
+
+    // Thin-wall torsion of each plate, added without warping coupling
+    const Precision j1 = bottom_width * std::pow(bottom_thickness, 3) / 3;
+    const Precision j2 = top_width * std::pow(top_thickness, 3) / 3;
+    const Precision j3 = web_height * std::pow(web_thickness, 3) / 3;
+
+    // The shared y-axis makes Iyz zero for centered I- and T-sections
+    const Precision iy = iy1 + iy2 + iy3;
+    const Precision iz = iz1 + iz2 + iz3;
+    const Precision j  = j1 + j2 + j3;
 
     return std::make_shared<Profile>("I", area, iy, iz, j, 0,
                                      0, 0, 0, reference_height - cz);
