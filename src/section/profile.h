@@ -37,7 +37,8 @@ namespace fem {
  * non-circular sections uses documented engineering approximations.
  */
 struct Profile : public fem::Namable {
-    using Ptr = std::shared_ptr<Profile>; ///< Shared pointer alias for profile ownership.
+    // Shared ownership used by model sections and named profile definitions.
+    using Ptr = std::shared_ptr<Profile>;
 
     // Centroidal area and bending properties. Iyz uses the positive
     // integral of y*z and the section's local transverse y/z axes.
