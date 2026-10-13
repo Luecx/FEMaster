@@ -388,6 +388,11 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                 })
             )
         );
+
+        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::key_equals("OP", "NEW"))
+        );
     });
 }
 

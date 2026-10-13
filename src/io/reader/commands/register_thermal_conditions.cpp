@@ -83,6 +83,11 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 })
             )
         );
+
+        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
+        );
     });
 
     // Prescribed heat density supplies the scalar thermal right-hand side
@@ -124,6 +129,11 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                     parser.modify_conditions(bc::HEAT_FLUX, "SURFACE:" + target, {std::move(heat_flux)});
                 })
             )
+        );
+
+        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
         );
     });
 
@@ -168,6 +178,11 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                     parser.modify_conditions(bc::CONVECTION, "SURFACE:" + target, {std::move(convection)});
                 })
             )
+        );
+
+        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
         );
     });
 }

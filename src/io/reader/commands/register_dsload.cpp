@@ -159,6 +159,11 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
                 })
             )
         );
+
+        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
+        );
     });
 }
 
