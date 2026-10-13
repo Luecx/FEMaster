@@ -17,7 +17,7 @@ class StaticStep:
     loads: tuple[LoadCollector, ...] = ()
     supports: tuple[SupportCollector, ...] = ()
     solver: SolverControl | None = None
-    constraint_method: ConstraintMethod | None = ConstraintMethod.NULLSPACE
+    constraint_method: ConstraintMethod | None = ConstraintMethod.ELIMINATION
     inertia_relief: bool = False
     inertia_relief_consider_point_masses: bool = True
     rebalance_loads: bool = False
