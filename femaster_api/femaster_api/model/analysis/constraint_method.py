@@ -8,3 +8,4 @@ from enum import Enum
 class ConstraintMethod(Enum):
     NULLSPACE = "NULLSPACE"
     LAGRANGE = "LAGRANGE"
+    ELIMINATION = "ELIMINATION"

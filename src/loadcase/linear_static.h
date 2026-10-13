@@ -37,7 +37,7 @@ struct LinearStatic : public LoadCase {
     solver::SolverDevice device = solver::CPU; ///< Solver device selection.
     solver::SolverMethod method = solver::DIRECT; ///< Solver method selection.
     constraint::ConstraintTransformer::Method constraint_method =
-        constraint::ConstraintTransformer::Method::NullSpace; ///< Constraint backend selection.
+        constraint::ConstraintTransformer::Method::Elimination; ///< Constraint backend selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
     Precision step_period = Precision(1); ///< Step-end time for evaluating prescribed load amplitudes.
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).

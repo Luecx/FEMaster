@@ -53,7 +53,10 @@ def cmd_loadcase(parser, header: Header) -> None:
         "loads": (),
         "supports": (),
         "solver": None,
-        "constraint_method": ConstraintMethod.NULLSPACE,
+        "constraint_method": (
+            ConstraintMethod.ELIMINATION if lc_type in {"LINEARSTATIC", "LINEARSTATICTOPO"}
+            else ConstraintMethod.NULLSPACE
+        ),
         "inertia_relief": False,
         "inertia_relief_consider_point_masses": True,
         "rebalance_loads": False,
@@ -110,7 +113,7 @@ def _parse_loadcase_subcommand(parser, lc_type: str, state: dict, header: Header
         if lc_type not in {"LINEARSTATIC", "LINEARSTATICTOPO", "NONLINEARSTATIC"}:
             raise FEMasterInputError("*CONSTRAINTMETHOD is not supported for this loadcase type")
         _reject_data(parser, "*CONSTRAINTMETHOD")
-        state["constraint_method"] = ConstraintMethod[header.params.get("TYPE", "NULLSPACE").upper()]
+        state["constraint_method"] = ConstraintMethod[header.params.get("TYPE", state["constraint_method"].value).upper()]
     elif keyword == "INERTIARELIEF":
         _require(lc_type == "LINEARSTATIC", "*INERTIARELIEF only valid for LINEARSTATIC")
         _reject_data(parser, "*INERTIARELIEF")

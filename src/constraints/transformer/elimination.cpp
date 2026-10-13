@@ -155,12 +155,14 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
         }
 
         if (pivot_column == system.dofs) {
+            logging::error(std::abs(rhs) <= tolerance,
+                "[Elimination] inconsistent constraint row after substitution");
             ++report.redundant_rows;
             continue;
         }
 
         logging::error(std::abs(pivot_coefficient) > tolerance,
-                       "[Elimination] pivot is numerically zero");
+                       "[Elimination] pivot is numerically zero; try *CONSTRAINTMETHOD, TYPE=NULLSPACE");
 
         is_slave[static_cast<std::size_t>(pivot_column)] = 1;
         map.slaves.push_back(pivot_column);
@@ -203,7 +205,7 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
         }
 
         char& state = expansion_state[column];
-        logging::error(state != 1, "[Elimination] cyclic constraint dependency");
+        logging::error(state != 1, "[Elimination] cyclic constraint dependency; try *CONSTRAINTMETHOD, TYPE=NULLSPACE");
         if (state == 2) {
             return expanded_values[column];
         }
