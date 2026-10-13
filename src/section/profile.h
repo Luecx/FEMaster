@@ -23,23 +23,41 @@
 
 namespace fem {
 /**
- * @struct Profile
- * @brief Beam cross-section constants used by beam elements.
+ * @brief Generalized cross-section properties used by spatial beam elements.
+ *
+ * A profile stores the area, centroidal bending inertia tensor, Saint-Venant
+ * torsional constant and effective transverse shear areas used by B31 and B33.
+ * Product of inertia follows Iyz = integral_A(y*z*dA), without a leading minus.
+ * Offsets describe the shear-point and beam reference-line positions relative
+ * to the section centroid.
+ *
+ * Named input profiles and typed geometric factories create the same object.
+ * No shape geometry is retained after property evaluation. Factory methods
+ * compute exact areas and bending inertias for supported sections; torsion for
+ * non-circular sections uses documented engineering approximations.
  */
 struct Profile : public fem::Namable {
     using Ptr = std::shared_ptr<Profile>; ///< Shared pointer alias for profile ownership.
 
-    Precision area_              = 0; ///< Cross-section area.
-    Precision inertia_y_         = 0; ///< Second moment of area about local y.
-    Precision inertia_z_         = 0; ///< Second moment of area about local z.
-    Precision torsion_inertia_   = 0; ///< Torsional inertia.
-    Precision product_inertia_yz_ = 0; ///< Product of inertia: integral_A(y*z*dA).
-    Precision offset_y_          = 0; ///< Shear point offset y: SP - SMP.
-    Precision offset_z_          = 0; ///< Shear point offset z: SP - SMP.
-    Precision reference_y_       = 0; ///< Reference point offset y: REF - SMP.
-    Precision reference_z_       = 0; ///< Reference point offset z: REF - SMP.
-    Precision shear_area_y_      = 0; ///< Effective transverse shear area in local y.
-    Precision shear_area_z_      = 0; ///< Effective transverse shear area in local z.
+    // Centroidal area and bending properties. Iyz uses the positive
+    // integral of y*z and the section's local transverse y/z axes.
+    Precision area_               = 0;
+    Precision inertia_y_          = 0;
+    Precision inertia_z_          = 0;
+    Precision torsion_inertia_    = 0;
+    Precision product_inertia_yz_ = 0;
+
+    // Transverse shear point (SP) and beam reference line (REF) measured
+    // relative to the section mid-point (SMP).
+    Precision offset_y_    = 0;
+    Precision offset_z_    = 0;
+    Precision reference_y_ = 0;
+    Precision reference_z_ = 0;
+
+    // Effective shear areas; the constructor defaults nonpositive inputs
+    // to 5A/6 for the two transverse directions.
+    Precision shear_area_y_ = 0;
+    Precision shear_area_z_ = 0;
 
     // Construct generalized section constants from explicit properties or
     // standard cross-section dimensions. Factories return ordinary Profiles;
@@ -66,22 +84,8 @@ struct Profile : public fem::Namable {
     static Ptr Angle(Precision width, Precision height, Precision bottom_thickness,
                      Precision side_thickness);
 
-    /**
-     * @brief Creates a beam profile with geometric constants.
-     *
-     * @param name Profile identifier.
-     * @param area Cross-section area.
-     * @param inertia_y Second moment of area about local y.
-     * @param inertia_z Second moment of area about local z.
-     * @param torsion_inertia Torsional inertia.
-     * @param product_inertia_yz Product of inertia integral_A(y*z*dA).
-     * @param offset_y Shear point offset y: SP - SMP.
-     * @param offset_z Shear point offset z: SP - SMP.
-     * @param reference_y Reference point offset y: REF - SMP.
-     * @param reference_z Reference point offset z: REF - SMP.
-     * @param shear_area_y Effective transverse shear area in local y; non-positive selects 5A/6.
-     * @param shear_area_z Effective transverse shear area in local z; non-positive selects 5A/6.
-     */
+    // Construct directly from generalized properties. The optional inertia
+    // coupling, offsets and shear areas use the established FEMaster order.
     Profile(const std::string& name,
             Precision area,
             Precision inertia_y,
@@ -95,9 +99,7 @@ struct Profile : public fem::Namable {
             Precision shear_area_y       = 0,
             Precision shear_area_z       = 0);
 
-    /**
-     * @brief Prints the profile constants to the logger.
-     */
+    // Report all generalized constants and section reference offsets.
     void info();
 };
 } // namespace fem
