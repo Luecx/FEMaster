@@ -65,7 +65,7 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 \[
 Cu=d
 \]
-are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Not every analysis supports every method; in particular, nonlinear and harmonic procedures may impose stricter restrictions than linear static analysis.
+are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Linear static and topology-static analyses default to \val{ELIMINATION}; nonlinear and harmonic analyses retain \val{NULLSPACE} and currently support only that method.
 
 \subsection*{Nullspace projection}
 
