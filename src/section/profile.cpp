@@ -151,8 +151,8 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision thickness
 
 /**
  * Computes the centroid and exact bending inertias of a hollow rectangle
- * by subtracting its interior from the exterior rectangle. The Saint-Venant
- * torsional constant uses the thin-walled closed-cell Bredt-Batho formula.
+ * by summing four non-overlapping wall rectangles. The Saint-Venant torsion
+ * is approximated with the thin-walled closed-cell Bredt-Batho formula.
  *
  * Wall thicknesses follow Abaqus order: right, top, left, bottom.
  */
@@ -172,34 +172,58 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision right,
     logging::error(top + bottom < height,
         "PROFILE BOX: horizontal walls leave no positive interior height");
 
-    // Subtract the interior rectangle to obtain centroid and bending inertias
-    const Precision inner_width  = width - right - left;
-    const Precision inner_height = height - top - bottom;
-    const Precision outer_area   = width * height;
-    const Precision inner_area   = inner_width * inner_height;
-    const Precision area         = outer_area - inner_area;
-    const Precision hole_y       = left + inner_width / 2;
-    const Precision hole_z       = bottom + inner_height / 2;
-    const Precision cy           = (outer_area * width / 2 - inner_area * hole_y) / area;
-    const Precision cz           = (outer_area * height / 2 - inner_area * hole_z) / area;
+    // Represent the closed section as four disjoint wall rectangles.
+    // Side walls span the full height; horizontal walls span the interior width.
+    const Precision inner_width = width - right - left;
+    const Precision a_left      = left * height;
+    const Precision a_right     = right * height;
+    const Precision a_top       = inner_width * top;
+    const Precision a_bottom    = inner_width * bottom;
+    const Precision area        = a_left + a_right + a_top + a_bottom;
 
-    // Determine the centroidal contributions of the outer rectangle and void.
-    // The interior is subtracted from the outer shape, not added as material.
-    const Precision outer_iy  = width * std::pow(height, 3) / 12 +
-                                outer_area * std::pow(height / 2 - cz, 2);
-    const Precision inner_iy  = inner_width * std::pow(inner_height, 3) / 12 +
-                                inner_area * std::pow(hole_z - cz, 2);
-    const Precision outer_iz  = height * std::pow(width, 3) / 12 +
-                                outer_area * std::pow(width / 2 - cy, 2);
-    const Precision inner_iz  = inner_height * std::pow(inner_width, 3) / 12 +
-                                inner_area * std::pow(hole_y - cy, 2);
-    const Precision outer_iyz = outer_area * (width / 2 - cy) * (height / 2 - cz);
-    const Precision inner_iyz = inner_area * (hole_y - cy) * (hole_z - cz);
+    const Precision y_left      = left / 2;
+    const Precision y_right     = width - right / 2;
+    const Precision y_top       = left + inner_width / 2;
+    const Precision y_bottom    = y_top;
+    const Precision z_left      = height / 2;
+    const Precision z_right     = z_left;
+    const Precision z_top       = height - top / 2;
+    const Precision z_bottom    = bottom / 2;
 
-    // Assemble the section bending inertias from the solid and hollow parts
-    const Precision iy  = outer_iy - inner_iy;
-    const Precision iz  = outer_iz - inner_iz;
-    const Precision iyz = outer_iyz - inner_iyz;
+    // Determine the composite centroid using the wall areas
+    const Precision cy = (a_left * y_left + a_right * y_right +
+                          a_top * y_top + a_bottom * y_bottom) / area;
+    const Precision cz = (a_left * z_left + a_right * z_right +
+                          a_top * z_top + a_bottom * z_bottom) / area;
+
+    // Evaluate each wall's bending inertias around the common centroid
+    const Precision iy_left   = left * std::pow(height, 3) / 12 +
+                                a_left * std::pow(z_left - cz, 2);
+    const Precision iy_right  = right * std::pow(height, 3) / 12 +
+                                a_right * std::pow(z_right - cz, 2);
+    const Precision iy_top    = inner_width * std::pow(top, 3) / 12 +
+                                a_top * std::pow(z_top - cz, 2);
+    const Precision iy_bottom = inner_width * std::pow(bottom, 3) / 12 +
+                                a_bottom * std::pow(z_bottom - cz, 2);
+
+    const Precision iz_left   = height * std::pow(left, 3) / 12 +
+                                a_left * std::pow(y_left - cy, 2);
+    const Precision iz_right  = height * std::pow(right, 3) / 12 +
+                                a_right * std::pow(y_right - cy, 2);
+    const Precision iz_top    = top * std::pow(inner_width, 3) / 12 +
+                                a_top * std::pow(y_top - cy, 2);
+    const Precision iz_bottom = bottom * std::pow(inner_width, 3) / 12 +
+                                a_bottom * std::pow(y_bottom - cy, 2);
+
+    const Precision iyz_left   = a_left * (y_left - cy) * (z_left - cz);
+    const Precision iyz_right  = a_right * (y_right - cy) * (z_right - cz);
+    const Precision iyz_top    = a_top * (y_top - cy) * (z_top - cz);
+    const Precision iyz_bottom = a_bottom * (y_bottom - cy) * (z_bottom - cz);
+
+    // Assemble the section inertias from all four positive wall contributions
+    const Precision iy  = iy_left + iy_right + iy_top + iy_bottom;
+    const Precision iz  = iz_left + iz_right + iz_top + iz_bottom;
+    const Precision iyz = iyz_left + iyz_right + iyz_top + iyz_bottom;
 
     // Estimate closed-cell torsion along the four wall midlines
     const Precision mid_width  = width - (right + left) / 2;
