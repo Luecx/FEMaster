@@ -67,9 +67,12 @@ Profile::Profile(const std::string& name,
 Profile::Ptr Profile::General(Precision area, Precision i11, Precision i12,
                               Precision i22, Precision torsion) {
     // Validate the finite elastic section properties before construction
-    logging::error(std::isfinite(area) && std::isfinite(i11) && std::isfinite(i12) &&
-                   std::isfinite(i22) && std::isfinite(torsion),
-        "PROFILE GENERAL: properties must be finite");
+    logging::error(std::isfinite(area) && area > 0,
+        "PROFILE GENERAL: area must be finite and positive");
+    logging::error(std::isfinite(i11) && std::isfinite(i12) && std::isfinite(i22),
+        "PROFILE GENERAL: bending inertias must be finite");
+    logging::error(std::isfinite(torsion) && torsion > 0,
+        "PROFILE GENERAL: torsional constant must be finite and positive");
 
     return std::make_shared<Profile>("GENERAL", area, i11, i22, torsion, i12);
 }
@@ -82,9 +85,10 @@ Profile::Ptr Profile::General(Precision area, Precision i11, Precision i12,
  */
 Profile::Ptr Profile::Rectangle(Precision width, Precision height) {
     // Validate physical dimensions
-    logging::error(std::isfinite(width) && std::isfinite(height) &&
-                   width > 0 && height > 0,
-        "PROFILE RECT: width and height must be finite and positive");
+    logging::error(std::isfinite(width) && width > 0,
+        "PROFILE RECT: width must be finite and positive");
+    logging::error(std::isfinite(height) && height > 0,
+        "PROFILE RECT: height must be finite and positive");
 
     // Compute cross-section area and centroidal inertias
     const Precision area = width * height;
@@ -122,9 +126,12 @@ Profile::Ptr Profile::Circle(Precision radius) {
  */
 Profile::Ptr Profile::Pipe(Precision outer_radius, Precision thickness) {
     // Validate the remaining positive interior radius
-    logging::error(std::isfinite(outer_radius) && std::isfinite(thickness) &&
-                   outer_radius > 0 && thickness > 0 && thickness < outer_radius,
-        "PROFILE PIPE: require 0 < thickness < outer radius");
+    logging::error(std::isfinite(outer_radius) && outer_radius > 0,
+        "PROFILE PIPE: outer radius must be finite and positive");
+    logging::error(std::isfinite(thickness) && thickness > 0,
+        "PROFILE PIPE: wall thickness must be finite and positive");
+    logging::error(thickness < outer_radius,
+        "PROFILE PIPE: thickness must be smaller than outer radius");
 
     const Precision pi           = std::acos(Precision(-1));
     const Precision inner_radius = outer_radius - thickness;
@@ -152,12 +159,18 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision thickness
 Profile::Ptr Profile::Box(Precision width, Precision height, Precision right,
                            Precision top, Precision left, Precision bottom) {
     // Validate the exterior geometry and non-degenerate interior
-    logging::error(std::isfinite(width) && std::isfinite(height) &&
-                   std::isfinite(right) && std::isfinite(top) &&
-                   std::isfinite(left) && std::isfinite(bottom) &&
-                   width > right + left && height > top + bottom &&
-                   right > 0 && top > 0 && left > 0 && bottom > 0,
-        "PROFILE BOX: positive walls must leave a positive interior");
+    logging::error(std::isfinite(width) && width > 0,
+        "PROFILE BOX: width must be finite and positive");
+    logging::error(std::isfinite(height) && height > 0,
+        "PROFILE BOX: height must be finite and positive");
+    logging::error(std::isfinite(right) && right > 0 && std::isfinite(left) && left > 0,
+        "PROFILE BOX: left and right wall thicknesses must be finite and positive");
+    logging::error(std::isfinite(top) && top > 0 && std::isfinite(bottom) && bottom > 0,
+        "PROFILE BOX: top and bottom wall thicknesses must be finite and positive");
+    logging::error(right + left < width,
+        "PROFILE BOX: side walls leave no positive interior width");
+    logging::error(top + bottom < height,
+        "PROFILE BOX: horizontal walls leave no positive interior height");
 
     // Subtract the interior rectangle to obtain centroid and bending inertias
     const Precision inner_width  = width - right - left;
@@ -170,16 +183,23 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision right,
     const Precision cy           = (outer_area * width / 2 - inner_area * hole_y) / area;
     const Precision cz           = (outer_area * height / 2 - inner_area * hole_z) / area;
 
-    const Precision iy = (width * std::pow(height, 3) -
-                          inner_width * std::pow(inner_height, 3)) / 12 +
-                         outer_area * std::pow(height / 2 - cz, 2) -
-                         inner_area * std::pow(hole_z - cz, 2);
-    const Precision iz = (height * std::pow(width, 3) -
-                          inner_height * std::pow(inner_width, 3)) / 12 +
-                         outer_area * std::pow(width / 2 - cy, 2) -
-                         inner_area * std::pow(hole_y - cy, 2);
-    const Precision iyz = outer_area * (width / 2 - cy) * (height / 2 - cz) -
-                          inner_area * (hole_y - cy) * (hole_z - cz);
+    // Determine the centroidal contributions of the outer rectangle and void.
+    // The interior is subtracted from the outer shape, not added as material.
+    const Precision outer_iy  = width * std::pow(height, 3) / 12 +
+                                outer_area * std::pow(height / 2 - cz, 2);
+    const Precision inner_iy  = inner_width * std::pow(inner_height, 3) / 12 +
+                                inner_area * std::pow(hole_z - cz, 2);
+    const Precision outer_iz  = height * std::pow(width, 3) / 12 +
+                                outer_area * std::pow(width / 2 - cy, 2);
+    const Precision inner_iz  = inner_height * std::pow(inner_width, 3) / 12 +
+                                inner_area * std::pow(hole_y - cy, 2);
+    const Precision outer_iyz = outer_area * (width / 2 - cy) * (height / 2 - cz);
+    const Precision inner_iyz = inner_area * (hole_y - cy) * (hole_z - cz);
+
+    // Assemble the section bending inertias from the solid and hollow parts
+    const Precision iy  = outer_iy - inner_iy;
+    const Precision iz  = outer_iz - inner_iz;
+    const Precision iyz = outer_iyz - inner_iyz;
 
     // Estimate closed-cell torsion along the four wall midlines
     const Precision mid_width  = width - (right + left) / 2;
