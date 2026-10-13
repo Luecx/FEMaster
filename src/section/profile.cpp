@@ -1,6 +1,11 @@
 /**
  * @file profile.cpp
- * @brief Implements beam profile storage and reporting.
+ * @brief Implements generalized beam properties and typed geometry factories.
+ *
+ * Each geometric factory evaluates area, bending inertias and a torsional
+ * constant, then stores only these properties in an ordinary Profile.
+ * Beam sections therefore require no geometric subtype or string-based
+ * factory dispatch. Open-section torsion uses thin-wall approximations.
  *
  * @see src/section/profile.h
  * @author Finn Eggers
