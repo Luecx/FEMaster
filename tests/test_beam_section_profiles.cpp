@@ -56,6 +56,31 @@ TEST(BeamSectionProfiles, BoxAndOpenSections) {
               angle->product_inertia_yz_ * angle->product_inertia_yz_, 0);
 }
 
+TEST(BeamSectionProfiles, ISectionAlsoSupportsAbaqusTSections) {
+    // Abaqus SECTION=I allows a T with either the lower or upper flange absent.
+    const auto top = make_beam_geometry_profile(
+        "T_TOP", "I", {0, 100, 0, 60, 0, 10, 8});
+    EXPECT_NEAR(top->area_, 60.0 * 10 + 90.0 * 8, 1e-3);
+    EXPECT_NEAR(top->product_inertia_yz_, 0, 1e-3);
+    EXPECT_GT(top->inertia_y_, 0);
+    EXPECT_GT(top->inertia_z_, 0);
+    EXPECT_GT(top->torsion_inertia_, 0);
+
+    const auto bottom = make_beam_geometry_profile(
+        "T_BOTTOM", "I", {0, 100, 60, 0, 10, 0, 8});
+    EXPECT_NEAR(bottom->area_, top->area_, 1e-3);
+    EXPECT_NEAR(bottom->inertia_y_, top->inertia_y_, 1e-3);
+    EXPECT_NEAR(bottom->inertia_z_, top->inertia_z_, 1e-3);
+
+    // A partially specified flange or two missing flanges is not a section.
+    EXPECT_THROW(make_beam_geometry_profile(
+        "INVALID", "I", {0, 100, 0, 60, 10, 10, 8}), std::exception);
+    EXPECT_THROW(make_beam_geometry_profile(
+        "INVALID", "I", {0, 100, 60, 0, 0, 10, 8}), std::exception);
+    EXPECT_THROW(make_beam_geometry_profile(
+        "INVALID", "I", {0, 100, 0, 0, 0, 0, 8}), std::exception);
+}
+
 TEST(BeamSectionReader, BothKeywordsAcceptProfilesAndGeometry) {
     const std::string path = "tests/TMP_BEAM_SECTION_VARIANTS.INP";
     {
