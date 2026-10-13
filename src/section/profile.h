@@ -39,6 +39,31 @@ struct Profile : public fem::Namable {
     Precision shear_area_y_      = 0; ///< Effective transverse shear area in local y.
     Precision shear_area_z_      = 0; ///< Effective transverse shear area in local z.
 
+    // Construct generalized section constants from explicit properties or
+    // standard cross-section dimensions. Factories return ordinary Profiles;
+    // no geometric subtype is stored after evaluating the section properties.
+    static Ptr General  (Precision area, Precision i11, Precision i12, Precision i22, Precision torsion);
+    static Ptr Rectangle(Precision width, Precision height);
+    static Ptr Circle   (Precision radius);
+    static Ptr Pipe     (Precision outer_radius, Precision thickness);
+
+    // Box with equal or individual wall thicknesses (right, top, left, bottom)
+    static Ptr Box(Precision width, Precision height, Precision thickness);
+    static Ptr Box(Precision width, Precision height, Precision right, Precision top,
+                   Precision left, Precision bottom);
+
+    // Abaqus I/CHANNEL dimensions: reference height, total height, flange
+    // widths, flange thicknesses and web thickness. An I profile may omit one
+    // complete flange (width and thickness both zero) to describe a T profile.
+    static Ptr I(Precision reference_height, Precision height, Precision bottom_width,
+                 Precision top_width, Precision bottom_thickness, Precision top_thickness,
+                 Precision web_thickness);
+    static Ptr Channel(Precision reference_height, Precision height, Precision bottom_width,
+                       Precision top_width, Precision bottom_thickness, Precision top_thickness,
+                       Precision web_thickness, Precision reference_width);
+    static Ptr Angle(Precision width, Precision height, Precision bottom_thickness,
+                     Precision side_thickness);
+
     /**
      * @brief Creates a beam profile with geometric constants.
      *
