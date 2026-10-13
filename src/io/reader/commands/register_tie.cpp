@@ -18,6 +18,7 @@
 #include "register_functions.h"
 
 #include <memory>
+
 #include "../../dsl/registry.h"
 
 #include "../../../constraints/types/tie.h"
@@ -32,10 +33,11 @@ void register_tie(fem::io::dsl::Registry& registry, model::Model& model) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
+                .key("NAME").optional()
                 .key("MASTER").optional()
                 .key("SLAVE").optional()
                 .key("ADJUST").optional("NO").allowed({"NO", "YES"})
-                .key("DISTANCE").required()
+                .key("DISTANCE").alternative("POSITIONTOLERANCE").required()
         );
         const auto distance = std::make_shared<Precision>(0);
         const auto adjust   = std::make_shared<bool>(false);
@@ -92,12 +94,12 @@ void register_tie(fem::io::dsl::Registry& registry, model::Model& model) {
             }
         });
 
-        // Abaqus format: a single data line containing slave, master.
+        // Abaqus format: one or more data lines, each containing slave, master.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::negate(
                 fem::io::dsl::Condition::key_present("MASTER")))
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("SLAVE")
                     .one<std::string>().name("MASTER")
