@@ -161,6 +161,12 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                 })
             )
         );
+
+        // Abaqus/CAE can emit OP=NEW without data rows to clear prior supports.
+        // Keep all other BOUNDARY occurrences subject to the normal row requirement.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
+        );
     });
 }
 
