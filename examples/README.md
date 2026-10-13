@@ -9,3 +9,5 @@ FEMaster 01_beams/010_beam_cantilever_b33_linear.inp --output 010_beam_cantileve
 ```
 
 These decks were generated from the documented FEMaster DSL and should be treated as first-pass examples. Run them through your current build and adjust element-specific details where your implementation has stricter requirements.
+
+Bolt pretension: [095_bolt_pretension.inp](09_constraints/095_bolt_pretension.inp) demonstrates force loading, locking and a subsequent external load. See the [pretension reference](../documentation/pretension.md).
