@@ -97,12 +97,12 @@ Profile::Ptr make_beam_geometry_profile(const std::string& name,
             name, pi * (r * r - inner * inner), iy, iy, 2 * iy);
     }
     if (shape == "BOX") {
-        logging::error(d.size() == 5 || d.size() == 6,
-                       "BEAM SECTION BOX: expected a, b, t1, t2, t3, t4");
+        logging::error(d.size() == 3 || d.size() == 6,
+                       "BEAM SECTION BOX: expected a, b, t or a, b, t1, t2, t3, t4");
         const Precision a = d[0], b = d[1];
-        const Precision t1 = d[2], t2 = d.size() == 5 ? d[2] : d[3];
-        const Precision t3 = d.size() == 5 ? d[3] : d[4];
-        const Precision t4 = d.size() == 5 ? d[4] : d[5];
+        const Precision t1 = d[2], t2 = d.size() == 3 ? d[2] : d[3];
+        const Precision t3 = d.size() == 3 ? d[2] : d[4];
+        const Precision t4 = d.size() == 3 ? d[2] : d[5];
         // t1=bottom, t2=right, t3=top, t4=left (Abaqus wall order).
         const Precision inner_y = a - t2 - t4;
         const Precision inner_z = b - t1 - t3;
