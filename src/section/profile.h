@@ -1,10 +1,12 @@
 /**
  * @file profile.h
- * @brief Declares beam cross-section profile properties.
+ * @brief Declares generalized beam properties and typed geometry factories.
  *
- * A profile stores the geometric constants used by beam elements: area,
- * bending inertias, torsional inertia and optional offsets between section
- * reference axes.
+ * A Profile stores only the geometric constants used by beam elements:
+ * area, bending inertias, Saint-Venant torsion, shear areas and offsets.
+ * Named profiles and geometrically generated profiles have identical storage.
+ * Static factory methods compute these properties from standard cross-section
+ * dimensions without introducing separate geometric profile classes.
  *
  * @see src/section/profile.cpp
  * @author Finn Eggers
