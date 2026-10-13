@@ -296,15 +296,22 @@ Profile::Ptr Profile::Channel(Precision reference_height, Precision height,
                                Precision bottom_thickness, Precision top_thickness,
                                Precision web_thickness, Precision reference_width) {
     // Validate physical dimensions and reference offsets
-    logging::error(std::isfinite(reference_height) && std::isfinite(reference_width) &&
-                   std::isfinite(height) && std::isfinite(bottom_width) &&
-                   std::isfinite(top_width) && std::isfinite(bottom_thickness) &&
-                   std::isfinite(top_thickness) && std::isfinite(web_thickness) &&
-                   height > 0 && bottom_width > web_thickness &&
-                   top_width > web_thickness && web_thickness > 0 &&
-                   bottom_thickness > 0 && top_thickness > 0 &&
-                   bottom_thickness + top_thickness < height,
-        "PROFILE CHANNEL: invalid height, flange or web dimensions");
+    logging::error(std::isfinite(reference_height) && std::isfinite(reference_width),
+        "PROFILE CHANNEL: reference offsets must be finite");
+    logging::error(std::isfinite(height) && height > 0,
+        "PROFILE CHANNEL: height must be finite and positive");
+    logging::error(std::isfinite(web_thickness) && web_thickness > 0,
+        "PROFILE CHANNEL: web thickness must be finite and positive");
+    logging::error(std::isfinite(bottom_width) && bottom_width > web_thickness,
+        "PROFILE CHANNEL: lower flange must be wider than the web");
+    logging::error(std::isfinite(top_width) && top_width > web_thickness,
+        "PROFILE CHANNEL: upper flange must be wider than the web");
+    logging::error(std::isfinite(bottom_thickness) && bottom_thickness > 0,
+        "PROFILE CHANNEL: lower flange thickness must be finite and positive");
+    logging::error(std::isfinite(top_thickness) && top_thickness > 0,
+        "PROFILE CHANNEL: upper flange thickness must be finite and positive");
+    logging::error(bottom_thickness + top_thickness < height,
+        "PROFILE CHANNEL: flange thicknesses leave no positive web height");
 
     // Sum flange/web areas and first moments about the corner reference
     const Precision web_height = height - bottom_thickness - top_thickness;
@@ -321,25 +328,35 @@ Profile::Ptr Profile::Channel(Precision reference_height, Precision height,
     const Precision cy         = (a1 * y1 + a2 * y2 + a3 * y3) / area;
     const Precision cz         = (a1 * z1 + a2 * z2 + a3 * z3) / area;
 
-    // Use the parallel-axis theorem for centroidal bending and coupling
-    const Precision iy = (bottom_width * std::pow(bottom_thickness, 3) +
-                          top_width * std::pow(top_thickness, 3) +
-                          web_thickness * std::pow(web_height, 3)) / 12 +
-                          a1 * std::pow(z1 - cz, 2) +
-                          a2 * std::pow(z2 - cz, 2) +
+    // Compute each plate's centroidal bending and coupling contributions.
+    // Unlike an I-section, unequal edge-aligned flanges generally yield Iyz != 0.
+    const Precision iy1 = bottom_width * std::pow(bottom_thickness, 3) / 12 +
+                          a1 * std::pow(z1 - cz, 2);
+    const Precision iy2 = top_width * std::pow(top_thickness, 3) / 12 +
+                          a2 * std::pow(z2 - cz, 2);
+    const Precision iy3 = web_thickness * std::pow(web_height, 3) / 12 +
                           a3 * std::pow(z3 - cz, 2);
-    const Precision iz = (bottom_thickness * std::pow(bottom_width, 3) +
-                          top_thickness * std::pow(top_width, 3) +
-                          web_height * std::pow(web_thickness, 3)) / 12 +
-                          a1 * std::pow(y1 - cy, 2) +
-                          a2 * std::pow(y2 - cy, 2) +
+
+    const Precision iz1 = bottom_thickness * std::pow(bottom_width, 3) / 12 +
+                          a1 * std::pow(y1 - cy, 2);
+    const Precision iz2 = top_thickness * std::pow(top_width, 3) / 12 +
+                          a2 * std::pow(y2 - cy, 2);
+    const Precision iz3 = web_height * std::pow(web_thickness, 3) / 12 +
                           a3 * std::pow(y3 - cy, 2);
-    const Precision iyz = a1 * (y1 - cy) * (z1 - cz) +
-                          a2 * (y2 - cy) * (z2 - cz) +
-                          a3 * (y3 - cy) * (z3 - cz);
-    const Precision j = (bottom_width * std::pow(bottom_thickness, 3) +
-                         top_width * std::pow(top_thickness, 3) +
-                         web_height * std::pow(web_thickness, 3)) / 3;
+
+    const Precision iyz1 = a1 * (y1 - cy) * (z1 - cz);
+    const Precision iyz2 = a2 * (y2 - cy) * (z2 - cz);
+    const Precision iyz3 = a3 * (y3 - cy) * (z3 - cz);
+
+    // Add plate contributions to obtain the generalized section properties
+    const Precision iy  = iy1 + iy2 + iy3;
+    const Precision iz  = iz1 + iz2 + iz3;
+    const Precision iyz = iyz1 + iyz2 + iyz3;
+
+    const Precision j1 = bottom_width * std::pow(bottom_thickness, 3) / 3;
+    const Precision j2 = top_width * std::pow(top_thickness, 3) / 3;
+    const Precision j3 = web_height * std::pow(web_thickness, 3) / 3;
+    const Precision j  = j1 + j2 + j3;
 
     return std::make_shared<Profile>("CHANNEL", area, iy, iz, j, iyz,
                                      0, 0, reference_width - cy, reference_height - cz);
@@ -353,11 +370,18 @@ Profile::Ptr Profile::Channel(Precision reference_height, Precision height,
 Profile::Ptr Profile::Angle(Precision width, Precision height,
                              Precision bottom_thickness, Precision side_thickness) {
     // Validate finite dimensions and the non-overlapping leg decomposition
-    logging::error(std::isfinite(width) && std::isfinite(height) &&
-                   std::isfinite(bottom_thickness) && std::isfinite(side_thickness) &&
-                   width > side_thickness && height > bottom_thickness &&
-                   bottom_thickness > 0 && side_thickness > 0,
-        "PROFILE L: invalid leg dimensions or thicknesses");
+    logging::error(std::isfinite(width) && width > 0,
+        "PROFILE L: width must be finite and positive");
+    logging::error(std::isfinite(height) && height > 0,
+        "PROFILE L: height must be finite and positive");
+    logging::error(std::isfinite(bottom_thickness) && bottom_thickness > 0,
+        "PROFILE L: bottom thickness must be finite and positive");
+    logging::error(std::isfinite(side_thickness) && side_thickness > 0,
+        "PROFILE L: side thickness must be finite and positive");
+    logging::error(bottom_thickness < height,
+        "PROFILE L: bottom thickness must be smaller than height");
+    logging::error(side_thickness < width,
+        "PROFILE L: side thickness must be smaller than width");
 
     // Decompose the angle into a bottom leg and the non-overlapping side leg
     const Precision side_height = height - bottom_thickness;
@@ -371,17 +395,25 @@ Profile::Ptr Profile::Angle(Precision width, Precision height,
     const Precision cy          = (a1 * y1 + a2 * y2) / area;
     const Precision cz          = (a1 * z1 + a2 * z2) / area;
 
-    // Recover the centroidal moments and the sign-consistent product of inertia
-    const Precision iy = (width * std::pow(bottom_thickness, 3) +
-                          side_thickness * std::pow(side_height, 3)) / 12 +
-                          a1 * std::pow(z1 - cz, 2) + a2 * std::pow(z2 - cz, 2);
-    const Precision iz = (bottom_thickness * std::pow(width, 3) +
-                          side_height * std::pow(side_thickness, 3)) / 12 +
-                          a1 * std::pow(y1 - cy, 2) + a2 * std::pow(y2 - cy, 2);
-    const Precision iyz = a1 * (y1 - cy) * (z1 - cz) +
-                          a2 * (y2 - cy) * (z2 - cz);
-    const Precision j = (width * std::pow(bottom_thickness, 3) +
-                         side_height * std::pow(side_thickness, 3)) / 3;
+    // Evaluate bottom and side-leg bending terms around the common centroid
+    const Precision iy1 = width * std::pow(bottom_thickness, 3) / 12 +
+                          a1 * std::pow(z1 - cz, 2);
+    const Precision iy2 = side_thickness * std::pow(side_height, 3) / 12 +
+                          a2 * std::pow(z2 - cz, 2);
+    const Precision iz1 = bottom_thickness * std::pow(width, 3) / 12 +
+                          a1 * std::pow(y1 - cy, 2);
+    const Precision iz2 = side_height * std::pow(side_thickness, 3) / 12 +
+                          a2 * std::pow(y2 - cy, 2);
+    const Precision iyz1 = a1 * (y1 - cy) * (z1 - cz);
+    const Precision iyz2 = a2 * (y2 - cy) * (z2 - cz);
+
+    // Assemble moments and thin-wall torsion from the two non-overlapping legs
+    const Precision iy  = iy1 + iy2;
+    const Precision iz  = iz1 + iz2;
+    const Precision iyz = iyz1 + iyz2;
+    const Precision j1  = width * std::pow(bottom_thickness, 3) / 3;
+    const Precision j2  = side_height * std::pow(side_thickness, 3) / 3;
+    const Precision j   = j1 + j2;
 
     return std::make_shared<Profile>("L", area, iy, iz, j, iyz, 0, 0, -cy, -cz);
 }
