@@ -106,20 +106,20 @@ Profile::Ptr make_beam_geometry_profile(const std::string& name,
         const Precision t1 = d[2], t2 = d.size() == 3 ? d[2] : d[3];
         const Precision t3 = d.size() == 3 ? d[2] : d[4];
         const Precision t4 = d.size() == 3 ? d[2] : d[5];
-        // t1=bottom, t2=right, t3=top, t4=left (Abaqus wall order).
-        const Precision inner_y = a - t2 - t4;
-        const Precision inner_z = b - t1 - t3;
+        // Abaqus wall order: t1=right, t2=top, t3=left, t4=bottom.
+        const Precision inner_y = a - t1 - t3;
+        const Precision inner_z = b - t2 - t4;
         logging::error(inner_y > 0 && inner_z > 0,
                        "BEAM SECTION BOX: wall thicknesses leave no interior");
         const Properties p = rectangles({
             {a, b, a / 2, b / 2},
-            {-inner_y, inner_z, t4 + inner_y / 2, t1 + inner_z / 2}
+            {-inner_y, inner_z, t3 + inner_y / 2, t4 + inner_z / 2}
         });
-        const Precision mid_y = a - (t2 + t4) / 2;
-        const Precision mid_z = b - (t1 + t3) / 2;
+        const Precision mid_y = a - (t1 + t3) / 2;
+        const Precision mid_z = b - (t2 + t4) / 2;
         // Thin-walled Bredt-Batho closed-cell torsion estimate.
         const Precision j = 4 * std::pow(mid_y * mid_z, 2) /
-            (mid_y / t1 + mid_z / t2 + mid_y / t3 + mid_z / t4);
+            (mid_z / t1 + mid_y / t2 + mid_z / t3 + mid_y / t4);
         return std::make_shared<Profile>(
             name, p.area, p.iy, p.iz, j, p.iyz,
             0, 0, a / 2 - p.cy, b / 2 - p.cz);
