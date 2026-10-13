@@ -19,8 +19,8 @@
 #include "../../core/logging.h"
 #include "../../mattools/append_sparse_block.h"
 #include "../../mattools/max_abs_diagonal.h"
+#include "../../solve/sparse/solve_sparse.h"
 
-#include <Eigen/SparseCholesky>
 #include <Eigen/SparseQR>
 
 #include <algorithm>
@@ -159,9 +159,10 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
  * Recovers multipliers satisfying C^T*lambda=f-K*u in full-system coordinates.
  *
  * Solve the regularized normal equations (C*C^T+r*I)*lambda=C*(f-K*u)
- * using sparse LDLT. Scale r from the largest absolute normal-matrix diagonal
- * with a unit fallback for an unusable scale. If factorization or finite
- * solution recovery fails, solve C^T*lambda=f-K*u through sparse QR instead.
+ * through the shared CPU direct solver (MKL PARDISO when enabled). Scale r
+ * from the largest absolute normal-matrix diagonal with a unit fallback for
+ * an unusable scale. If recovery is nonfinite, solve C^T*lambda=f-K*u through
+ * sparse QR instead.
  * An unconstrained system returns an empty vector. Inputs and transformer
  * state are unchanged.
  *
@@ -198,13 +199,13 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
     }
     normal.makeCompressed();
 
-    Eigen::SimplicialLDLT<SparseMatrix> ldlt{};
-    ldlt.compute(normal);
-    if (ldlt.info() == Eigen::Success) {
-        DynamicVector multipliers = ldlt.solve(normal_rhs);
-        if (ldlt.info() == Eigen::Success && multipliers.allFinite()) {
-            return multipliers;
-        }
+    // Reuse FEMaster's CPU direct solver for the regularized SPD system.
+    const DynamicVector multipliers = solver::solve(
+        solver::CPU, solver::DIRECT, normal, normal_rhs,
+        solver::DirectSolverMatrixType::SPD
+    );
+    if (multipliers.allFinite()) {
+        return multipliers;
     }
 
     const SparseMatrix transpose = system_.C.transpose();
