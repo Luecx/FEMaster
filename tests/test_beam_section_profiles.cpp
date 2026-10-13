@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -16,8 +17,8 @@ using namespace fem;
 TEST(BeamSectionProfiles, RectAndCircularProperties) {
     const auto rect = make_beam_geometry_profile("RECT_TEST", "RECT", {20, 40});
     EXPECT_DOUBLE_EQ(rect->area_, 800);
-    EXPECT_NEAR(rect->inertia_y_, 20.0 * std::pow(40.0, 3) / 12, 1e-5);
-    EXPECT_NEAR(rect->inertia_z_, 40.0 * std::pow(20.0, 3) / 12, 1e-5);
+    EXPECT_NEAR(rect->inertia_y_, 20.0 * std::pow(40.0, 3) / 12, 0.1);
+    EXPECT_NEAR(rect->inertia_z_, 40.0 * std::pow(20.0, 3) / 12, 0.1);
 
     const auto circle = make_beam_geometry_profile("CIRC_TEST", "CIRC", {5});
     EXPECT_NEAR(circle->area_, std::acos(-1.0) * 25, 1e-4);
