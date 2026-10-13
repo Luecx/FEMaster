@@ -324,6 +324,59 @@ TEST(Reader_Parser, BoundaryCreatesDirectStructuralSupportsAndRejectsThermalDofs
     std::filesystem::remove(output_path);
 }
 
+TEST(Reader_Parser, EmptyBoundaryNewClearsSupportsBeforeSubsequentBlocks) {
+    const std::string input_path  = "tests/TMP_EMPTY_BOUNDARY_NEW.INP";
+    const std::string output_path = "tests/TMP_EMPTY_BOUNDARY_NEW.RES";
+
+    {
+        std::ofstream out(input_path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n";
+        for (int id = 19888; id <= 19896; ++id) {
+            out << id << ", 0, 0, 0\n";
+        }
+
+        // A populated OP=NEW remains valid; the following empty occurrence
+        // must remove its supports without swallowing subsequent BOUNDARY blocks.
+        out << "*Boundary, op=New\n19888, 1, 3, 0\n";
+        out << "** Boundary conditions +++++++++++++++++++++++++++++++++++++\n";
+        out << "**\n*Boundary, op=New\n";
+        for (int group = 0; group < 4; ++group) {
+            out << "** Name: Fixed-" << group + 1 << "\n";
+            out << "*Boundary\n";
+            for (int offset = 0; offset < 2; ++offset) {
+                out << 19889 + 2 * group + offset << ", 1, 3, 0\n";
+            }
+        }
+        out << "**\n";
+    }
+
+    io::reader::Parser parser;
+    ASSERT_NO_THROW(parser.run(input_path, output_path));
+    EXPECT_EQ(parser.conditions().get(bc::SUPPORT).size(), 24u);
+
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+}
+
+TEST(Reader_Parser, EmptyBoundaryWithoutNewIsRejected) {
+    const std::string input_path  = "tests/TMP_EMPTY_BOUNDARY_MOD.INP";
+    const std::string output_path = "tests/TMP_EMPTY_BOUNDARY_MOD.RES";
+    {
+        std::ofstream out(input_path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n1, 0, 0, 0\n";
+        out << "*Boundary\n** No data lines\n";
+        out << "*Boundary\n1, 1, 3, 0\n";
+    }
+
+    io::reader::Parser parser;
+    EXPECT_THROW(parser.run(input_path, output_path), std::exception);
+
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+}
+
 TEST(Reader_Parser, MixedSolidSectionCreatesSolidAndTrussSubsets) {
     const std::string input_path  = "tests/TMP_MIXED_SOLID_SECTION.INP";
     const std::string output_path = "tests/TMP_MIXED_SOLID_SECTION.RES";
