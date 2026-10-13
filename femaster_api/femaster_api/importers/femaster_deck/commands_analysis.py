@@ -53,8 +53,10 @@ def cmd_loadcase(parser, header: Header) -> None:
         "loads": (),
         "supports": (),
         "solver": None,
-        "constraint_method": (ConstraintMethod.ELIMINATION if lc_type in {"LINEARSTATIC", "LINEARSTATICTOPO"}
-                              else ConstraintMethod.NULLSPACE),
+        "constraint_method": (
+            ConstraintMethod.ELIMINATION if lc_type in {"LINEARSTATIC", "LINEARSTATICTOPO"}
+            else ConstraintMethod.NULLSPACE
+        ),
         "inertia_relief": False,
         "inertia_relief_consider_point_masses": True,
         "rebalance_loads": False,
