@@ -63,7 +63,11 @@ void validate_dimensions(const std::string& shape, const std::vector<Precision>&
         // I/CHANNEL section origin offsets l and o may legitimately be zero.
         const bool offset = (shape == "I" || shape == "CHANNEL") &&
                             (i == 0 || (shape == "CHANNEL" && i == 7));
-        logging::error(std::isfinite(d[i]) && (offset || d[i] > 0),
+        // Abaqus represents T-sections as an I-section with one missing
+        // flange (b1=t1=0 or b2=t2=0).
+        const bool optional_flange = shape == "I" && (i == 2 || i == 3 || i == 4 || i == 5);
+        logging::error(std::isfinite(d[i]) &&
+                       (offset || (optional_flange ? d[i] >= 0 : d[i] > 0)),
                        "BEAM SECTION: dimensions must be finite, lengths/thicknesses positive");
     }
 }
@@ -130,7 +134,20 @@ Profile::Ptr make_beam_geometry_profile(const std::string& name,
         const Precision l = d[0], h = d[1], b1 = d[2], b2 = d[3];
         const Precision t1 = d[4], t2 = d[5], t3 = d[6];
         logging::error(t1 + t2 < h, "BEAM SECTION I/CHANNEL: flange thicknesses exceed height");
-        logging::error(t3 < std::min(b1, b2), "BEAM SECTION I/CHANNEL: web too thick");
+        if (shape == "I") {
+            const bool lower = b1 > 0 && t1 > 0;
+            const bool upper = b2 > 0 && t2 > 0;
+            logging::error((lower || (b1 == 0 && t1 == 0)) &&
+                           (upper || (b2 == 0 && t2 == 0)) &&
+                           (lower || upper),
+                "BEAM SECTION I: each flange must have both width and thickness, "
+                "and at least one flange must exist");
+            logging::error((!lower || t3 < b1) && (!upper || t3 < b2),
+                "BEAM SECTION I: web thicker than an existing flange width");
+        } else {
+            logging::error(t3 < std::min(b1, b2),
+                "BEAM SECTION CHANNEL: web too thick");
+        }
         const Precision lower_y = shape == "I" ? 0 : b1 / 2;
         const Precision upper_y = shape == "I" ? 0 : b2 / 2;
         const Precision web_y = shape == "I" ? 0 : t3 / 2;
