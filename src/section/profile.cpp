@@ -205,29 +205,28 @@ Profile::Ptr Profile::Box(Precision width, Precision height, Precision right,
                           a_top * z_top + a_bottom * z_bottom) / area;
 
     // Evaluate each wall's bending inertias around the common centroid
-    const Precision iy_left   = left * std::pow(height, 3) / 12 +
-                                a_left * std::pow(z_left - cz, 2);
-    const Precision iy_right  = right * std::pow(height, 3) / 12 +
-                                a_right * std::pow(z_right - cz, 2);
-    const Precision iy_top    = inner_width * std::pow(top, 3) / 12 +
-                                a_top * std::pow(z_top - cz, 2);
-    const Precision iy_bottom = inner_width * std::pow(bottom, 3) / 12 +
-                                a_bottom * std::pow(z_bottom - cz, 2);
+    const Precision iy_left   = left        * std::pow(height     , 3) / 12 +
+                                a_left      * std::pow(z_left   - cz, 2);
+    const Precision iy_right  = right       * std::pow(height     , 3) / 12 +
+                                a_right     * std::pow(z_right  - cz, 2);
+    const Precision iy_top    = inner_width * std::pow(top        , 3) / 12 +
+                                a_top       * std::pow(z_top    - cz, 2);
+    const Precision iy_bottom = inner_width * std::pow(bottom     , 3) / 12 +
+                                a_bottom    * std::pow(z_bottom - cz, 2);
 
-    const Precision iz_left   = height * std::pow(left, 3) / 12 +
-                                a_left * std::pow(y_left - cy, 2);
-    const Precision iz_right  = height * std::pow(right, 3) / 12 +
-                                a_right * std::pow(y_right - cy, 2);
-    const Precision iz_top    = top * std::pow(inner_width, 3) / 12 +
-                                a_top * std::pow(y_top - cy, 2);
-    const Precision iz_bottom = bottom * std::pow(inner_width, 3) / 12 +
-                                a_bottom * std::pow(y_bottom - cy, 2);
+    const Precision iz_left   = height      * std::pow(left       , 3) / 12 +
+                                a_left      * std::pow(y_left   - cy, 2);
+    const Precision iz_right  = height      * std::pow(right      , 3) / 12 +
+                                a_right     * std::pow(y_right  - cy, 2);
+    const Precision iz_top    = top         * std::pow(inner_width, 3) / 12 +
+                                a_top       * std::pow(y_top    - cy, 2);
+    const Precision iz_bottom = bottom      * std::pow(inner_width, 3) / 12 +
+                                a_bottom    * std::pow(y_bottom - cy, 2);
 
-    const Precision iyz_left   = a_left * (y_left - cy) * (z_left - cz);
-    const Precision iyz_right  = a_right * (y_right - cy) * (z_right - cz);
-    const Precision iyz_top    = a_top * (y_top - cy) * (z_top - cz);
+    const Precision iyz_left   = a_left   * (y_left   - cy) * (z_left   - cz);
+    const Precision iyz_right  = a_right  * (y_right  - cy) * (z_right  - cz);
+    const Precision iyz_top    = a_top    * (y_top    - cy) * (z_top    - cz);
     const Precision iyz_bottom = a_bottom * (y_bottom - cy) * (z_bottom - cz);
-
     // Assemble the section inertias from all four positive wall contributions
     const Precision iy  = iy_left + iy_right + iy_top + iy_bottom;
     const Precision iz  = iz_left + iz_right + iz_top + iz_bottom;
