@@ -2,6 +2,8 @@
 #include "../src/io/dsl/file.h"
 #include "../src/io/reader/parser.h"
 #include "../src/section/profile_geometry.h"
+#include "../src/section/section_beam.h"
+#include "../src/model/model.h"
 
 #include <cmath>
 #include <filesystem>
@@ -102,4 +104,40 @@ TEST(BeamSectionReader, RejectsUnknownGeometry) {
     io::dsl::DeckParser deck_parser(parser.registry());
     EXPECT_THROW(deck_parser.parse(file), std::runtime_error);
     std::filesystem::remove(path);
+}
+
+TEST(BeamSectionReader, BothKeywordsConstructBeamSections) {
+    const std::string input = "tests/TMP_BEAM_SECTIONS_COMPLETE.INP";
+    const std::string output = "tests/TMP_BEAM_SECTIONS_COMPLETE.RES";
+    {
+        std::ofstream out(input);
+        ASSERT_TRUE(out.is_open());
+        out << "*MATERIAL, NAME=STEEL\\n*ELASTIC\\n210000, 0.3\\n";
+        out << "*PROFILE, NAME=P1\\n100, 800, 600, 400\\n";
+        out << "*NODE\\n1, 0, 0, 0\\n2, 10, 0, 0\\n3, 20, 0, 0\\n4, 30, 0, 0\\n5, 40, 0, 0\\n";
+        out << "*ELEMENT, TYPE=B31\\n1, 1, 2\\n2, 2, 3\\n3, 3, 4\\n4, 4, 5\\n";
+        for (int id = 1; id <= 4; ++id) {
+            out << "*ELSET, ELSET=SET" << id << "\\n" << id << "\\n";
+        }
+        out << "*BEAM SECTION, ELSET=SET1, MATERIAL=STEEL, PROFILE=P1\\n0, 0, -1\\n";
+        out << "*BEAM SECTION, ELSET=SET2, MATERIAL=STEEL, SECTION=RECT\\n10, 20\\n0, 0, -1\\n";
+        out << "*BEAM GENERAL SECTION, ELSET=SET3, SECTION=GENERAL\\n80, 700, 0, 900, 300\\n210000, 80000, 0\\n";
+        out << "*BEAM GENERAL SECTION, ELSET=SET4, MATERIAL=STEEL, SECTION=PIPE\\n10, 2\\n0, 0, -1\\n";
+    }
+
+    io::reader::Parser parser;
+    ASSERT_NO_THROW(parser.run(input, output));
+    const auto part = parser.model()._data->parts.get();
+    ASSERT_NE(part, nullptr);
+    ASSERT_EQ(part->sections.size(), 4u);
+    for (const auto& section : part->sections) {
+        auto* beam = section->as<BeamSection>();
+        ASSERT_NE(beam, nullptr);
+        ASSERT_NE(beam->profile_, nullptr);
+        EXPECT_GT(beam->profile_->area_, 0);
+        ASSERT_NE(beam->material_, nullptr);
+    }
+
+    std::filesystem::remove(input);
+    std::filesystem::remove(output);
 }
