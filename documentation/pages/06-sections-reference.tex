@@ -154,25 +154,33 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 
 \keywordpage{BEAM SECTION}
 
-\cmd{BEAM SECTION} assigns material, profile, and orientation information to a native FEMaster beam element set. \key{MATERIAL} selects the constitutive law, \key{PROFILE} supplies cross-section constants, and the data line gives a nonzero direction vector used to construct the local beam cross-section axes.
+\cmd{BEAM SECTION} and \cmd{BEAM GENERAL SECTION} both create the same generalized linear \val{BeamSection} in FEMaster. Unlike Abaqus, FEMaster does not yet integrate nonlinear constitutive behavior through a beam cross-section. Both input keywords therefore use the same parsing and section-property code path.
 
-The beam axis itself is determined by the element geometry from node 1 to node 2. The Section orientation vector must therefore provide a second direction that is not parallel to the beam axis. Together they establish the local cross-section basis in which \(I_y\), \(I_z\), \(I_{yz}\), offsets, bending moments, and section forces are interpreted.
+There are three mutually exclusive section descriptions:
 
-The orientation vector belongs to the beam reference geometry. It is not a prescribed nodal rotation and it is not a load direction. For a curved or multi-element beam region, consistency of this vector determines continuity of the local frame along the complete member.
+\begin{itemize}
+  \item \key{PROFILE=name} references a previously declared native FEMaster \cmd{PROFILE}; a named \key{MATERIAL} is required.
+  \item \key{SECTION=GENERAL} (or an omitted \key{SECTION} without \key{PROFILE}) reads \((A,I_{11},I_{12},I_{22},J)\) directly on the first data line.
+  \item \key{SECTION=RECT}, \val{CIRC}, \val{PIPE}, \val{BOX}, \val{I}, \val{CHANNEL}, or \val{L} reads a geometric data line and converts it to generalized section constants.
+\end{itemize}
 
-The current supported Abaqus input subset does not provide the native FEMaster beam-profile/beam-section mapping. General Abaqus \cmd{BEAM SECTION} cards are outside the supported subset unless a reader extension explicitly documents their syntax.
+For geometric types, use Abaqus dimension order: \val{RECT}: \(a,b\); \val{CIRC}: radius; \val{PIPE}: outer radius, wall thickness; \val{BOX}: \(a,b,t\) for uniform walls or \(a,b,t_1,t_2,t_3,t_4\); \val{I}: \(l,h,b_1,b_2,t_1,t_2,t_3\), with a T-section represented by \(b_1=t_1=0\) or \(b_2=t_2=0\); \val{CHANNEL}: \(l,h,b_1,b_2,t_1,t_2,t_3,o\); \val{L}: \(a,b,t_1,t_2\). Shapes not listed here, including \val{ARBITRARY}, \val{HEX}, \val{HAT}, and \val{TRAPEZOID}, are not yet supported.
 
-The local orientation determines which bending inertia acts about an applied-load direction. A beam can therefore have the specified area and inertias but a different bending stiffness when an unsymmetric profile or changing member direction produces different local axes.
+For \val{GENERAL} and geometric input, the first data line is followed by an optional \((n_{1x},n_{1y},n_{1z})\) direction (default \(0,0,-1\)). When \key{MATERIAL} is omitted, provide a following data line with \(E,G,\alpha\); \(\alpha\) is optional. The solver currently represents these direct constants using an equivalent isotropic material, so they must imply a valid Poisson ratio.
+
+A \key{DENSITY} override may be specified without changing a shared named material. If \key{PROFILE} is used, the only data line is the optional section direction.
+
+For closed circular sections, torsion is calculated from the polar second moment. For solid rectangles and thin-walled open/closed library shapes, torsion uses engineering approximations. The currently generic transverse shear areas remain \(5A/6\) and nontrivial shear-center corrections are not derived. Consequently, these inputs are linear generalized-section approximations, not a claim of full Abaqus library-section equivalence.
+
+The nonzero orientation vector must not be parallel to the beam tangent. It defines the local cross-section basis in which section inertias and offsets are interpreted.
 
 \begin{keywordparameters}
-\key{MATERIAL} / \key{MAT} & required & Beam material. \\
-\key{ELSET} & required & Beam element set. \\
-\key{PROFILE} & required & Previously defined native FEMaster Profile. \\
+\key{ELSET} & required & Target beam element set. \\
+\key{MATERIAL} / \key{MAT} & optional & Named material; required with \key{PROFILE}. \\
+\key{PROFILE} & optional & Previously defined native Profile; mutually exclusive with \key{SECTION}. \\
+\key{SECTION} & optional & \val{GENERAL} (default without PROFILE), or one of the supported library shapes. \\
+\key{DENSITY} & optional & Section-local nonnegative density override. \\
 \end{keywordparameters}
-
-\begin{keyworddata}
-\val{n1x, n1y, n1z} & Nonzero direction used to define the initial local cross-section orientation. \\
-\end{keyworddata}
 
 \exampleheading
 
@@ -185,9 +193,12 @@ The local orientation determines which bending inertia acts about an applied-loa
  MATERIAL=STEEL, PROFILE=BEAM_PROFILE
 0., 1., 0.
 \end{femasterdeck}
-\begin{noabaqus}
-The current supported Abaqus input subset has no mapping to FEMaster's native Profile-based \cmd{BEAM SECTION} definition.
-\end{noabaqus}
+\begin{abaqusdeck}
+*BEAM GENERAL SECTION, ELSET=BEAMS,
+ MATERIAL=STEEL, SECTION=RECT
+10., 20.
+0., 1., 0.
+\end{abaqusdeck}
 \end{dialectexamples}
 
 \keywordpage{TRUSS SECTION}
