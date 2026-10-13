@@ -116,6 +116,29 @@ TEST(BeamSectionReader, BothKeywordsAcceptProfilesAndGeometry) {
     std::filesystem::remove(path);
 }
 
+TEST(BeamSectionReader, ParsesBothAbaqusTSectionVariants) {
+    const std::string path = "tests/TMP_BEAM_SECTION_T_SHAPES.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=I\n";
+        out << "0, 100, 0, 60, 0, 10, 8\n";
+        out << "0, 0, -1\n";
+        out << "*BEAM GENERAL SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=I\n";
+        out << "0, 100, 60, 0, 10, 0, 8\n";
+        out << "0, 0, -1\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File file(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(file);
+    EXPECT_EQ(deck.root().children("BEAMSECTION").size(), 1u);
+    EXPECT_EQ(deck.root().children("BEAMGENERALSECTION").size(), 1u);
+
+    std::filesystem::remove(path);
+}
+
 TEST(BeamSectionReader, RejectsUnknownGeometry) {
     const std::string path = "tests/TMP_BEAM_SECTION_INVALID.INP";
     {
