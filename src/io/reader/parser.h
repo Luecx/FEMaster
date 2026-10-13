@@ -140,6 +140,14 @@ public:
     // load with the correct transformation applied. This maps node ID -> coordinate system name.
     std::unordered_map<ID, std::string> node_transforms;
 
+    struct PretensionAction {
+        std::string section;
+        std::string action;
+        std::string control;
+        Precision   value = 0;
+    };
+    std::vector<PretensionAction> queued_pretension_actions_;
+
 public:
     // Construction
     Parser();
@@ -160,6 +168,11 @@ public:
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
+    void queue_pretension_action(const std::string& section,
+                                 const std::string& action,
+                                 const std::string& control,
+                                 Precision value);
+
     StepState& step_state();
     const StepState& step_state() const;
 

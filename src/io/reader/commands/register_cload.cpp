@@ -152,7 +152,11 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
         ) {
             auto& model = parser.model();
             auto region = model.resolve_node_region(target);
-            const std::string identifier = (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+            std::string identifier = (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+            if (region->size() == 1)
+                for (const auto& section : model._data->pretension_sections)
+                    if (section->control_node == *region->begin())
+                        identifier = "PRETENSION_NODE:" + std::to_string(section->control_node);
 
             std::vector<bc::Condition::Ptr> replacements;
             for (auto& [load_region, load_orientation] :

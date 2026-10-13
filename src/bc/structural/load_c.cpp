@@ -74,6 +74,22 @@ void CLoad::apply(
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
 
+    for (const auto& section : model_data.pretension_sections) {
+        bool targets_control = false;
+        for (const ID node : *region_) targets_control |= node == section->control_node;
+        if (!targets_control) continue;
+        logging::error(section->nodal_control,
+            "CLOAD: use native PRETENSION actions for a native section");
+        logging::error(!orientation_, "CLOAD: control node cannot have a local orientation");
+        for (Dim dof = 1; dof < 6; ++dof)
+            logging::error(std::isnan(values_[dof]), "CLOAD: pretension control node has only DOF 1");
+        logging::error(std::isfinite(values_[0]), "CLOAD: control-node force must be finite");
+        if (section->state == pretension::State::Open) {
+            section->state = pretension::State::Loading;
+            section->control = pretension::Control::Force;
+        }
+    }
+
     // Determine the contributions of the start and target values.
     // An explicit amplitude overrides the linear step interpolation.
     Precision start_scale = Precision(1) - step_progress;

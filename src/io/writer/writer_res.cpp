@@ -499,6 +499,28 @@ void ResWriter::add_loadcase(int id, WriterStepType step_type) {
     file_path << "LC " << id << '\n';
 }
 
+void ResWriter::write_pretension_sections(const model::ModelData& model_data) {
+    if (model_data.pretension_sections.empty()) return;
+    file_path << "PRETENSION SECTIONS\n";
+    file_path.setf(std::ios::fixed, std::ios::floatfield);
+    file_path << std::setprecision(6);
+    for (const auto& section : model_data.pretension_sections) {
+        if (!section) continue;
+        const auto& [instance, local_id] = model_data.node_mapping.at(section->control_node);
+        const std::string control_id = instance->instance_id == 0
+            ? std::to_string(local_id) : instance->name + "." + std::to_string(local_id);
+        file_path << "  " << section->name << '\n'
+                  << "    control   : " << control_id << " (DOF 1)\n"
+                  << "    surface A : " << section->interface_surface_set_a << '\n'
+                  << "    surface B : " << section->interface_surface_set_b << '\n'
+                  << "    axis      : " << section->axis_direction(0) << ", "
+                  << section->axis_direction(1) << ", "
+                  << section->axis_direction(2) << '\n'
+                  << "    interface : " << section->interface_pairs.size() << " pairs\n";
+    }
+    file_path << "END PRETENSION SECTIONS\n";
+}
+
 /**
  * Builds the semantic RES identifiers for compiled nodes and elements.
  *
