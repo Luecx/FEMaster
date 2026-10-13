@@ -16,6 +16,9 @@
  */
 
 #include "register_functions.h"
+
+#include <memory>
+
 #include "../../dsl/registry.h"
 
 #include "../../../constraints/types/tie.h"
@@ -30,20 +33,17 @@ void register_tie(fem::io::dsl::Registry& registry, model::Model& model) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("MASTER").required()
-                .key("SLAVE").required()
+                .key("NAME").optional()
+                .key("MASTER").optional()
+                .key("SLAVE").optional()
                 .key("ADJUST").optional("NO").allowed({"NO", "YES"})
-                .key("DISTANCE").required()
+                .key("DISTANCE").alternative("POSITIONTOLERANCE").required()
         );
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            const std::string master = keys.raw("MASTER");
-            const std::string slave  = keys.raw("SLAVE");
-            const Precision distance = keys.get<Precision>("DISTANCE");
-            const bool adjust        = keys.get<bool>("ADJUST");
+        const auto distance = std::make_shared<Precision>(0);
+        const auto adjust   = std::make_shared<bool>(false);
 
-            logging::error(model._data->compiled,
-                "TIE: constraints require a compiled model");
-
+        const auto add_tie = [&model](const std::string& slave, const std::string& master,
+                                      Precision max_distance, bool do_adjust) {
             const auto slave_nodes = model._data->node_sets.has(slave)
                 ? model._data->node_sets.get(slave)
                 : nullptr;
@@ -68,19 +68,53 @@ void register_tie(fem::io::dsl::Registry& registry, model::Model& model) {
 
             if (master_surfaces && master_surfaces->size() > 0) {
                 if (slave_nodes && slave_nodes->size() > 0) {
-                    model._data->ties.emplace_back(master_surfaces, slave_nodes, distance, adjust);
+                    model._data->ties.emplace_back(master_surfaces, slave_nodes, max_distance, do_adjust);
                 } else {
-                    model._data->ties.emplace_back(master_surfaces, slave_surfaces, distance, adjust);
+                    model._data->ties.emplace_back(master_surfaces, slave_surfaces, max_distance, do_adjust);
                 }
             } else if (slave_nodes && slave_nodes->size() > 0) {
-                model._data->ties.emplace_back(master_lines, slave_nodes, distance, adjust);
+                model._data->ties.emplace_back(master_lines, slave_nodes, max_distance, do_adjust);
             } else {
-                model._data->ties.emplace_back(master_lines, slave_surfaces, distance, adjust);
+                model._data->ties.emplace_back(master_lines, slave_surfaces, max_distance, do_adjust);
             }
 
             model._data->ties.back().adjust_geometry(*model._data);
+        };
+
+        command.on_enter([&model, distance, adjust, add_tie](const fem::io::dsl::Keys& keys) {
+            logging::error(model._data->compiled,
+                "TIE: constraints require a compiled model");
+            logging::error(keys.has("MASTER") == keys.has("SLAVE"),
+                "TIE: MASTER and SLAVE must either both be specified or both omitted");
+
+            *distance = keys.get<Precision>("DISTANCE");
+            *adjust   = keys.get<bool>("ADJUST");
+            if (keys.has("MASTER")) {
+                add_tie(keys.raw("SLAVE"), keys.raw("MASTER"), *distance, *adjust);
+            }
         });
-        command.variant(fem::io::dsl::Variant::make());
+
+        // Abaqus format: one or more data lines, each containing slave, master.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::negate(
+                fem::io::dsl::Condition::key_present("MASTER")))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("SLAVE")
+                    .one<std::string>().name("MASTER")
+                )
+                .bind([add_tie, distance, adjust](const std::string& slave,
+                                                  const std::string& master) {
+                    add_tie(slave, master, *distance, *adjust);
+                })
+            )
+        );
+
+        // Preserve existing FEMaster decks that supply both names on the keyword.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_present("MASTER"))
+        );
     });
 }
 
