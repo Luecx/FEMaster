@@ -21,7 +21,7 @@
  *         Mr = T^T M T           (reduced "mass")
  *   (6) Solve generalized EVP:
  *         A * phi = lambda * Mr * phi
- *       We target the *smallest* eigenvalues by shift-invert at sigma = 0.
+ *       We target the *smallest* eigenvalues by shift-invert at sigma = -1.
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
  *       Expand to node x 6 and compute simple modal participations.
@@ -33,7 +33,7 @@
  *   see its cost (which can dominate without zero-column compression).
  * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
- * - The eigval solver is configured for shift-invert at sigma=0 to extract the
+ * - The eigval solver is configured for shift-invert at sigma=-1 to extract the
  *   lowest frequencies first. Sorting is "largest magnitude" in SI space.
  *
  * Notes
@@ -319,11 +319,11 @@ void LinearEigenfrequency::run() {
     );
 
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
-    // We use shift-invert at sigma = 0.0, so "largest magnitude" in SI space
+    // We use shift-invert at sigma = -1.0, so "largest magnitude" in SI space
     // corresponds to the smallest original eigenvalues.
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
-    eigopt.sigma = 0.0;
+    eigopt.sigma = -1.0;
     eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
