@@ -291,20 +291,18 @@ ELEMENTS: Dict[str, ElementDefinition] = {
             12: (-0.5, -0.5, 0.5),
             13: (0.5, -0.5, 0.5),
         },
-        # These faces are used only for drawing edges. The supplied solver code does
-        # not expose implemented surface definitions for C3D13.
+        # S1-S5 match the outward-oriented quadratic faces from C3D13::surface().
         faces={
-            1: (1, 2, 3, 4, 6, 7, 8, 9),
-            2: (1, 5, 2, 10, 11, 6),
-            3: (2, 5, 3, 11, 12, 7),
-            4: (3, 5, 4, 12, 13, 8),
-            5: (4, 5, 1, 13, 10, 9),
+            1: (1, 4, 3, 2, 9, 8, 7, 6),
+            2: (1, 2, 5, 6, 11, 10),
+            3: (2, 3, 5, 7, 12, 11),
+            4: (3, 4, 5, 8, 13, 12),
+            5: (4, 1, 5, 9, 10, 13),
         },
         integration_domain="DOMAIN_ISO_PYRAMID",
         integration_order="ORDER_QUARTIC",
         shape_functions="quadratic pyramid",
         dof_per_node=3,
-        has_faces_in_solver=False,
     ),
     "C3D15": ElementDefinition(
         name="C3D15",
