@@ -12,6 +12,9 @@
 
 #include "c3d5.h"
 
+#include "../geometry/surface/surface3.h"
+#include "../geometry/surface/surface4.h"
+
 namespace fem::model {
 
 /**
@@ -25,6 +28,29 @@ C3D5::C3D5(ID elem_id, const std::array<ID, 5>& node_ids)
         node_ids[0], node_ids[1], node_ids[2], node_ids[3],
         node_ids[4], node_ids[4], node_ids[4], node_ids[4]
     }) {}
+
+/**
+ * Extracts the five physical pyramid faces using Abaqus S1-S5 numbering.
+ *
+ * The inherited C3D8 connectivity repeats the apex in four upper slots.
+ * Returning its S2 face would create a zero-area quadrilateral, so the
+ * pyramid instead exposes its base and four properly oriented triangles.
+ */
+SurfacePtr C3D5::surface(ID surface_id) {
+    switch (surface_id) {
+        case 1: return std::make_shared<Surface4>(
+            std::array<ID, 4>{node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
+        case 2: return std::make_shared<Surface3>(
+            std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[4]});
+        case 3: return std::make_shared<Surface3>(
+            std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[4]});
+        case 4: return std::make_shared<Surface3>(
+            std::array<ID, 3>{node_ids[2], node_ids[3], node_ids[4]});
+        case 5: return std::make_shared<Surface3>(
+            std::array<ID, 3>{node_ids[3], node_ids[0], node_ids[4]});
+        default: return nullptr;
+    }
+}
 
 /**
  * @brief Copies the persistent five-node topology as another C3D5.
