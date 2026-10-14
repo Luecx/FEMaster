@@ -50,13 +50,13 @@ SurfacePtr C3D20::surface(ID surface_id) {
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface8>(std::array<ID, 8> {node_ids[0],
-                                                                 node_ids[1],
-                                                                 node_ids[2],
                                                                  node_ids[3],
-                                                                 node_ids[8],
-                                                                 node_ids[9],
+                                                                 node_ids[2],
+                                                                 node_ids[1],
+                                                                 node_ids[11],
                                                                  node_ids[10],
-                                                                 node_ids[11]});
+                                                                 node_ids[9],
+                                                                 node_ids[8]});
         case 2:
             return std::make_shared<Surface8>(std::array<ID, 8> {node_ids[4],
                                                                  node_ids[5],
@@ -99,7 +99,7 @@ SurfacePtr C3D20::surface(ID surface_id) {
                                                                  node_ids[4],
                                                                  node_ids[7],
                                                                  node_ids[11],
-                                                                 node_ids[12],
+                                                                 node_ids[16],
                                                                  node_ids[15],
                                                                  node_ids[19]});
         default: return nullptr;    // Invalid surface ID
