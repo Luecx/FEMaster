@@ -14,6 +14,7 @@
 #include "../src/material/neo_hooke_elasticity.h"
 #include "../src/loadcase/tools/nonlinear_state_manager.h"
 #include "../src/model/model.h"
+#include "../src/model/solid/c3d13.h"
 #include "../src/model/solid/c3d8.h"
 #include "../src/model/solid/c3d8i.h"
 #include "../src/section/section_solid.h"
@@ -29,6 +30,62 @@
 #include <memory>
 
 using namespace fem;
+
+TEST(Elements_C3D13, OutwardOrientedQuadraticSurfaceSides) {
+    model::C3D13 element(0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    model::Field coords{"C3D13_NODES", model::FieldDomain::NODE, 13, 3};
+    const auto natural_nodes = element.node_coords_local();
+
+    for (Index node = 0; node < 13; ++node) {
+        for (Index component = 0; component < 3; ++component) {
+            coords(node, component) = natural_nodes(node, component);
+        }
+    }
+
+    const std::array<std::array<ID, 8>, 5> expected{{
+        {{0, 3, 2, 1, 8, 7, 6, 5}},
+        {{0, 1, 4, 5, 10, 9, -1, -1}},
+        {{1, 2, 4, 6, 11, 10, -1, -1}},
+        {{2, 3, 4, 7, 12, 11, -1, -1}},
+        {{3, 0, 4, 8, 9, 12, -1, -1}}
+    }};
+    const Vec3 interior(0, 0, Precision(0.2));
+
+    for (Index side = 1; side <= 5; ++side) {
+        auto surface = element.surface(side);
+        ASSERT_NE(surface, nullptr) << "S" << side;
+
+        const Index corners = side == 1 ? 4 : 3;
+        ASSERT_EQ(surface->n_nodes, 2 * corners);
+        ASSERT_EQ(surface->n_edges, corners);
+
+        for (Index i = 0; i < surface->n_nodes; ++i) {
+            EXPECT_EQ(surface->nodes()[i], expected[side - 1][i])
+                << "S" << side << " local node " << i;
+        }
+
+        // Every midside node must lie on the corresponding oriented corner edge.
+        for (Index i = 0; i < corners; ++i) {
+            const Vec3 a = coords.row_vec3(surface->nodes()[i]);
+            const Vec3 b = coords.row_vec3(surface->nodes()[(i + 1) % corners]);
+            const Vec3 m = coords.row_vec3(surface->nodes()[corners + i]);
+            EXPECT_NEAR((m - (a + b) / Precision(2)).norm(), 0, 1e-12);
+        }
+
+        const Vec2 local = side == 1
+                         ? Vec2(Precision(0), Precision(0))
+                         : Vec2(Precision(1) / 3, Precision(1) / 3);
+        const Vec3 position = surface->local_to_global(local, coords);
+        EXPECT_GT(surface->normal(coords, local).dot(position - interior), 0)
+            << "S" << side << " must point outwards";
+        EXPECT_NEAR(surface->area(coords),
+                    side == 1 ? Precision(4) : std::sqrt(Precision(2)), 1e-10);
+    }
+
+    EXPECT_EQ(element.surface(0), nullptr);
+    EXPECT_EQ(element.surface(6), nullptr);
+    EXPECT_EQ(element.surface(-1), nullptr);
+}
 
 TEST(Elements_C3D8, ShapeFunctionsBasic) {
     model::C3D8 el(0, {0,1,2,3,4,5,6,7});
