@@ -26,6 +26,9 @@ namespace fem::model {
 struct C3D5 : C3D8 {
     C3D5(ID elem_id, const std::array<ID, 5>& node_ids);
 
+    // Five physical faces with Abaqus S1-S5 numbering; no collapsed apex face.
+    SurfacePtr surface(ID surface_id) override;
+
     // Reconstruct from the five independent connectivity entries so copying
     // during Model::compile() preserves the concrete pyramid element type.
     ElementPtr copy() const override;
