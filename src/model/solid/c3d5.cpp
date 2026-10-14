@@ -38,16 +38,11 @@ C3D5::C3D5(ID elem_id, const std::array<ID, 5>& node_ids)
  */
 SurfacePtr C3D5::surface(ID surface_id) {
     switch (surface_id) {
-        case 1: return std::make_shared<Surface4>(
-            std::array<ID, 4>{node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
-        case 2: return std::make_shared<Surface3>(
-            std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[4]});
-        case 3: return std::make_shared<Surface3>(
-            std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[4]});
-        case 4: return std::make_shared<Surface3>(
-            std::array<ID, 3>{node_ids[2], node_ids[3], node_ids[4]});
-        case 5: return std::make_shared<Surface3>(
-            std::array<ID, 3>{node_ids[3], node_ids[0], node_ids[4]});
+        case 1: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
+        case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[4]});
+        case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[4]});
+        case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[2], node_ids[3], node_ids[4]});
+        case 5: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[3], node_ids[0], node_ids[4]});
         default: return nullptr;
     }
 }
