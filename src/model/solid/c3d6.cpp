@@ -52,7 +52,7 @@ SurfacePtr C3D6::surface(ID surface_id) {
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface3>(
-                std::array<ID, 3> {node_ids[0], node_ids[1], node_ids[2]});    // Face 1: Triangle
+                std::array<ID, 3> {node_ids[0], node_ids[2], node_ids[1]});    // Face 1: Triangle
         case 2:
             return std::make_shared<Surface3>(
                 std::array<ID, 3> {node_ids[3], node_ids[4], node_ids[5]});    // Face 2: Triangle
