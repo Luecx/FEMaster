@@ -147,10 +147,10 @@ const math::quadrature::Quadrature& C3D4::integration_scheme() const {
  */
 SurfacePtr C3D4::surface(ID surface_id) {
     switch (surface_id) {
-        case 1: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[0], node_ids[2], node_ids[1]});
-        case 2: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[0], node_ids[1], node_ids[3]});
-        case 3: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[1], node_ids[2], node_ids[3]});
-        case 4: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[2], node_ids[0], node_ids[3]});
+        case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[2], node_ids[1]});
+        case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[3]});
+        case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[3]});
+        case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[2], node_ids[0], node_ids[3]});
         default: return nullptr;    // Invalid surface ID
     }
 }
