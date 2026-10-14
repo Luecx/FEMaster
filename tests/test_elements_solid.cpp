@@ -80,6 +80,28 @@ TEST(Elements_C3D13, OutwardOrientedQuadraticSurfaceSides) {
             << "S" << side << " must point outwards";
         EXPECT_NEAR(surface->area(coords),
                     side == 1 ? Precision(4) : std::sqrt(Precision(2)), 1e-10);
+
+        // The extracted face interpolation must equal the volume shape-function
+        // trace, with all nodes outside the face contributing zero.
+        const Vec2 probe = side == 1
+                         ? Vec2(Precision(0.23), Precision(-0.17))
+                         : Vec2(Precision(0.21), Precision(0.34));
+        const Vec3 probe_position = surface->local_to_global(probe, coords);
+        const auto solid_shape = element.shape_function(
+            probe_position(0), probe_position(1), probe_position(2));
+        const auto face_shape = surface->shape_function(probe);
+
+        for (Index node = 0; node < 13; ++node) {
+            Precision expected_shape = 0;
+            for (Index i = 0; i < surface->n_nodes; ++i) {
+                if (surface->nodes()[i] == node) {
+                    expected_shape = face_shape(i);
+                    break;
+                }
+            }
+            EXPECT_NEAR(solid_shape(node), expected_shape, 1e-10)
+                << "S" << side << " volume/face interpolation at node " << node;
+        }
     }
 
     EXPECT_EQ(element.surface(0), nullptr);
