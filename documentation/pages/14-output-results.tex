@@ -7,6 +7,14 @@ The native \file{.res} format preserves FEMaster Field domains and is the most c
 
 Abaqus/CalculiX field-output cards such as \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} select which FEMaster result Fields are written for the active step. The first explicit field-output request replaces that step's default result selection. \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted for compatibility but remain ignored because FEMaster does not implement a separate text-print result path.
 
+\section*{Pretension results}
+When a pretension section exists, linear-static output also provides \val{PTGAP},
+\val{PTFORC} and \val{TF}. These fields describe the axial gap, interface force
+and total signed section force. They can be selected with \cmd{NODE FILE} and
+are available in RES, FRD and FEMR. Control-node U1 is a scalar adjustment;
+it is not a physical mesh-node translation. See Chapter~\ref{chap:pretension}
+for signs, control-node reactions and force-recovery limits.
+
 \keywordpage{OVERVIEW}
 
 \cmd{OVERVIEW} prints a diagnostic summary of the current model without changing the analysis.

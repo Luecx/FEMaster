@@ -56,15 +56,20 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE",
             "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        auto fixed = std::make_shared<bool>(false);
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
+                .flag("FIXED")
                 .key("TYPE").optional("DISPLACEMENT").allowed({"DISPLACEMENT"})
                 .key("AMPLITUDE").optional()
                 .key("OP").optional("MOD").allowed({"MOD", "NEW"})
         );
-        command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&parser, amplitude, fixed](const fem::io::dsl::Keys& keys) {
+            *fixed = keys.has("FIXED");
+            logging::error(!*fixed || (!keys.has("AMPLITUDE") && parser.active_loadcase()),
+                "BOUNDARY,FIXED: requires an analysis step and no AMPLITUDE");
             auto& state = parser.step_state();
             logging::error(!state.step_active || parser.active_loadcase(),
                 "BOUNDARY: inside STEP must appear after a supported procedure");
@@ -92,10 +97,11 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                     .one<int>().name("LAST_DOF").on_missing(-1).on_empty(-1)
                     .one<Precision>().name("MAGNITUDE").on_missing(Precision{0}).on_empty(Precision{0})
                 )
-                .bind([&parser, amplitude](const std::string& target,
+                .bind([&parser, amplitude, fixed](const std::string& target,
                                            int first_dof,
                                            int last_dof,
                                            Precision magnitude) {
+                    logging::error(std::isfinite(magnitude), "BOUNDARY: magnitude must be finite");
                     if (last_dof < 0) last_dof = first_dof;
                     logging::error(first_dof >= 1 && first_dof <= 6
                                 && last_dof >= first_dof && last_dof <= 6,
@@ -119,11 +125,27 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                     for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
 
                     auto& model = parser.model();
-                    const std::string identifier =
+                    auto target_region = model.resolve_node_region(target);
+                    std::string identifier =
                         (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+                    if (target_region->size() == 1)
+                        for (const auto& section : model._data->pretension_sections)
+                            if (section->control_node == *target_region->begin())
+                                identifier = "PRETENSION_NODE:" + std::to_string(section->control_node);
                     std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
 
                     const auto add_node = [&](ID node_id) {
+                        Vec6 node_values = values;
+                        if (*fixed) {
+                            logging::error(first_dof == 1 && last_dof == 1 && magnitude == Precision(0),
+                                "BOUNDARY,FIXED: only pretension DOF 1 without a magnitude is supported");
+                            pretension::PretensionSection::Ptr section;
+                            for (const auto& candidate : model._data->pretension_sections)
+                                if (candidate->control_node == node_id) section = candidate;
+                            logging::error(section && section->nodal_control && section->has_solved_gap,
+                                "BOUNDARY,FIXED: requires an Abaqus control node with a successfully solved prior step");
+                            node_values[0] = section->last_solved_gap;
+                        }
                         cos::CoordinateSystem::Ptr orientation = nullptr;
                         const auto transform = parser.node_transforms.find(node_id);
                         if (transform != parser.node_transforms.end()) {
@@ -139,18 +161,14 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                             if (std::isnan(values[dof])) continue;
 
                             Vec6 component_values = Vec6::Constant(NAN);
-                            component_values[dof] = values[dof];
+                            component_values[dof] = node_values[dof];
                             replacements[dof].push_back(std::make_shared<bc::Support>(
                                 region, component_values, orientation
                             ));
                         }
                     };
 
-                    if (model._data->node_sets.has(target)) {
-                        for (const ID node_id : *model._data->node_sets.get(target)) add_node(node_id);
-                    } else {
-                        add_node(model.compiled_node_id(target));
-                    }
+                    for (const ID node_id : *target_region) add_node(node_id);
 
                     // A node set is one logical source for each DOF, even when
                     // individual nodes use different TRANSFORM bases.

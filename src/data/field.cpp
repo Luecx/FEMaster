@@ -248,6 +248,21 @@ bool Field::has_any_finite() const {
     return values.has_any_finite();
 }
 
+void Field::resize_rows(Index row_count, Precision fill_value) {
+    logging::error(row_count > 0,
+        "Field '", name, "': rows must remain positive");
+    FieldMatrix resized(row_count, components);
+    for (Index row = 0; row < row_count; ++row) {
+        for (Index component = 0; component < components; ++component) {
+            resized(row, component) = row < rows
+                ? values(row, component)
+                : fill_value;
+        }
+    }
+    rows = row_count;
+    values = std::move(resized);
+}
+
 /**
  * @brief Checks a stored component for any nonfinite value.
  *

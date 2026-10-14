@@ -219,6 +219,7 @@ void Parser::run(const std::string& input_path,
     // Reset all mutable state so each run represents an independent deck.
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
+    queued_pretension_actions_.clear();
     next_loadcase_id_ = 1;
     step_state_ = StepState{};
     node_transforms.clear();
@@ -235,7 +236,12 @@ void Parser::run(const std::string& input_path,
     const io::dsl::Deck deck = deck_parser.parse(file);
 
     // Semantic dependencies are now explicit and independent of source order.
-    process_deck(deck, input_path, output_path, writer_formats);
+    try {
+        process_deck(deck, input_path, output_path, writer_formats);
+    } catch (...) {
+        close_writers();
+        throw;
+    }
 }
 
 /**
@@ -348,9 +354,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Assembly regions, properties and dense fields
     // ---------------------------------------------------------------------
-    root.execute_children("FIELD");
-    root.execute_children("NORMAL");
-
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("NSET");
         assembly->execute_children("ELSET");
@@ -360,7 +363,17 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("MASS");
         assembly->execute_children("ROTARYINERTIA");
         assembly->execute_children("SPRING");
+    }
 
+    root.execute_children("PRETENSIONSECTION");
+    root.execute_children("PRE-TENSIONSECTION");
+    for (const auto* assembly : root.children("ASSEMBLY"))
+        assembly->execute_children("PRE-TENSIONSECTION");
+    model_->prepare_pretension_sections();
+
+    root.execute_children("FIELD");
+    root.execute_children("NORMAL");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("FIELD");
         assembly->execute_children("NORMAL");
     }
@@ -392,6 +405,9 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("TRANSFORM");
     }
+    for (const auto& section : model_->_data->pretension_sections)
+        logging::error(!node_transforms.count(section->control_node),
+            "PRETENSION SECTION: local TRANSFORM at control node is unsupported");
 
     // ---------------------------------------------------------------------
     // Root-level topology-dependent constraints
@@ -450,7 +466,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         return name == "BOUNDARY" || name == "SUPPORT" || name == "CLOAD" || name == "DLOAD"
             || name == "DSLOAD" || name == "PLOAD" || name == "VLOAD"
             || name == "INERTIALOAD" || name == "TEMPERATURE"
-            || name == "HEATFLUX" || name == "CONVECTION";
+            || name == "HEATFLUX" || name == "CONVECTION" || name == "PRETENSION";
     };
 
     for (const auto* command : root.children()) {
@@ -520,6 +536,7 @@ void Parser::initialize_writers(const std::string&                    input_path
 
     writer_ = io::writer::ResultWriters(writer_base, writer_formats);
     writer_.write_model_data(*model_->_data);
+    writer_.write_pretension_sections(*model_->_data);
 }
 
 /**
@@ -634,6 +651,20 @@ void Parser::end_loadcase() {
         "Parser: cannot end a load case when none is active");
 
     auto loadcase = std::move(active_loadcase_);
+    logging::error(model_->_data->pretension_sections.empty() ||
+        loadcase->type_name() == "LINEARSTATIC",
+        "PRETENSION currently supports LINEARSTATIC load cases only");
+    for (const auto& action : queued_pretension_actions_) {
+        if (action.action == "LOCK") {
+            model_->lock_pretension_section(action.section);
+        } else {
+            const auto control = action.control == "FORCE"
+                ? pretension::Control::Force
+                : pretension::Control::Displacement;
+            model_->set_pretension_load(action.section, control, action.value);
+        }
+    }
+    queued_pretension_actions_.clear();
 
     // Insert only missing collector pointers and remember precisely those
     // references. Previously active direct conditions must survive cleanup.
@@ -687,6 +718,13 @@ void Parser::end_loadcase() {
         }
         current.clear();
     }
+}
+
+void Parser::queue_pretension_action(const std::string& section,
+                                     const std::string& action,
+                                     const std::string& control,
+                                     Precision value) {
+    queued_pretension_actions_.push_back({section, action, control, value});
 }
 
 /**
@@ -1116,6 +1154,8 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_tie(registry, mdl);
     commands::register_contact(registry, mdl);
     commands::register_point_mass(registry, mdl);
+    commands::register_pretension_section(registry, mdl);
+    commands::register_pretension(registry, mdl, *this);
     commands::register_overview(registry, mdl);
     commands::register_equation(registry, mdl);
 

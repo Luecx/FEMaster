@@ -30,6 +30,7 @@ struct ConstraintGroups {
     constraint::Equations couplings;  ///< Equations originating from couplings.
     constraint::Equations ties;       ///< Equations originating from tie constraints.
     constraint::Equations rbms;       ///< Equations originating from RBM constraints.
+    constraint::Equations pretensions; ///< Equations originating from pretension sections.
     constraint::Equations others;     ///< Manual or uncategorised constraint equations.
 
     /// Flattens all groups into a single vector of equations.
@@ -44,6 +45,7 @@ struct ConstraintGroups {
         append(couplings);
         append(ties);
         append(rbms);
+        append(pretensions);
         append(others);
         return all;
     }

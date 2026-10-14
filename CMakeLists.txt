@@ -478,6 +478,7 @@ if(FEMASTER_BUILD_TESTS)
 
     file(GLOB TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 
+    list(REMOVE_ITEM TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pretension.cpp")
     add_executable(FEMaster_test ${TEST_SOURCES})
     target_link_libraries(FEMaster_test PRIVATE
             "$<LINK_LIBRARY:WHOLE_ARCHIVE,femaster_core>"
@@ -487,6 +488,19 @@ if(FEMASTER_BUILD_TESTS)
 
     include(GoogleTest)
     gtest_discover_tests(FEMaster_test)
+
+    # Keep feature verification runnable independently of the full unit suite.
+    add_executable(FEMaster_pretension_test tests/test_pretension.cpp)
+    target_link_libraries(FEMaster_pretension_test PRIVATE
+        "$<LINK_LIBRARY:WHOLE_ARCHIVE,femaster_core>" GTest::gtest_main)
+    gtest_discover_tests(FEMaster_pretension_test)
+
+    add_test(NAME Pretension_FacePair_Loadsteps
+        COMMAND ${CMAKE_COMMAND}
+            -DFEMASTER_EXECUTABLE=$<TARGET_FILE:FEMaster>
+            -DFEMASTER_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DFEMASTER_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/pretension_face_pair_ctest
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_pretension_face_pair.cmake)
 endif()
 
 # =============================================================================
@@ -537,3 +551,12 @@ add_custom_target(femaster-info
         COMMAND ${CMAKE_COMMAND} -E echo "cuDSS: ${FEMASTER_ENABLE_CUDSS} (${FEMASTER_CUDSS_VERSION})"
         VERBATIM
 )
+
+# Opt-in, solver-free pretension preparation and matching benchmarks.
+option(FEMASTER_BUILD_BENCHMARKS "Build pretension mesh preparation benchmark" OFF)
+if(FEMASTER_BUILD_BENCHMARKS)
+    add_executable(FEMaster_pretension_benchmark benchmarks/pretension_prepare.cpp)
+    add_executable(FEMaster_pretension_matching benchmarks/pretension_matching.cpp)
+    target_link_libraries(FEMaster_pretension_matching PRIVATE femaster_core)
+    target_link_libraries(FEMaster_pretension_benchmark PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,femaster_core>")
+endif()

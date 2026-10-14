@@ -31,6 +31,7 @@
 #include "../core/parallel.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
+#include "../constraints/types/pretension.h"
 #include "element/element_structural.h"
 #include "model.h"
 #include "solid/element_solid.h"
@@ -295,6 +296,13 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         }
     }
 
+    for (const auto& section : _data->pretension_sections) {
+        logging::error(section && section->control_node >= 0,
+            "PRETENSION SECTION: control node not prepared");
+        logging::error(!mask.row(section->control_node).any(),
+            "PRETENSION SECTION: control node must not have structural connectivity");
+        mask(section->control_node, 0) = true;
+    }
     return mattools::numerate_dofs(mask);
 }
 
@@ -342,6 +350,15 @@ Field Model::build_load_matrix(Precision time, Precision step_progress) {
     // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
         coupling.apply_loads(*_data, load_matrix);
+    }
+
+    if (!_data->pretension_sections.empty()) {
+        const Field pretension_force = build_pretension_force_matrix();
+        for (Index node = 0; node < load_matrix.rows; ++node) {
+            for (Dim component = 0; component < 3; ++component) {
+                load_matrix(node, component) += pretension_force(node, component);
+            }
+        }
     }
 
     return load_matrix;
@@ -478,6 +495,19 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
     collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
     collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
+
+    Index pretension_idx = 0;
+    for (auto& section : _data->pretension_sections) {
+        if (!section) continue;
+        auto equations = constraint::get_pretension_equations(
+            system_dof_ids, *_data, *section);
+        for (auto& equation : equations) {
+            equation.source = constraint::EquationSourceKind::Manual;
+            equation.source_index = pretension_idx;
+            groups.pretensions.push_back(std::move(equation));
+        }
+        ++pretension_idx;
+    }
 
     // Append manually defined equations without regenerating their coefficients.
     // Preserve explicitly assigned source types and mark unknown origins as manual.

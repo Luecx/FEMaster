@@ -20,6 +20,9 @@
 
 #include "model_data.h"
 #include "element/element.h"
+#include "model.h"
+
+#include <algorithm>
 
 #include "../core/config.h"
 #include "../core/parallel.h"
@@ -27,6 +30,35 @@
 #include <vector>
 
 namespace fem::model {
+
+ID ModelData::append_nodes(const std::vector<Vec3>& new_positions) {
+    logging::error(compiled && positions != nullptr && positions_reference != nullptr,
+        "ModelData: pretension nodes require compiled position fields");
+    const ID first = static_cast<ID>(positions->rows);
+    const auto default_instance = instances.get(Model::DEFAULT_INSTANCE_NAME);
+    logging::error(default_instance != nullptr,
+        "ModelData: default instance missing for generated pretension node");
+    Index local_id = first;
+    for (const auto& [instance, existing_local] : node_mapping)
+        if (instance == default_instance) local_id = std::max(local_id, existing_local + Index(1));
+    logging::error(local_id < Index(100000000) &&
+        new_positions.size() <= static_cast<std::size_t>(Index(100000000) - local_id),
+        "ModelData: generated pretension node exceeds result-id range");
+    const Index new_rows = positions->rows + static_cast<Index>(new_positions.size());
+    positions->resize_rows(new_rows);
+    positions_reference->resize_rows(new_rows);
+    node_mapping.reserve(static_cast<std::size_t>(new_rows));
+    for (std::size_t i = 0; i < new_positions.size(); ++i) {
+        const ID node = first + static_cast<ID>(i);
+        for (Dim component = 0; component < 3; ++component) {
+            (*positions)(node, component) = new_positions[i](component);
+            (*positions_reference)(node, component) = new_positions[i](component);
+        }
+        node_sets.all()->add(node);
+        node_mapping.emplace_back(default_instance, local_id++);
+    }
+    return first;
+}
 
 /**
  * Determines the number of rows required by one model field domain.

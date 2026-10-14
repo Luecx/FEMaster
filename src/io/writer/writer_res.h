@@ -80,6 +80,7 @@ class ResWriter {
 
     // Result organization
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void write_pretension_sections(const model::ModelData& model_data);
 
     // Field output
     void write_field(const model::Field& field,

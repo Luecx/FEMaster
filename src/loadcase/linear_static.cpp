@@ -63,6 +63,14 @@ void LinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
+    const bool has_pretension = !model->_data->pretension_sections.empty();
+    logging::error(!has_pretension || constraint_method != ConstraintTransformer::Method::Lagrange,
+        "PRETENSION: LAGRANGE is unsupported because its multiplier path does not "
+        "check constraint rank or consistency. Use NULLSPACE or ELIMINATION.");
+
+    logging::error(!has_pretension || (!inertia_relief && !rebalance_loads),
+        "PRETENSION: inertia relief and load rebalancing do not support scalar control-node loads");
+
     // Prepare section assignments and analysis-local element state
     model->assign_sections();
     model->step_begin();
@@ -200,6 +208,10 @@ void LinearStatic::run() {
         "building constraint transformer");
 
     logging::info(true, "");
+    logging::error(!has_pretension || transformer->feasible(),
+        "PRETENSION: inconsistent constraint equations (supports, equations or interface gap); "
+        "residual ||C u - d|| = ", transformer->report().residual_norm);
+
     logging::info(true, "Constraint summary");
     logging::up();
     logging::info(true, "m (rows of C)     : ", transformer->report().equations);
@@ -294,6 +306,37 @@ void LinearStatic::run() {
         "REACTION_FORCES"
     );
 
+    model::Field pretension_force, pretension_gap, pretension_total;
+    if (!model->_data->pretension_sections.empty()) {
+        pretension_force = model::Field{"PRETENSION_FORCE", model::FieldDomain::NODE,
+            model->_data->field_rows(model::FieldDomain::NODE), 3};
+        pretension_force.set_zero();
+        pretension_total = model::Field{"TF", model::FieldDomain::NODE,
+            model->_data->field_rows(model::FieldDomain::NODE), 1};
+        pretension_total.set_zero();
+        pretension_gap = model->build_pretension_gap_matrix(global_disp_mat);
+    }
+    // The interface force includes constraint reactions after LOCK. Subtract
+    // other external loads so PTFORC remains the force transmitted by the cut.
+    for (const auto& section : model->_data->pretension_sections) {
+        section->total_force = 0;
+        for (const auto& pair : section->interface_pairs) {
+            for (const ID node : {pair.side_a, pair.side_b}) {
+                for (Dim component = 0; component < 3; ++component) {
+                    pretension_force(node, component) +=
+                        global_internal_mat(node, component) - global_load_mat(node, component);
+                }
+            }
+        }
+        for (const auto& pair : section->interface_pairs)
+            for (Dim component = 0; component < 3; ++component)
+                section->total_force += pretension_force(pair.side_b, component) * section->axis_direction(component);
+        pretension_force(section->control_node, 0) = section->total_force;
+        pretension_total(section->control_node, 0) = section->total_force;
+        reaction_masked(section->control_node, 0) = section->total_force - global_load_mat(section->control_node, 0);
+        pretension_gap(section->control_node, 0) = global_disp_mat(section->control_node, 0);
+    }
+
     Timer::measure(
         [&]() {
             using io::writer::OutputField;
@@ -313,11 +356,15 @@ void LinearStatic::run() {
                 output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
             }
 
+            output.provide(OutputField::PTFORC, pretension_force);
+            output.provide(OutputField::PTGAP, pretension_gap);
+            output.provide(OutputField::TF, pretension_total);
             output.write_frame(*writer, model->_data.get());
         },
         "resolving and writing requested result fields");
 
     transformer->post_check_static(K, f, q);
+    model->capture_pretension_gaps(global_disp_mat);
     model->step_end();
 }
 
