@@ -14,6 +14,7 @@
  */
 
 #include "frt_shell_s6.h"
+#include "../geometry/surface/surface6.h"
 
 #include <cmath>
 

@@ -35,6 +35,8 @@
 #include <array>
 #include <cmath>
 
+#include <Eigen/Geometry>
+
 namespace fem {
 namespace model {
 

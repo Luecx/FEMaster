@@ -50,6 +50,11 @@
 
 #include "linear_eigenfreq.h"
 
+#include "../io/writer/writers.h"
+
+#include "../model/model.h"
+#include "../core/timer.h"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>

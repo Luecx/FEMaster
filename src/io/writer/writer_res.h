@@ -22,8 +22,7 @@
 
 #pragma once
 
-#include "../../core/core.h"
-#include "../../core/logging.h"
+#include "../../core/types_num.h"
 #include "../../data/field.h"
 #include "writer_step_type.h"
 

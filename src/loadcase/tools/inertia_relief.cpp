@@ -51,6 +51,7 @@
 #include "../../section/section_point_mass.h"
 
 #include <Eigen/Eigenvalues>
+#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <cmath>

@@ -24,10 +24,8 @@
 
 #include "../condition.h"
 #include "../../constraints/types/equation.h"
-#include "../../core/core.h"
 #include "../../core/types_eig.h"
 #include "../../cos/coordinate_system.h"
-#include "../../data/field.h"
 #include "../../data/region.h"
 
 #include <cmath>

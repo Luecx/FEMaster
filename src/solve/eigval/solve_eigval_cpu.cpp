@@ -1,5 +1,21 @@
+/**
+ * @file solve_eigval_cpu.cpp
+ * @brief Dispatches CPU eigenvalue solves and selects interval modes.
+ *
+ * The CPU dispatcher selects the regular or shifted Spectra implementation.
+ * With oneMKL, interval selection counts eigenvalues below the upper bound
+ * from the inertia of a PARDISO factorization before invoking shift-invert.
+ * Concrete eigensolver iterations remain in the mode-specific implementations.
+ *
+ * @see EigvalOpts
+ */
+
 #include "solve_eigval_cpu.h"
 #include <algorithm>
+
+#ifdef USE_MKL
+#include <Eigen/PardisoSupport>
+#endif
 
 namespace fem::solver::detail {
 

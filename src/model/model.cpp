@@ -26,6 +26,7 @@
  */
 
 #include "model.h"
+#include "element/element_structural.h"
 
 #include "../bc/collector.h"
 #include "../core/config.h"

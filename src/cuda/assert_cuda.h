@@ -16,15 +16,9 @@
 #ifdef SUPPORT_GPU
 
 #include <cublas_v2.h>
-#include <cuComplex.h>
-#include <curand.h>
-#include <cusolverDn.h>
-#include <cusolverSp.h>
+#include <cusolver_common.h>
 #include <cusparse_v2.h>
-
-#include <iostream>
-
-#include "cuda.h"
+#include <driver_types.h>
 
 namespace fem {
 namespace cuda {

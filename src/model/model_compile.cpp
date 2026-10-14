@@ -36,12 +36,17 @@
 
 #include "model.h"
 
+#include "geometry/line/line_interface.h"
+#include "geometry/surface/surface_interface.h"
+
 #include "../section/section_beam.h"
 #include "../section/section_point_mass.h"
 #include "../section/section_shell_abd.h"
 #include "../section/section_shell_integrated.h"
 #include "../section/section_solid.h"
 #include "../section/section_truss.h"
+
+#include <Eigen/LU>
 
 #include <algorithm>
 #include <charconv>

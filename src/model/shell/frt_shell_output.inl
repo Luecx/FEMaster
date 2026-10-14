@@ -25,6 +25,9 @@
 #include "../../math/extrapolate.h"
 #include "../../math/vec_util.h"
 
+#include <Eigen/Geometry>
+#include <Eigen/LU>
+
 #include <algorithm>
 #include <cmath>
 

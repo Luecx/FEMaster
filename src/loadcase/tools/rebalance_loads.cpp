@@ -40,6 +40,7 @@
 #include "../../model/element/element_structural.h"
 
 #include <Eigen/Cholesky>
+#include <Eigen/Geometry>
 #include <Eigen/LU>
 
 #include <algorithm>

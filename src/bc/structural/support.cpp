@@ -30,6 +30,7 @@
 #include "../../data/field.h"
 #include "../../model/element/element.h"
 #include "../../model/model_data.h"
+#include "../../model/geometry/surface/surface_interface.h"
 
 #include <cmath>
 #include <sstream>

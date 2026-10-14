@@ -30,6 +30,7 @@
 #include "../../model/element/element.h"
 #include "../../model/geometry/surface/surface_interface.h"
 #include "../../model/model_data.h"
+#include "../../model/geometry/surface/surface_interface.h"
 
 #include <atomic>
 #include <cmath>

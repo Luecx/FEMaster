@@ -46,6 +46,11 @@
 
 #include "linear_buckling.h"
 
+#include "../io/writer/writers.h"
+
+#include "../model/model.h"
+#include "../core/timer.h"
+
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"

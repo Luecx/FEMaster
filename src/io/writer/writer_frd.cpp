@@ -39,6 +39,7 @@
 #include "writer_frd.h"
 
 #include "../../core/config.h"
+#include "../../core/logging.h"
 #include "../../core/parallel.h"
 #include "../../model/element/element.h"
 #include "../../model/element/element_structural.h"

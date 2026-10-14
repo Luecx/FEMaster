@@ -24,6 +24,7 @@
 #include "../../dsl/keyword.h"
 #include "../../../core/logging.h"
 #include "../../../data/field.h"
+#include "../../../model/model.h"
 
 #include "../../../loadcase/linear_transient.h"
 

@@ -13,11 +13,10 @@
 
 #pragma once
 
-#include "../core/assert.h"
-#include "../core/types_eig.h"
-#include "csqrt.h"
+#include "../core/types_num.h"
 
 #include <array>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <ostream>

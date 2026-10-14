@@ -15,8 +15,8 @@
 #pragma once
 
 #include "../../data/region.h"
-#include "../../model/geometry/line/line_interface.h"
-#include "../../model/geometry/surface/surface.h"
+#include "../../core/types_cls.h"
+#include "../../core/types_eig.h"
 #include "equation.h"
 
 namespace fem {

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "../core/types_eig.h"
+#include "../core/types_num.h"
 
 #include <limits>
 

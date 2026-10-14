@@ -15,6 +15,9 @@
 
 #include "../../math/vec_util.h"
 #include "../../model/model_data.h"
+#include "../../model/geometry/surface/surface_interface.h"
+
+#include <Eigen/Cholesky>
 #include <sstream>
 #include <stdexcept>
 
