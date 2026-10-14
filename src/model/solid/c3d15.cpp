@@ -51,18 +51,18 @@ SurfacePtr C3D15::surface(ID surface_id) {
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface6>(std::array<ID, 6> {node_ids[0],
-                                                                 node_ids[1],
                                                                  node_ids[2],
-                                                                 node_ids[6],
+                                                                 node_ids[1],
+                                                                 node_ids[8],
                                                                  node_ids[7],
-                                                                 node_ids[8]});    // Face 1: Triangle
+                                                                 node_ids[6]});    // Face 1: Triangle
         case 2:
             return std::make_shared<Surface6>(std::array<ID, 6> {node_ids[3],
                                                                  node_ids[4],
                                                                  node_ids[5],
+                                                                 node_ids[9],
                                                                  node_ids[10],
-                                                                 node_ids[11],
-                                                                 node_ids[12]});    // Face 2: Triangle
+                                                                 node_ids[11]});    // Face 2: Triangle
         case 3:
             return std::make_shared<Surface8>(std::array<ID, 8> {node_ids[0],
                                                                  node_ids[1],
