@@ -60,6 +60,28 @@ Each keyword reference shows native FEMaster input on the left and the correspon
 
 The comparison shows how the same model operation is expressed in either accepted input style without exposing parser implementation details.
 
+\keywordpage{INCLUDE}
+
+\cmd{INCLUDE} inserts another input file at the current position. Both readers accept \key{INPUT} and the native legacy alias \key{SRC}. Includes may be nested and retain the surrounding input scope, so a material table or a Part mesh can be split into separate files.
+
+Relative paths are resolved first against the directory of the file containing the include. If that path does not exist, FEMaster tries the path relative to the process working directory for compatibility with older decks. Absolute paths are used directly. Path case is preserved, and matching single or double quotes around the path are removed. A missing path or unreadable file is an error.
+
+\begin{keywordparameters}
+\key{INPUT} / \key{SRC} & required & File to insert; relative to the including file before the working-directory fallback. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*INCLUDE, SRC=mesh/Nodes.inp
+*INCLUDE, INPUT="materials/Steel.inp"
+\end{femasterdeck}
+\begin{abaqusdeck}
+*INCLUDE, INPUT=mesh/Nodes.inp
+*INCLUDE, INPUT="materials/Steel.inp"
+\end{abaqusdeck}
+\end{dialectexamples}
+
 \keywordpage{HEADING}
 
 \cmd{HEADING} adds descriptive text to an input deck. It does not change the finite-element equations or the numerical result. The keyword keeps exported, archived, and regression decks self-describing and is accepted in both native FEMaster and Abaqus input.

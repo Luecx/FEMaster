@@ -3,6 +3,8 @@
 
 FEMaster is a finite-element solver for structural mechanics. Models can be described either with the native FEMaster input syntax or with the Abaqus-style syntax supported by FEMaster. This manual documents both forms together: each modelling concept is explained once, and the corresponding FEMaster and Abaqus input is shown side by side wherever both representations are available.
 
+This edition describes version 2.9.45, including the current temperature-state and thermal-expansion workflow. Native prescribed temperatures participate in structural equilibrium and recovery. Heat-conduction operators exist in the C++ subsystem, but the current command-line readers do not expose a heat-transfer procedure. Chapter~\ref{chap:loads-bcs} documents the supported thermal workflow and its limits.
+
 The documentation is organized by the way a finite-element model is built and solved. After the general input rules, the manual describes model organization and mesh definition, the available element formulations, regions and surfaces, materials, sections, coordinate systems, Fields, loads and boundary conditions, constraints including contact, analysis procedures, numerical controls, result output, and complete examples. A keyword index at the end provides a direct route from an input keyword to its detailed description.
 
 \section{Two input styles}
@@ -57,10 +59,10 @@ The same order exposes dependencies during diagnosis: geometry and element conne
 \textbf{FEMaster analysis} & \textbf{Purpose} \\
 \midrule
 \endhead
-\val{LINEARSTATIC} & Small-displacement static equilibrium for a linear structural model. \\
+\val{LINEARSTATIC} & Static equilibrium linearized about the reference state, including prescribed thermal initial strain. \\
 \val{LINEARSTATICTOPO} & Linear static analysis with element-wise topology density, penalization, and optional orientation Fields. \\
 \val{NONLINEARSTATIC} & Incremental nonlinear equilibrium with load control or arc-length path following, nonlinear element formulations, and contact where applicable. \\
-\val{EIGENFREQ} & Constrained free-vibration eigenvalue analysis based on the structural stiffness and mass matrices. \\
+\val{EIGENFREQ} & Constrained free-vibration analysis with a requested mode count or an open eigenvalue interval. \\
 \val{LINEARBUCKLING} & Linearized eigenvalue buckling analysis about a preloaded state using geometric stiffness. \\
 \val{LINEARTRANSIENT} & Implicit linear time integration with Newmark parameters, optional Rayleigh damping, initial velocity, and configurable result cadence. \\
 \val{LINEARHARMONIC} & Direct steady-state harmonic response over one or more excitation frequencies with optional Rayleigh damping. \\

@@ -128,6 +128,8 @@ A target may be a direct node reference or a node set. If the first target is a 
 
 For example, two equally sized sets \val{LEFT} and \val{RIGHT} can impose pairwise equality of one displacement component without manually writing one equation for every node pair. The ordering of the two sets therefore forms part of the equation definition.
 
+Several count-and-triple groups may follow one \cmd{EQUATION} keyword, as in CalculiX input. Finish exactly the declared number of triples before starting the next count line. The count and DOFs must be complete integer tokens; malformed numerical prefixes, incomplete triples, and non-finite coefficients are rejected.
+
 \begin{keyworddata}
 First line & Number of terms \(N\ge2\). \\
 Following lines & One to four \val{target, dof, coefficient} triples per line until \(N\) terms are complete. \\
@@ -144,6 +146,39 @@ LEFT, 1, 1.0, RIGHT, 1, -1.0
 *EQUATION
 2
 LEFT, 1, 1.0, RIGHT, 1, -1.0
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{MPC}
+
+\cmd{MPC} defines a simple two-node multi-point constraint at root or Assembly level in both input dialects. Each data line contains \val{type, dependent_node, independent_node}. Nodes are direct references such as \val{42} or \val{INSTANCE.42}; the command does not expand node sets.
+
+\val{PIN} equates the available translational DOFs and leaves rotations independent. \val{TIE} equates the available translations and rotations component by component. \val{BEAM} uses the second node as rigid-link master and, with \(\boldsymbol r=\boldsymbol x_1-\boldsymbol x_2\), enforces
+\[
+\boldsymbol u_1=\boldsymbol u_2+\boldsymbol\theta_2\times\boldsymbol r,
+\qquad
+\boldsymbol\theta_1=\boldsymbol\theta_2
+\]
+for the participating components. Master DOFs needed by the dependent node are activated during structural DOF enumeration.
+
+These are homogeneous linear constraint equations. In particular, \val{BEAM} uses small-rotation rigid-link kinematics even inside a nonlinear structural loadcase; it is not a finite-rotation joint. \val{MPC,TIE} connects two specified nodes and is distinct from \cmd{TIE}, which searches and interpolates a geometric interface. Other Abaqus MPC types and user-defined MPCs are not supported.
+
+\begin{keyworddata}
+\val{type} & \val{BEAM}, \val{TIE}, or \val{PIN}. \\
+\val{dependent, independent} & Two direct compiled node references in this order. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MPC
+BEAM, 10, 20
+PIN, LEFT.1, RIGHT.1
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MPC
+BEAM, 10, 20
+PIN, LEFT.1, RIGHT.1
 \end{abaqusdeck}
 \end{dialectexamples}
 

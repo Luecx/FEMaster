@@ -25,6 +25,8 @@ The end value is inclusive. The increment defaults to 1 and must not be zero. Po
 
 Part-level sets represent regions intrinsic to the component, such as a bolt row, root edge, or material domain, and are available on every Instance. Assembly-level sets represent placement-dependent selections, such as one support on a particular Instance or a region combining nodes from several components.
 
+An explicit \cmd{NSET} block may have no data lines; it still creates the named empty set. This supports CalculiX decks that populate the same set in later blocks. A generated block must contain at least one range. A consuming load, support, or constraint may require a nonempty target even though the set definition itself accepts an empty list.
+
 \begin{keywordparameters}
 \key{NSET} / \key{NAME} & required & Name of the node set to create or extend. \\
 \key{INSTANCE} & optional & Assembly-level qualifier for local node references. \\

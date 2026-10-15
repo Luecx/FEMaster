@@ -131,6 +131,10 @@ TENSION
 *NONLINEAR, INCREMENTS=8,
  MAXITER=40, TOL=1e-5
 *SOLVER, DEVICE=CPU, METHOD=DIRECT
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, PEEQ
 *END
 \end{femasterdeck}
 \begin{abaqusdeck}
@@ -157,11 +161,17 @@ TENSION
 2, 2, 3, 0.
 *CLOAD
 2, 1, 27000.
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, PEEQ
 *END STEP
 \end{abaqusdeck}
 \end{dialectexamples}
 
 Because the Abaqus deck uses geometric nonlinearity, compare results using the same load, deformation, constitutive stress measure, and nonlinear kinematics when checking against another implementation.
+
+The explicit requests preserve displacement and reactions while adding stress, total strain, and \val{PEEQ}. For this truss the one material-point PEEQ is recovered at both nodes; it records accepted plastic history rather than being recomputed from total strain.
 
 \section{Reusable Part and translated Instance}
 
@@ -395,7 +405,7 @@ For \val{C3D8}, the physical face represented by \val{S2} and its normal directi
 
 \section{Eigenfrequency analysis}
 
-The modal example uses a two-element truss with distributed material density and requests the lowest five eigenpairs. Only axial motion is left free. It demonstrates distributed structural mass; the following complete example separately demonstrates the shared concentrated \val{MASS} element/property syntax.
+The modal example uses a three-element truss with distributed material density and requests the lowest axial eigenpair. Only axial motion is left free. It demonstrates distributed structural mass; the following complete example separately demonstrates the shared concentrated \val{MASS} element/property syntax.
 
 The natural frequencies are governed by
 \[
@@ -407,15 +417,17 @@ Changing density therefore changes the frequencies even though the static stiffn
 \begin{femasterdeck}
 *NODE
 0,    0., 0., 0.
-1,  500., 0., 0.
-2, 1000., 0., 0.
+1,  333.333333, 0., 0.
+2,  666.666667, 0., 0.
+3, 1000., 0., 0.
 *ELEMENT, TYPE=T3, ELSET=BAR
 0, 0, 1
 1, 1, 2
+2, 2, 3
 *NSET, NAME=FIXED
 0
 *NSET, NAME=GUIDED
-1, 2
+1, 2, 3
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -431,21 +443,23 @@ GUIDED, NAN, 0., 0., NAN, NAN, NAN
 *SUPPORTS
 BC
 *NUMEIGENVALUES
-5
+1
 *END
 \end{femasterdeck}
 \begin{abaqusdeck}
 *NODE
 0,    0., 0., 0.
-1,  500., 0., 0.
-2, 1000., 0., 0.
+1,  333.333333, 0., 0.
+2,  666.666667, 0., 0.
+3, 1000., 0., 0.
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 0, 0, 1
 1, 1, 2
+2, 2, 3
 *NSET, NSET=FIXED
 0
 *NSET, NSET=GUIDED
-1, 2
+1, 2, 3
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -456,7 +470,7 @@ BC
 
 *STEP, PERTURBATION
 *FREQUENCY
-5
+1
 *BOUNDARY
 FIXED, 1, 3, 0.
 GUIDED, 2, 3, 0.
@@ -466,49 +480,54 @@ GUIDED, 2, 3, 0.
 
 The first mode shapes identify whether the corresponding numerical frequencies belong to structural deformation or to an unintended mechanism. A plausible frequency attached to an unintended mechanism is not a valid modal result.
 
+
+\subsection*{Selecting a frequency band instead of a count}
+
+To select every mode in an open 100--2000 Hz band from this native model, replace \cmd{NUMEIGENVALUES} and its data line with
+\begin{syntax}
+*EIGENVALUERANGE
+394784.176, 157913670.
+\end{syntax}
+The values are \((2\pi f)^2\) in s\(^{-2}\), not frequencies. Modes exactly on either endpoint are excluded. The Abaqus version above remains count based. The three free axial DOFs leave room for a partial-spectrum solve: the first frequency is about 1308 Hz and the next lies above the selected upper limit. Requesting all three eigenvalues would violate the sparse solver requirement \(0<k<N\).
+
 \section{Eigenfrequency with a concentrated MASS element}
 
-This benchmark isolates the new one-node concentrated-mass path. Two identical axial rods connect a central mass node to fixed supports on both sides. The rods carry no material density, so the only inertia is the \val{MASS} element at the centre. The centre node is guided so only \(U_x\) is free.
+Three identical, massless axial rods connect two interior mass nodes between fixed ends. Each interior node carries a one-node \val{MASS} element and is guided so only \(U_x\) is free. Requesting one eigenpair from these two free DOFs satisfies the sparse solver requirement \(0<k<N\).
 
 The example uses N, mm, and s. In this consistent unit system the mass unit is tonne, because
 \[
 1\ \mathrm{N}\,\mathrm{s}^2/\mathrm{mm}=1\ \mathrm{t}.
 \]
-Thus \(m=0.01\) represents \(10\,\mathrm{kg}\).
-
-Each rod has
+Thus each mass \(m=0.01\) represents \(10\,\mathrm{kg}\). Each rod has
 \[
-k=\frac{EA}{L}
-=\frac{210000\cdot1}{1000}
-=210\ \mathrm{N/mm}.
+k=\frac{EA}{L}=\frac{210000\cdot1}{1000}=210\ \mathrm{N/mm}.
 \]
-A positive displacement of the central node extends one rod and shortens the other, so both provide restoring stiffness and
+The reduced matrices are
 \[
-k_\mathrm{eq}=2k=420\ \mathrm{N/mm}.
+K=k\begin{bmatrix}2&-1\\-1&2\end{bmatrix},\qquad
+M=m\begin{bmatrix}1&0\\0&1\end{bmatrix}.
 \]
-The exact circular eigenfrequency and frequency are therefore
+The lowest mode has equal axial displacements at the two mass nodes, giving
 \[
-\omega_1=\sqrt{\frac{k_\mathrm{eq}}{m}}
-=\sqrt{\frac{420}{0.01}}
-\approx204.939\ \mathrm{s}^{-1},
-\]
-\[
-f_1=\frac{\omega_1}{2\pi}
-\approx32.617\ \mathrm{Hz}.
+\omega_1=\sqrt{k/m}=\sqrt{21000}\approx144.914\ \mathrm{s}^{-1},
+\qquad f_1=\frac{\omega_1}{2\pi}\approx23.064\ \mathrm{Hz}.
 \]
 
 \begin{dialectexamples}
 \begin{femasterdeck}
 *NODE
-1, -1000., 0., 0.
-2,     0., 0., 0.
-3,  1000., 0., 0.
+1,    0., 0., 0.
+2, 1000., 0., 0.
+3, 2000., 0., 0.
+4, 3000., 0., 0.
 
 *ELEMENT, TYPE=T3, ELSET=BARS
 1, 1, 2
 2, 2, 3
+3, 3, 4
 *ELEMENT, TYPE=MASS, ELSET=POINT_MASS
 100, 2
+101, 3
 
 *MATERIAL, NAME=STEEL
 *ELASTIC
@@ -522,7 +541,8 @@ f_1=\frac{\omega_1}{2\pi}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 1, 0., 0., 0., NAN, NAN, NAN
 2, NAN, 0., 0., NAN, NAN, NAN
-3, 0., 0., 0., NAN, NAN, NAN
+3, NAN, 0., 0., NAN, NAN, NAN
+4, 0., 0., 0., NAN, NAN, NAN
 
 *LOADCASE, TYPE=EIGENFREQ
 *SUPPORTS
@@ -533,15 +553,18 @@ BC
 \end{femasterdeck}
 \begin{abaqusdeck}
 *NODE
-1, -1000., 0., 0.
-2,     0., 0., 0.
-3,  1000., 0., 0.
+1,    0., 0., 0.
+2, 1000., 0., 0.
+3, 2000., 0., 0.
+4, 3000., 0., 0.
 
 *ELEMENT, TYPE=T3D2, ELSET=BARS
 1, 1, 2
 2, 2, 3
+3, 3, 4
 *ELEMENT, TYPE=MASS, ELSET=POINT_MASS
 100, 2
+101, 3
 
 *MATERIAL, NAME=STEEL
 *ELASTIC
@@ -558,81 +581,96 @@ BC
 *BOUNDARY
 1, 1, 3, 0.
 2, 2, 3, 0.
-3, 1, 3, 0.
+3, 2, 3, 0.
+4, 1, 3, 0.
 *END STEP
 \end{abaqusdeck}
 \end{dialectexamples}
 
-This model is useful as a direct regression check for \cmd{ELEMENT, TYPE=MASS} and \cmd{MASS}: the stiffness comes entirely from the two trusses, the inertia comes entirely from the point element, and the expected finite eigenfrequency is approximately \(32.617\,\mathrm{Hz}\).
+This model is useful as a direct regression check for \cmd{ELEMENT, TYPE=MASS} and \cmd{MASS}: the stiffness comes entirely from the three trusses, the inertia comes entirely from the two point elements, and the expected finite eigenfrequency is approximately \(23.064\,\mathrm{Hz}\).
 
-\section{Linear buckling of a compressed member}
+\section{Linear buckling of a solid cantilever column}
 
-A linear buckling analysis uses a reference preload to construct geometric stiffness and then extracts load multipliers. The example below uses a slender truss only to demonstrate the input structure; a flexural column requires a beam, shell, or solid model with transverse/bending degrees of freedom.
+This shared \val{C3D8I} model represents a 100 mm long, 2 mm square column with its base fixed. Four nodal forces of \(-25\) N give a total compressive reference load of 100 N. The unconstrained translations along the column admit lateral flexural modes, unlike an axial-only truss with its transverse translations fixed.
 
-The buckling factors satisfy a generalized eigenproblem involving the elastic stiffness and preload-dependent geometric stiffness. They multiply the reference load rather than representing absolute force directly.
+The two incompatible-mode bricks illustrate the complete input workflow and are a coarse discretization, not a converged column benchmark. Refine along the length and check the buckling shapes and factors. The factors multiply the 100 N reference preload; symmetric bending directions can have repeated or nearly repeated factors.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
 *NODE
-0, 0., 0., 0.
-1, 1000., 0., 0.
-*ELEMENT, TYPE=T3, ELSET=MEMBER
-0, 0, 1
-*NSET, NAME=LEFT
-0
-*NSET, NAME=RIGHT
-1
+0, -1., -1.,   0.
+1,  1., -1.,   0.
+2,  1.,  1.,   0.
+3, -1.,  1.,   0.
+4, -1., -1.,  50.
+5,  1., -1.,  50.
+6,  1.,  1.,  50.
+7, -1.,  1.,  50.
+8, -1., -1., 100.
+9,  1., -1., 100.
+10, 1.,  1., 100.
+11,-1.,  1., 100.
+*ELEMENT, TYPE=C3D8I, ELSET=COLUMN
+0, 0, 1, 2, 3, 4, 5, 6, 7
+1, 4, 5, 6, 7, 8, 9, 10, 11
+*NSET, NSET=BASE
+0, 1, 2, 3
+*NSET, NSET=TIP
+8, 9, 10, 11
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
-*TRUSS SECTION, ELSET=MEMBER, MATERIAL=STEEL
-100.
+*SOLID SECTION, ELSET=COLUMN, MATERIAL=STEEL
 *SUPPORT, SUPPORT_COLLECTOR=BC
-LEFT, 0., 0., 0., NAN, NAN, NAN
-RIGHT, NAN, 0., 0., NAN, NAN, NAN
+BASE, 0., 0., 0., NAN, NAN, NAN
 *CLOAD, LOAD_COLLECTOR=PRELOAD
-RIGHT, -1000., 0., 0., 0., 0., 0.
-
+TIP, 0., 0., -25., 0., 0., 0.
 *LOADCASE, TYPE=LINEARBUCKLING
 *SUPPORTS
 BC
 *LOADS
 PRELOAD
 *NUMEIGENVALUES
-5
+2
 *SIGMA
-0.0
+0.
 *END
 \end{femasterdeck}
 \begin{abaqusdeck}
 *NODE
-0, 0., 0., 0.
-1, 1000., 0., 0.
-*ELEMENT, TYPE=T3D2, ELSET=MEMBER
-0, 0, 1
-*NSET, NSET=LEFT
-0
-*NSET, NSET=RIGHT
-1
+0, -1., -1.,   0.
+1,  1., -1.,   0.
+2,  1.,  1.,   0.
+3, -1.,  1.,   0.
+4, -1., -1.,  50.
+5,  1., -1.,  50.
+6,  1.,  1.,  50.
+7, -1.,  1.,  50.
+8, -1., -1., 100.
+9,  1., -1., 100.
+10, 1.,  1., 100.
+11,-1.,  1., 100.
+*ELEMENT, TYPE=C3D8I, ELSET=COLUMN
+0, 0, 1, 2, 3, 4, 5, 6, 7
+1, 4, 5, 6, 7, 8, 9, 10, 11
+*NSET, NSET=BASE
+0, 1, 2, 3
+*NSET, NSET=TIP
+8, 9, 10, 11
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
-*SOLID SECTION, ELSET=MEMBER, MATERIAL=STEEL
-100.
-
+*SOLID SECTION, ELSET=COLUMN, MATERIAL=STEEL
 *STEP, PERTURBATION
 *BUCKLE
-5
+2
 *BOUNDARY
-LEFT, 1, 3, 0.
-RIGHT, 2, 3, 0.
+BASE, 1, 3, 0.
 *CLOAD
-RIGHT, 1, -1000.
+TIP, 3, -25.
 *END STEP
 \end{abaqusdeck}
 \end{dialectexamples}
-
-The model above is deliberately a syntax example rather than a flexural-buckling benchmark: an axial truss does not possess beam bending stiffness. A column model based on flexural buckling requires \val{B33}, shell, or solid elements and boundary conditions that admit the relevant buckling mode.
 
 \section{Arc-length snap-through}
 
@@ -867,6 +905,164 @@ TIP, 1, 1.
 \end{dialectexamples}
 
 When comparing the two harmonic decks numerically, remove the native \cmd{DAMPING} line or otherwise ensure that both calculations use the same damping model. Harmonic response can change dramatically near resonance even for small damping differences.
+
+\section{Uniform thermal expansion of a solid}
+
+This native example heats a unit cube from the material stress-free temperature of 20 to 120. With \(\alpha=10^{-5}\), the free linear strain is \(\alpha\Delta T=0.001\). Minimal axis constraints remove rigid motion while admitting uniform expansion; expected translations are \(u_x=0.001x\), \(u_y=0.001y\), and \(u_z=0.001z\), with zero thermoelastic stress up to numerical precision. The Field stores absolute temperatures. There is no thermal load collector or \cmd{TLOAD}.
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE
+0, 0., 0., 0.
+1, 1., 0., 0.
+2, 1., 1., 0.
+3, 0., 1., 0.
+4, 0., 0., 1.
+5, 1., 0., 1.
+6, 1., 1., 1.
+7, 0., 1., 1.
+*ELEMENT, TYPE=C3D8, ELSET=CUBE
+0, 0, 1, 2, 3, 4, 5, 6, 7
+*MATERIAL, NAME=MAT
+*ELASTIC
+10000., 0.3
+*EXPANSION, ZERO=20.
+1.e-5
+*SOLID SECTION, ELSET=CUBE, MATERIAL=MAT
+*FIELD, NAME=T0, TYPE=NODE, COLS=1
+0, 120.
+1, 120.
+2, 120.
+3, 120.
+4, 120.
+5, 120.
+6, 120.
+7, 120.
+*INITIALCONDITION, TYPE=TEMPERATURE, FIELD=T0
+*SUPPORT, SUPPORT_COLLECTOR=BC
+0, 0., 0., 0., NAN, NAN, NAN
+1, NAN, 0., 0., NAN, NAN, NAN
+3, 0., NAN, 0., NAN, NAN, NAN
+*LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*NODE OUTPUT
+U, RF, NT
+*ELEMENT OUTPUT
+S, E
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+The current Abaqus reader accepts \cmd{EXPANSION, ZERO=...} but has no temperature-state input mapping. This complete thermal case therefore uses native input.
+\end{noabaqus}
+\end{dialectexamples}
+
+Changing \val{TYPE=C3D8} to \val{C3D8I} exercises the enhanced-mode thermal path with the same connectivity and boundary conditions. To restrain all expansion instead, prescribe zero translations at every node. The corresponding small-strain hydrostatic stress is \(-E\alpha\Delta T/(1-2\nu)=-25\) in the model's stress units. These are analytical reference values, not results of a run performed for this manual update.
+
+\section{Geometrically exact B31 cantilever}
+
+This native two-element beam uses the shared \cmd{PROFILE} and \cmd{BEAM SECTION} property syntax. \val{B31} includes transverse shear through the two supplied effective shear areas. Nonlinear equilibrium uses finite section rotations; refine the mesh so each relative nodal rotation stays below 180 degrees. The profile describes a 2 by 2 mm square through its area, bending moments, approximate torsion constant, and \(5A/6\) shear areas.
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE
+0,   0., 0., 0.
+1,  50., 0., 0.
+2, 100., 0., 0.
+*ELEMENT, TYPE=B31, ELSET=BEAMS
+0, 0, 1
+1, 1, 2
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*PROFILE, NAME=SQUARE
+4., 1.333333, 1.333333, 2.25,
+0., 0., 0., 0., 0., 3.333333, 3.333333
+*BEAM SECTION, ELSET=BEAMS,
+ MATERIAL=STEEL, PROFILE=SQUARE
+0., 1., 0.
+*SUPPORT, SUPPORT_COLLECTOR=BC
+0, 0., 0., 0., 0., 0., 0.
+*CLOAD, LOAD_COLLECTOR=P
+2, 0., 0., -1., 0., 0., 0.
+*LOADCASE, TYPE=NONLINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+P
+*NONLINEAR, CONTROL=LOAD, INCREMENTS=10
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+SF
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+Abaqus \val{B31} connectivity is accepted, but the Abaqus reader does not map beam-section properties. The complete runnable beam definition uses native input.
+\end{noabaqus}
+\end{dialectexamples}
+
+\section{Two-node PIN constraint}
+
+Two rods meet at coincident but separately numbered nodes 1 and 2. \cmd{MPC,PIN} equates their translations while allowing rotations to remain independent. The prescribed axial load is transferred through this relation; both rods carry 1000 N and the total tip displacement is \(1000\cdot1000/(210000\cdot100)=0.047619\) mm in linear theory.
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE
+0,    0., 0., 0.
+1,  500., 0., 0.
+2,  500., 0., 0.
+3, 1000., 0., 0.
+*ELEMENT, TYPE=T3, ELSET=BARS
+0, 0, 1
+1, 2, 3
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*TRUSS SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+*MPC
+PIN, 1, 2
+*SUPPORT, SUPPORT_COLLECTOR=BC
+0, 0., 0., 0., NAN, NAN, NAN
+1, NAN, 0., 0., NAN, NAN, NAN
+3, NAN, 0., 0., NAN, NAN, NAN
+*CLOAD, LOAD_COLLECTOR=P
+3, 1000., 0., 0., 0., 0., 0.
+*LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+P
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*NODE
+0,    0., 0., 0.
+1,  500., 0., 0.
+2,  500., 0., 0.
+3, 1000., 0., 0.
+*ELEMENT, TYPE=T3D2, ELSET=BARS
+0, 0, 1
+1, 2, 3
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*SOLID SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+*MPC
+PIN, 1, 2
+*STEP
+*STATIC
+*BOUNDARY
+0, 1, 3, 0.
+1, 2, 3, 0.
+3, 2, 3, 0.
+*CLOAD
+3, 1, 1000.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
 
 \section{Using the examples as templates}
 

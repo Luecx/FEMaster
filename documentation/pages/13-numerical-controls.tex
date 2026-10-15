@@ -37,6 +37,8 @@ The registration applies to linear static, nonlinear static, linear buckling, to
 
 The default CPU/direct configuration avoids iterative convergence and backend-specific GPU requirements. Indirect or GPU configurations exchange this baseline for different memory, scaling, and hardware characteristics; their numerical behaviour still depends on the physical model and constraint system.
 
+Direct assembly distinguishes positive-definite, symmetric-indefinite, and general nonsymmetric matrices. cuDSS supports these respective Cholesky, LDLT, and LU paths. The legacy cuSolver direct path is Cholesky-only and falls back to the CPU for non-positive-definite matrix classes. A build without CUDA also reports CPU fallback. The console solver name identifies the selected factorization. Nonlinear static currently requires \val{METHOD=DIRECT} and \val{CONSTRAINTMETHOD=NULLSPACE}.
+
 \begin{keywordparameters}
 \key{DEVICE} & optional & \val{CPU} (default) or \val{GPU}. \\
 \key{METHOD} & optional & \val{DIRECT} (default) or \val{INDIRECT}. \\
@@ -175,6 +177,8 @@ where \(\Delta s\) is the arc-length scale and \(\psi\) is controlled by \key{AR
 \key{INITIAL_INCREMENT} defines the first normalized load or arc-length step. \key{MINIMUM_INCREMENT} and \key{MAXIMUM_INCREMENT} bound adaptive changes. \key{MAX_INCREMENTS} limits the number of accepted increments. The legacy \key{INCREMENTS=n} shorthand sets the initial scale to \(1/n\); an explicitly supplied \key{INITIAL_INCREMENT} takes precedence.
 
 With \key{ADAPTIVE=ON}, quickly converged increments can grow by \key{GROWTH_FACTOR}, while rejected or slowly converged attempts are reduced by \key{CUTBACK_FACTOR}. The default thresholds are \key{FAST_ITERATIONS=6}, \key{SLOW_ITERATIONS=10}, \key{GROWTH_FACTOR=1.5}, and \key{CUTBACK_FACTOR=0.5}. \key{MAXIMUM_CUTBACKS} limits repeated reductions of one attempted path segment.
+
+Adaptive load control can reject an increment early when Newton diagnostics indicate divergence, persistently slow predicted convergence, or repeated strongly damped line-search steps with negligible residual progress. Severe failures use the internal severe-cutback factor (currently 0.25), while ordinary cutbacks use \key{CUTBACK_FACTOR}. These diagnostics and the severe factor are internal controls, not additional \cmd{NONLINEAR} keyword options. Trial material/contact state is restored before retrying the reduced increment.
 
 Adaptive stepping does not alter the equilibrium equations. It changes only how aggressively the solution path is traversed. Persistently small increments can result from contact transitions, material stiffness, element distortion, unstable mechanisms, or an inconsistent tangent; cutback only changes the attempted path discretization.
 
@@ -360,6 +364,8 @@ Frequency resolution determines which parts of the response curve are sampled. A
 
 The requested value is a result count, not a frequency or buckling-factor cutoff. A request for ten modes therefore returns ten eigenpairs but does not independently define the covered spectral range, particularly in the presence of multiplicities or closely spaced eigenvalues.
 
+The sparse partial eigensolver requires \(0<k<N\), where \(N\) is the constrained problem dimension. It cannot extract the complete spectrum or solve a one-unknown modal model. Request fewer modes than reduced unknowns. For \val{EIGENFREQ}, this card switches back to count selection if \cmd{EIGENVALUERANGE} appeared earlier. If both selectors occur, the last one wins. Buckling has count selection only.
+
 \exampleheading
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -370,6 +376,38 @@ The requested value is a result count, not a frequency or buckling-factor cutoff
 *FREQUENCY
 20
 \end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{EIGENVALUERANGE}
+
+\cmd{EIGENVALUERANGE} selects all eigenfrequency eigenpairs in the open interval \((\lambda_{\min},\lambda_{\max})\), instead of a fixed count. It is valid only inside a native \val{EIGENFREQ} loadcase. Both bounds must be finite and satisfy \(\lambda_{\min}<\lambda_{\max}\); eigenvalues equal to either endpoint are excluded.
+
+The bounds are generalized eigenvalues \(\lambda=\omega^2\), not frequencies in Hz. For a positive frequency band \((f_{\min},f_{\max})\), enter
+\[
+\lambda_{\min}=(2\pi f_{\min})^2,\qquad
+\lambda_{\max}=(2\pi f_{\max})^2.
+\]
+The resulting count depends on the actual spectrum and can be zero. Modes are written in ascending eigenvalue order. This card enables range selection; a later \cmd{NUMEIGENVALUES} disables it. The supported Abaqus \cmd{FREQUENCY} mapping remains count based and does not map its additional spectral data to this native selector.
+
+Range extraction also uses sparse partial solves and requires \(N>1\) and \(k<N\). With oneMKL, the shifted factorization counts eigenvalues below the upper bound; that count must remain below \(N\). Without oneMKL, successively larger partial solves must reach an eigenvalue at or above the upper bound. If complete interval coverage cannot be established before \(k=N\), the solver reports an error rather than returning a truncated interval. The current GPU eigensolver path delegates to the CPU. Refine the model or narrow the interval when the band would require the complete spectrum.
+
+\begin{keyworddata}
+\val{minimum, maximum} & Two finite eigenvalue bounds in inverse-time-squared units. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=EIGENFREQ
+*SUPPORTS
+BC
+*EIGENVALUERANGE
+3947.84176, 394784.176
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+The native example selects the open 10--100 Hz band when time is measured in seconds. The Abaqus reader does not register \cmd{EIGENVALUERANGE}.
+\end{noabaqus}
 \end{dialectexamples}
 
 \keywordpage{SIGMA}
@@ -426,7 +464,7 @@ Abaqus output-request cards currently do not control FEMaster's transient write 
 \]
 corresponding to the translational and rotational nodal DOFs.
 
-\key{FIELD} names the Field that completely supplies the initial velocity state. Initial displacement is taken from the analysis/model state defined by the current procedure.
+\key{FIELD} names the Field that completely supplies the initial velocity state and overrides any model velocity bound by \cmd{INITIALCONDITION, TYPE=VELOCITY}. If this loadcase selector is omitted, transient initialization uses that model velocity when present; otherwise it starts with zero velocity. The current procedure initializes reduced displacement to zero and derives the initial acceleration from equilibrium.
 
 \begin{keywordparameters}
 \key{FIELD} & required & Existing six-component \val{NODE} Field. \\

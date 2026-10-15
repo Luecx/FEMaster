@@ -9,7 +9,7 @@ User node and element identifiers are independent of these local indices. They a
 
 \keywordpage{FIELD}
 
-\cmd{FIELD} creates and optionally populates a named Field. It is a native FEMaster command; the supported Abaqus input format currently has no generic equivalent. The command is accepted at model level and in the native \cmd{LOADCASE} contexts documented by the consuming feature.
+\cmd{FIELD} creates and optionally populates a named Field. It is a native FEMaster command accepted at root level and inside \cmd{LOADCASE}. The supported Abaqus input format currently has no generic equivalent. A Field selected by a root-level initial condition must be defined at root level; a loadcase-local Field is created only when that loadcase is executed. \cmd{FIELD} is not registered inside \cmd{PART} or \cmd{ASSEMBLY}; qualified references address assembled entities from root-level Fields.
 
 \key{NAME} identifies the Field. \key{TYPE} selects its domain, \key{COLS} specifies the number of numerical components per location, and \key{FILL} defines how entries are initialized before explicit data rows are applied. \val{FILL=ZERO} is the default. \val{FILL=NAN} initializes unspecified components with NaN so that missing data remain distinguishable from a physical zero.
 

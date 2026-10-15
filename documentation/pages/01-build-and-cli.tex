@@ -9,7 +9,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 \end{shellcmd}
 
-The build requires CMake 3.24 or newer, Git, and a C++17 compiler. CMake fetches the pinned Eigen, Spectra, argparse, and LZ4 sources through FetchContent and builds LZ4 with FEMaster. GoogleTest is fetched only when \key{FEMASTER_BUILD_TESTS} is enabled. No separate installation of these libraries is required. The first configuration requires network access; downloaded sources are stored in \file{<build-directory>/_deps} by default. Optional oneMKL, OpenMP, CUDA, and cuDSS backends still require their toolkits or runtimes to be installed separately. Apple Accelerate is supplied by the macOS SDK.
+The build requires CMake 3.24 or newer, Git, and a C++17 compiler. CMake fetches the pinned Eigen, Spectra, argparse, and LZ4 sources through FetchContent and builds LZ4 with FEMaster. GoogleTest is fetched only when \key{FEMASTER_BUILD_TESTS} is enabled. No separate installation of these libraries is required. The current pins are Eigen 5.0.1, Spectra v1.2.0, argparse v3.2, LZ4 v1.10.0, and optional GoogleTest v1.18.0. The first configuration requires network access; downloaded sources are stored in \file{<build-directory>/_deps} by default. Optional oneMKL, OpenMP, CUDA, and cuDSS backends still require their toolkits or runtimes to be installed separately. Apple Accelerate is supplied by the macOS SDK.
 
 For predownloaded dependencies, supply the corresponding FetchContent source directory override, such as \key{FETCHCONTENT_SOURCE_DIR_EIGEN}. \key{FETCHCONTENT_BASE_DIR} changes the download directory. Single-configuration builds place the executable in \file{<build-directory>/bin}; multi-configuration builds use \file{<build-directory>/bin/<configuration>}.
 
@@ -85,6 +85,12 @@ By default the \file{.res} and \file{.frd} writers are enabled. Supplying
 compression for independently loadable field chunks.
 
 At the end of a regular solver run, FEMaster prints a process timing summary in hours, minutes, seconds, milliseconds, and total milliseconds. This timing covers the full executable run, including parsing, solving, result writing, and shutdown.
+
+\key{--version} reports the solver version from \file{src/core/version.h}, also used by the startup banner and CMake project version. It therefore identifies the executable version rather than the version of the command-line parsing library.
+
+\begin{shellcmd}
+FEMaster --version
+\end{shellcmd}
 
 \section{DSL documentation mode}
 
