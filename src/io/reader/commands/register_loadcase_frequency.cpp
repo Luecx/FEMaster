@@ -90,6 +90,25 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
                 )
         );
     });
+
+    registry.command("MODALBASIS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.doc("Use a modal basis up to twice the highest excitation frequency; an empty basis uses the direct solver.");
+
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
+            auto* base = parser.active_loadcase();
+            logging::error(base != nullptr,
+                "MODALBASIS must appear inside *LOADCASE");
+            auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base);
+            logging::error(lc != nullptr,
+                "MODALBASIS not supported for loadcase type ", base->type_name());
+            logging::error(keys._kv.empty(),
+                "MODALBASIS does not accept parameters");
+            lc->modal_basis = true;
+        });
+
+        command.variant(fem::io::dsl::Variant::make());
+    });
 }
 
 } // namespace fem::io::reader::commands
