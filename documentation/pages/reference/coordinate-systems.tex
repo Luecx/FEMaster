@@ -41,15 +41,15 @@ Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to 
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible orientation]
+\begin{inputdeck}
 *ORIENTATION, NAME=MAT_AXES,
  DEFINITION=COORDINATES,
  SYSTEM=RECTANGULAR
 1., 0., 0., 0., 1., 0., 0., 0., 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: Compact FEMaster orientation}
-\begin{inputdeck}[Alternative]
+\paragraph*{Compact rectangular orientation}
+\begin{inputdeck}
 *ORIENTATION, NAME=MAT_AXES,
  TYPE=RECTANGULAR
 1., 0., 0.,
@@ -83,15 +83,14 @@ A node has one effective nodal basis. Overlapping transformed sets with incompat
 \val{a1,a2,a3,b1,b2,b3} & Two directions/points defining the rectangular basis or cylindrical axis. \\
 \end{keyworddata}
 
-\exampleheading
-
-\begin{inputdeck}[Abaqus-compatible]
-*TRANSFORM, NSET=CYLINDER_NODES, TYPE=C
-0., 0., 0., 0., 0., 100.
-\end{inputdeck}
-
-\paragraph*{Alternative: Rectangular nodal transformation}
-\begin{inputdeck}[Alternative]
+\paragraph*{Rectangular transformation}
+\begin{inputdeck}
 *TRANSFORM, NSET=EDGE_NODES, TYPE=R
 1., 0., 0., 0., 1., 0.
+\end{inputdeck}
+
+\paragraph*{Cylindrical transformation}
+\begin{inputdeck}
+*TRANSFORM, NSET=CYLINDER_NODES, TYPE=C
+0., 0., 0., 0., 0., 100.
 \end{inputdeck}
