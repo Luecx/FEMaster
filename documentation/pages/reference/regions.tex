@@ -27,25 +27,16 @@ Generated form & \val{start, end, increment}; the increment defaults to \val{1} 
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
-*PART, NAME=BEAM
-*NODE
-0, 0., 0., 0.
-1, 1., 0., 0.
-2, 2., 0., 0.
-3, 3., 0., 0.
+\begin{inputdeck}
 *NSET, NSET=ENDS
 0, 3
+
 *NSET, NSET=ALLN, GENERATE
 0, 3, 1
-*END PART
 \end{inputdeck}
 
-\paragraph*{Alternative: Generated or instance-qualified node set}
-\begin{inputdeck}[Alternative]
-*NSET, NSET=EDGE_NODES, GENERATE
-1, 20, 1
-
+\paragraph*{Instance-qualified node set}
+\begin{inputdeck}
 *NSET, NSET=ROOT, INSTANCE=LEFT
 1, 2, 3
 \end{inputdeck}
@@ -96,7 +87,7 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ELSET, ELSET=DESIGN_DOMAIN, GENERATE
 0, 99, 1
 
@@ -132,13 +123,13 @@ Explicit native form & \val{surface_id, element_id, side}. \\
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *SURFACE, NAME=TOP, TYPE=ELEMENT
 SOLIDS, S2
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster direct surface references}
-\begin{inputdeck}[FEMaster extension]
+\paragraph*{Direct surface references}
+\begin{inputdeck}
 *SURFACE, NAME=TOP
 SOLIDS, S2
 
@@ -172,7 +163,7 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *SURFACE, NAME=PATCH_A
 0, 20, S1
 1, 21, S1
@@ -183,8 +174,8 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 0, 1, 2
 \end{inputdeck}
 
-\paragraph*{Alternative: Ordinary element surface selection}
-\begin{inputdeck}[Abaqus-compatible]
+\paragraph*{Equivalent element surface selection}
+\begin{inputdeck}
 *SURFACE, NAME=CONTACT_FACE, TYPE=ELEMENT
 20, S1
 21, S1
