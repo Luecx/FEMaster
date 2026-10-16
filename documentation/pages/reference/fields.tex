@@ -49,8 +49,7 @@ Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both loca
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster extension]
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -61,11 +60,7 @@ Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both loca
  COLS=3, FILL=NAN
 10, 0, 0., 0., 1.
 10, 1, 0., 0., 1.
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently has no generic Field keyword. Abaqus model data are imported only where a dedicated supported keyword provides the corresponding information.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{NORMAL}
 
@@ -83,8 +78,7 @@ The local node index is the zero-based position inside the element connectivity 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster extension]
 *FIELD, NAME=SHELL_NORMALS,
  TYPE=ELEMENT_NODAL, COLS=3, FILL=NAN
 10, 0, 0., 0., 1.
@@ -93,8 +87,4 @@ The local node index is the zero-based position inside the element connectivity 
 10, 3, 0., 0., 1.
 
 *NORMAL, FIELD=SHELL_NORMALS
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader does not expose FEMaster's generic Field-based \cmd{NORMAL} selector. Direct prescription of element-nodal directors therefore requires native FEMaster input; Abaqus input is limited to the explicitly supported orientation syntax of the relevant model definition.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
