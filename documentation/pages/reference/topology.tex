@@ -34,8 +34,7 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -46,11 +45,7 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 *TOPOEXPONENT
 3.0
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-Topology-density Fields and \val{LINEARSTATICTOPO} are native FEMaster capabilities.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{TOPOORIENT}
 
@@ -76,8 +71,7 @@ The rotation order is significant because finite rotations about different axes 
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *FIELD, NAME=ORIENT,
  TYPE=ELEMENT, COLS=3, FILL=ZERO
 0, 0.0, 0.0, 0.0
@@ -87,11 +81,7 @@ The rotation order is significant because finite rotations about different axes 
 *TOPODENSITY, FIELD=RHO
 *TOPOORIENT, FIELD=ORIENT
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-No topology-orientation Field mapping is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{TOPOEXPONENT}
 
@@ -115,12 +105,7 @@ The exact reported Field follows FEMaster's topology result definitions, while t
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *TOPOEXPONENT
 3.0
-\end{femasterdeck}
-\begin{noabaqus}
-No corresponding topology penalization keyword is currently supported in Abaqus input.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
