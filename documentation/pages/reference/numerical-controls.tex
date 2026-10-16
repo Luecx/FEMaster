@@ -262,9 +262,17 @@ RAMP_LOAD
 \end{inputdeck}
 
 \paragraph*{DYNAMIC procedure}
+
+The equivalent DYNAMIC procedure specifies the increment first and the step period second; boundary conditions and loading belong inside STEP.
 \begin{inputdeck}
+*STEP, NAME=TRANSIENT
 *DYNAMIC, DIRECT
 0.005, 2.0
+*BOUNDARY
+FIXED, 1, 3, 0.
+*CLOAD
+TIP, 1, 100.
+*END STEP
 \end{inputdeck}
 
 \keywordnestedpage{NEWMARK}
@@ -390,10 +398,16 @@ HARMONIC
 \end{inputdeck}
 
 \paragraph*{Steady-state dynamics procedure}
+
+The corresponding Abaqus-compatible procedure defines its frequency range inside a STEP. The force on TIP is defined in the step rather than through a load collector.
 \begin{inputdeck}
+*STEP, NAME=SWEEP
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
 10., 1000., 100, 1., 1.
+*CLOAD, REAL
+TIP, 3, -100.
+*END STEP
 \end{inputdeck}
 
 \keywordnestedpage{NUMEIGENVALUES}
@@ -418,9 +432,15 @@ BC
 \end{inputdeck}
 
 \paragraph*{Frequency extraction procedure}
+
+The frequency extraction procedure requests the number of modes directly. The node set FIXED must already be defined.
 \begin{inputdeck}
+*STEP, PERTURBATION
 *FREQUENCY
 20
+*BOUNDARY
+FIXED, 1, 6, 0.
+*END STEP
 \end{inputdeck}
 
 \keywordnestedpage{SIGMA}
