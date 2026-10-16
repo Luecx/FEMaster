@@ -19,6 +19,8 @@ Materials are independent of Parts. The corresponding Section assignment connect
 \key{MATERIAL} / \key{NAME} & required & Unique material identifier. \\
 \end{keywordparameters}
 
+The material definition becomes the active target for ELASTIC and DENSITY. The assigned unit system must be consistent with all geometry, loads, and mass data.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -95,6 +97,8 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 
 \paragraph*{Isotropic material example}
 
+The first block defines an isotropic steel with Young's modulus and Poisson ratio. The second block supplies nine directional engineering constants for an orthotropic material; its section must use the intended material axes.
+
 \begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
@@ -128,6 +132,8 @@ When converting uniaxial test data to this table, use true stress and subtract t
 \begin{keyworddata}
 \val{true (Cauchy) yield stress, equivalent plastic strain} & One hardening point per row; the first plastic strain is zero and subsequent strains are strictly increasing. \\
 \end{keyworddata}
+
+The table specifies true yield stress against equivalent plastic strain, with the first plastic strain equal to zero. The second row introduces hardening beyond initial yield.
 
 \exampleheading
 
@@ -166,6 +172,8 @@ Neo-Hooke selector & required & Selects the supported Neo-Hooke constitutive mod
 \val{D1} & Compressibility coefficient. \\
 \end{keyworddata}
 
+The supported Neo-Hooke model is intended for finite-strain elastic behavior. Its constants must be expressed in the same mechanical unit system as the remainder of the model.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -191,6 +199,8 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 \begin{keyworddata}
 \val{rho} & Scalar mass density. \\
 \end{keyworddata}
+
+For eigenfrequency, inertia, and transient analyses, this value enters the mass matrix. A static stress analysis without inertial loading need not use mass density.
 
 \exampleheading
 
@@ -225,6 +235,8 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 \val{alpha} & Constant isotropic coefficient of thermal expansion. \\
 \end{keyworddata}
 
+The coefficient describes free thermal strain per unit change in temperature. The older THERMALEXPANSION spelling shown below selects the same underlying property.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -256,6 +268,8 @@ remain usable within the unified input language.
 \begin{keyworddata}
 \val{alpha} & Constant isotropic coefficient of thermal expansion. \\
 \end{keyworddata}
+
+This legacy keyword accepts the same value as EXPANSION. New input decks should use the latter, while older files remain readable.
 
 \exampleheading
 
