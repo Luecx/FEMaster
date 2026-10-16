@@ -41,7 +41,7 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *PROFILE, NAME=RECT_EQUIV
 200., 6666.67, 1666.67, 4577.,
 0., 0., 0., 0., 0., 166.667, 166.667.
@@ -71,20 +71,20 @@ A Section applies one material system and orientation to its target element set.
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *SOLID SECTION, ELSET=SOLID,
  MATERIAL=STEEL,
  ORIENTATION=MAT_AXES
 \end{inputdeck}
 
-\paragraph*{Alternative: Truss cross-sectional area}
-\begin{inputdeck}[Alternative]
+\paragraph*{Truss cross-sectional area}
+\begin{inputdeck}
 *SOLID SECTION, ELSET=BARS, MATERIAL=STEEL
 100.
 \end{inputdeck}
 
-\paragraph*{Alternative: Explicit TRUSS SECTION for trusses}
-\begin{inputdeck}[Alternative]
+\paragraph*{Explicit truss section}
+\begin{inputdeck}
 *TRUSS SECTION, ELSET=BARS, MATERIAL=STEEL
 100.
 \end{inputdeck}
@@ -142,14 +142,14 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
 2.0, 5
 \end{inputdeck}
 
-\paragraph*{Alternative: Direct ABD and transverse-shear stiffness}
-\begin{inputdeck}[FEMaster extension]
+\paragraph*{Direct ABD stiffness}
+\begin{inputdeck}
 *SHELL SECTION, ELSET=PANEL, TYPE=ABD
 1000000., 0., 0., 0., 0., 0., 0., 1000000., 0., 0., 0., 0., 0., 0., 400000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 2000., 100000., 0., 0., 100000.
 \end{inputdeck}
@@ -190,21 +190,20 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
 10., 20.
 0., 1., 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus-compatible BEAM GENERAL SECTION}
-\begin{inputdeck}[Alternative]
-*BEAM GENERAL SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
-10., 20.
-0., 1., 0.
-\end{inputdeck}
 
-\paragraph*{Alternative: FEMaster predefined PROFILE}
-\begin{inputdeck}[Alternative]
+
+The keyword \cmd{BEAM GENERAL SECTION} is also accepted with the
+same \key{SECTION} geometry and data lines; only the keyword
+spelling changes. No separate definition is required.
+
+\paragraph*{Predefined profile}
+\begin{inputdeck}
 *PROFILE, NAME=BEAM_PROFILE
 200., 6666.7, 1666.7, 4577.
 *BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, PROFILE=BEAM_PROFILE
@@ -241,14 +240,14 @@ in contrast, use \cmd{SOLID SECTION} without an area line.
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *TRUSS SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
 \end{inputdeck}
 
-\paragraph*{Alternative: SOLID SECTION for a truss-only ELSET}
-\begin{inputdeck}[Abaqus-compatible]
+\paragraph*{Solid section for truss elements}
+\begin{inputdeck}
 *SOLID SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
