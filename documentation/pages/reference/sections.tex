@@ -69,7 +69,7 @@ A Section applies one material system and orientation to its target element set.
 \key{ORIENTATION} & optional & Named material coordinate system. \\
 \end{keywordparameters}
 
-\exampleheading
+\paragraph*{Solid element section}
 
 \begin{inputdeck}
 *SOLID SECTION, ELSET=SOLID,
@@ -140,7 +140,7 @@ ABD FEMaster & 36 row-major generalized-stiffness entries followed by 4 row-majo
 Abaqus homogeneous form & Thickness and optional integration-point count; the current supported count is 5. \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Integrated shell section}
 
 \begin{inputdeck}
 *SHELL SECTION, ELSET=PANEL,
@@ -188,7 +188,7 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 \key{DENSITY} & optional & Section-local nonnegative density override. \\
 \end{keywordparameters}
 
-\exampleheading
+\paragraph*{Geometric beam section}
 
 \begin{inputdeck}
 *BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
