@@ -26,6 +26,7 @@ FEMaster implementation rather than distinct numerical elements.
 \val{C3D8I} & 8 & Incompatible-mode hexahedral solid with condensed enhanced modes. \\
 \val{C3D8R} & 8 & Reduced-integration hexahedral solid with hourglass stabilization. \\
 \val{C3D10} & 10 & Quadratic tetrahedral solid. \\
+\val{C3D13} & 13 & Quadratic pyramid solid with rational interpolation. \\
 \val{C3D15} & 15 & Quadratic wedge solid. \\
 \val{C3D20} & 20 & Fully integrated quadratic hexahedral solid. \\
 \val{C3D20R} & 20 & Reduced-integration quadratic hexahedral solid. \\
@@ -49,11 +50,12 @@ In particular, the \val{R} suffix of imported shell names such as
 \val{S4R} does not select a separate reduced-integration
 formulation in FEMaster.
 
+\clearpage
 \subsubsection{Solid elements}
 
 Solid elements model a three-dimensional continuum. They use translational nodal degrees of freedom and obtain their constitutive response from a \cmd{SOLID SECTION}. They represent the full three-dimensional stress state, through-thickness stresses, and local geometry or load introduction that shell and line elements omit.
 
-Low-order solids are inexpensive but may require significant refinement in bending-dominated problems. Higher-order solids generally represent curvature and stress gradients more efficiently, but they contain more degrees of freedom per element and are more sensitive to poor midside-node placement and distorted mappings. Mesh quality remains essential for every formulation.
+Low-order solids are inexpensive but may require significant refinement in bending-dominated problems. Higher-order solids generally represent curvature and stress gradients more efficiently, but they contain more degrees of freedom per element and are more sensitive to poor midside-node placement and distorted mappings. Well-shaped hexahedra are useful for structured or swept meshes, while tetrahedra and pyramids accommodate irregular geometry and mixed-topology transitions. Reduced integration introduces additional sensitivity to low-energy modes and stabilization. Mesh quality and refinement should be assessed using displacements, reactions, energies, and stress trends; convergence of the algebraic solver alone does not establish discretization accuracy.
 
 \clearpage
 \paragraph{\val{C3D4}: 4-node tetrahedral solid}
@@ -245,6 +247,45 @@ The quadratic geometry mapping also represents curved boundaries more accurately
 The element costs more per cell than \val{C3D4}, but substantially fewer cells may be required for comparable displacement and stress accuracy. Refinement is still required near singularities, sharp re-entrant corners, and concentrated loads where no polynomial element can make a mathematical singularity disappear.
 
 \clearpage
+\paragraph{\val{C3D13}: 13-node quadratic pyramid solid}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\linewidth]{pages/figures/element_schematics/c3d13_schematic.png}
+    \caption{\val{C3D13} quadratic pyramid topology and integration scheme.}
+\end{figure}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D13, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>, <n9>, <n10>, <n11>, <n12>, <n13>
+\end{syntax}
+
+\val{C3D13} is a thirteen-node quadratic pyramid element with rational
+shape functions in the natural pyramid coordinates. Nodes 1--4 define
+the quadrilateral base and node 5 the apex. Nodes 6--9 lie on the four
+base edges, while nodes 10--13 lie between the base corners and the
+apex. The rational interpolation accommodates the collapsed pyramid
+geometry and provides a higher-order displacement description than
+the five-node \val{C3D5} transition element.
+
+A pyramid is useful where a quadrilateral-faced hexahedral mesh must
+transition to a region containing tetrahedral cells. Compared with
+\val{C3D5}, the midside nodes can represent curved edges and varying
+deformation fields more accurately, provided their positions are
+consistent with the intended physical geometry. Strongly distorted
+pyramids or poor apex placement can still result in inaccurate
+Jacobians, stiffness, and stress recovery.
+
+The element uses the \val{DOMAIN_ISO_PYRAMID} quadrature with
+\val{ORDER_QUARTIC} (27 integration points) and provides five
+outward-oriented quadratic faces for surface definitions: an
+eight-node quadrilateral base (\val{S1}) and four six-node
+triangular sides (\val{S2}--\val{S5}). Recovered stress and strain
+values are extrapolated from the constitutive integration points.
+As for other quadratic solids, local stresses should be assessed
+through mesh refinement rather than a single extrapolated nodal peak.
+
+\clearpage
 \paragraph{\val{C3D15}: 15-node quadratic wedge solid}
 
 \begin{figure}[H]
@@ -310,6 +351,7 @@ The formulation combines a quadratic hexahedral mesh with reduced integration. \
 
 Solid stress and strain recovery is performed at the constitutive integration points and then extrapolated to element nodes; global nodal results are averaged over element contributions. An element with fewer integration points cannot provide the same recovered spatial variation as its full-integration counterpart. See Section~\ref{sec:output-results} for the distinction between integration-point, element-nodal, and averaged nodal fields.
 
+\clearpage
 \subsubsection{Shell elements}
 
 Shell elements model thin-walled structures through a two-dimensional
@@ -465,6 +507,32 @@ through-thickness continuum stresses. The aliases \val{S8},
 \val{S8R}, and \val{MITC8} select this same
 \val{MITC8FRT} implementation.
 
+Although grouped with the shell and panel formulations, \val{QSPT}
+is a specialized shear-panel element rather than a general-purpose
+shell. Its kinematics and recoverable quantities differ from those
+of the finite-rotation MITC shells described above.
+
+\clearpage
+\paragraph{\val{QSPT}: quadrilateral shear-panel element}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\linewidth]{pages/figures/element_schematics/qspt_schematic.png}
+    \caption{\val{QSPT} shear-panel element.}
+\end{figure}
+
+\begin{syntax}
+*ELEMENT, TYPE=QSPT, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>
+\end{syntax}
+
+\val{QSPT} is a specialized four-node quadrilateral panel element developed for shear-flow-oriented structural idealizations. It is intended for simplified panel models where the principal purpose of the element is to transfer in-plane shear rather than reproduce the complete behaviour of a general shell.
+
+Typical applications are preliminary thin-walled structures, webs, aircraft-style shear panels, and reduced-order structural models in which panel shear flow is the primary quantity of interest. In such models \val{QSPT} can provide a compact load-path representation without introducing a complete shell formulation for every panel.
+
+\val{QSPT} is not a general replacement for \val{MITC4FRT} despite sharing a four-node quadrilateral topology. It does not provide the bending stiffness, local shell curvature, full shell resultants, or detailed top/bottom stresses of a shell formulation.
+
+\clearpage
 \subsubsection{Beam and truss elements}
 
 Line elements idealize slender three-dimensional members by describing the cross-section through section properties instead of meshing it explicitly. This can reduce the number of degrees of freedom by orders of magnitude compared with shell or solid modelling. The trade-off is that local three-dimensional connection behaviour, detailed cross-section distortion, holes, welds, and local stress concentrations are not resolved.
@@ -546,6 +614,7 @@ The Abaqus-compatible name \val{T3D2} selects the same FEMaster truss formulatio
 10, 1, 2
 \end{inputdeck}
 
+\clearpage
 \subsubsection{Point elements}
 
 Point elements are zero-dimensional structural elements attached to a single node. They preserve element identity and ELSET membership while their physical contribution is supplied by an assigned point-mass section rather than by continuum geometry or a material law. The unified input language accepts three regular one-node types: \val{MASS}, \val{ROTARYI}, and \val{SPRING1}. Internally all three use the same \texttt{PointElement}; the corresponding property keyword determines which generalized diagonal coefficient is populated.
@@ -626,46 +695,5 @@ For one selected direction the point-element stiffness matrix contains exactly o
 The current mapping is deliberately narrower than the complete Abaqus spring family. It supports only real, constant, linear \val{SPRING1} behavior in the global nodal system. \val{SPRING2}, \val{SPRINGA}, local orientations, nonlinear force--displacement curves, frequency or field dependence, and complex stiffness are not mapped.
 
 The FEMaster-specific \cmd{POINTMASS} keyword provides an alternative NSET-based convenience syntax when mass, rotary inertia, and several diagonal translational or rotational springs should be combined directly on the same target nodes. It creates auxiliary post-compile point elements rather than regular ELSET members.
-
-\subsubsection{Specialized panel elements}
-
-\val{QSPT} is retained as a distinct panel idealization rather than grouping it with the general shell family, because it does not provide the complete membrane/bending/shear shell response documented above.
-
-\clearpage
-\paragraph{\val{QSPT}: quadrilateral shear-panel element}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.78\linewidth]{pages/figures/element_schematics/qspt_schematic.png}
-    \caption{\val{QSPT} shear-panel element.}
-\end{figure}
-
-\begin{syntax}
-*ELEMENT, TYPE=QSPT, ELSET=<set>
-<id>, <n1>, <n2>, <n3>, <n4>
-\end{syntax}
-
-\val{QSPT} is a specialized four-node quadrilateral panel element developed for shear-flow-oriented structural idealizations. It is intended for simplified panel models where the principal purpose of the element is to transfer in-plane shear rather than reproduce the complete behaviour of a general shell.
-
-Typical applications are preliminary thin-walled structures, webs, aircraft-style shear panels, and reduced-order structural models in which panel shear flow is the primary quantity of interest. In such models \val{QSPT} can provide a compact load-path representation without introducing a complete shell formulation for every panel.
-
-\val{QSPT} is not a general replacement for \val{MITC4FRT} despite sharing a four-node quadrilateral topology. It does not provide the bending stiffness, local shell curvature, full shell resultants, or detailed top/bottom stresses of a shell formulation.
-
-\subsubsection{Element formulation comparison}
-
-No element is universally optimal. The following relationships summarize the principal formulation differences:
-\begin{itemize}
-  \item \val{C3D10} provides higher-order tetrahedral stress resolution than \val{C3D4};
-  \item well-shaped hexahedra align naturally with structured and swept geometries;
-  \item \val{C3D5} provides transition topology between other solid families;
-  \item reduced-integration solids introduce deformation modes and refinement sensitivity that solver convergence alone does not characterize;
-  \item all accepted shell labels select the current finite-rotation formulations; non-FRT names are compatibility aliases rather than separate linear elements;
-  \item shells omit detailed three-dimensional through-thickness stress in exchange for a midsurface representation of thin structures;
-  \item \val{MASS}, \val{ROTARYI}, and \val{SPRING1} provide concentrated diagonal point inertia or ground stiffness without continuum geometry or stress recovery;
-  \item beams and trusses impose one-dimensional kinematic assumptions on the represented member;
-  \item reactions, deformed shapes, energy trends, and mesh convergence characterize the discretization error associated with element and mesh selection.
-\end{itemize}
-
-A solver can converge accurately to the discrete equations of a poor finite-element model. Algebraic convergence therefore remains distinct from discretization accuracy.
 
 \addtocontents{toc}{\protect\setcounter{tocdepth}{3}}
