@@ -21,22 +21,22 @@ Materials are independent of Parts. The corresponding Section assignment connect
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=STEEL
-*ELASTIC, TYPE=ISOTROPIC
-210000., 0.3
-*DENSITY
-7.85e-9
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
 *DENSITY
 7.85e-9
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster-specific syntax}
+\begin{inputdeck}[FEMaster extension]
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000., 0.3
+*DENSITY
+7.85e-9
+\end{inputdeck}
 
 \keywordnestedpage{ELASTIC}
 
@@ -103,22 +103,27 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Isotropic elasticity]
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster-specific syntax}
+\begin{inputdeck}[FEMaster extension]
 *MATERIAL, NAME=UD
 *ELASTIC, TYPE=ENGINEERINGCONSTANTS
 135000., 10000., 10000.,
 0.30, 0.30, 0.40,
 5000., 5000., 3500.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*MATERIAL, NAME=UD
+\end{inputdeck}
+
+\paragraph*{Alternative: Engineering constants}
+\begin{inputdeck}[Alternative]
+*MATERIAL, NAME=COMPOSITE
 *ELASTIC, TYPE=ENGINEERING CONSTANTS
-135000., 10000., 10000.,
-0.30, 0.30, 0.40,
-5000., 5000., 3500.
-\end{abaqusdeck}
-\end{dialectexamples}
+135000., 10000., 10000., 0.30, 0.30, 0.40, 5000., 5000., 3500.
+\end{inputdeck}
 
 \keywordnestedpage{PLASTIC}
 
@@ -142,17 +147,7 @@ When converting uniaxial test data to this table, use true stress and subtract t
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
-*PLASTIC, TYPE=J2
-250., 0.
-300., 0.02
-350., 0.05
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -160,8 +155,7 @@ When converting uniaxial test data to this table, use true stress and subtract t
 250., 0.
 300., 0.02
 350., 0.05
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{HYPERELASTIC}
 
@@ -190,18 +184,11 @@ Neo-Hooke selector & required & Selects the supported Neo-Hooke constitutive mod
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=RUBBER
-*HYPERELASTIC, NEOHOOKE
-0.348, 5.0e-6
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=RUBBER
 *HYPERELASTIC, NEO HOOKE
 0.348, 5.0e-6
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{DENSITY}
 
@@ -223,18 +210,11 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=STEEL
 *DENSITY
 7.85e-9
-\end{femasterdeck}
-\begin{abaqusdeck}
-*MATERIAL, NAME=STEEL
-*DENSITY
-7.85e-9
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{EXPANSION}
 
@@ -262,18 +242,18 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=ALUMINIUM
 *EXPANSION, TYPE=ISO
 2.30e-5
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Alternative: Legacy THERMALEXPANSION alias}
+\begin{inputdeck}[Alternative]
 *MATERIAL, NAME=ALUMINIUM
-*EXPANSION, TYPE=ISO
+*THERMALEXPANSION
 2.30e-5
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{THERMALEXPANSION}
 
@@ -289,15 +269,15 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *MATERIAL, NAME=ALUMINIUM
 *THERMALEXPANSION
 2.30e-5
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Alternative: Recommended EXPANSION keyword}
+\begin{inputdeck}[Alternative]
 *MATERIAL, NAME=ALUMINIUM
-*THERMALEXPANSION, TYPE=ISOTROPIC
+*EXPANSION
 2.30e-5
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
