@@ -1,11 +1,16 @@
-\subsection{Model Organization and Mesh}
-\label{sec:model-organization}
+A FEMaster model can be defined directly through nodes and elements
+or organized into reusable Parts and placed Instances. The optional
+Part/Assembly hierarchy supports multiple placements of the same
+component with independent local numbering; simple models can omit
+the hierarchy. Node and element IDs are non-negative user labels,
+including \val{0}, and need not be consecutive.
 
-The following keywords define mesh topology and optional Part/Assembly organization.
+Named node sets, element sets, and surfaces provide reusable selections
+for Section assignments, loads, supports, and constraints. The
+following keywords define the mesh, its organization, and its
+associated regions.
 
-Node and element IDs are user labels. They are non-negative integers, may start at \textbf{0}, and may be sparse. Separate Parts may reuse the same numerical IDs because their topologies are independent. When an assembly-level definition needs to distinguish entities belonging to different Instances, the Instance name provides the required qualification.
-
-\keywordnestedpage{PART}
+\keywordpage{PART}
 
 \cmd{PART} begins a reusable finite-element component definition. Nodes, elements, part-level sets, surfaces, and section assignments that follow belong to the active Part until \cmd{END PART} closes it.
 
@@ -44,7 +49,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{END PART}
+\keywordpage{END PART}
 
 \cmd{END PART} closes the active Part scope. Definitions that follow are no longer part-local unless another \cmd{PART} is opened. The command is distinct from native \cmd{END}, which terminates a native loadcase.
 
@@ -69,7 +74,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{ASSEMBLY}
+\keywordpage{ASSEMBLY}
 
 \cmd{ASSEMBLY} begins the optional Assembly scope. The Assembly is where placed Instances and regions that refer to the assembled model are defined. A model that does not need explicit Instances may omit this scope entirely.
 
@@ -102,7 +107,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{END ASSEMBLY}
+\keywordpage{END ASSEMBLY}
 
 \cmd{END ASSEMBLY} closes the Assembly scope.
 
@@ -127,7 +132,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{INSTANCE}
+\keywordpage{INSTANCE}
 
 \cmd{INSTANCE} places an existing Part in the Assembly. Native FEMaster intentionally accepts the same placement representation used by the supported Abaqus reader. \key{NAME} gives the Instance a unique assembly name and \key{PART} selects the reusable Part.
 
@@ -172,7 +177,7 @@ The Part-local node and element labels remain associated with every Instance. As
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{END INSTANCE}
+\keywordpage{END INSTANCE}
 
 \cmd{END INSTANCE} closes the current Instance definition.
 
@@ -191,7 +196,7 @@ The Part-local node and element labels remain associated with every Instance. As
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{NODE}
+\keywordpage{NODE}
 
 \cmd{NODE} defines finite-element nodes by user ID and Cartesian reference coordinates. In a Part scope the nodes belong to that Part. In a flat native model they belong directly to the model topology.
 
@@ -229,7 +234,7 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordnestedpage{ELEMENT}
+\keywordpage{ELEMENT}
 
 \cmd{ELEMENT} defines element topology and connectivity. Each data
 record starts with an element ID followed by the node IDs in
