@@ -39,6 +39,8 @@ Native cylindrical & 9 scalar components defining the cylindrical system geometr
 Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to the origin. \\
 \end{keyworddata}
 
+This example defines local material directions. The orientation can subsequently be selected by a section that needs directional constitutive properties. A nodal TRANSFORM instead changes the basis used for nodal DOFs.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -84,6 +86,8 @@ A node has one effective nodal basis. Overlapping transformed sets with incompat
 \end{keyworddata}
 
 \paragraph*{Rectangular transformation}
+The selected node set receives a local basis for nodal degrees of freedom. The two variants describe different coordinate systems rather than competing file formats.
+
 \begin{inputdeck}
 *TRANSFORM, NSET=EDGE_NODES, TYPE=R
 1., 0., 0., 0., 1., 0.
