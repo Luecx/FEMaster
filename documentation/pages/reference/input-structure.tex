@@ -66,7 +66,12 @@ Named resources are used throughout the rest of the deck. Node sets, element set
 
 \subsection{FEMaster and Abaqus examples in this manual}
 
-Each keyword reference shows native FEMaster input on the left and the corresponding supported Abaqus input on the right. When the syntax is identical, both columns intentionally show the same form. When the modelling concepts differ, the two examples show the respective accepted representation. If no equivalent is currently read from Abaqus input, the Abaqus column states that directly rather than showing syntax that FEMaster would reject. A shared keyword does not imply shared placement: for example, \cmd{SOLVER} belongs inside a native \cmd{LOADCASE} or inside an Abaqus \cmd{STEP} \emph{after} the analysis procedure card.
+Each keyword page shows a primary definition with useful alternatives
+stacked directly below it. A given keyword may have Abaqus-compatible
+or FEMaster-specific data forms; their placement and limitations are
+defined by that keyword rather than by separate input dialects.
+For example, \cmd{SOLVER} belongs inside a \cmd{LOADCASE} or inside
+a \cmd{STEP} after its procedure definition.
 
 The comparison shows how the same model operation is expressed in either accepted input style without exposing parser implementation details.
 
