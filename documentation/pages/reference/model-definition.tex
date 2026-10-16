@@ -258,35 +258,11 @@ must belong to the same topology scope as the element.
 \val{n1, n2, ...} & Node connectivity in formulation-specific order. \\
 \end{keyworddata}
 
-\paragraph*{Abaqus-compatible example}
-
-\begin{inputdeck}[Abaqus-compatible syntax]
-*ELEMENT, TYPE=C3D8, ELSET=SOLIDS
-10, 1, 2, 3, 4, 5, 6, 7, 8
-
-*ELEMENT, TYPE=T3D2, ELSET=BARS
-20, 9, 10
-
-*ELEMENT, TYPE=MASS, ELSET=POINTS
-30, 11
-\end{inputdeck}
-
-The same input language also accepts FEMaster-specific element
-names, which can be freely combined with supported Abaqus-compatible
-definitions in the same input deck:
-
-\begin{inputdeck}[Additional FEMaster element types]
-*ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
-40, 12, 13, 14, 15
-
-*ELEMENT, TYPE=T3, ELSET=BRACES
-50, 16, 17
-\end{inputdeck}
-
 Element connectivity defines topology and kinematics, but additional
 physical properties are assigned by the applicable Section or
 concentrated-property keywords; see Section~\ref{sec:sections}.
-The following subsections document the supported types, their
-connectivity, formulations, applications, and limitations.
+The following element reference lists the supported types and their
+aliases, followed by the individual numerical formulations, connectivity,
+applications, and limitations.
 
 \input{pages/reference/elements}
