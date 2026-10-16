@@ -154,7 +154,10 @@ SOLIDS, S2
 
 The destination name is supplied by \key{SFSET} or \key{NAME}; the native default is \val{SFALL}. Explicit surface references can be listed directly. With \key{GENERATE}, arithmetic ranges of surface IDs can be produced using the same inclusive start/end/increment convention as node and element sets. \key{INSTANCE} can be used for Assembly-level selection where applicable.
 
-The supported Abaqus input format does not have a separate \cmd{SFSET} keyword. A named Abaqus \cmd{SURFACE} already serves as the reusable surface region, so the right-hand example expresses the same modelling intent directly through one combined surface definition.
+\cmd{SFSET} is a FEMaster extension. A regular \cmd{SURFACE}
+definition can instead select the same physical faces directly,
+as shown in the alternative below. The two forms do not require
+separate input modes.
 
 \begin{keywordparameters}
 \key{SFSET} / \key{NAME} & optional & Destination surface-region name; native default \val{SFALL}. \\
