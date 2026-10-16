@@ -41,8 +41,11 @@ The matrix request belongs inside the analysis whose assembled stiffness matrix 
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *REQUESTSTIFFNESS, FILE=K_service.txt
-...
 *END
 \end{inputdeck}
 
@@ -63,9 +66,14 @@ This example requests the elastic and geometric stiffnesses of the linear-buckli
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
+*SUPPORTS
+BC
+*LOADS
+PRELOAD
+*NUMEIGENVALUES
+5
 *REQUESTSTIFFNESS, FILE=K.txt
 *REQUESTSTGEOM, FILE=KG.txt
-...
 *END
 \end{inputdeck}
 
@@ -84,9 +92,12 @@ The report describes the equations and ranks used to enforce supports and coupli
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
-*CONSTRAINTSUMMARY
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
-...
+*CONSTRAINTSUMMARY
 *END
 \end{inputdeck}
 
