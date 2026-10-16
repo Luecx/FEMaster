@@ -41,6 +41,8 @@ Point masses represent equipment, payloads, actuators, engines, sensors, or othe
 \val{krx, kry, krz} & Rotational ground-spring constants; default 0. \\
 \end{keyworddata}
 
+The command creates one auxiliary point element at every node of PAYLOAD. The listed coefficients are assigned per node, not divided by the number of nodes in the set.
+
 \exampleheading
 \begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD
@@ -82,6 +84,8 @@ The supported mapping is the isotropic form only. Abaqus anisotropic mass, orien
 \val{mass} & Non-negative isotropic translational mass assigned to every target element. \\
 \end{keyworddata}
 
+An explicit MASS element is referenced through its element set and given a translational mass. The POINTMASS alternative avoids a separate regular element definition.
+
 \exampleheading
 \begin{inputdeck}
 *ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
@@ -113,6 +117,8 @@ The Abaqus data format additionally contains the products of inertia \(I_{12}\),
 \val{I11, I22, I33} & Non-negative rotary inertias about the three supported axes. \\
 \val{I12, I13, I23} & Optional Abaqus tensor fields; currently required to be zero. \\
 \end{keyworddata}
+
+The listed diagonal inertias act about the nodal rotational axes. They do not supply translational mass unless combined with a MASS element or POINTMASS values.
 
 \exampleheading
 \begin{inputdeck}
@@ -150,6 +156,8 @@ The current mapping supports only real, constant, non-negative linear stiffness 
 \val{dof} & Integer nodal degree of freedom from 1 through 6. \\
 \val{stiffness} & Non-negative constant linear spring stiffness. \\
 \end{keyworddata}
+
+The two SPRING1 elements act in different generalized directions at the same node. POINTMASS can express several diagonal ground-spring components in one nodal property.
 
 \exampleheading
 \begin{inputdeck}
