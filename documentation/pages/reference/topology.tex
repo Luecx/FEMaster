@@ -34,7 +34,7 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -71,7 +71,7 @@ The rotation order is significant because finite rotations about different axes 
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *FIELD, NAME=ORIENT,
  TYPE=ELEMENT, COLS=3, FILL=ZERO
 0, 0.0, 0.0, 0.0
@@ -105,7 +105,7 @@ The exact reported Field follows FEMaster's topology result definitions, while t
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *TOPOEXPONENT
 3.0
 \end{inputdeck}
