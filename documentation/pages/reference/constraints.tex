@@ -42,14 +42,14 @@ Scoped form & Data belong to \cmd{KINEMATIC} or \cmd{DISTRIBUTING} and use inclu
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
 *DISTRIBUTING, COUPLING=STRUCTURAL
 1, 3
 \end{inputdeck}
 
-\paragraph*{Alternative: Legacy direct FEMaster coupling}
-\begin{inputdeck}[Alternative]
+\paragraph*{Direct coupling form}
+\begin{inputdeck}
 *COUPLING, MASTER=REF, SURFACE=LOADED_FACE, TYPE=STRUCTURAL
 1., 1., 1., 0., 0., 0.
 \end{inputdeck}
@@ -65,7 +65,7 @@ Each data line contains an inclusive DOF range \val{first,last}. Valid DOF numbe
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *COUPLING, REF NODE=RP, SURFACE=FLANGE
 *KINEMATIC
 1, 3
@@ -85,19 +85,18 @@ Its optional DOF data uses the same inclusive 1--6 range syntax as \cmd{KINEMATI
 \val{first, last} & Optional inclusive range of generalized DOFs 1--6. \\
 \end{keyworddata}
 
+The \val{CONTINUUM} and \val{STRUCTURAL} selector values
+currently use the same distributing-coupling implementation;
+a second input deck is therefore unnecessary.
+
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *COUPLING, REF NODE=RP, SURFACE=LOADED_FACE
 *DISTRIBUTING, COUPLING=CONTINUUM
 1, 3
 \end{inputdeck}
 
-\paragraph*{Alternative: Structural distributing coupling}
-\begin{inputdeck}[Alternative]
-*COUPLING, REF NODE=RP, SURFACE=LOADED_FACE
-*DISTRIBUTING, COUPLING=STRUCTURAL
-1, 3
-\end{inputdeck}
+
 
 \keywordpage{EQUATION}
 
@@ -119,7 +118,7 @@ Following lines & One to four \val{target, dof, coefficient} triples per line un
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *EQUATION
 2
 LEFT, 1, 1.0, RIGHT, 1, -1.0
@@ -141,13 +140,13 @@ CalculiX \key{ROT NODE} feature is not supported.
 
 \exampleheading
 
-\begin{inputdeck}[CalculiX-compatible]
+\begin{inputdeck}
 *RIGID BODY, NSET=FLANGE_NODES, REF NODE=RP
 \end{inputdeck}
 
-\paragraph*{Alternative: Explicit kinematic coupling}
+\paragraph*{Equivalent kinematic coupling}
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *COUPLING, REF NODE=RP, SURFACE=FLANGE_NODES
 *KINEMATIC
 1, 6
@@ -174,7 +173,7 @@ Tie and contact solve different modelling problems. A Tie is an equality-type co
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *TIE, MASTER=MASTER_FACE,
  SLAVE=SLAVE_NODES,
  DISTANCE=0.5, ADJUST=YES
@@ -200,7 +199,7 @@ A coupling can reduce a distributed region to a reference node before two refere
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *ORIENTATION, NAME=HINGE_AXES,
  TYPE=RECTANGULAR
 1., 0., 0., 0., 1., 0.
@@ -227,7 +226,7 @@ RBM addresses rigid-body motion itself. Other singularities can instead arise fr
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *RBM, ELSET=FREE_COMPONENT
 \end{inputdeck}
 
@@ -267,7 +266,7 @@ The user-supplied \key{PENALTY} is a numerical stiffness scale, not a physical m
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *SURFACE, NAME=MASTER_FACE
 MASTER_ELEMENTS, S1
 *SURFACE, NAME=SLAVE_FACE
