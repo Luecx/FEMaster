@@ -62,6 +62,11 @@
 \titleformat{\section}
   {\normalfont\Large\bfseries\color{FMDark}}
   {\thesection}{0.8em}{}
+
+% Each section starts on a new page; chapter and keyword page breaks
+% are preserved as separate conventions.
+\let\femasterOriginalSection\section
+\renewcommand{\section}{\clearpage\femasterOriginalSection}
 \titleformat{\subsection}
   {\normalfont\large\bfseries\color{FMDark}}
   {\thesubsection}{0.7em}{}
