@@ -50,7 +50,12 @@ Point masses represent equipment, payloads, actuators, engines, sensors, or othe
 0., 0., 0.
 \end{inputdeck}
 
-\paragraph*{Regular MASS element with an ELSET}
+For a translational mass alone, a regular \val{MASS} element and
+its \cmd{MASS} property assignment can be used instead. The
+additional rotary inertias and ground springs in the example above
+are not represented by this replacement.
+
+\paragraph*{Regular mass element}
 \begin{inputdeck}
 *ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 2
@@ -88,7 +93,7 @@ The supported mapping is the isotropic form only. Abaqus anisotropic mass, orien
 \paragraph*{POINTMASS assigned directly to a node set}
 \begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD_NODES
-0.025
+0.01
 \end{inputdeck}
 
 \keywordnestedpage{ROTARY INERTIA}
