@@ -83,7 +83,7 @@ SERVICE
 *END
 \end{inputdeck}
 
-\paragraph*{Equivalent Abaqus STEP}
+\paragraph*{Alternative: Equivalent Abaqus STEP}
 \begin{inputdeck}[Alternative]
 *STEP, NAME=SERVICE_LOAD
 *STATIC
@@ -115,7 +115,7 @@ FIXED_SUPPORTS, SYMMETRY_SUPPORTS
 *END
 \end{inputdeck}
 
-\paragraph*{Direct BOUNDARY in a STEP}
+\paragraph*{Alternative: Direct BOUNDARY in a STEP}
 \begin{inputdeck}[Alternative]
 *STEP
 *FREQUENCY
@@ -148,7 +148,7 @@ GRAVITY, PRESSURE, ACTUATOR
 *END
 \end{inputdeck}
 
-\paragraph*{Direct loads in a STEP}
+\paragraph*{Alternative: Direct loads in a STEP}
 \begin{inputdeck}[Alternative]
 *STEP
 *STATIC
@@ -173,7 +173,7 @@ Native \cmd{END} closes the current \cmd{LOADCASE}. It is distinct from \cmd{END
 *END
 \end{inputdeck}
 
-\paragraph*{Abaqus END STEP}
+\paragraph*{Alternative: Abaqus END STEP}
 \begin{inputdeck}[Alternative]
 *STEP
 *STATIC
@@ -208,7 +208,7 @@ Loads and boundary conditions written within the Step belong to that analysis. F
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster LOADCASE}
+\paragraph*{Alternative: FEMaster LOADCASE}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=NONLINEARSTATIC
 *NONLINEAR, CONTROL=LOAD,
@@ -311,7 +311,7 @@ FIXED, 1, 6, 0.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster eigenfrequency LOADCASE}
+\paragraph*{Alternative: FEMaster eigenfrequency LOADCASE}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=EIGENFREQ
 *SUPPORTS
@@ -346,7 +346,7 @@ The first data value is the positive number of requested buckling modes. \key{EI
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster linear-buckling LOADCASE}
+\paragraph*{Alternative: FEMaster linear-buckling LOADCASE}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=LINEARBUCKLING
 *SUPPORTS
@@ -383,7 +383,7 @@ Native FEMaster exposes the same analysis through \val{LINEARTRANSIENT}, \cmd{TI
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster transient LOADCASE}
+\paragraph*{Alternative: FEMaster transient LOADCASE}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=LINEARTRANSIENT
 *SUPPORTS
@@ -423,7 +423,7 @@ Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster harmonic LOADCASE}
+\paragraph*{Alternative: FEMaster harmonic LOADCASE}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=LINEARHARMONIC
 *SUPPORTS
@@ -448,7 +448,7 @@ HARMONIC_FORCE
 *END STEP
 \end{inputdeck}
 
-\paragraph*{FEMaster END}
+\paragraph*{Alternative: FEMaster END}
 \begin{inputdeck}[Alternative]
 *LOADCASE, TYPE=LINEARSTATIC
 ...
