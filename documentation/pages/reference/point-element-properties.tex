@@ -42,18 +42,21 @@ Point masses represent equipment, payloads, actuators, engines, sensors, or othe
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster extension]
 *POINTMASS, NSET=PAYLOAD
 0.025,
 1.2e-3, 1.2e-3, 2.0e-3,
 1000., 1000., 0.,
 0., 0., 0.
-\end{femasterdeck}
-\begin{noabaqus}
-Abaqus-style input uses regular \val{MASS}, \val{ROTARYI}, and \val{SPRING1} elements together with \cmd{MASS}, \cmd{ROTARY INERTIA}, and \cmd{SPRING}. Native \cmd{POINTMASS} is the legacy FEMaster variant that combines these diagonal properties directly on an NSET.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: Regular MASS element with an ELSET}
+\begin{inputdeck}[Alternative]
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
+100, 2
+*MASS, ELSET=PAYLOAD_MASS
+0.025
+\end{inputdeck}
 
 \keywordnestedpage{MASS}
 
@@ -75,20 +78,18 @@ The supported mapping is the isotropic form only. Abaqus anisotropic mass, orien
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 2
 *MASS, ELSET=PAYLOAD_MASS
 0.01
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
-100, 2
-*MASS, ELSET=PAYLOAD_MASS
-0.01
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: POINTMASS assigned directly to a node set}
+\begin{inputdeck}[Alternative]
+*POINTMASS, NSET=PAYLOAD_NODES
+0.025
+\end{inputdeck}
 
 \keywordnestedpage{ROTARY INERTIA}
 
@@ -109,20 +110,19 @@ The Abaqus data format additionally contains the products of inertia \(I_{12}\),
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_INERTIA
 101, 2
 *ROTARY INERTIA, ELSET=PAYLOAD_INERTIA
 1.2e-3, 1.2e-3, 2.0e-3, 0., 0., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_INERTIA
-101, 2
-*ROTARY INERTIA, ELSET=PAYLOAD_INERTIA
-1.2e-3, 1.2e-3, 2.0e-3, 0., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: POINTMASS with diagonal rotary inertia}
+\begin{inputdeck}[Alternative]
+*POINTMASS, NSET=PAYLOAD_NODES
+0.,
+1.2e-3, 1.2e-3, 2.0e-3
+\end{inputdeck}
 
 \keywordnestedpage{SPRING}
 
@@ -147,8 +147,7 @@ The current mapping supports only real, constant, non-negative linear stiffness 
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ELEMENT, TYPE=SPRING1, ELSET=SPRING_X
 102, 2
 *SPRING, ELSET=SPRING_X
@@ -160,18 +159,13 @@ The current mapping supports only real, constant, non-negative linear stiffness 
 *SPRING, ELSET=ROTSPRING_Z
 6
 25.0
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELEMENT, TYPE=SPRING1, ELSET=SPRING_X
-102, 2
-*SPRING, ELSET=SPRING_X
-1
-1000.0
+\end{inputdeck}
 
-*ELEMENT, TYPE=SPRING1, ELSET=ROTSPRING_Z
-103, 2
-*SPRING, ELSET=ROTSPRING_Z
-6
-25.0
-\end{abaqusdeck}
-\end{dialectexamples}
+\paragraph*{Alternative: POINTMASS with translational and rotational ground springs}
+\begin{inputdeck}[Alternative]
+*POINTMASS, NSET=SUPPORT_NODES
+0.,
+0., 0., 0.,
+1000., 0., 0.,
+0., 0., 25.
+\end{inputdeck}
