@@ -43,21 +43,21 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*LOADCASE, TYPE=LINEARSTATIC
-*SOLVER, DEVICE=CPU, METHOD=DIRECT
-...
-*END
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *STEP
 *STATIC
 *SOLVER, DEVICE=CPU, METHOD=INDIRECT
 ...
 *END STEP
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{FEMaster LOADCASE context}
+\begin{inputdeck}[Alternative]
+*LOADCASE, TYPE=LINEARSTATIC
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+...
+*END
+\end{inputdeck}
 
 \keywordnestedpage{CONSTRAINTMETHOD}
 
@@ -127,18 +127,13 @@ For dense or strongly coupled general equations, nullspace projection avoids the
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *LOADCASE, TYPE=LINEARSTATIC
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
 *SOLVER, METHOD=INDIRECT
 ...
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus input does not expose FEMaster's native constraint-method selection.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{NONLINEAR}
 
@@ -209,8 +204,7 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *NONLINEAR, CONTROL=ARC_LENGTH,
  MAX_INCREMENTS=200,
  INITIAL_INCREMENT=0.05,
@@ -218,13 +212,14 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
  MAXIMUM_INCREMENT=0.1,
  MAXITER=40, TOL=1e-8,
  ADAPTIVE=ON
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Equivalent STEP / STATIC RIKS controls}
+\begin{inputdeck}[Alternative]
 *STEP, NLGEOM=YES, INC=200
 *STATIC, RIKS
 0.05, 1.0, 1e-5, 0.1
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{TIME}
 
@@ -243,16 +238,16 @@ The time increment must resolve the highest response frequencies that matter to 
 The ratio between \(\Delta t\) and the shortest relevant period \(T_\mathrm{min}\) determines the temporal resolution. Phase and peak-amplitude accuracy generally require many points per period.
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *TIME
 0.0, 2.0, 0.005
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Abaqus-compatible DYNAMIC procedure}
+\begin{inputdeck}[Alternative]
 *DYNAMIC, DIRECT
 0.005, 2.0
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{NEWMARK}
 
@@ -279,15 +274,10 @@ For the default parameters the linear method is unconditionally stable for the s
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *NEWMARK
 0.25, 0.5
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus \cmd{DYNAMIC, DIRECT} mapping uses FEMaster's transient integration but does not expose a separate imported Newmark-parameter card.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{DAMPING}
 
@@ -314,15 +304,10 @@ Rayleigh damping is frequency dependent. Coefficients fitted at two frequencies 
 \end{keyworddata}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *DAMPING, TYPE=RAYLEIGH
 0.0, 1.0e-5
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently does not import a separate Step damping card.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{FREQUENCIES}
 
@@ -342,17 +327,17 @@ Frequency resolution determines which parts of the response curve are sampled. A
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *FREQUENCIES, SCALE=LINEAR
 10., 1000., 100
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Abaqus steady-state procedure}
+\begin{inputdeck}[Alternative]
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
 10., 1000., 100, 1., 1.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{NUMEIGENVALUES}
 
@@ -361,16 +346,16 @@ Frequency resolution determines which parts of the response curve are sampled. A
 The requested value is a result count, not a frequency or buckling-factor cutoff. A request for ten modes therefore returns ten eigenpairs but does not independently define the covered spectral range, particularly in the presence of multiplicities or closely spaced eigenvalues.
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *NUMEIGENVALUES
 20
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Abaqus frequency extraction}
+\begin{inputdeck}[Alternative]
 *FREQUENCY
 20
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{SIGMA}
 
@@ -385,15 +370,10 @@ with elastic stiffness \(A\) and geometric stiffness contribution \(B\), shift-i
 \val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates a scale from the pre-buckling solution where possible and falls back to conservative stiffness/geometric-stiffness estimates if necessary. A manual shift directly targets a known approximate spectral range.
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *SIGMA
 0.0
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus \cmd{BUCKLE} mapping does not expose native FEMaster's explicit \cmd{SIGMA} control.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{WRITEEVERY}
 
@@ -408,15 +388,10 @@ Output sampling must still be fine enough for the quantity being inspected. A tr
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *WRITEEVERY, TYPE=STEPS
 10
-\end{femasterdeck}
-\begin{noabaqus}
-Abaqus output-request cards currently do not control FEMaster's transient write cadence.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{INITIALVELOCITY}
 
@@ -433,17 +408,12 @@ corresponding to the translational and rotational nodal DOFs.
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *FIELD, NAME=V0, TYPE=NODE,
  COLS=6, FILL=ZERO
 0, 1., 0., 0., 0., 0., 0.
 *INITIALVELOCITY, FIELD=V0
-\end{femasterdeck}
-\begin{noabaqus}
-No initial-velocity mapping is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{INERTIARELIEF}
 
@@ -462,14 +432,9 @@ All regular compiled structural elements contribute to the mass properties used 
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *INERTIARELIEF, CONSIDER_POINT_MASSES=1
-\end{femasterdeck}
-\begin{noabaqus}
-No inertia-relief procedure is currently imported by the supported Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{REBALANCELOADS}
 
@@ -480,11 +445,6 @@ This differs physically from inertia relief. \cmd{REBALANCELOADS} assumes a theo
 Rebalancing a load with a physical resultant removes that resultant and thereby defines a different loadcase; it does not supply support to an unsupported model.
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster syntax]
 *REBALANCELOADS
-\end{femasterdeck}
-\begin{noabaqus}
-No corresponding load-rebalancing input card is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
