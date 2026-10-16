@@ -28,17 +28,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*PART, NAME=ROD
-*NODE, NSET=PNODES
-0,   0., 0., 0.
-1, 100., 0., 0.
-*ELEMENT, TYPE=T3, ELSET=BAR
-0, 0, 1
-*END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *PART, NAME=ROD
 *NODE, NSET=PNODES
 0,   0., 0., 0.
@@ -46,8 +36,18 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 0, 0, 1
 *END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster-specific syntax}
+\begin{inputdeck}[FEMaster extension]
+*PART, NAME=ROD
+*NODE, NSET=PNODES
+0,   0., 0., 0.
+1, 100., 0., 0.
+*ELEMENT, TYPE=T3, ELSET=BAR
+0, 0, 1
+*END PART
+\end{inputdeck}
 
 \keywordpage{END PART}
 
@@ -61,18 +61,11 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *PART, NAME=PLATE
 ...
 *END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
-*PART, NAME=PLATE
-...
-*END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{ASSEMBLY}
 
@@ -90,22 +83,13 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ASSEMBLY, NAME=ASSEMBLY
 *INSTANCE, NAME=ROD_A, PART=ROD
 0., 0., 0.
 *END INSTANCE
 *END ASSEMBLY
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ASSEMBLY, NAME=ASSEMBLY
-*INSTANCE, NAME=ROD_A, PART=ROD
-0., 0., 0.
-*END INSTANCE
-*END ASSEMBLY
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{END ASSEMBLY}
 
@@ -119,18 +103,18 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ASSEMBLY
-...
-*END ASSEMBLY
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ASSEMBLY, NAME=ASSEMBLY
 ...
 *END ASSEMBLY
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster-specific syntax}
+\begin{inputdeck}[FEMaster extension]
+*ASSEMBLY
+...
+*END ASSEMBLY
+\end{inputdeck}
 
 \keywordpage{INSTANCE}
 
@@ -162,20 +146,12 @@ The Part-local node and element labels remain associated with every Instance. As
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *INSTANCE, NAME=RIGHT, PART=BRACKET
 100., 0., 0.
 0., 0., 0., 0., 0., 1., 90.
 *END INSTANCE
-\end{femasterdeck}
-\begin{abaqusdeck}
-*INSTANCE, NAME=RIGHT, PART=BRACKET
-100., 0., 0.
-0., 0., 0., 0., 0., 1., 90.
-*END INSTANCE
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{END INSTANCE}
 
@@ -183,18 +159,11 @@ The Part-local node and element labels remain associated with every Instance. As
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *INSTANCE, NAME=A, PART=BLOCK
 20., 0., 0.
 *END INSTANCE
-\end{femasterdeck}
-\begin{abaqusdeck}
-*INSTANCE, NAME=A, PART=BLOCK
-20., 0., 0.
-*END INSTANCE
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{NODE}
 
@@ -219,20 +188,12 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *NODE, NSET=EDGE
 0,  0., 0., 0.
 10, 25., 0., 0.
 20, 50., 0., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*NODE, NSET=EDGE
-0,  0., 0., 0.
-10, 25., 0., 0.
-20, 50., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{ELEMENT}
 
