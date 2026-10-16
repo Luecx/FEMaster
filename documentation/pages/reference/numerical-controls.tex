@@ -134,9 +134,12 @@ For dense or strongly coupled general equations, nullspace projection avoids the
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
 *SOLVER, METHOD=INDIRECT
-...
 *END
 \end{inputdeck}
 
