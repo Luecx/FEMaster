@@ -42,7 +42,7 @@ Point masses represent equipment, payloads, actuators, engines, sensors, or othe
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD
 0.025,
 1.2e-3, 1.2e-3, 2.0e-3,
@@ -50,8 +50,8 @@ Point masses represent equipment, payloads, actuators, engines, sensors, or othe
 0., 0., 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: Regular MASS element with an ELSET}
-\begin{inputdeck}[Alternative]
+\paragraph*{Regular MASS element with an ELSET}
+\begin{inputdeck}
 *ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 2
 *MASS, ELSET=PAYLOAD_MASS
@@ -78,15 +78,15 @@ The supported mapping is the isotropic form only. Abaqus anisotropic mass, orien
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 2
 *MASS, ELSET=PAYLOAD_MASS
 0.01
 \end{inputdeck}
 
-\paragraph*{Alternative: POINTMASS assigned directly to a node set}
-\begin{inputdeck}[Alternative]
+\paragraph*{POINTMASS assigned directly to a node set}
+\begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD_NODES
 0.025
 \end{inputdeck}
@@ -110,15 +110,15 @@ The Abaqus data format additionally contains the products of inertia \(I_{12}\),
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_INERTIA
 101, 2
 *ROTARY INERTIA, ELSET=PAYLOAD_INERTIA
 1.2e-3, 1.2e-3, 2.0e-3, 0., 0., 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: POINTMASS with diagonal rotary inertia}
-\begin{inputdeck}[Alternative]
+\paragraph*{POINTMASS with diagonal rotary inertia}
+\begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD_NODES
 0.,
 1.2e-3, 1.2e-3, 2.0e-3
@@ -147,7 +147,7 @@ The current mapping supports only real, constant, non-negative linear stiffness 
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ELEMENT, TYPE=SPRING1, ELSET=SPRING_X
 102, 2
 *SPRING, ELSET=SPRING_X
@@ -161,8 +161,8 @@ The current mapping supports only real, constant, non-negative linear stiffness 
 25.0
 \end{inputdeck}
 
-\paragraph*{Alternative: POINTMASS with translational and rotational ground springs}
-\begin{inputdeck}[Alternative]
+\paragraph*{POINTMASS with translational and rotational ground springs}
+\begin{inputdeck}
 *POINTMASS, NSET=SUPPORT_NODES
 0.,
 0., 0., 0.,
