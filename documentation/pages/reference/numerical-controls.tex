@@ -43,7 +43,7 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP
 *STATIC
 *SOLVER, DEVICE=CPU, METHOD=INDIRECT
@@ -51,13 +51,9 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster LOADCASE context}
-\begin{inputdeck}[Alternative]
-*LOADCASE, TYPE=LINEARSTATIC
-*SOLVER, DEVICE=CPU, METHOD=DIRECT
-...
-*END
-\end{inputdeck}
+The same \cmd{SOLVER} command can be placed inside a
+\cmd{LOADCASE}. It must appear after the procedure keyword
+when used inside an Abaqus-compatible \cmd{STEP}.
 
 \keywordnestedpage{CONSTRAINTMETHOD}
 
@@ -127,7 +123,7 @@ For dense or strongly coupled general equations, nullspace projection avoids the
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
 *SOLVER, METHOD=INDIRECT
@@ -204,7 +200,7 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *NONLINEAR, CONTROL=ARC_LENGTH,
  MAX_INCREMENTS=200,
  INITIAL_INCREMENT=0.05,
@@ -214,8 +210,8 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
  ADAPTIVE=ON
 \end{inputdeck}
 
-\paragraph*{Alternative: Equivalent STEP / STATIC RIKS controls}
-\begin{inputdeck}[Alternative]
+\paragraph*{Riks procedure}
+\begin{inputdeck}
 *STEP, NLGEOM=YES, INC=200
 *STATIC, RIKS
 0.05, 1.0, 1e-5, 0.1
@@ -238,13 +234,13 @@ The time increment must resolve the highest response frequencies that matter to 
 The ratio between \(\Delta t\) and the shortest relevant period \(T_\mathrm{min}\) determines the temporal resolution. Phase and peak-amplitude accuracy generally require many points per period.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *TIME
 0.0, 2.0, 0.005
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus-compatible DYNAMIC procedure}
-\begin{inputdeck}[Alternative]
+\paragraph*{DYNAMIC procedure}
+\begin{inputdeck}
 *DYNAMIC, DIRECT
 0.005, 2.0
 \end{inputdeck}
@@ -274,7 +270,7 @@ For the default parameters the linear method is unconditionally stable for the s
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *NEWMARK
 0.25, 0.5
 \end{inputdeck}
@@ -304,7 +300,7 @@ Rayleigh damping is frequency dependent. Coefficients fitted at two frequencies 
 \end{keyworddata}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *DAMPING, TYPE=RAYLEIGH
 0.0, 1.0e-5
 \end{inputdeck}
@@ -327,13 +323,13 @@ Frequency resolution determines which parts of the response curve are sampled. A
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *FREQUENCIES, SCALE=LINEAR
 10., 1000., 100
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus steady-state procedure}
-\begin{inputdeck}[Alternative]
+\paragraph*{Steady-state dynamics procedure}
+\begin{inputdeck}
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
 10., 1000., 100, 1., 1.
@@ -346,13 +342,13 @@ Frequency resolution determines which parts of the response curve are sampled. A
 The requested value is a result count, not a frequency or buckling-factor cutoff. A request for ten modes therefore returns ten eigenpairs but does not independently define the covered spectral range, particularly in the presence of multiplicities or closely spaced eigenvalues.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *NUMEIGENVALUES
 20
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus frequency extraction}
-\begin{inputdeck}[Alternative]
+\paragraph*{Frequency extraction procedure}
+\begin{inputdeck}
 *FREQUENCY
 20
 \end{inputdeck}
@@ -370,7 +366,7 @@ with elastic stiffness \(A\) and geometric stiffness contribution \(B\), shift-i
 \val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates a scale from the pre-buckling solution where possible and falls back to conservative stiffness/geometric-stiffness estimates if necessary. A manual shift directly targets a known approximate spectral range.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *SIGMA
 0.0
 \end{inputdeck}
@@ -388,7 +384,7 @@ Output sampling must still be fine enough for the quantity being inspected. A tr
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *WRITEEVERY, TYPE=STEPS
 10
 \end{inputdeck}
@@ -408,7 +404,7 @@ corresponding to the translational and rotational nodal DOFs.
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *FIELD, NAME=V0, TYPE=NODE,
  COLS=6, FILL=ZERO
 0, 1., 0., 0., 0., 0., 0.
@@ -432,7 +428,7 @@ All regular compiled structural elements contribute to the mass properties used 
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *INERTIARELIEF, CONSIDER_POINT_MASSES=1
 \end{inputdeck}
 
@@ -445,6 +441,6 @@ This differs physically from inertia relief. \cmd{REBALANCELOADS} assumes a theo
 Rebalancing a load with a physical resultant removes that resultant and thereby defines a different loadcase; it does not supply support to an unsupported model.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *REBALANCELOADS
 \end{inputdeck}
