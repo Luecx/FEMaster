@@ -3,7 +3,13 @@
 
 An analysis procedure determines which finite-element problem FEMaster solves. The same mesh, materials, Sections, loads, and constraints can be reused for different procedures because the governing equations differ even when the physical model is unchanged.
 
-Native FEMaster uses \cmd{LOADCASE, TYPE=...}. Abaqus input uses \cmd{STEP} followed by one supported procedure keyword. The side-by-side examples in this section show equivalent analysis intent. Numerical settings such as constraint treatment, nonlinear convergence, damping, time stepping, and eigensolver controls are described in Section~\ref{sec:numerical-controls}.
+FEMaster supports both \cmd{STEP} with a procedure keyword and
+\cmd{LOADCASE, TYPE=...} with FEMaster-specific control cards.
+Each procedure entry shows its own definition first and then a
+corresponding alternative where appropriate. Both can be used
+within the unified input language. Constraint handling, nonlinear
+convergence, damping, time stepping, and eigensolver controls are
+described in Section~\ref{sec:numerical-controls}.
 
 \paragraph*{Analysis families}
 
