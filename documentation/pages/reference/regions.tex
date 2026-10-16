@@ -27,8 +27,7 @@ Generated form & \val{start, end, increment}; the increment defaults to \val{1} 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *PART, NAME=BEAM
 *NODE
 0, 0., 0., 0.
@@ -40,21 +39,16 @@ Generated form & \val{start, end, increment}; the increment defaults to \val{1} 
 *NSET, NSET=ALLN, GENERATE
 0, 3, 1
 *END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
-*PART, NAME=BEAM
-*NODE
-0, 0., 0., 0.
-1, 1., 0., 0.
-2, 2., 0., 0.
-3, 3., 0., 0.
-*NSET, NSET=ENDS
-0, 3
-*NSET, NSET=ALLN, GENERATE
-0, 3, 1
-*END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: Generated or instance-qualified node set}
+\begin{inputdeck}[Alternative]
+*NSET, NSET=EDGE_NODES, GENERATE
+1, 20, 1
+
+*NSET, NSET=ROOT, INSTANCE=LEFT
+1, 2, 3
+\end{inputdeck}
 
 \clearpage
 \paragraph*{Assembly-level Instance selection}
@@ -102,22 +96,13 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *ELSET, ELSET=DESIGN_DOMAIN, GENERATE
 0, 99, 1
 
 *ELSET, ELSET=EVEN_ELEMENTS, GENERATE
 0, 98, 2
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELSET, ELSET=DESIGN_DOMAIN, GENERATE
-0, 99, 1
-
-*ELSET, ELSET=EVEN_ELEMENTS, GENERATE
-0, 98, 2
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{SURFACE}
 
@@ -147,19 +132,19 @@ Explicit native form & \val{surface_id, element_id, side}. \\
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
+*SURFACE, NAME=TOP, TYPE=ELEMENT
+SOLIDS, S2
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster direct surface references}
+\begin{inputdeck}[FEMaster extension]
 *SURFACE, NAME=TOP
 SOLIDS, S2
 
 *SURFACE, NAME=ONE_FACE
 0, 42, S1
-\end{femasterdeck}
-\begin{abaqusdeck}
-*SURFACE, NAME=TOP, TYPE=ELEMENT
-SOLIDS, S2
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{SFSET}
 
@@ -184,8 +169,7 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *SURFACE, NAME=PATCH_A
 0, 20, S1
 1, 21, S1
@@ -194,11 +178,12 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 *SFSET, NAME=CONTACT_FACE
 0, 1, 2
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Alternative: Ordinary element surface selection}
+\begin{inputdeck}[Abaqus-compatible]
 *SURFACE, NAME=CONTACT_FACE, TYPE=ELEMENT
 20, S1
 21, S1
 22, S1
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
