@@ -17,6 +17,8 @@ In models with a Part/Instance hierarchy or many named regions, the overview exp
 
 A structurally plausible overview establishes only the reported model organization. It does not establish the physical consistency of material units, element orientations, shell normals, surface sides, load directions, or boundary conditions.
 
+This root-level diagnostic prints a model summary for checking the assembled input. It does not choose results or alter the finite-element solution.
+
 \exampleheading
 \begin{inputdeck}
 *OVERVIEW
@@ -33,6 +35,8 @@ Matrix output is a diagnostic and verification feature distinct from the ordinar
 \begin{keywordparameters}
 \key{FILE} & optional & Stiffness-matrix output filename. \\
 \end{keywordparameters}
+
+The matrix request belongs inside the analysis whose assembled stiffness matrix is to be exported. The FILE name controls the output destination.
 
 \exampleheading
 \begin{inputdeck}
@@ -54,6 +58,8 @@ The command changes output only; it does not modify the preload or buckling eige
 \key{FILE} & optional & Geometric-stiffness output filename/base. \\
 \end{keywordparameters}
 
+This example requests the elastic and geometric stiffnesses of the linear-buckling problem, including the preload-dependent geometric contribution.
+
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
@@ -72,6 +78,8 @@ When several constraint sources act simultaneously, support collectors, RBM supp
 In an unexpectedly singular or over-constrained model, the constraint groups can expose a duplicate coupling or a support that constrains a reference node twice more directly than the final sparse matrix.
 
 \cmd{CONSTRAINTSUMMARY} does not choose the enforcement method. \cmd{CONSTRAINTMETHOD} separately determines whether the equations are handled by nullspace projection, elimination, or Lagrange multipliers where supported.
+
+The report describes the equations and ranks used to enforce supports and coupling constraints. It is useful for diagnosing underconstraint or redundant equations.
 
 \exampleheading
 \begin{inputdeck}
@@ -96,6 +104,8 @@ The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does 
 
 \cmd{NODE OUTPUT} selects nodal result quantities for the active step. When it is the first explicit output card, the step defaults are cleared before the listed variables are added.
 
+The nodal output request is attached to the current analysis step. U requests displacements and RF requests reaction forces, provided those quantities are available for that procedure.
+
 \exampleheading
 \begin{inputdeck}
 *OUTPUT, FIELD
@@ -109,6 +119,8 @@ same nodal field list and configures the same output request.
 \keywordpage{ELEMENT OUTPUT}
 
 \cmd{ELEMENT OUTPUT} selects element-derived result quantities for the active step. It uses the same request set as \cmd{EL FILE}; the spelling does not select a different FEMaster result format.
+
+The element output request selects derived fields such as stress S and strain E for the active step. Output availability still depends on the elements and procedure.
 
 \exampleheading
 \begin{inputdeck}
@@ -124,6 +136,8 @@ same element field list and configures the same output request.
 
 \cmd{NODE FILE} is the CalculiX-style alias of \cmd{NODE OUTPUT}. It selects the listed nodal result quantities for the active step but does not force creation of a separate ASCII node-results file.
 
+This CalculiX-compatible alias selects the same nodal fields as NODE OUTPUT. It does not create a separate unrelated output stream.
+
 \exampleheading
 \begin{inputdeck}
 *NODE FILE
@@ -137,6 +151,8 @@ compatibility container and does not itself select fields.
 \keywordpage{EL FILE}
 
 \cmd{EL FILE} is the CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It selects the listed element-derived result quantities without changing the configured FEMaster result writer.
+
+This alias selects the same element result fields as ELEMENT OUTPUT. The available variables depend on the active procedure and element formulations.
 
 \exampleheading
 \begin{inputdeck}
@@ -152,6 +168,8 @@ compatibility container and does not itself select fields.
 
 \cmd{NODE PRINT} is accepted and ignored. It does not modify the active field-output request set and does not generate an Abaqus/CalculiX text print table.
 
+This input is accepted for file compatibility but currently ignored. It neither changes the frame output selection nor produces an additional text-results table.
+
 \exampleheading
 \begin{inputdeck}
 *NODE PRINT
@@ -161,6 +179,8 @@ U, RF
 \keywordpage{EL PRINT}
 
 \cmd{EL PRINT} is accepted and ignored in the same way as \cmd{NODE PRINT}. It neither filters FEMaster result Fields nor generates a separate textual element-results table.
+
+This command is parsed for compatibility but has no effect on the result fields. Use ELEMENT OUTPUT or EL FILE to request actual element output.
 
 \exampleheading
 \begin{inputdeck}
