@@ -507,7 +507,7 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         },
         faces={1: (1, 2, 3, 4, 5, 6)},
         integration_domain="DOMAIN_ISO_TRI",
-        integration_order="ORDER_CUBIC",
+        integration_order="ORDER_QUARTIC",
         shape_functions="quadratic triangular shell",
         dof_per_node=6,
     ),
@@ -525,7 +525,7 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         },
         faces={1: (1, 2, 3, 4, 5, 6)},
         integration_domain="DOMAIN_ISO_TRI",
-        integration_order="ORDER_CUBIC",
+        integration_order="ORDER_QUARTIC",
         shape_functions="finite-rotation MITC6-b shell",
         dof_per_node=6,
     ),
@@ -700,6 +700,7 @@ def integration_points(defn: ElementDefinition) -> np.ndarray:
       ORDER_CONSTANT/LINEAR  -> 1 point
       ORDER_QUADRATIC        -> 3 points
       ORDER_CUBIC            -> 4 points
+      ORDER_QUARTIC/QUINTIC  -> 6 points
 
     The third coordinate is used as z/t for 3D domains and remains zero for
     shell/line reference domains.
@@ -749,6 +750,17 @@ def integration_points(defn: ElementDefinition) -> np.ndarray:
                 [1.0 / 5.0, 3.0 / 5.0, 0.0],
                 [1.0 / 5.0, 1.0 / 5.0, 0.0],
                 [3.0 / 5.0, 1.0 / 5.0, 0.0],
+            ], dtype=float)
+        if order in {"ORDER_QUARTIC", "ORDER_QUINTIC"}:
+            # Same six-point triangular rule registered in
+            # src/math/quadrature_iso_tri.cpp (weights are not plotted).
+            a = 0.445948490915965
+            b = 0.091576213509771
+            c = 1.0 - 2.0 * a
+            d = 1.0 - 2.0 * b
+            return np.array([
+                [a, a, 0.0], [a, c, 0.0], [c, a, 0.0],
+                [b, b, 0.0], [b, d, 0.0], [d, b, 0.0],
             ], dtype=float)
         return np.zeros((0, 3), dtype=float)
 
