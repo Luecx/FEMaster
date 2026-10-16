@@ -148,6 +148,16 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 2.0, 5
 \end{inputdeck}
 
+\paragraph*{Alternative: Direct ABD and transverse-shear stiffness}
+\begin{inputdeck}[FEMaster extension]
+*SHELL SECTION, ELSET=PANEL, TYPE=ABD
+1000000., 0., 0., 0., 0., 0., 0., 1000000., 0., 0., 0., 0., 0., 0., 400000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 2000., 100000., 0., 0., 100000.
+\end{inputdeck}
+
+The data line contains 40 values: the complete $6\times6$
+generalized membrane--bending stiffness matrix in row-major order,
+followed by the complete $2\times2$ transverse-shear stiffness matrix.
+
 \keywordnestedpage{BEAM SECTION}
 
 \cmd{BEAM SECTION} and \cmd{BEAM GENERAL SECTION} both create the same generalized linear \val{BeamSection} in FEMaster. Unlike Abaqus, FEMaster does not yet integrate nonlinear constitutive behavior through a beam cross-section. Both input keywords therefore use the same parsing and section-property code path.
@@ -231,7 +241,7 @@ in contrast, use \cmd{SOLID SECTION} without an area line.
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}[FEMaster extension]
 *TRUSS SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
