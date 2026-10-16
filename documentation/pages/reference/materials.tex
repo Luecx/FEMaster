@@ -29,14 +29,6 @@ Materials are independent of Parts. The corresponding Section assignment connect
 7.85e-9
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster-specific syntax}
-\begin{inputdeck}[FEMaster extension]
-*MATERIAL, NAME=STEEL
-*ELASTIC, TYPE=ISOTROPIC
-210000., 0.3
-*DENSITY
-7.85e-9
-\end{inputdeck}
 
 \keywordnestedpage{ELASTIC}
 
@@ -109,14 +101,6 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 210000., 0.3
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster-specific syntax}
-\begin{inputdeck}[FEMaster extension]
-*MATERIAL, NAME=UD
-*ELASTIC, TYPE=ENGINEERINGCONSTANTS
-135000., 10000., 10000.,
-0.30, 0.30, 0.40,
-5000., 5000., 3500.
-\end{inputdeck}
 
 \paragraph*{Alternative: Engineering constants}
 \begin{inputdeck}[Alternative]
@@ -257,7 +241,11 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \keywordnestedpage{THERMALEXPANSION}
 
-\cmd{THERMALEXPANSION} is the legacy spelling of \cmd{EXPANSION}. Both FEMaster and Abaqus input readers accept it with exactly the same syntax and constant isotropic thermal-expansion behavior. Use \cmd{EXPANSION} for new decks.
+\cmd{THERMALEXPANSION} is a legacy alias for \cmd{EXPANSION}.
+Both keywords accept the same constant isotropic coefficient,
+optional \key{TYPE} selector, and stress-free reference temperature
+\key{ZERO}. For new decks, prefer \cmd{EXPANSION}; both forms
+remain usable within the unified input language.
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
