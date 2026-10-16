@@ -47,6 +47,8 @@ Integration-point Field & \val{element, local_ip, v1, v2, ...}; \val{local_ip} i
 Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both local indices are zero based. \\
 \end{keyworddata}
 
+The first field stores one scalar value per element; the second stores a three-component vector for each element node. A consuming keyword selects the named field, for example TOPODENSITY or NORMAL.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -75,6 +77,8 @@ The local node index is the zero-based position inside the element connectivity 
 \begin{keywordparameters}
 \key{FIELD} & required & Name of an existing three-component \val{ELEMENT_NODAL} Field. \\
 \end{keywordparameters}
+
+The named six-component shell director is not needed here: NORMAL reads a three-component element-nodal field. The field definition must precede its use by the shell-normal assignment.
 
 \exampleheading
 
