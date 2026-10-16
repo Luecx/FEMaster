@@ -33,6 +33,8 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 \key{FIELD} / \key{NAME} & required & Scalar \val{ELEMENT} Field containing element densities. \\
 \end{keywordparameters}
 
+A scalar element field supplies the design densities; the topology-weighted linear static loadcase then reads them through TOPODENSITY. The density values are not nodal displacements or material densities.
+
 \exampleheading
 \begin{inputdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
@@ -70,6 +72,8 @@ The rotation order is significant because finite rotations about different axes 
 \key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field of Euler angles \((\theta_x,\theta_y,\theta_z)\) in radians. \\
 \end{keywordparameters}
 
+This element field supplies the orientation parameters for the topology-weighted analysis. The field must exist before it is selected by TOPOORIENT.
+
 \exampleheading
 \begin{inputdeck}
 *FIELD, NAME=ORIENT,
@@ -103,6 +107,8 @@ The exact reported Field follows FEMaster's topology result definitions, while t
 \begin{keyworddata}
 \val{exponent} & Scalar density penalization exponent \(p\). \\
 \end{keyworddata}
+
+The exponent is applied inside LINEARSTATICTOPO, together with the density field selected by TOPODENSITY. Increasing it penalizes intermediate relative densities more strongly.
 
 \exampleheading
 \begin{inputdeck}
