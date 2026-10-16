@@ -25,6 +25,8 @@ Explicit form & One or more node IDs or supported named/qualified node reference
 Generated form & \val{start, end, increment}; the increment defaults to \val{1} and must be nonzero. \\
 \end{keyworddata}
 
+Node sets are reusable selections for supports, loads, or output. The first definition selects endpoints explicitly; the second generates a sequence of node IDs.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -85,6 +87,8 @@ Explicit form & One or more element IDs or supported named/qualified element ref
 Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
 
+Generated element sets save long ID lists when the numbering follows a regular stride. The referenced element IDs must already exist within the relevant topology scope.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -120,6 +124,8 @@ An unordered node set contains no element-side information and therefore cannot 
 Target form & \val{element-or-elset, side}. \\
 Explicit native form & \val{surface_id, element_id, side}. \\
 \end{keyworddata}
+
+This definition selects face S2 from each element in SOLIDS. Face numbering depends on the element formulation; consult the element schematics when selecting the loaded side.
 
 \exampleheading
 
@@ -160,6 +166,8 @@ separate input modes.
 Explicit form & Existing surface IDs or supported named surface references. \\
 Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
+
+The first definitions create surface entities; SFSET then groups their identifiers into one reusable region. A regular SURFACE can describe the same geometric selection directly.
 
 \exampleheading
 
