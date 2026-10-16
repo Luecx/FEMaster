@@ -176,7 +176,10 @@ The closing keyword ends the active \cmd{LOADCASE}. It does not terminate the en
 
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
-...
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *END
 \end{inputdeck}
 
@@ -493,7 +496,10 @@ This closing keyword executes and finishes the selected \cmd{STEP}. A FEMaster \
 \begin{inputdeck}
 *STEP
 *STATIC
-...
+*BOUNDARY
+ROOT, 1, 3, 0.
+*CLOAD
+TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
