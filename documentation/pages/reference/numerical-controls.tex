@@ -247,6 +247,10 @@ window. The previously defined collectors \val{BC} and \val{RAMP_LOAD}
 supply supports and loading. This example integrates 0--2 seconds
 in fixed 0.005-second increments.
 
+\begin{keyworddata}
+t_start, t_end, dt & Start, end, and fixed time increment; the start time is optional. \\
+\end{keyworddata}
+
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARTRANSIENT
@@ -379,6 +383,10 @@ Frequency resolution determines which parts of the response curve are sampled. A
 \key{SCALE} & optional & Currently \val{LINEAR}. \\
 \end{keywordparameters}
 
+\begin{keyworddata}
+f_start, f_end, count & Frequencies at the ends of the interval and the positive sample count. \\
+\end{keyworddata}
+
 Assuming that the support collector \val{BC} and harmonic-load collector
 \val{HARMONIC} have been defined earlier, this example solves 100
 equally spaced excitation frequencies between 10 and 1000\,Hz.
@@ -421,6 +429,10 @@ assembled stiffness and mass matrices. \val{BC} is a previously
 defined support collector; the mode count is specified inside
 the analysis rather than at model level.
 
+\begin{keyworddata}
+count & Positive number of requested eigenpairs. \\
+\end{keyworddata}
+
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=EIGENFREQ
@@ -460,6 +472,10 @@ loading and \val{BC} defines the supports. The example requests five
 buckling factors and an automatic spectral shift (\val{0.0}).
 The factors multiply the reference load; they are not forces.
 
+\begin{keyworddata}
+sigma & Spectral shift; zero requests the automatic buckling shift. \\
+\end{keyworddata}
+
 \exampleheading
 \begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
@@ -485,6 +501,10 @@ Output sampling must still be fine enough for the quantity being inspected. A tr
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{STEPS} (default) or \val{TIME}. \\
 \end{keywordparameters}
+
+\begin{keyworddata}
+interval & Write frequency in steps or physical time, selected by TYPE. \\
+\end{keyworddata}
 
 With a fixed time increment of 0.001 seconds over one second,
 the solver performs 1000 integration increments. \cmd{WRITEEVERY}
