@@ -1,13 +1,17 @@
 \chapter{Keyword Reference}
 \label{chap:keyword-reference}
 
-This chapter documents the native FEMaster input syntax and the supported Abaqus input syntax. Commands are grouped by their role in model definition, properties, loading, constraints, analysis setup, and output. Section~\ref{sec:keyword-index} provides a compact index of the accepted keywords and element names.
+This chapter documents the unified FEMaster input language, combining supported Abaqus-compatible keywords with FEMaster-specific extensions. Commands are grouped by their role in model definition, properties, loading, constraints, analysis setup, and output. Section~\ref{sec:keyword-index} provides a compact index of the accepted keywords and element names.
 
 \paragraph*{Reading the keyword pages}
 
-Each input keyword has one canonical location in this manual and starts on a new page. The page first explains the modelling purpose and physical meaning of the command. Parameter and data-line tables then define the accepted syntax. Finally, a side-by-side example shows native FEMaster input on the left and supported Abaqus input on the right.
-
-When both columns contain the same syntax, that is intentional. When the corresponding Abaqus keyword is not currently supported, the Abaqus column states that explicitly instead of showing syntax that FEMaster would reject. The aim is to make the manual a reliable description of what can actually be used in a FEMaster calculation.
+Each keyword has one canonical location in this manual. Its entry explains
+the modelling purpose, accepted parameters, and input data. Abaqus-
+compatible definitions and FEMaster-specific extensions are part of
+the same input language. Alternative forms are documented where useful;
+some reference pages still display equivalent forms side by side.
+The \cmd{ELEMENT} entry presents one common syntax with separate
+examples only where alternative definitions are meaningful.
 
 \input{pages/reference/input-structure}
 
@@ -15,7 +19,6 @@ When both columns contain the same syntax, that is intentional. When the corresp
 \label{sec:model-definition}
 \input{pages/reference/model-definition}
 \input{pages/reference/regions}
-\input{pages/reference/elements}
 
 \section{Model Properties}
 \label{sec:model-properties}
