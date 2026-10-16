@@ -96,9 +96,9 @@ SERVICE
 *STEP, NAME=SERVICE_LOAD
 *STATIC
 *BOUNDARY
-...
+ROOT, 1, 3, 0.
 *CLOAD
-...
+TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
@@ -208,16 +208,22 @@ Here a nonlinear static step declares the procedure first, then supplies its bou
  NLGEOM=YES, INC=100
 *STATIC
 0.05, 1.0, 1e-5, 0.1
-...
+*BOUNDARY
+ROOT, 1, 3, 0.
+*CLOAD
+TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
 \paragraph*{LOADCASE-based analysis}
 \begin{inputdeck}
 *LOADCASE, TYPE=NONLINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *NONLINEAR, CONTROL=LOAD,
  MAX_INCREMENTS=100
-...
 *END
 \end{inputdeck}
 
@@ -307,7 +313,7 @@ Remaining accepted positions & Additional Abaqus spectral controls not used by t
 The eigenfrequency step below requests 12 modes of the constrained model. The node set \val{FIXED} must already exist, and meaningful frequencies require stiffness and mass definitions.
 
 \begin{keywordparameters}
-EIGENSOLVER & optional & LANCZOS or SUBSPACE, both accepted as solver labels. \\
+\key{EIGENSOLVER} & optional & \val{LANCZOS} or \val{SUBSPACE}; the solver backend is selected internally. \\
 \end{keywordparameters}
 
 \exampleheading
@@ -346,10 +352,10 @@ The first data value is the positive number of requested buckling modes. \key{EI
 The buckling step first forms the reference stress state from its applied load and then computes load factors. The selected nodes, load and element properties must exist before this analysis.
 
 \begin{keywordparameters}
-EIGENSOLVER & optional & LANCZOS or SUBSPACE, both accepted as solver labels. \\
+\key{EIGENSOLVER} & optional & \val{LANCZOS} or \val{SUBSPACE}; the solver backend is selected internally. \\
 \end{keywordparameters}
 \begin{keyworddata}
-count & Number of requested buckling modes. \\
+\val{count} & Number of requested buckling modes. \\
 \end{keyworddata}
 
 \exampleheading
@@ -359,9 +365,9 @@ count & Number of requested buckling modes. \\
 *BUCKLE
 5
 *BOUNDARY
-...
+ROOT, 1, 3, 0.
 *CLOAD
-...
+TIP, 1, -1000.
 *END STEP
 \end{inputdeck}
 
@@ -374,6 +380,8 @@ BC
 PRELOAD
 *NUMEIGENVALUES
 5
+*SIGMA
+0.0
 *END
 \end{inputdeck}
 
@@ -392,10 +400,10 @@ Native FEMaster exposes the same analysis through \val{LINEARTRANSIENT}, \cmd{TI
 The transient step integrates the response for one second using 0.01-second increments. For time-dependent loading, define an \cmd{AMPLITUDE} and reference it from \cmd{CLOAD}.
 
 \begin{keywordparameters}
-DIRECT & required flag & Fixed-increment implicit time integration. \\
+\key{DIRECT} & required flag & Fixed-increment implicit time integration. \\
 \end{keywordparameters}
 \begin{keyworddata}
-dt, period & Time increment and positive step duration. \\
+\val{dt, period} & Time increment and positive step duration. \\
 \end{keyworddata}
 
 \exampleheading
@@ -405,9 +413,9 @@ dt, period & Time increment and positive step duration. \\
 *DYNAMIC, DIRECT
 0.01, 1.0
 *BOUNDARY
-...
+ROOT, 1, 3, 0.
 *CLOAD, AMPLITUDE=RAMP
-...
+TIP, 1, 100.
 *END STEP
 \end{inputdeck}
 
@@ -442,12 +450,12 @@ Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=
 This step performs a frequency-response analysis over 10--1000 Hz. The harmonic force is applied to the previously defined node set \val{TIP}; the stiffness and mass properties must be assigned to the model.
 
 \begin{keywordparameters}
-DIRECT & required flag & Solve the direct complex harmonic system. \\
-INTERVAL & optional & RANGE (only supported setting). \\
-FREQUENCYSCALE & optional & LINEAR or LOGARITHMIC. \\
+\key{DIRECT} & required flag & Solve the direct complex harmonic system. \\
+\key{INTERVAL} & optional & \val{RANGE} (only supported setting). \\
+\key{FREQUENCYSCALE} & optional & \val{LINEAR} or \val{LOGARITHMIC}. \\
 \end{keywordparameters}
 \begin{keyworddata}
-f_min, f_max, count, bias, scale & Frequency interval and sample count; bias and scale must be one. \\
+\val{f_min, f_max, count, bias, scale} & Frequency interval, sample count and two unit-valued controls. \\
 \end{keyworddata}
 
 \exampleheading
@@ -457,8 +465,8 @@ f_min, f_max, count, bias, scale & Frequency interval and sample count; bias and
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
 10., 1000., 100, 1., 1.
-*CLOAD
-...
+*CLOAD, REAL
+TIP, 3, -100.
 *END STEP
 \end{inputdeck}
 
