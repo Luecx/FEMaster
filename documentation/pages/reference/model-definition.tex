@@ -231,59 +231,62 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 
 \keywordnestedpage{ELEMENT}
 
-\cmd{ELEMENT} defines element connectivity. Every data record begins with a user element ID followed by the node IDs in the formulation-specific connectivity order. \key{TYPE} selects the finite-element formulation. \key{ELSET} optionally adds all elements in the block to an element set and defaults to \val{EALL} in native FEMaster input.
+\cmd{ELEMENT} defines element topology and connectivity. Each data
+record starts with an element ID followed by the node IDs in
+formulation-specific order. The \key{TYPE} parameter selects the
+formulation, while \key{ELSET} optionally assigns the elements to a
+named set. Element IDs are non-negative user labels, may start at
+\val{0}, and need not be consecutive.
 
-Element IDs are non-negative user labels and may also begin at \textbf{0}. They may be sparse. Connectivity is written using node IDs from the same topology scope as the element. The connectivity order determines local edges and faces, shell normal direction, solid face labels, element orientation, and the mapping from the reference element to the physical geometry.
+Connectivity order matters: it defines local edges and faces,
+element orientation, shell normals, and the mapping between the
+reference element and its physical geometry. The connected nodes
+must belong to the same topology scope as the element.
 
-The complete formulation reference is given in Section~\ref{sec:elements}. That subsection documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
-
-The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster accepts the short shell labels \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{MITC8} as aliases of the corresponding current finite-rotation FRT shell implementations; these labels no longer select separate legacy linear shells. The FRT names and \val{QSPT} are also accepted directly. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} labels are shared by both input dialects.
-
-\val{TYPE=MASS}, \val{TYPE=ROTARYI}, and \val{TYPE=SPRING1} define one-node point elements. Each preserves its own element ID, one-node connectivity, ELSET membership, and Part/Instance expansion. Internally the three labels use the same point-element topology; the associated property keyword supplies the mechanical contribution. \cmd{MASS} assigns translational mass, \cmd{ROTARY INERTIA} assigns diagonal rotary inertia, and \cmd{SPRING} assigns one constant linear point-to-ground stiffness. The formulations and property syntax are documented in Section~\ref{sec:elements} and Section~\ref{sec:sections}.
-
-An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness. Likewise, regular point elements remain mechanically inactive until the corresponding point property is assigned; Section~\ref{sec:sections} documents these assignments.
+\begin{syntax}
+*ELEMENT, TYPE=<element-type>, ELSET=<set>
+<element-id>, <node-1>, <node-2>, ...
+\end{syntax}
 
 \begin{keywordparameters}
-\key{TYPE} & required & Element formulation/type identifier. \\
-\key{ELSET} & optional & Element set receiving all elements in the block; native default \val{EALL}. \\
+\key{TYPE} & required & Element type or formulation identifier listed below. \\
+\key{ELSET} & optional & Element set receiving the block; the general set \val{EALL} is used by default. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{id} & Non-negative user element ID; \val{0} is valid. \\
-\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \val{MASS}, \val{ROTARYI}, and \val{SPRING1} use exactly one node. \\
+\val{id} & Non-negative element ID; \val{0} is valid. \\
+\val{n1, n2, ...} & Node connectivity in formulation-specific order. \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Abaqus-compatible example}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ELEMENT, TYPE=T3, ELSET=BARS
-0, 0, 10
-1, 10, 20
+\begin{inputdeck}[Abaqus-compatible syntax]
+*ELEMENT, TYPE=C3D8, ELSET=SOLIDS
+10, 1, 2, 3, 4, 5, 6, 7, 8
 
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
-100, 20
-*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
-101, 20
-*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
-102, 20
-
-*ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
-10, 100, 110, 120, 130
-\end{femasterdeck}
-\begin{abaqusdeck}
 *ELEMENT, TYPE=T3D2, ELSET=BARS
-0, 0, 10
-1, 10, 20
+20, 9, 10
 
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
-100, 20
-*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
-101, 20
-*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
-102, 20
+*ELEMENT, TYPE=MASS, ELSET=POINTS
+30, 11
+\end{inputdeck}
 
-*ELEMENT, TYPE=S4, ELSET=PANEL
-10, 100, 110, 120, 130
-\end{abaqusdeck}
-\end{dialectexamples}
+The same input language also accepts FEMaster-specific element
+names, which can be freely combined with supported Abaqus-compatible
+definitions in the same input deck:
+
+\begin{inputdeck}[Additional FEMaster element types]
+*ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
+40, 12, 13, 14, 15
+
+*ELEMENT, TYPE=T3, ELSET=BRACES
+50, 16, 17
+\end{inputdeck}
+
+Element connectivity defines topology and kinematics, but additional
+physical properties are assigned by the applicable Section or
+concentrated-property keywords; see Section~\ref{sec:sections}.
+The following subsections document the supported types, their
+connectivity, formulations, applications, and limitations.
+
+\input{pages/reference/elements}
