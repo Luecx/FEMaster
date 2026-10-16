@@ -74,78 +74,9 @@
   title=#1
 }
 
-% Side-by-side input examples. The two child boxes intentionally are not
-% breakable. A breakable tcblisting inside a raster can be split into fragments
-% and thereby occupy separate raster cells, which makes the Abaqus box fall below
-% the FEMaster box even though both easily fit next to each other. Keeping each
-% child box intact makes every dialectexamples environment one two-column row;
-% TeX moves that row to the next page if insufficient vertical space remains.
-\newenvironment{dialectexamples}{%
-  \par\medskip\noindent
-  \begin{tcbraster}[
-    raster columns=2,
-    raster equal height=rows,
-    raster column skip=3mm,
-    raster row skip=0pt,
-    raster left skip=0pt,
-    raster right skip=0pt,
-    raster width=\linewidth
-  ]
-}{%
-  \end{tcbraster}
-  \par\medskip
-}
-
-\newtcblisting{femasterdeck}{%
-  listing only,
-  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
-  enhanced,
-  sharp corners,
-  colback=FMGray,
-  colframe=FMBlue,
-  borderline west={2pt}{0pt}{FMBlue},
-  boxrule=0.4pt,
-  left=5pt,right=5pt,top=5pt,bottom=5pt,
-  title=FEMaster
-}
-
-\newtcblisting{abaqusdeck}{%
-  listing only,
-  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
-  enhanced,
-  sharp corners,
-  colback=FMGray,
-  colframe=FMAbaqus,
-  borderline west={2pt}{0pt}{FMAbaqus},
-  boxrule=0.4pt,
-  left=5pt,right=5pt,top=5pt,bottom=5pt,
-  title=Abaqus input
-}
-
-% Used when the supported Abaqus reader has no equivalent keyword. Keeping the
-% right-hand box rather than dropping it preserves the visual comparison contract
-% throughout the manual.
-\newtcolorbox{noabaqus}{%
-  enhanced,
-  sharp corners,
-  colback=FMGray,
-  colframe=FMAbaqus,
-  borderline west={2pt}{0pt}{FMAbaqus},
-  boxrule=0.4pt,
-  left=7pt,right=7pt,top=7pt,bottom=7pt,
-  title=Abaqus input
-}
-
-\newtcolorbox{nofemaster}{%
-  enhanced,
-  sharp corners,
-  colback=FMGray,
-  colframe=FMBlue,
-  borderline west={2pt}{0pt}{FMBlue},
-  boxrule=0.4pt,
-  left=7pt,right=7pt,top=7pt,bottom=7pt,
-  title=FEMaster
-}
+% Keyword examples use the shared full-width inputdeck listing defined
+% in femaster-manual.sty. Primary and alternative examples are stacked
+% in document order; there is no input-dialect column layout.
 
 % Do not wrap tabularx in another environment: tabularx must see its own literal
 % \end{tabularx} while collecting the body. Plain tabular columns avoid that
@@ -173,4 +104,4 @@
 }
 
 \newcommand{\syntaxheading}{\paragraph*{Syntax and semantics}}
-\newcommand{\exampleheading}{\paragraph*{FEMaster and Abaqus example}}
+\newcommand{\exampleheading}{\paragraph*{Example}}
