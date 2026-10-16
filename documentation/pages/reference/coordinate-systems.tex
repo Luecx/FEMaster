@@ -58,7 +58,7 @@ Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to 
 
 \keywordnestedpage{TRANSFORM}
 
-\cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. It does not exist as a native FEMaster keyword because native FEMaster loads and supports can reference named orientations directly where a local basis is required.
+\cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. The nodal basis differs from a named \cmd{ORIENTATION}: local support and load directions may also be specified by referencing named coordinate systems.
 
 \key{NSET} identifies the nodes that use the transformation. \key{TYPE=R} selects a rectangular transform and is the default. The six data values define two directions or points that establish the local rectangular basis. The directions must be nonzero and non-collinear.
 
