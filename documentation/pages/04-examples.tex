@@ -26,7 +26,7 @@ This two-node bar illustrates the same \cmd{ELASTIC}/\cmd{PLASTIC} material defi
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 1,    0., 0., 0.
 2, 1000., 0., 0.
@@ -53,13 +53,13 @@ This two-node bar illustrates the same \cmd{ELASTIC}/\cmd{PLASTIC} material defi
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster truss section and nonlinear loadcase}
+\paragraph*{FEMaster truss section and nonlinear loadcase}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=BAR
 1, 1, 2
 *PLASTIC, TYPE=J2
@@ -92,7 +92,7 @@ The Part coordinates remain local to the reusable component. The Instance placem
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -128,13 +128,13 @@ RIGHT, 1, 500.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster truss and reusable collectors}
+\paragraph*{FEMaster truss and reusable collectors}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=BAR
 0, 0, 1
 *TRUSS SECTION, ELSET=BAR, MATERIAL=STEEL
@@ -162,7 +162,7 @@ This example is intentionally simple enough that shell normals and load directio
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0,    0.,   0., 0.
 1, 1000.,   0., 0.
@@ -191,13 +191,13 @@ TIP, 3, -50.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster finite-rotation shell and loadcase}
+\paragraph*{FEMaster finite-rotation shell and loadcase}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
 0, 0, 1, 2, 3
 *SHELL SECTION, ELSET=PANEL, MATERIAL=ALUMINIUM, TYPE=INTEGRATED
@@ -225,7 +225,7 @@ direction follows the selected surface orientation.
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0, 0., 0., 0.
 1, 1., 0., 0.
@@ -257,13 +257,13 @@ LOADED_FACE, P, 1.0
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster pressure and support collectors}
+\paragraph*{FEMaster pressure and support collectors}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 BASE, 0., 0., 0., NAN, NAN, NAN
 *PLOAD, LOAD_COLLECTOR=P
@@ -290,7 +290,7 @@ Changing density therefore changes the frequencies even though the static stiffn
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0,    0., 0., 0.
 1,  500., 0., 0.
@@ -319,13 +319,13 @@ GUIDED, 2, 3, 0.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster frequency extraction}
+\paragraph*{FEMaster frequency extraction}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=BAR
 0, 0, 1
 1, 1, 2
@@ -377,7 +377,7 @@ f_1=\frac{\omega_1}{2\pi}
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 1, -1000., 0., 0.
 2,     0., 0., 0.
@@ -408,13 +408,13 @@ f_1=\frac{\omega_1}{2\pi}
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster truss and eigenfrequency loadcase}
+\paragraph*{FEMaster truss and eigenfrequency loadcase}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=BARS
 1, 1, 2
 2, 2, 3
@@ -432,9 +432,9 @@ BC
 *END
 \end{inputdeck}
 
-\paragraph*{Alternative: NSET-based concentrated mass instead of MASS element}
+\paragraph*{NSET-based concentrated mass instead of MASS element}
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *NSET, NSET=CENTRE_NODE
 2
 *POINTMASS, NSET=CENTRE_NODE
@@ -454,7 +454,7 @@ The buckling factors satisfy a generalized eigenproblem involving the elastic st
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0, 0., 0., 0.
 1, 1000., 0., 0.
@@ -481,13 +481,13 @@ RIGHT, 1, -1000.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster buckling loadcase}
+\paragraph*{FEMaster buckling loadcase}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=MEMBER
 0, 0, 1
 *TRUSS SECTION, ELSET=MEMBER, MATERIAL=STEEL
@@ -523,7 +523,7 @@ Arc-length control permits the equilibrium path to pass a limit point at which l
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0, -1000.,   0., 0.
 1,     0., 100., 0.
@@ -553,13 +553,13 @@ APEX, 2, -20000.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster arc-length continuation}
+\paragraph*{FEMaster arc-length continuation}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3, ELSET=BARS
 0, 0, 1
 1, 1, 2
@@ -593,7 +593,7 @@ Newmark parameters are \(\beta=0.25\) and \(\gamma=0.5\).
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0,    0., 0., 0.
 1, 1000., 0., 0.
@@ -626,13 +626,13 @@ U
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster Newmark time integration and output cadence}
+\paragraph*{FEMaster Newmark time integration and output cadence}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., NAN, NAN, NAN
 TIP, NAN, 0., 0., NAN, NAN, NAN
@@ -668,7 +668,7 @@ are made consistent.
 
 \paragraph*{Example}
 
-\begin{inputdeck}[Complete Abaqus-compatible input]
+\begin{inputdeck}
 *NODE
 0, 0., 0., 0.
 1, 1000., 0., 0.
@@ -698,13 +698,13 @@ TIP, 1, 1.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster harmonic analysis with Rayleigh damping}
+\paragraph*{FEMaster harmonic analysis with Rayleigh damping}
 
 The following cards replace the corresponding definitions in the
 complete example above; unchanged geometry and material definitions
 are retained.
 
-\begin{inputdeck}[FEMaster extension (replacement cards)]
+\begin{inputdeck}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., NAN, NAN, NAN
 TIP, NAN, 0., 0., NAN, NAN, NAN
