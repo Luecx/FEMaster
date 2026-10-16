@@ -21,7 +21,7 @@ Materials are independent of Parts. The corresponding Section assignment connect
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -95,15 +95,15 @@ Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},
 
 \exampleheading
 
-\begin{inputdeck}[Isotropic elasticity]
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
 \end{inputdeck}
 
 
-\paragraph*{Alternative: Engineering constants}
-\begin{inputdeck}[Alternative]
+\paragraph*{Orthotropic engineering constants}
+\begin{inputdeck}
 *MATERIAL, NAME=COMPOSITE
 *ELASTIC, TYPE=ENGINEERING CONSTANTS
 135000., 10000., 10000., 0.30, 0.30, 0.40, 5000., 5000., 3500.
@@ -131,7 +131,7 @@ When converting uniaxial test data to this table, use true stress and subtract t
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -168,7 +168,7 @@ Neo-Hooke selector & required & Selects the supported Neo-Hooke constitutive mod
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *MATERIAL, NAME=RUBBER
 *HYPERELASTIC, NEO HOOKE
 0.348, 5.0e-6
@@ -194,7 +194,7 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *DENSITY
 7.85e-9
@@ -227,14 +227,14 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
 *EXPANSION, TYPE=ISO
 2.30e-5
 \end{inputdeck}
 
-\paragraph*{Alternative: Legacy THERMALEXPANSION alias}
-\begin{inputdeck}[Alternative]
+\paragraph*{Legacy keyword}
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
 *THERMALEXPANSION
 2.30e-5
@@ -259,14 +259,14 @@ remain usable within the unified input language.
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster legacy alias]
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
 *THERMALEXPANSION
 2.30e-5
 \end{inputdeck}
 
-\paragraph*{Alternative: Recommended EXPANSION keyword}
-\begin{inputdeck}[Alternative]
+\paragraph*{Recommended keyword}
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
 *EXPANSION
 2.30e-5
