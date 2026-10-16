@@ -55,7 +55,11 @@ No thickness or area is required because a solid element represents its physical
 
 For isotropic elasticity, changing the material orientation has no effect on the constitutive response because the stiffness is direction independent. For orthotropic or fully anisotropic material data, the orientation is physically significant and must be chosen consistently with the material axes.
 
-The supported Abaqus \cmd{SOLID SECTION} syntax is identical for ordinary solid regions. FEMaster also accepts a special Abaqus-reader use of \cmd{SOLID SECTION} for a pure \val{T3D2} truss set; in that case the data value is interpreted as the truss cross-sectional area. This special case is described again under \cmd{TRUSS SECTION}.
+\cmd{SOLID SECTION} also accepts a positive area data line
+when its ELSET contains only truss elements, including \val{T3}
+and \val{T3D2}. This special case is equivalent to an explicit
+\cmd{TRUSS SECTION}; for an ordinary solid region no area
+data line is permitted.
 
 A Section applies one material system and orientation to its target element set. Different material systems or orientations within one geometric component therefore require separate named element sets and Section assignments. A target set containing incompatible element families does not define a uniform Section interpretation.
 
@@ -209,7 +213,12 @@ The same area also determines material mass per unit length through \(\rho A\) a
 
 The area must therefore use the same unit system as the geometry and material constants and must be strictly positive.
 
-The supported Abaqus reader does not use a literal \cmd{TRUSS SECTION} keyword. Instead, a pure \val{T3D2} element set can be assigned through the supported \cmd{SOLID SECTION} syntax with the cross-sectional area on the data line. The resulting truss mechanics are the same even though the input spelling differs. This mapping is specific to the FEMaster-supported pure \val{T3D2} region and does not describe other Abaqus truss-section workflows.
+\cmd{TRUSS SECTION} is the explicit FEMaster form for assigning
+a truss material and area. Alternatively, \cmd{SOLID SECTION}
+accepts an area data line when the ELSET consists exclusively
+of truss elements (\val{T3} or \val{T3D2}). The resulting
+truss-section properties are the same. Ordinary solid elements,
+in contrast, use \cmd{SOLID SECTION} without an area line.
 
 \begin{keywordparameters}
 \key{MATERIAL} / \key{MAT} & required & Truss material. \\
