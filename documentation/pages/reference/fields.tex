@@ -1,5 +1,5 @@
-\chapter{Fields}
-\label{chap:fields}
+\subsection{Fields}
+\label{sec:fields}
 
 Fields store spatially varying data that belong to the finite-element model. They are more general than sets: a set only answers whether an entity belongs to a region, whereas a Field stores one or more numerical values at every addressed location. Typical uses are topology variables, prescribed shell directors, initial conditions, and other data that vary from node to node, element to element, or within an element.
 
@@ -7,7 +7,7 @@ A Field has a \emph{domain} and a fixed number of components. The domain determi
 
 User node and element identifiers are independent of these local indices. They are non-negative deck labels, may start at \textbf{0}, and do not have to be contiguous. For example, node IDs \val{0}, \val{10}, and \val{1000} are perfectly valid if they are unique in their scope. By contrast, the local node indices of a four-node element are \val{0}, \val{1}, \val{2}, and \val{3} because they refer to positions in that element's connectivity.
 
-\keywordpage{FIELD}
+\keywordnestedpage{FIELD}
 
 \cmd{FIELD} creates and optionally populates a named Field. It is a native FEMaster command; the supported Abaqus input format currently has no generic equivalent. The command is accepted at model level and in the native \cmd{LOADCASE} contexts documented by the consuming feature.
 
@@ -67,7 +67,7 @@ The supported Abaqus reader currently has no generic Field keyword. Abaqus model
 \end{noabaqus}
 \end{dialectexamples}
 
-\keywordpage{NORMAL}
+\keywordnestedpage{NORMAL}
 
 \cmd{NORMAL} selects an existing three-component \val{ELEMENT_NODAL} Field as the source of shell element-nodal normals or directors. The referenced Field must already exist, must use \val{TYPE=ELEMENT_NODAL}, and must contain exactly three components.
 

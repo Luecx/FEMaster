@@ -1,13 +1,11 @@
-\chapter{Model Definition}
-\label{chap:model-definition}
+\subsection{Model Organization and Mesh}
+\label{sec:model-organization}
 
-Model definition describes the geometry and topology on which the analysis is built. A simple FEMaster model may be completely flat: nodes and elements can be defined directly without an explicit Part, Assembly, or Instance. The optional structured Part/Assembly form represents reused components, several placements of the same Part, separate local ID spaces, and imported Abaqus-style assemblies.
-
-From the user's point of view, the two forms describe the same kind of finite-element model. In a flat model there is one direct topology. In a structured model, each Part owns its local nodes, elements, sets, surfaces, and section assignments, while Instances place those Parts into the final assembly. Parts therefore describe \emph{what a component is}; Instances describe \emph{where that component is}.
+The following keywords define mesh topology and optional Part/Assembly organization.
 
 Node and element IDs are user labels. They are non-negative integers, may start at \textbf{0}, and may be sparse. Separate Parts may reuse the same numerical IDs because their topologies are independent. When an assembly-level definition needs to distinguish entities belonging to different Instances, the Instance name provides the required qualification.
 
-\keywordpage{PART}
+\keywordnestedpage{PART}
 
 \cmd{PART} begins a reusable finite-element component definition. Nodes, elements, part-level sets, surfaces, and section assignments that follow belong to the active Part until \cmd{END PART} closes it.
 
@@ -46,7 +44,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{END PART}
+\keywordnestedpage{END PART}
 
 \cmd{END PART} closes the active Part scope. Definitions that follow are no longer part-local unless another \cmd{PART} is opened. The command is distinct from native \cmd{END}, which terminates a native loadcase.
 
@@ -71,7 +69,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{ASSEMBLY}
+\keywordnestedpage{ASSEMBLY}
 
 \cmd{ASSEMBLY} begins the optional Assembly scope. The Assembly is where placed Instances and regions that refer to the assembled model are defined. A model that does not need explicit Instances may omit this scope entirely.
 
@@ -104,7 +102,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{END ASSEMBLY}
+\keywordnestedpage{END ASSEMBLY}
 
 \cmd{END ASSEMBLY} closes the Assembly scope.
 
@@ -129,7 +127,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{INSTANCE}
+\keywordnestedpage{INSTANCE}
 
 \cmd{INSTANCE} places an existing Part in the Assembly. Native FEMaster intentionally accepts the same placement representation used by the supported Abaqus reader. \key{NAME} gives the Instance a unique assembly name and \key{PART} selects the reusable Part.
 
@@ -174,7 +172,7 @@ The Part-local node and element labels remain associated with every Instance. As
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{END INSTANCE}
+\keywordnestedpage{END INSTANCE}
 
 \cmd{END INSTANCE} closes the current Instance definition.
 
@@ -193,7 +191,7 @@ The Part-local node and element labels remain associated with every Instance. As
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{NODE}
+\keywordnestedpage{NODE}
 
 \cmd{NODE} defines finite-element nodes by user ID and Cartesian reference coordinates. In a Part scope the nodes belong to that Part. In a flat native model they belong directly to the model topology.
 
@@ -231,19 +229,19 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{ELEMENT}
+\keywordnestedpage{ELEMENT}
 
 \cmd{ELEMENT} defines element connectivity. Every data record begins with a user element ID followed by the node IDs in the formulation-specific connectivity order. \key{TYPE} selects the finite-element formulation. \key{ELSET} optionally adds all elements in the block to an element set and defaults to \val{EALL} in native FEMaster input.
 
 Element IDs are non-negative user labels and may also begin at \textbf{0}. They may be sparse. Connectivity is written using node IDs from the same topology scope as the element. The connectivity order determines local edges and faces, shell normal direction, solid face labels, element orientation, and the mapping from the reference element to the physical geometry.
 
-The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
+The complete formulation reference is given in Section~\ref{sec:elements}. That subsection documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
 
 The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster accepts the short shell labels \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{MITC8} as aliases of the corresponding current finite-rotation FRT shell implementations; these labels no longer select separate legacy linear shells. The FRT names and \val{QSPT} are also accepted directly. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} labels are shared by both input dialects.
 
-\val{TYPE=MASS}, \val{TYPE=ROTARYI}, and \val{TYPE=SPRING1} define one-node point elements. Each preserves its own element ID, one-node connectivity, ELSET membership, and Part/Instance expansion. Internally the three labels use the same point-element topology; the associated property keyword supplies the mechanical contribution. \cmd{MASS} assigns translational mass, \cmd{ROTARY INERTIA} assigns diagonal rotary inertia, and \cmd{SPRING} assigns one constant linear point-to-ground stiffness. The formulations and property syntax are documented in Chapter~\ref{chap:elements} and Chapter~\ref{chap:sections}.
+\val{TYPE=MASS}, \val{TYPE=ROTARYI}, and \val{TYPE=SPRING1} define one-node point elements. Each preserves its own element ID, one-node connectivity, ELSET membership, and Part/Instance expansion. Internally the three labels use the same point-element topology; the associated property keyword supplies the mechanical contribution. \cmd{MASS} assigns translational mass, \cmd{ROTARY INERTIA} assigns diagonal rotary inertia, and \cmd{SPRING} assigns one constant linear point-to-ground stiffness. The formulations and property syntax are documented in Section~\ref{sec:elements} and Section~\ref{sec:sections}.
 
-An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness. Likewise, regular point elements remain mechanically inactive until the corresponding point property is assigned; Chapter~\ref{chap:sections} documents these assignments.
+An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness. Likewise, regular point elements remain mechanically inactive until the corresponding point property is assigned; Section~\ref{sec:sections} documents these assignments.
 
 \begin{keywordparameters}
 \key{TYPE} & required & Element formulation/type identifier. \\

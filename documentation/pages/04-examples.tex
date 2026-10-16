@@ -1,7 +1,7 @@
-\chapter{Complete Examples}
+\chapter{Examples}
 \label{chap:complete-examples}
 
-The examples in this chapter combine the individual keyword pages into complete modelling workflows. Each section describes one physical problem and presents native FEMaster and supported Abaqus input side by side. The examples intentionally keep explicit sets, properties, boundary conditions, loads, and analysis controls so that the relation between the two input styles remains visible.
+The examples in this chapter combine the individual keyword entries into complete modelling workflows. Each section describes one physical problem and presents native FEMaster and supported Abaqus input side by side. The examples intentionally keep explicit sets, properties, boundary conditions, loads, and analysis controls so that the relation between the two input styles remains visible.
 
 Native FEMaster defines reusable support and load collectors and activates them inside a \cmd{LOADCASE}. Abaqus input places supported \cmd{BOUNDARY} and load cards inside a \cmd{STEP}. Where the syntax differs, the examples use the exact FEMaster-supported representation rather than assuming that every feature of the full Abaqus product is available.
 
@@ -9,94 +9,7 @@ Several examples intentionally use node or element ID \val{0}. This demonstrates
 
 \section{Linear static truss}
 
-The first model is a two-node axial bar in a consistent N--mm unit system. Node 0 is fixed and node 1 is guided so only axial translation remains free. A 1000 N force acts in the global \(x\)-direction. With
-\[
-E=210000\ \mathrm{MPa},\qquad
-L=1000\ \mathrm{mm},\qquad
-A=100\ \mathrm{mm}^2,
-\]
-the analytical displacement is
-\[
-u_x=\frac{FL}{EA}
-=\frac{1000\cdot1000}{210000\cdot100}
-\approx0.047619\ \mathrm{mm}.
-\]
-The case provides both a syntax template and a basic stiffness/reaction verification model.
-
-\begin{dialectexamples}
-\begin{femasterdeck}
-*HEADING
-Linear static axial truss
-
-*NODE
-0,    0., 0., 0.
-1, 1000., 0., 0.
-*ELEMENT, TYPE=T3, ELSET=BAR
-0, 0, 1
-*NSET, NAME=FIXED
-0
-*NSET, NAME=TIP
-1
-
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
-*TRUSS SECTION, ELSET=BAR,
- MATERIAL=STEEL
-100.
-
-*SUPPORT, SUPPORT_COLLECTOR=BC
-FIXED, 0., 0., 0., NAN, NAN, NAN
-TIP, NAN, 0., 0., NAN, NAN, NAN
-*CLOAD, LOAD_COLLECTOR=AXIAL
-TIP, 1000., 0., 0., 0., 0., 0.
-
-*LOADCASE, TYPE=LINEARSTATIC,
- NAME=AXIAL_TENSION
-*SUPPORTS
-BC
-*LOADS
-AXIAL
-*SOLVER, DEVICE=CPU, METHOD=DIRECT
-*CONSTRAINTMETHOD, TYPE=NULLSPACE
-*END
-\end{femasterdeck}
-\begin{abaqusdeck}
-*HEADING
-Linear static axial truss
-
-*NODE
-0,    0., 0., 0.
-1, 1000., 0., 0.
-*ELEMENT, TYPE=T3D2, ELSET=BAR
-0, 0, 1
-*NSET, NSET=FIXED
-0
-*NSET, NSET=TIP
-1
-
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
-*SOLID SECTION, ELSET=BAR,
- MATERIAL=STEEL
-100.
-
-*STEP, NAME=AXIAL_TENSION
-*STATIC
-*BOUNDARY
-FIXED, 1, 3, 0.
-TIP, 2, 3, 0.
-*CLOAD
-TIP, 1, 1000.
-*END STEP
-\end{abaqusdeck}
-\end{dialectexamples}
-
-The axial reaction at the fixed node balances the applied 1000 N load to numerical precision. The corresponding axial stress is approximately
-\[
-\sigma=\frac{F}{A}=10\ \mathrm{MPa}.
-\]
+The complete introductory truss example, including both input styles, the solver invocation, and the analytical displacement and reaction checks, is given in Section~\ref{sec:first-example}. The following examples extend that workflow to additional model and analysis features.
 
 \section{Nonlinear axial response with tabulated J2 plasticity}
 

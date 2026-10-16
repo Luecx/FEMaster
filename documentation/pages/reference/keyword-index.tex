@@ -1,7 +1,7 @@
-\chapter{Keyword Index}
-\label{chap:keyword-index}
+\section{Keyword Index}
+\label{sec:keyword-index}
 
-This chapter provides a compact index of the input keywords accepted by the current FEMaster and supported Abaqus syntaxes. Every keyword has one canonical explanation in the preceding thematic chapters. A check mark means that the spelling is accepted in that input style; a dash means that the same keyword is not available there, although an equivalent modelling operation may be shown on the detailed page.
+This section provides a compact index of the input keywords accepted by the current FEMaster and supported Abaqus syntaxes. Every keyword has one canonical explanation in the preceding thematic sections. A check mark means that the spelling is accepted in that input style; a dash means that the same keyword is not available there, although an equivalent modelling operation may be shown on the detailed page.
 
 Command names are displayed in the conventional spaced form used in the manual, for example \cmd{END PART}, \cmd{SOLID SECTION}, and \cmd{STEADY STATE DYNAMICS}. \cmd{INERTIALOAD} is shown with the exact native spelling currently accepted by FEMaster.
 
@@ -17,8 +17,8 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \midrule
 \endhead
 
-\cmd{HEADING} & \checkmark & \checkmark & Input Format \\
-\cmd{MODEL} & \checkmark & -- & Input Format; optional native root marker \\
+\cmd{HEADING} & \checkmark & \checkmark & Input Structure \\
+\cmd{MODEL} & \checkmark & -- & Input Structure; optional native root marker \\
 \cmd{PART} & \checkmark & \checkmark & Model Definition \\
 \cmd{END PART} & \checkmark & \checkmark & Model Definition \\
 \cmd{ASSEMBLY} & \checkmark & \checkmark & Model Definition \\
@@ -26,7 +26,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{INSTANCE} & \checkmark & \checkmark & Model Definition \\
 \cmd{END INSTANCE} & \checkmark & \checkmark & Model Definition \\
 \cmd{NODE} & \checkmark & \checkmark & Model Definition \\
-\cmd{ELEMENT} & \checkmark & \checkmark & Model Definition and Elements \\
+\cmd{ELEMENT} & \checkmark & \checkmark & Model Definition; Element Formulations \\
 
 \midrule
 \cmd{NSET} & \checkmark & \checkmark & Regions and Selections \\
@@ -74,14 +74,14 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{INERTIALOAD} & \checkmark & -- & Loads and Boundary Conditions \\
 
 \midrule
-\cmd{COUPLING} & \checkmark & \checkmark & Constraints \\
-\cmd{KINEMATIC} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
-\cmd{DISTRIBUTING} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
-\cmd{EQUATION} & \checkmark & \checkmark & Constraints \\
-\cmd{TIE} & \checkmark & -- & Constraints \\
-\cmd{CONNECTOR} & \checkmark & -- & Constraints \\
-\cmd{RBM} & \checkmark & -- & Constraints \\
-\cmd{CONTACT} & \checkmark & -- & Constraints: Contact \\
+\cmd{COUPLING} & \checkmark & \checkmark & Constraints and Contact \\
+\cmd{KINEMATIC} & \checkmark & \checkmark & Constraints and Contact; child of scoped \cmd{COUPLING} \\
+\cmd{DISTRIBUTING} & \checkmark & \checkmark & Constraints and Contact; child of scoped \cmd{COUPLING} \\
+\cmd{EQUATION} & \checkmark & \checkmark & Constraints and Contact \\
+\cmd{TIE} & \checkmark & -- & Constraints and Contact \\
+\cmd{CONNECTOR} & \checkmark & -- & Constraints and Contact \\
+\cmd{RBM} & \checkmark & -- & Constraints and Contact \\
+\cmd{CONTACT} & \checkmark & -- & Constraints and Contact \\
 
 \midrule
 \cmd{LOADCASE} & \checkmark & -- & Analysis Procedures \\
@@ -112,10 +112,10 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{REBALANCELOADS} & \checkmark & -- & Solver and Numerical Controls \\
 
 \midrule
-\cmd{OVERVIEW} & \checkmark & -- & Output, Diagnostics, and Results \\
-\cmd{REQUESTSTIFFNESS} & \checkmark & -- & Output, Diagnostics, and Results \\
-\cmd{REQUESTSTGEOM} & \checkmark & -- & Output, Diagnostics, and Results \\
-\cmd{CONSTRAINTSUMMARY} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{OVERVIEW} & \checkmark & -- & Output and Diagnostics \\
+\cmd{REQUESTSTIFFNESS} & \checkmark & -- & Output and Diagnostics \\
+\cmd{REQUESTSTGEOM} & \checkmark & -- & Output and Diagnostics \\
+\cmd{CONSTRAINTSUMMARY} & \checkmark & -- & Output and Diagnostics \\
 \cmd{OUTPUT} & \checkmark & \checkmark & Output; \key{FIELD} container accepted, selection is made by child node/element output cards \\
 \cmd{NODE OUTPUT} & \checkmark & \checkmark & Output; selects nodal result Fields for the active step \\
 \cmd{ELEMENT OUTPUT} & \checkmark & \checkmark & Output; selects element-derived result Fields for the active step \\
@@ -125,17 +125,17 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{EL PRINT} & \checkmark & \checkmark & Output; accepted and ignored \\
 
 \midrule
-\cmd{TOPODENSITY} & \checkmark & -- & Advanced Model Features \\
-\cmd{TOPOORIENT} & \checkmark & -- & Advanced Model Features \\
-\cmd{TOPOEXPONENT} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPODENSITY} & \checkmark & -- & Topology-weighted Linear Statics \\
+\cmd{TOPOORIENT} & \checkmark & -- & Topology-weighted Linear Statics \\
+\cmd{TOPOEXPONENT} & \checkmark & -- & Topology-weighted Linear Statics \\
 
 \bottomrule
 \end{longtable}
 \normalsize
 
-\section{Supported element formulations}
+\subsection{Supported element formulations}
 
-The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~\ref{chap:elements}. The following table provides a compact element-type index. The Abaqus column lists the spelling accepted in Abaqus input when it differs from the native FEMaster name.
+The \cmd{ELEMENT} keyword selects one of the formulations documented in Section~\ref{sec:elements}. The following table provides a compact element-type index. The Abaqus column lists the spelling accepted in Abaqus input when it differs from the native FEMaster name.
 
 \small
 \begin{longtable}{@{}p{0.20\linewidth}p{0.20\linewidth}p{0.50\linewidth}@{}}
@@ -172,9 +172,9 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \end{longtable}
 \normalsize
 
-The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}/\val{S4R} and native \val{S4}/\val{MITC4}/\val{MITC4FRT} all select the current four-node finite-rotation shell. The non-FRT input labels are retained for syntax compatibility but do not retain separate legacy linear formulations. Detailed topology figures and formulation notes are given in the Elements chapter.
+The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}/\val{S4R} and native \val{S4}/\val{MITC4}/\val{MITC4FRT} all select the current four-node finite-rotation shell. The non-FRT input labels are retained for syntax compatibility but do not retain separate legacy linear formulations. Detailed topology figures and formulation notes are given in the Element Formulations subsection.
 
-\section{Coverage notes}
+\subsection{Coverage notes}
 
 A check mark in the Abaqus column means that the documented subset of that keyword is accepted by FEMaster. It does not imply support for every option available in the complete Abaqus product.
 

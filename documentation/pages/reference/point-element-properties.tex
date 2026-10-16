@@ -1,4 +1,4 @@
-\keywordpage{POINTMASS}
+\keywordnestedpage{POINTMASS}
 
 \cmd{POINTMASS} is the native NSET-based concentrated-property command. It is evaluated on the compiled model and creates one auxiliary point element for every node in the target NSET. All point elements created by one command share the supplied mass, rotary inertia, and optional ground-spring properties.
 
@@ -55,7 +55,7 @@ Abaqus-style input uses regular \val{MASS}, \val{ROTARYI}, and \val{SPRING1} ele
 \end{noabaqus}
 \end{dialectexamples}
 
-\keywordpage{MASS}
+\keywordnestedpage{MASS}
 
 \cmd{MASS} assigns an isotropic concentrated translational mass to one-node \val{MASS} elements. One scalar value \(m\) is applied independently to every point element in the target ELSET and produces
 \[
@@ -90,7 +90,7 @@ The supported mapping is the isotropic form only. Abaqus anisotropic mass, orien
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{ROTARY INERTIA}
+\keywordnestedpage{ROTARY INERTIA}
 
 \cmd{ROTARY INERTIA} assigns concentrated rotary inertia to one-node \val{ROTARYI} elements. The first three data values are the diagonal moments \(I_{11}\), \(I_{22}\), and \(I_{33}\), which map directly to the three rotational nodal directions:
 \[
@@ -124,7 +124,7 @@ The Abaqus data format additionally contains the products of inertia \(I_{12}\),
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{SPRING}
+\keywordnestedpage{SPRING}
 
 \cmd{SPRING} assigns a constant linear ground stiffness to one-node \val{SPRING1} elements. The first data line selects one nodal degree of freedom and the second data line gives the corresponding scalar stiffness. Degrees of freedom 1--3 create translational springs; degrees of freedom 4--6 create rotational springs:
 \[

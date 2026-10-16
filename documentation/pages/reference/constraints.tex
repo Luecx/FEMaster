@@ -1,11 +1,11 @@
-\chapter{Constraints}
-\label{chap:constraints}
+\section{Constraints and Contact}
+\label{sec:constraints}
 
 Constraints introduce kinematic relations between degrees of freedom that go beyond ordinary supports. A support prescribes selected degrees of freedom directly. A constraint instead relates the motion of different nodes or regions, for example by connecting a reference node to a surface, tying two independently meshed regions together, defining an idealized joint, or removing rigid-body motion from an otherwise free component.
 
-The distinction between these constraint types is physical, not merely syntactic. A kinematic coupling imposes a rigid relation between selected motions. A structural/distributing coupling transfers generalized motion and loading between a reference point and a distributed region. A Tie creates a permanent compatibility relation between associated geometry. A Connector idealizes a joint between two points. RBM removes the rigid-body nullspace of a selected structural region. Contact, described at the end of this chapter, is unilateral and allows separation.
+The distinction between these constraint types is physical, not merely syntactic. A kinematic coupling imposes a rigid relation between selected motions. A structural/distributing coupling transfers generalized motion and loading between a reference point and a distributed region. A Tie creates a permanent compatibility relation between associated geometry. A Connector idealizes a joint between two points. RBM removes the rigid-body nullspace of a selected structural region. Contact, described at the end of this section, is unilateral and allows separation.
 
-Constraints are used by the active analysis together with the selected support collectors. The numerical method used to enforce the resulting equations is controlled separately by \cmd{CONSTRAINTMETHOD}; see Chapter~\ref{chap:numerical-controls}.
+Constraints are used by the active analysis together with the selected support collectors. The numerical method used to enforce the resulting equations is controlled separately by \cmd{CONSTRAINTMETHOD}; see Section~\ref{sec:numerical-controls}.
 
 \keywordpage{COUPLING}
 
@@ -240,14 +240,12 @@ No direct RBM-suppression keyword is currently imported by the supported Abaqus 
 \end{noabaqus}
 \end{dialectexamples}
 
-\section{Contact}
+\keywordpage{CONTACT}
 \label{sec:contact}
 
 Contact is a unilateral constraint between two surface regions. In contrast to a Tie, which permanently enforces compatible motion between associated regions, contact permits the surfaces to separate and transmits normal interaction only when the contact condition becomes active.
 
 The current FEMaster contact formulation is frictionless dual-mortar surface-to-surface contact with an augmented-Lagrange normal-contact law. Contact acts over the physical overlap of slave and master facets and is nonlinear because the active contact region changes with deformation. Its response depends on the master/slave assignment, surface orientation, and penalty scale.
-
-\keywordpage{CONTACT}
 
 \cmd{CONTACT} defines one frictionless contact pair between a nonempty master surface set and a nonempty slave surface set. \key{MASTER} and \key{SLAVE} name the two regions. \key{PENALTY} provides the initial contact penalty stiffness. \key{CLEARANCE} shifts the zero-gap condition and defaults to zero. \key{FLIP=YES} reverses the master-surface normal used by the contact pair; the default is \val{NO}.
 

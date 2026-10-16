@@ -45,6 +45,10 @@
 \setlist[itemize]{leftmargin=*,topsep=2pt,itemsep=2pt}
 \setlist[enumerate]{leftmargin=*,topsep=2pt,itemsep=2pt}
 
+% Keep keyword entries visible and numbered inside grouped reference topics.
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{FEMaster Reference Manual}
@@ -61,6 +65,9 @@
 \titleformat{\subsection}
   {\normalfont\large\bfseries\color{FMDark}}
   {\thesubsection}{0.7em}{}
+\titleformat{\paragraph}[block]
+  {\normalfont\normalsize\bfseries\color{FMDark}}
+  {\theparagraph}{0.7em}{}
 
 \lstdefinestyle{femasterInput}{
   basicstyle=\ttfamily\small,

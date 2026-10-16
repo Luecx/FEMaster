@@ -1,11 +1,11 @@
-\chapter{Analysis Procedures}
-\label{chap:analysis-procedures}
+\subsection{Analysis Procedures}
+\label{sec:analysis-procedures}
 
 An analysis procedure determines which finite-element problem FEMaster solves. The same mesh, materials, Sections, loads, and constraints can be reused for different procedures because the governing equations differ even when the physical model is unchanged.
 
-Native FEMaster uses \cmd{LOADCASE, TYPE=...}. Abaqus input uses \cmd{STEP} followed by one supported procedure keyword. The side-by-side examples in this chapter show equivalent analysis intent. Numerical settings such as constraint treatment, nonlinear convergence, damping, time stepping, and eigensolver controls are described in Chapter~\ref{chap:numerical-controls}.
+Native FEMaster uses \cmd{LOADCASE, TYPE=...}. Abaqus input uses \cmd{STEP} followed by one supported procedure keyword. The side-by-side examples in this section show equivalent analysis intent. Numerical settings such as constraint treatment, nonlinear convergence, damping, time stepping, and eigensolver controls are described in Section~\ref{sec:numerical-controls}.
 
-\section{Analysis families}
+\paragraph*{Analysis families}
 
 The principal equations are:
 
@@ -46,7 +46,7 @@ integrated in time with the implicit Newmark method.
 \]
 solved directly for each requested excitation frequency.
 
-\keywordpage{LOADCASE}
+\keywordnestedpage{LOADCASE}
 
 Native \cmd{LOADCASE} begins an analysis definition. \key{TYPE} selects one of the supported procedures:
 \begin{itemize}
@@ -94,7 +94,7 @@ SERVICE
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{SUPPORTS}
+\keywordnestedpage{SUPPORTS}
 
 \cmd{SUPPORTS} selects one or more native support collectors for the active loadcase. The selected supports are combined with model constraints such as couplings, ties, connectors, and RBM constraints before the equation system is solved.
 
@@ -125,7 +125,7 @@ FIXED, 1, 3, 0.
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{LOADS}
+\keywordnestedpage{LOADS}
 
 \cmd{LOADS} selects one or more native load collectors for the active loadcase. The resulting external load is the superposition of the loads contained in all selected collectors.
 
@@ -161,7 +161,7 @@ ACTUATOR, 1, 500.
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{END}
+\keywordnestedpage{END}
 
 Native \cmd{END} closes the current \cmd{LOADCASE}. It is distinct from \cmd{END PART}, \cmd{END INSTANCE}, \cmd{END ASSEMBLY}, and Abaqus \cmd{END STEP}.
 
@@ -181,7 +181,7 @@ Native \cmd{END} closes the current \cmd{LOADCASE}. It is distinct from \cmd{END
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{STEP}
+\keywordnestedpage{STEP}
 
 \cmd{STEP} begins an Abaqus-style analysis Step. The currently supported Abaqus input accepts at most one analysis Step per deck. Exactly one supported procedure keyword---\cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, or \cmd{STEADY STATE DYNAMICS}---defines the analysis performed in that Step.
 
@@ -217,7 +217,7 @@ Loads and boundary conditions written within the Step belong to that analysis. F
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{STATIC}
+\keywordnestedpage{STATIC}
 
 Abaqus \cmd{STATIC} selects static equilibrium. The supported mapping depends on the Step options.
 
@@ -272,7 +272,7 @@ Riks & First four values define the supported path-increment controls; unsupport
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{FREQUENCY}
+\keywordnestedpage{FREQUENCY}
 
 Abaqus \cmd{FREQUENCY} selects free-vibration eigenfrequency extraction. The constrained generalized eigenproblem is
 \[
@@ -314,7 +314,7 @@ FIXED, 1, 6, 0.
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{BUCKLE}
+\keywordnestedpage{BUCKLE}
 
 Abaqus \cmd{BUCKLE} selects linear eigenvalue buckling. The analysis first establishes the reference stress state caused by the selected preload. That stress state produces a geometric stiffness matrix \(K_G\). Buckling factors then follow from
 \[
@@ -351,7 +351,7 @@ PRELOAD
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{DYNAMIC}
+\keywordnestedpage{DYNAMIC}
 
 Abaqus \cmd{DYNAMIC, DIRECT} selects FEMaster's linear implicit transient analysis. The structural equation is
 \[
@@ -390,7 +390,7 @@ DYNAMIC_LOAD
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{STEADY STATE DYNAMICS}
+\keywordnestedpage{STEADY STATE DYNAMICS}
 
 Abaqus \cmd{STEADY STATE DYNAMICS, DIRECT} selects direct linear harmonic response. For harmonic excitation at angular frequency \(\omega=2\pi f\), FEMaster solves the complex system
 \[
@@ -402,7 +402,7 @@ The result \(\hat u\) contains amplitude and phase information. Resonances appea
 
 Each data record contains lower frequency, optional upper frequency, optional point count, bias, and scale factor. If the upper frequency is omitted or zero, only the lower frequency is solved. For a range, the upper frequency must be at least as large as the lower. The default point count is 20. Bias values other than 1 and scale factors other than 1 are not supported. A logarithmic range requires a positive lower frequency.
 
-Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=LINEAR}. Multiple or explicitly listed frequencies can be represented according to the native frequency controls documented in the next chapter.
+Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=LINEAR}. Multiple or explicitly listed frequencies can be represented according to the native frequency controls documented in Section~\ref{sec:numerical-controls}.
 
 \exampleheading
 
@@ -428,7 +428,7 @@ HARMONIC_FORCE
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{END STEP}
+\keywordnestedpage{END STEP}
 
 \cmd{END STEP} closes the active Abaqus Step. A supported procedure must have been selected within the Step.
 

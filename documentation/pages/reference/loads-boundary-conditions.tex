@@ -1,11 +1,11 @@
-\chapter{Loads and Boundary Conditions}
-\label{chap:loads-bcs}
+\section{Loads and Boundary Conditions}
+\label{sec:loads-bcs}
 
 Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical and thermal load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. The same load definition can therefore be reused in several analyses.
 
-Abaqus input expresses loads and boundary conditions primarily inside a \cmd{STEP}. The supported \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} cards are interpreted according to the active analysis procedure. The side-by-side examples in this chapter show the equivalent FEMaster modelling intent.
+Abaqus input expresses loads and boundary conditions primarily inside a \cmd{STEP}. The supported \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} cards are interpreted according to the active analysis procedure. The side-by-side examples in this section show the equivalent FEMaster modelling intent.
 
-Throughout this chapter, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
+Throughout this section, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
 
 \keywordpage{AMPLITUDE}
 

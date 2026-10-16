@@ -1,9 +1,7 @@
-\chapter{Advanced Model Features}
-\label{chap:advanced-features}
+\subsection{Topology-weighted Linear Statics}
+\label{sec:advanced-features}
 
-This chapter collects model features that extend the basic mesh--material--load workflow. The topology-static commands use element Fields to scale stiffness and rotate material directions without changing mesh connectivity.
-
-\section{Topology-weighted linear statics}
+The topology-static commands use element Fields to scale stiffness and rotate material directions without changing mesh connectivity.
 
 \val{LINEARSTATICTOPO} extends linear static analysis with element-wise density and optional material-orientation Fields. It is intended for topology/sizing workflows in which design variables are supplied externally or updated between solver runs.
 
@@ -17,7 +15,7 @@ If an orientation Field is supplied, its three components are interpreted as ele
 
 The analysis also produces topology-related output such as density, compliance-related quantities, density sensitivity, volume, and orientation sensitivity where applicable.
 
-\keywordpage{TOPODENSITY}
+\keywordnestedpage{TOPODENSITY}
 
 \cmd{TOPODENSITY} selects the scalar element Field \(\rho_e\) used by an active \val{LINEARSTATICTOPO} loadcase. \key{FIELD} is required; \key{NAME} is accepted as an alternative spelling. The referenced Field must use \val{TYPE=ELEMENT} and exactly one component.
 
@@ -54,7 +52,7 @@ Topology-density Fields and \val{LINEARSTATICTOPO} are native FEMaster capabilit
 \end{noabaqus}
 \end{dialectexamples}
 
-\keywordpage{TOPOORIENT}
+\keywordnestedpage{TOPOORIENT}
 
 \cmd{TOPOORIENT} selects a three-component \val{ELEMENT} Field containing additional material-orientation angles for \val{LINEARSTATICTOPO}. \key{FIELD} is required and \key{NAME} is accepted as an alias.
 
@@ -95,7 +93,7 @@ No topology-orientation Field mapping is currently supported by the Abaqus reade
 \end{noabaqus}
 \end{dialectexamples}
 
-\keywordpage{TOPOEXPONENT}
+\keywordnestedpage{TOPOEXPONENT}
 
 \cmd{TOPOEXPONENT} sets the scalar penalization exponent \(p\) used by \val{LINEARSTATICTOPO}:
 \[

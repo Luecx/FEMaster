@@ -1,11 +1,11 @@
-\chapter{Sections and Element Properties}
-\label{chap:sections}
+\subsection{Sections and Element Properties}
+\label{sec:sections}
 
 Element connectivity defines interpolation and kinematics, but it does not by itself provide a complete structural model. Sections connect element regions to material and geometric properties. For solids the Section selects a material and optionally a material orientation. Shells additionally require thickness or a generalized shell stiffness. Trusses require cross-sectional area. Beams combine material data with cross-section constants and a local section direction.
 
 A Section defined for an element set inside a Part belongs to that Part. If the Part is instantiated several times, every Instance carries the same Section assignment. Material, thickness, area, and profile data thereby remain properties of the physical component, while the Instance placement determines where that component is located.
 
-\keywordpage{PROFILE}
+\keywordnestedpage{PROFILE}
 
 \cmd{PROFILE} defines the cross-section constants used by native FEMaster beam Sections. A Profile is referenced by name from \cmd{BEAM SECTION}. It stores area, bending second moments, torsional constant, optional product of inertia, shear-centre offsets, reference-line offsets, and optional effective transverse-shear areas.
 
@@ -52,7 +52,7 @@ The supported Abaqus reader currently has no standalone Profile mapping for the 
 \end{noabaqus}
 \end{dialectexamples}
 
-\keywordpage{SOLID SECTION}
+\keywordnestedpage{SOLID SECTION}
 
 \cmd{SOLID SECTION} assigns material properties to a solid element region. Native FEMaster requires \key{ELSET} and \key{MATERIAL}; \key{MAT} is accepted as an alias. \key{ORIENTATION} is optional and defines the local basis in which directional material properties are interpreted.
 
@@ -85,7 +85,7 @@ A Section applies one material system and orientation to its target element set.
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{SHELL SECTION}
+\keywordnestedpage{SHELL SECTION}
 
 \cmd{SHELL SECTION} assigns thickness and constitutive properties to shell elements. Native FEMaster supports two forms:
 \begin{itemize}
@@ -152,7 +152,7 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{BEAM SECTION}
+\keywordnestedpage{BEAM SECTION}
 
 \cmd{BEAM SECTION} and \cmd{BEAM GENERAL SECTION} both create the same generalized linear \val{BeamSection} in FEMaster. Unlike Abaqus, FEMaster does not yet integrate nonlinear constitutive behavior through a beam cross-section. Both input keywords therefore use the same parsing and section-property code path.
 
@@ -201,7 +201,7 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{TRUSS SECTION}
+\keywordnestedpage{TRUSS SECTION}
 
 Native \cmd{TRUSS SECTION} assigns a material and a positive cross-sectional area to a truss element set. A truss carries only axial force, so cross-sectional area is the only geometric Section property required by the current formulation.
 

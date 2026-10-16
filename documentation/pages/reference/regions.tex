@@ -1,5 +1,5 @@
-\chapter{Regions and Selections}
-\label{chap:regions}
+\subsection{Regions and Selections}
+\label{sec:regions}
 
 Regions give names to reusable parts of the mesh. They are used throughout a FEMaster model: Sections are assigned to element sets, supports and concentrated loads target nodes or node sets, pressure and traction loads act on surfaces, and constraints such as couplings, ties, and contact refer to named regions.
 
@@ -9,7 +9,7 @@ Regions can be defined inside a Part or at Assembly level. A Part-level region b
 
 User node, element, and explicit surface IDs are non-negative labels and may start at \val{0}. Generated ranges therefore may also begin at zero.
 
-\keywordpage{NSET}
+\keywordnestedpage{NSET}
 
 \cmd{NSET} creates or extends a named node set. The same basic syntax is accepted by native FEMaster and by the supported Abaqus input format. \key{NSET} gives the set name; \key{NAME} is accepted as an alternative spelling. Data may contain explicit node references or generated arithmetic ranges.
 
@@ -68,7 +68,7 @@ Generated form & \val{start, end, increment}; the increment defaults to \val{1} 
 \end{dialectexamples}
 
 \clearpage
-\subsection*{Assembly-level Instance selection}
+\paragraph*{Assembly-level Instance selection}
 
 A typical Assembly selection looks like
 \begin{syntax}
@@ -88,7 +88,7 @@ A typical Assembly selection looks like
 \end{syntax}
 Both sets contain a local node with ID \val{0}, but they refer to different placed Instances.
 
-\keywordpage{ELSET}
+\keywordnestedpage{ELSET}
 
 \cmd{ELSET} is the element-domain counterpart of \cmd{NSET}. It creates or extends a named element set from explicit element references or generated ranges. \key{ELSET} supplies the name and \key{NAME} is accepted as an alternative.
 
@@ -130,7 +130,7 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{SURFACE}
+\keywordnestedpage{SURFACE}
 
 \cmd{SURFACE} defines a geometric boundary from element sides. A surface is more than a node set: it retains which element face is selected and therefore has a well-defined interpolation, area or line measure, and orientation. Surface information is required for pressure loads, distributed tractions, surface couplings, ties, and contact.
 
@@ -172,7 +172,7 @@ SOLIDS, S2
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{SFSET}
+\keywordnestedpage{SFSET}
 
 \cmd{SFSET} groups existing native FEMaster surface entities into a named surface region. It combines surfaces created with explicit user surface IDs or several previously defined surface groups into one target.
 

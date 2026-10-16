@@ -1,5 +1,5 @@
-\chapter{Output, Diagnostics, and Results}
-\label{chap:output-results}
+\section{Output and Diagnostics}
+\label{sec:output-results}
 
 FEMaster writes analysis results in its own result formats and provides several diagnostic commands for inspecting matrices, constraints, and the assembled model. These diagnostics do not change the physical problem; they are intended for verification, comparison, and troubleshooting.
 
@@ -102,7 +102,7 @@ No Abaqus output-request card maps to this FEMaster constraint diagnostic.
 \end{noabaqus}
 \end{dialectexamples}
 
-\section{Abaqus and CalculiX output-request keywords}
+\subsection{Abaqus and CalculiX output-request keywords}
 
 FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
@@ -210,7 +210,7 @@ S, E
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\section{Native \file{.res} files}
+\subsection{Native \file{.res} files}
 
 The native \file{.res} file is organized into loadcase and Field blocks. A loadcase header has the form
 \begin{syntax}
@@ -218,7 +218,7 @@ LC <id>
 \end{syntax}
 and is followed by the Fields produced by that analysis.
 
-\subsection*{Indexed Field storage}
+\subsubsection*{Indexed Field storage}
 
 All standard result Fields associated with model entities are written in indexed form. Every row therefore contains one or more explicit index columns followed by the Field values. The header states both counts:
 
@@ -272,7 +272,7 @@ END FIELD
 
 For \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}, the first index is the semantic element identifier and the second is the zero-based local position within that element. This keeps the external result format independent of any internal element ordering.
 
-\subsection*{Common result quantities}
+\subsubsection*{Common result quantities}
 
 Typical Fields depend on analysis type:
 \begin{longtable}{@{}p{0.27\linewidth}p{0.63\linewidth}@{}}
@@ -295,7 +295,7 @@ Generalized nodal motion and force vectors use the six-component nodal order \do
 \]
 The component meaning of raw result data therefore depends on whether the Field contains generalized nodal quantities or stress/strain tensors.
 
-\subsection*{Structural stress and strain recovery}
+\subsubsection*{Structural stress and strain recovery}
 
 For solid elements, FEMaster evaluates constitutive stress and strain at the element's actual material integration points. Result recovery extrapolates those values to the element's local nodes with a topology-specific interpolation/extrapolation matrix; the global nodal result is then assembled from the contributions of incident elements. A reduced-integration element can only recover the spatial variation represented by its integration-point data (for example, a single-point \val{C3D8R} supplies a constant recovered value per element). Extrapolated element-nodal values and averaged nodal values therefore need not equal the original integration-point values.
 
@@ -303,7 +303,7 @@ The distinction is particularly important at a material interface, a stress disc
 
 FEMR version 1 stores \val{NODE} and \val{ELEMENT} result fields but does not serialize \val{ELEMENT\_NODAL}, \val{ELEMENT\_IP}, or \val{ELEMENT\_MP} fields. The writer skips unsupported domains with a warning; use \file{.res} when the local-field domain is needed. The absence of a local field in FEMR does not imply that FEMaster did not evaluate that quantity internally.
 
-\subsection*{Harmonic results}
+\subsubsection*{Harmonic results}
 
 A complex harmonic quantity is written as separate real and imaginary components:
 \[
@@ -321,7 +321,7 @@ The node-wise magnitude of the complex displacement vector can be reconstructed 
 
 The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.
 
-\section{FEMR binary result format}
+\subsection{FEMR binary result format}
 \label{sec:femr-format}
 
 FEMR version 1 is FEMaster's seekable binary result container. Multi-byte integers and floating-point values are little-endian. Unknown chunks are skipped using their stored size, allowing compatible format extensions.
@@ -333,7 +333,7 @@ FEMaster model.inp --output-format res frd femr
 \end{verbatim}
 FEMR version 1 always compresses each independently loadable field-data chunk with LZ4. There is no compression setting in the command-line interface.
 
-\subsection{Chunk envelope}
+\subsubsection{Chunk envelope}
 
 Every chunk begins with a 32-byte envelope containing, in order:
 \begin{itemize}
@@ -345,7 +345,7 @@ Every chunk begins with a 32-byte envelope containing, in order:
 \end{itemize}
 Only \texttt{FDAT} is compressed in version 1. Each field is a separate LZ4 block, so loading one field never decompresses another field.
 
-\subsection{Chunks}
+\subsubsection{Chunks}
 
 \begin{description}
   \item[HEAD] Must be first. It stores the \texttt{FEMR} magic, major and minor version, byte order, scalar width, default compression and reserved data.
@@ -360,11 +360,11 @@ Only \texttt{FDAT} is compressed in version 1. Each field is a separate LZ4 bloc
 
 Strings use a \texttt{uint16} byte length followed by UTF-8 bytes. Version 1 supports only the field domains \texttt{UNKNOWN} (0), \texttt{NODE} (1), and \texttt{ELEMENT} (2). Writers skip fields from other domains with a warning; readers reject unsupported domain codes found in a version 1 file.
 
-\subsection{Stable mesh and field indexing}
+\subsubsection{Stable mesh and field indexing}
 
 MESH ordering defines the stable dense result indexing. Node entry $i$ maps to row $i$ of every NODE field, and element entry $i$ maps to row $i$ of every ELEMENT field. Node and element identifiers are nevertheless stored explicitly; they must not be reconstructed from element connectivity. The accompanying instance and part-local identifiers preserve semantic labels such as \texttt{17} and \texttt{bolt.17}.
 
-\subsection{Lazy access}
+\subsubsection{Lazy access}
 
 A reader scans only chunk envelopes and the small metadata chunks. It seeks over MESH and FDAT payloads and retains their offsets. Mesh or field payloads are read, decompressed and checked only when requested.
 
@@ -376,7 +376,7 @@ with femaster.open_results("model.femr") as results:
     mesh = results.mesh
 \end{verbatim}
 
-\section{FRD visualization output}
+\subsection{FRD visualization output}
 
 FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Data that do not naturally map to FRD nodal blocks---for example some element-local, integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
 

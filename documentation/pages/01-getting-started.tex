@@ -1,0 +1,285 @@
+
+\chapter{Getting Started}
+\label{chap:getting-started}
+
+This chapter explains how to obtain FEMaster, compile it from source, and
+perform a first finite-element analysis. FEMaster is a command-line
+application that reads a keyword-based input file, performs the requested
+calculations, and writes the resulting data to output files. No graphical
+interface is required, allowing the solver to be used both interactively
+and as part of automated simulation workflows.
+
+
+\section{Installation}
+
+FEMaster is available for Linux, Windows, and macOS. The source code,
+precompiled releases, and additional project information are hosted on
+GitHub at \url{https://github.com/Luecx/FEMaster}.
+
+The simplest way to get started is to download a precompiled version
+from \url{https://github.com/Luecx/FEMaster/releases}. Where available,
+release archives contain executables for the corresponding operating
+system and architecture. After extracting the archive, the executable
+can be launched directly from a terminal. Depending on the selected
+release, additional runtime libraries may be required.
+
+Alternatively, FEMaster can be compiled from source. This allows the
+solver to be configured for the available hardware, including optional
+multithreaded CPU and GPU acceleration, and provides access to the
+latest development version. The source code can be obtained through
+Git:
+
+\begin{shellcmd}
+git clone https://github.com/Luecx/FEMaster.git
+cd FEMaster
+\end{shellcmd}
+
+
+\section{Building FEMaster}
+
+FEMaster uses CMake to manage its compilation and external dependencies.
+The repository provides predefined build configurations, called
+\emph{presets}, for the supported operating systems and numerical
+backends. A preset selects the compiler configuration, optimization
+settings, and optional libraries required for a particular build.
+
+From the repository root, configuring and compiling FEMaster requires
+only two commands. For example, a basic Linux build can be created
+using:
+
+\begin{shellcmd}
+cmake --preset linux
+cmake --build --preset linux -j8
+\end{shellcmd}
+
+The name \val{linux} is the selected preset and can be replaced by any
+of the available presets listed below. The first command configures
+the project and prepares its dependencies, while the second compiles
+the executable. The optional argument \val{-j8} specifies eight
+parallel build jobs. Subsequent builds generally require only the
+second command, unless the build configuration changes.
+
+Compilation requires CMake 3.24 or newer, Git, and a compiler supporting
+C++17. The presets using Ninja additionally require Ninja to be
+installed. Standard dependencies, including Eigen, Spectra, argparse,
+and LZ4, are downloaded automatically by CMake during configuration.
+Optional numerical libraries such as Intel oneMKL, NVIDIA CUDA, and
+cuDSS must be installed separately when their corresponding backends
+are enabled. On macOS, Apple Accelerate is provided by the system SDK.
+
+
+\subsection{Available build presets}
+
+The predefined presets provide different combinations of CPU
+parallelization, sparse solvers, and GPU acceleration. All regular
+presets produce optimized Release builds, with the exception of the
+profiling configuration. The available presets are summarized below.
+
+\begin{longtable}{@{}p{0.36\linewidth}p{0.56\linewidth}@{}}
+\toprule
+\textbf{Preset} & \textbf{Configuration} \\
+\midrule
+\endhead
+
+\multicolumn{2}{@{}l}{\textbf{Linux}} \\
+\midrule
+\val{linux} & Standard CPU build. \\
+\val{linux-omp} & CPU build with OpenMP parallelization. \\
+\val{linux-profile} & CPU build with profiling and debugging symbols. \\
+\val{linux-mkl} & CPU build with sequential Intel oneMKL. \\
+\val{linux-mkl-omp} & Threaded Intel oneMKL with OpenMP. \\
+\val{linux-cuda} & NVIDIA CUDA acceleration. \\
+\val{linux-cuda-cudss} & CUDA with NVIDIA cuDSS sparse direct solving. \\
+\val{linux-cuda-mkl} & CUDA with sequential Intel oneMKL. \\
+\val{linux-cuda-mkl-omp} & CUDA with threaded Intel oneMKL and OpenMP. \\
+\val{linux-full} & CUDA, cuDSS, threaded Intel oneMKL, and OpenMP. \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Windows}} \\
+\midrule
+\val{windows-msvc} & Standard CPU build using MSVC. \\
+\val{windows-msvc-cuda} & MSVC build with CUDA acceleration. \\
+\val{windows-msvc-cuda-cudss} & MSVC build with CUDA and cuDSS. \\
+\val{windows-intel} & Standard CPU build using IntelLLVM. \\
+\val{windows-intel-mkl} & IntelLLVM with sequential Intel oneMKL. \\
+\val{windows-intel-mkl-omp} & IntelLLVM with threaded Intel oneMKL and OpenMP. \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{macOS}} \\
+\midrule
+\val{macos} & Standard CPU build. \\
+\val{macos-omp} & CPU build with OpenMP parallelization. \\
+\val{macos-accelerate} & CPU build with Apple Accelerate. \\
+\val{macos-omp-accelerate} & OpenMP with Apple Accelerate. \\
+
+\bottomrule
+\end{longtable}
+
+The available configurations depend on the installed toolchains and
+hardware. Windows MSVC presets use Visual Studio, while the IntelLLVM
+presets require the Intel compiler toolchain. CUDA configurations
+require a compatible NVIDIA GPU and CUDA installation, and cuDSS
+configurations additionally require the cuDSS library. Apple
+Accelerate is available only on macOS.
+
+CMake places the compiled executable in the build directory
+associated with the selected preset, typically
+\file{build/<preset>/bin}. Multi-configuration generators, such as
+the Visual Studio presets, place the Release executable in
+\file{build/<preset>/bin/Release}. The executable is named
+\file{FEMaster} on Linux and macOS and \file{FEMaster.exe} on Windows.
+
+The exact preset definitions and additional configuration options
+can be found in \file{CMakePresets.json} and \file{CMakeLists.txt}.
+
+
+\section{Running FEMaster}
+
+FEMaster is executed by passing the path of an input deck to the
+command-line application. Input files conventionally use the
+\file{.inp} extension and contain the model definition together
+with the requested analysis procedures. Both supported Abaqus
+keywords and FEMaster-specific extensions are interpreted by the
+same parser, so no explicit input-format selection is required.
+
+If the executable is available on the system path, a model can
+be executed using:
+
+\begin{shellcmd}
+FEMaster example.inp
+\end{shellcmd}
+
+Alternatively, the executable can be called using its location
+in the build directory. For example, from the repository root
+after compiling with the \val{linux} preset:
+
+\begin{shellcmd}
+./build/linux/bin/FEMaster example.inp
+\end{shellcmd}
+
+Several optional command-line arguments control execution and
+result storage. The most commonly used options are:
+
+\begin{longtable}{@{}p{0.31\linewidth}p{0.61\linewidth}@{}}
+\toprule
+\textbf{Argument} & \textbf{Description} \\
+\midrule
+\endhead
+\key{--ncpus N} & Set the number of CPU threads available to the solver. \\
+\key{--output FILE} & Specify an alternative output file base name or path. \\
+\key{--output-format} & Select one or more result formats: \val{res}, \val{frd}, or \val{femr}. \\
+\bottomrule
+\end{longtable}
+
+For example, the following command limits execution to eight CPU
+threads and requests FRD and FEMR output:
+
+\begin{shellcmd}
+FEMaster example.inp --ncpus 8 --output-format frd femr
+\end{shellcmd}
+
+The selected numerical backend is configured through the input
+deck and must be supported by the compiled executable. The
+complete command-line interface can be inspected using
+\key{--help}.
+
+
+\section{First example: linear static truss}
+\label{sec:first-example}
+
+As a first calculation, consider a straight truss element subjected
+to an axial tensile force. The model consists of two nodes connected
+by a single element with a length of 1000 mm and a cross-sectional
+area of 100 mm\(^2\). The material is linear elastic steel with
+Young's modulus of 210000 MPa. One end is fixed, while the opposite
+end is allowed to move only in the axial direction and is subjected
+to a force of 1000 N.
+
+Save the following input deck as \file{example.inp}:
+
+\begin{syntax}
+*HEADING
+First FEMaster example
+
+*NODE
+1, 0., 0., 0.
+2, 1000., 0., 0.
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+
+*TRUSS SECTION, ELSET=BAR, MATERIAL=STEEL
+100.
+
+*STEP, NAME=AXIAL_TENSION
+*STATIC
+*BOUNDARY
+1, 1, 3, 0.
+2, 2, 3, 0.
+*CLOAD
+2, 1, 1000.
+*END STEP
+\end{syntax}
+
+The example combines FEMaster-specific element and section
+definitions with Abaqus-style analysis keywords. Both are
+supported within the unified input language. To perform the
+analysis, execute:
+
+\begin{shellcmd}
+FEMaster example.inp
+\end{shellcmd}
+
+FEMaster reads the model, assembles the finite-element system,
+solves the static equilibrium equations, and writes the calculated
+results to output files. The expected axial displacement at the
+loaded node is approximately \(0.047619\) mm, providing a simple
+reference value for checking the calculation.
+
+
+\section{Result files}
+
+By default, FEMaster writes the results of an analysis using the
+input filename as the output base name. Running \file{example.inp}
+therefore produces \file{example.res} and \file{example.frd}.
+An additional binary result format, \file{.femr}, is available
+through the \key{--output-format} option.
+
+The \file{.res} format stores numerical result Fields in a
+text-based representation, while \file{.frd} provides results in
+the CalculiX/CGX format for visualization and postprocessing.
+The \file{.femr} format provides structured binary storage with
+compression for more efficient handling of larger result datasets.
+The available result quantities, output controls, and file
+conventions are described in Section~\ref{sec:output-results}.
+
+
+\section{Built-in documentation}
+
+In addition to this manual, FEMaster provides a command-line
+documentation mode for inspecting the keywords and input
+variants recognized by the executable. This can be useful when
+working with an unfamiliar command or checking which syntax
+forms are supported by a particular build.
+
+Documentation mode is activated using \key{--document}, followed
+by an action specifying the requested information:
+
+\begin{shellcmd}
+FEMaster --document --doc-list
+FEMaster --document --doc-show CLOAD
+FEMaster --document --doc-variants ELASTIC
+FEMaster --document --doc-search SECTION
+\end{shellcmd}
+
+These commands list available keywords, display the definition
+of a particular command, inspect its accepted data variants,
+or search the command registry. Documentation mode does not
+require an input deck and does not perform a finite-element
+analysis. For detailed explanations, modelling conventions,
+and practical examples, the Keyword Reference remains the
+primary source of information.

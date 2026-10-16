@@ -1,92 +1,106 @@
+
 \chapter{Overview}
 \label{chap:overview}
 
-FEMaster is a finite-element solver for structural mechanics. Models can be described either with the native FEMaster input syntax or with the Abaqus-style syntax supported by FEMaster. This manual documents both forms together: each modelling concept is explained once, and the corresponding FEMaster and Abaqus input is shown side by side wherever both representations are available.
+\section{Introduction}
+\label{sec:introduction}
 
-The documentation is organized by the way a finite-element model is built and solved. After the general input rules, the manual describes model organization and mesh definition, the available element formulations, regions and surfaces, materials, sections, coordinate systems, Fields, loads and boundary conditions, constraints including contact, analysis procedures, numerical controls, result output, and complete examples. A keyword index at the end provides a direct route from an input keyword to its detailed description.
+FEMaster (\emph{Finite Elements in Mechanical Analysis and Simulation for Technical Engineering Research}) is an open-source finite-element solver for structural mechanics, implemented in modern C++. It is designed for engineering applications, scientific research, and education, providing a common framework for the numerical analysis of structures ranging from simple mechanical components to large and complex finite-element models. Its capabilities include different structural element formulations, static and dynamic analyses, eigenvalue problems, and nonlinear structural behavior.
 
-\section{Two input styles}
+The project originated during the author's university studies, following an internship at MTU where working with CalculiX provided the motivation to develop an independent finite-element solver. Rather than simply reproducing existing functionality, the objective was to implement established numerical methods within a modern, maintainable, and accessible codebase. FEMaster is intended to serve both as a practical engineering tool and as a platform for studying, developing, and verifying finite-element methods. Particular emphasis is placed on numerical transparency, computational performance, and a broad selection of element formulations, allowing users to investigate both the physical response of a structure and the numerical methods used to obtain it.
 
-Native FEMaster input exposes the solver's own modelling concepts directly. Loads and supports can be collected under names and selected by a loadcase, Fields can be defined explicitly, and analysis-specific numerical controls are available through dedicated FEMaster keywords.
 
-The supported Abaqus input style uses familiar Abaqus concepts such as \cmd{PART}, \cmd{ASSEMBLY}, \cmd{INSTANCE}, \cmd{STEP}, \cmd{BOUNDARY}, and procedure keywords such as \cmd{STATIC} or \cmd{FREQUENCY}. FEMaster interprets the supported subset in terms of the same structural model and analysis capabilities described throughout this manual.
+\section{Design philosophy and implementation}
 
-Neither syntax forces the user to introduce Parts and Instances for a simple model. In native FEMaster input, nodes and elements can be defined directly. The structured Part/Assembly representation supports reused components, several placed copies of one component, independent local ID spaces, and Abaqus-style assemblies.
+The development of FEMaster is guided by three closely related objectives: numerical transparency, maintainability, and computational efficiency. Numerical transparency means that the methods used by the solver should be accessible and understandable, rather than hidden behind an opaque implementation. The source code is organized around clearly defined mechanical and numerical concepts, with an emphasis on readable implementations, meaningful interfaces, and documentation. Mathematical formulations and numerical procedures are described throughout this manual where appropriate, providing a connection between the theoretical foundations of finite-element analysis and their implementation in the solver. This is particularly relevant for educational applications, method development, and the verification of numerical results.
 
-\begin{notebox}[Optional Part/Assembly hierarchy]
-A native FEMaster model does not require \cmd{PART}, \cmd{ASSEMBLY}, or \cmd{INSTANCE}. A flat model is a fully supported workflow, while the hierarchy adds explicit organization for reusable and placed components.
-\end{notebox}
+Maintainability is supported by a modular C++ architecture that separates model definitions, element formulations, material behavior, analysis procedures, and numerical solution methods. This separation allows individual components to be developed and examined without requiring detailed knowledge of the entire application. It also facilitates the implementation of additional element formulations, constitutive models, and analysis capabilities. The intention is to maintain a codebase that remains approachable as the solver grows in complexity, enabling contributions and modifications without sacrificing the clarity of existing implementations.
 
-\section{The finite-element model}
+Computational efficiency is addressed through parallel execution, efficient numerical algorithms, and established high-performance libraries. FEMaster uses Eigen for linear algebra operations and Spectra for eigenvalue computations, while Intel oneMKL provides high-performance multithreaded CPU solution capabilities. GPU acceleration is supported through NVIDIA CUDA and cuDSS, allowing computationally demanding solution tasks to be executed on compatible graphics hardware. The available numerical backends depend on the platform and build configuration. These technologies are intended to provide efficient solutions for both small models, where computational overhead can be significant relative to the actual problem size, and large systems, where memory requirements and the performance of sparse numerical operations become increasingly important.
 
-A structural finite-element model consists of several layers of information that work together.
 
-\textbf{Nodes} define the reference geometry and carry the mechanical degrees of freedom. \textbf{Elements} connect those nodes and define the interpolation and kinematic assumptions used over lines, surfaces, or volumes. The element formulation determines which deformation modes can be represented and how strains, curvatures, internal forces, mass, and other element quantities are evaluated.
+\section{Input format and compatibility}
+\label{sec:input-format}
 
-\textbf{Node sets, element sets, and surfaces} give reusable names to parts of the mesh. They are used to assign Sections, supports, loads, couplings, ties, contact pairs, and other model features without repeatedly listing individual IDs.
+FEMaster uses a unified keyword-based input format derived from the conventions established by Abaqus and also used by CalculiX. A finite-element model is described through a text file containing definitions for geometry, element connectivity, materials, structural properties, loads, boundary conditions, and analysis procedures. The format is particularly suitable for automated model generation, parameter studies, and reproducible numerical investigations, while remaining sufficiently readable for small models to be created and modified manually.
 
-\textbf{Materials} define constitutive behaviour and density. \textbf{Sections} connect element regions to their physical properties. A solid Section assigns a material; a shell Section additionally defines thickness or generalized shell stiffness; a truss Section defines area; and a beam Section combines a material with a profile and local cross-section direction.
+The input language supports a subset of the Abaqus keyword syntax together with FEMaster-specific extensions. Both forms are interpreted within the same input language and can generally be combined in a single input deck. This allows existing Abaqus-style models to be used where their definitions are supported, while additional FEMaster keywords provide access to functionality beyond the conventional syntax. Full compatibility with arbitrary Abaqus input files is not implied, since the supported keywords, parameters, element formulations, and numerical procedures depend on the capabilities implemented in FEMaster. The Keyword Reference documents these capabilities and presents alternative Abaqus-compatible and FEMaster-specific syntax wherever applicable.
 
-\textbf{Coordinate systems and orientations} define local directions for anisotropic material behaviour, beam and shell properties, loads, supports, nodal transformations, and other directional quantities.
+Several extensions introduce concepts inspired by preprocessing environments such as Altair HyperWorks. In particular, loads and supports can be organized into named collectors that are defined independently of individual analyses. These collectors can subsequently be referenced by analysis steps, allowing different combinations of loads and boundary conditions to be applied without repeatedly defining the same conditions. Additional keywords provide explicit control over analysis procedures, constraint handling, solver selection, and the use of CPU or GPU acceleration. Together, these extensions are intended to make input decks easier to organize, reuse, and inspect, particularly when a model contains several loading configurations or analysis procedures.
 
-\textbf{Fields} store quantities that vary spatially over nodes, elements, element-local nodes, integration points, or material points. They are used when a model feature requires more information than can be expressed by one scalar keyword parameter, for example topology variables or prescribed shell directors.
 
-\textbf{Loads and boundary conditions} define the external forcing and prescribed motion. \textbf{Constraints} introduce relations between different degrees of freedom, such as couplings, ties, idealized connectors, rigid-body-mode suppression, and unilateral contact.
+\section{Supported element families}
 
-Finally, an \textbf{analysis procedure} determines which equilibrium or eigenvalue problem is solved. Numerical controls select the solution strategy, constraint treatment, time or load stepping, convergence criteria, damping, and related settings.
+FEMaster provides a range of structural finite elements for modelling one-, two-, and three-dimensional mechanical behavior. The supported families include truss, beam, shell, continuum solid, and point elements, each offering different capabilities and levels of geometric detail. The choice of element formulation determines which deformation modes can be represented, which physical properties are required, and how accurately a particular structural response can be captured.
 
-\section{Typical workflow}
+An important characteristic of FEMaster is its support for six mechanical degrees of freedom per node, consisting of three translations and three rotations. Individual elements activate only the degrees of freedom required by their formulation. In particular, beam and shell elements use independent rotational degrees of freedom and are implemented as dedicated structural elements. Unlike the approach used for many conventional beam and shell formulations in CalculiX, these elements are not internally expanded into three-dimensional continuum elements. Instead, their stiffness, internal forces, and other mechanical quantities are evaluated directly from their respective structural formulations.
 
-A practical FEMaster model is usually built in the following order:
-\begin{enumerate}
-  \item define the geometry and mesh using nodes, elements, and optionally Parts and Instances;
-  \item create named regions and surfaces that will be used by later definitions;
-  \item define materials, profiles, Sections, and coordinate systems;
-  \item define Fields or other spatial model data where needed;
-  \item apply loads, supports, and kinematic constraints;
-  \item define the analysis procedure and its numerical controls;
-  \item resulting displacement, force, stress, strain, mode-shape, buckling, transient, or harmonic Fields complete the analysis output.
-\end{enumerate}
+\textbf{Continuum solid elements} represent the full three-dimensional deformation and stress state of a body. FEMaster supports tetrahedral, hexahedral, wedge, and pyramid elements with different interpolation orders and integration schemes, including reduced integration and enhanced formulations. They are particularly suitable for complex geometries, local stress concentrations, and regions where three-dimensional effects are important.
 
-The same order exposes dependencies during diagnosis: geometry and element connectivity precede Section and material assignments, which precede region definitions and coordinate directions, supports and constraints, and finally the numerical analysis settings.
+\textbf{Beam and truss elements} provide computationally efficient representations of slender structures. Truss elements carry axial forces, while beam elements additionally represent bending, torsion, and transverse shear, depending on the formulation. Their cross-sectional behavior is defined through geometric and material properties rather than an explicitly meshed cross-section. FEMaster supports both classical beam formulations and geometrically exact formulations capable of representing finite rotations, making them suitable for frames, stiffeners, spars, and other structural members.
+
+\textbf{Shell elements} describe thin-walled structures through a two-dimensional reference surface and associated thickness properties. They capture membrane deformation, bending, and transverse shear without requiring a volume mesh through the thickness. FEMaster includes shell formulations based on the Mixed Interpolation of Tensorial Components (MITC) approach with finite-rotation kinematics, making them suitable for plates, panels, curved shells, and lightweight structures.
+
+\textbf{Point elements} introduce concentrated properties such as masses, rotary inertias, and spring stiffnesses at individual nodes. They allow attached equipment, payloads, and simplified elastic supports to be represented without explicitly modelling their geometry.
+
+The different element families can be combined within a single finite-element model, allowing an appropriate balance between computational efficiency and mechanical detail. The available element types, their formulations, numerical characteristics, and limitations are documented in Chapter~\ref{chap:elements}.
+
 
 \section{Supported analysis families}
 
-\begin{longtable}{@{}p{0.30\linewidth}p{0.60\linewidth}@{}}
+FEMaster supports several analysis procedures covering static structural behavior, stability, free vibration, and time- or frequency-dependent response. An analysis procedure determines the governing equations to be solved, the required system matrices, and the numerical strategy used to obtain the solution. The same finite-element model can be evaluated using different procedures, allowing structural stiffness, deformation, stability, and dynamic characteristics to be investigated without redefining the underlying geometry and material properties. The currently supported analysis families are summarized below.
+
+\begin{longtable}{@{}p{0.31\linewidth}p{0.62\linewidth}@{}}
 \toprule
-\textbf{FEMaster analysis} & \textbf{Purpose} \\
+\textbf{FEMaster analysis} & \textbf{Description} \\
 \midrule
 \endhead
-\val{LINEARSTATIC} & Small-displacement static equilibrium for a linear structural model. \\
-\val{LINEARSTATICTOPO} & Linear static analysis with element-wise topology density, penalization, and optional orientation Fields. \\
-\val{NONLINEARSTATIC} & Incremental nonlinear equilibrium with load control or arc-length path following, nonlinear element formulations, and contact where applicable. \\
-\val{EIGENFREQ} & Constrained free-vibration eigenvalue analysis based on the structural stiffness and mass matrices. \\
-\val{LINEARBUCKLING} & Linearized eigenvalue buckling analysis about a preloaded state using geometric stiffness. \\
-\val{LINEARTRANSIENT} & Implicit linear time integration with Newmark parameters, optional Rayleigh damping, initial velocity, and configurable result cadence. \\
-\val{LINEARHARMONIC} & Direct steady-state harmonic response over one or more excitation frequencies with optional Rayleigh damping. \\
+
+\val{LINEARSTATIC} &
+Linear static equilibrium analysis under prescribed loads and boundary conditions. The procedure determines displacements, reactions, strains, and stresses using a linearized structural model. It is suitable for stiffness evaluation, load-path investigations, and structural assessments in which nonlinear effects can be neglected. \\
+
+\val{LINEARSTATICTOPO} &
+Linear static analysis with topology-dependent element properties. Element-wise density values, penalization, and optional orientation Fields allow structural responses to be evaluated for different material distributions, providing a basis for topology-related investigations and optimization workflows. \\
+
+\val{NONLINEARSTATIC} &
+Incremental static equilibrium analysis accounting for nonlinear structural behavior. The solution is obtained through iterative equilibrium corrections, with support for load-controlled increments and arc-length path following. Depending on the element formulations and model definitions, nonlinear effects may include large displacements, finite rotations, material nonlinearities, and contact. \\
+
+\val{EIGENFREQ} &
+Free-vibration analysis based on the generalized eigenvalue problem of the structural stiffness and mass matrices. The procedure computes natural frequencies and their associated mode shapes, allowing the dynamic characteristics of a structure to be investigated independently of a prescribed time-dependent excitation. \\
+
+\val{LINEARBUCKLING} &
+Linearized stability analysis using the structural stiffness and the geometric stiffness associated with a reference loading state. The resulting eigenvalues describe critical load factors within the linearized buckling approximation, while the corresponding eigenvectors identify possible instability modes. \\
+
+\val{LINEARTRANSIENT} &
+Linear time-domain dynamic analysis including inertial and optional damping effects. The equations of motion are integrated using an implicit Newmark scheme, allowing the response to time-dependent loading, initial velocities, and transient excitation to be evaluated over a prescribed time interval. \\
+
+\val{LINEARHARMONIC} &
+Linear steady-state response to harmonic excitation. The procedure solves the frequency-dependent complex equation system directly at specified excitation frequencies, providing displacement and other supported response amplitudes together with their phase information. Optional damping can be included through Rayleigh damping. \\
+
 \bottomrule
 \end{longtable}
 
-The supported Abaqus procedures \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS} are documented next to the corresponding FEMaster analysis procedures in Chapter~\ref{chap:analysis-procedures}.
+The analysis procedures differ not only in their numerical solution methods but also in the physical assumptions underlying their results. Linear static analysis and linearized eigenvalue procedures are generally efficient and suitable for a wide range of engineering investigations, provided their assumptions are appropriate for the problem. Nonlinear static analysis extends the equilibrium formulation to situations in which the structural response changes with deformation, loading, or contact conditions, but typically requires incremental loading and iterative convergence. Dynamic procedures additionally account for mass and inertia, either by integrating the response over time or by evaluating the steady-state response at selected excitation frequencies. These distinctions should be considered when selecting a procedure, since the most computationally demanding analysis is not necessarily the most appropriate one for a particular engineering question.
+
+Both FEMaster-specific analysis definitions and supported Abaqus procedure keywords are available within the input language. The corresponding Abaqus procedures include \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS}. Their accepted parameters, available numerical controls, and relationship to the FEMaster analysis types are documented in Chapter~\ref{chap:analysis-procedures}.
+
 
 \section{Degree-of-freedom convention}
 
-Generalized nodal quantities use the order
+FEMaster uses a generalized six-component nodal convention consisting of three translations and three rotations:
 \[
-\dofvec.
+    \dofvec.
 \]
-The first three entries are translations and the last three are rotations. This convention is used by generalized concentrated loads, supports, coupling selectors, initial velocities, and several result Fields. Individual element formulations may use only a subset: continuum solids generally use translations, whereas beams and shells also use rotational degrees of freedom.
+The first three components represent translational displacements along the global coordinate axes, while the last three represent rotational degrees of freedom about those axes. This convention is used for generalized nodal loads, supports, coupling definitions, initial velocities, and selected result Fields. It does not imply that every node necessarily contributes six degrees of freedom to the global equation system. The active degrees of freedom depend on the connected element formulations and associated model definitions. For example, continuum solid elements generally require only translations, whereas beam and shell elements additionally use rotations. This distinction permits different structural element families to be represented within a common generalized framework without introducing unnecessary degrees of freedom throughout the model.
 
-This nodal six-component order is distinct from the six-component stress/strain order. Stress and strain tensors use the engineering component convention documented in the result chapter.
+The six-component nodal convention must not be confused with the six-component engineering stress and strain convention, which represents the independent components of symmetric second-order tensors rather than generalized displacements. Stress and strain component ordering is documented in Section~\ref{sec:output-results}.
+
 
 \section{Units}
 
-FEMaster does not impose a built-in unit system. All input quantities must form one consistent system. For example, a common structural choice is millimetres, newtons, tonnes, seconds, and megapascals, provided density and all dynamic quantities are converted consistently. The solver only combines the numerical values according to the finite-element equations; it cannot detect that a modulus was entered in pascals while the geometry was entered in millimetres.
+FEMaster does not prescribe a particular system of units or perform automatic unit conversions. All geometric dimensions, material properties, loads, masses, and numerical parameters must therefore be expressed using a consistent system of units. A common choice for structural analysis is millimetres, newtons, tonnes, and seconds, resulting in stresses and elastic moduli expressed in megapascals. Other systems, such as metres, newtons, kilograms, and seconds, are equally valid when applied consistently. Particular attention is required for density, rotary inertia, dynamic loading, damping coefficients, thermal expansion, and stiffness-related parameters, since inconsistent units may produce numerical results that appear plausible despite having no meaningful physical interpretation. Responsibility for unit consistency remains with the user, and the solver interprets all supplied quantities according to the governing finite-element equations.
 
-Unit consistency is especially important for density, inertia, dynamic analyses, contact penalty stiffness, thermal expansion, and any problem in which length, force, mass, and time appear simultaneously.
 
-\section{Reading the keyword pages}
+\section{Manual organization}
 
-Each input keyword has one canonical location in this manual and starts on a new page. The page first explains the modelling purpose and physical meaning of the command. Parameter and data-line tables then define the accepted syntax. Finally, a side-by-side example shows native FEMaster input on the left and supported Abaqus input on the right.
-
-When both columns contain the same syntax, that is intentional. When the corresponding Abaqus keyword is not currently supported, the Abaqus column states that explicitly instead of showing syntax that FEMaster would reject. The aim is to make the manual a reliable description of what can actually be used in a FEMaster calculation.
+This manual begins with Chapter~\ref{chap:getting-started}, which introduces installation, command-line execution, and a first complete calculation, including the interpretation and verification of its results. Chapter~\ref{chap:architecture} then explains the fundamental concepts of the FEMaster model architecture and the relationships between its principal objects. Building on these concepts, Chapter~\ref{chap:keyword-reference} provides the detailed input language reference, including supported keywords, parameters, data records, and alternative Abaqus-compatible definitions. The individual modelling and analysis concepts are brought together in Chapter~\ref{chap:complete-examples}, which presents complete applications and demonstrates how the available functionality can be used to investigate engineering problems. Additional mathematical background, numerical formulations, and derivations are provided in the appendices.

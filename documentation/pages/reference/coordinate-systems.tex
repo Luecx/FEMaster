@@ -1,11 +1,11 @@
-\chapter{Coordinate Systems and Orientations}
-\label{chap:coordinates}
+\subsection{Coordinate Systems and Orientations}
+\label{sec:coordinates}
 
 Coordinate systems define local directions used by materials, Sections, loads, supports, and nodal transformations. They determine the interpretation of anisotropy, beam or shell local axes, cylindrical loading, and boundary-condition components expressed outside the global Cartesian basis.
 
 \cmd{ORIENTATION} and \cmd{TRANSFORM} act on different concepts. \cmd{ORIENTATION} defines a named coordinate system that can be referenced by Sections and other orientation-aware native FEMaster features. Abaqus \cmd{TRANSFORM} assigns a local degree-of-freedom basis to a node set. Neither command moves the geometry; rigid placement of a Part is defined by \cmd{INSTANCE}.
 
-\keywordpage{ORIENTATION}
+\keywordnestedpage{ORIENTATION}
 
 Native \cmd{ORIENTATION} creates a named rectangular or cylindrical coordinate system. \key{NAME} identifies the system and \key{TYPE} selects \val{RECTANGULAR} or \val{CYLINDRICAL}.
 
@@ -56,7 +56,7 @@ Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to 
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\keywordpage{TRANSFORM}
+\keywordnestedpage{TRANSFORM}
 
 \cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. It does not exist as a native FEMaster keyword because native FEMaster loads and supports can reference named orientations directly where a local basis is required.
 
