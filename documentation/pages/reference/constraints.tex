@@ -40,26 +40,21 @@ Direct form & Six positive/inactive selectors for \(U_x,U_y,U_z,R_x,R_y,R_z\). \
 Scoped form & Data belong to \cmd{KINEMATIC} or \cmd{DISTRIBUTING} and use inclusive DOF ranges. \\
 \end{keyworddata}
 
+The reference node REF and target surface \val{LOADED_FACE} must already have been defined. The distributing child command controls which generalized DOFs participate.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-** Legacy direct form
-*COUPLING, MASTER=REF,
- SURFACE=LOADED_FACE, TYPE=STRUCTURAL
-1., 1., 1., 0., 0., 0.
+\begin{inputdeck}
+*COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
+*DISTRIBUTING, COUPLING=STRUCTURAL
+1, 3
+\end{inputdeck}
 
-** Scoped form
-*COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
-*DISTRIBUTING, COUPLING=STRUCTURAL
-1, 3
-\end{femasterdeck}
-\begin{abaqusdeck}
-*COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
-*DISTRIBUTING, COUPLING=STRUCTURAL
-1, 3
-\end{abaqusdeck}
-\end{dialectexamples}
+\paragraph*{Direct coupling form}
+\begin{inputdeck}
+*COUPLING, MASTER=REF, SURFACE=LOADED_FACE, TYPE=STRUCTURAL
+1., 1., 1., 0., 0., 0.
+\end{inputdeck}
 
 \keywordpage{KINEMATIC}
 
@@ -71,21 +66,15 @@ Each data line contains an inclusive DOF range \val{first,last}. Valid DOF numbe
 \val{first, last} & Optional inclusive range of generalized DOFs 1--6. \\
 \end{keyworddata}
 
+KINEMATIC is a child of a scoped COUPLING definition. Here translations 1--3 and rotation 6 participate in the kinematic constraint.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*COUPLING, MASTER=RP, SURFACE=FLANGE
-*KINEMATIC
-1, 3
-6
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *COUPLING, REF NODE=RP, SURFACE=FLANGE
 *KINEMATIC
 1, 3
 6
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{DISTRIBUTING}
 
@@ -100,19 +89,20 @@ Its optional DOF data uses the same inclusive 1--6 range syntax as \cmd{KINEMATI
 \val{first, last} & Optional inclusive range of generalized DOFs 1--6. \\
 \end{keyworddata}
 
+The \val{CONTINUUM} and \val{STRUCTURAL} selector values
+currently use the same distributing-coupling implementation;
+a second input deck is therefore unnecessary.
+
+Unlike a kinematic tie, distributing coupling transfers generalized loads through a weighted relation; the selected node set or surface must already exist.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*COUPLING, MASTER=RP, SURFACE=LOADED_FACE
-*DISTRIBUTING, COUPLING=CONTINUUM
-1, 3
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *COUPLING, REF NODE=RP, SURFACE=LOADED_FACE
 *DISTRIBUTING, COUPLING=CONTINUUM
 1, 3
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+
 
 \keywordpage{EQUATION}
 
@@ -133,19 +123,44 @@ First line & Number of terms \(N\ge2\). \\
 Following lines & One to four \val{target, dof, coefficient} triples per line until \(N\) terms are complete. \\
 \end{keyworddata}
 
+This two-term constraint relates displacement component 1 on two named node sets. Coefficients define the equation sign and magnitude; more terms can be provided for general linear MPCs.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *EQUATION
 2
 LEFT, 1, 1.0, RIGHT, 1, -1.0
-\end{femasterdeck}
-\begin{abaqusdeck}
-*EQUATION
-2
-LEFT, 1, 1.0, RIGHT, 1, -1.0
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\keywordpage{RIGID BODY}
+
+\cmd{RIGID BODY} couples all six generalized degrees of freedom of
+a node set to a reference node. It is a compact CalculiX-compatible
+way to define a complete kinematic rigid-body constraint. The
+\key{NSET} parameter specifies the coupled nodes; \key{REF NODE}
+selects the reference node (or a one-node set). The optional
+CalculiX \key{ROT NODE} feature is not supported.
+
+\begin{keywordparameters}
+\key{NSET} & required & Node set to be coupled rigidly. \\
+\key{REF NODE} & required & Reference node or one-node set. \\
+\end{keywordparameters}
+
+The example rigidly constrains the nodes in \val{FLANGE_NODES} to the motion of RP. The full six-DOF kinematic coupling shown below represents the same intended rigid-body motion.
+
+\exampleheading
+
+\begin{inputdeck}
+*RIGID BODY, NSET=FLANGE_NODES, REF NODE=RP
+\end{inputdeck}
+
+\paragraph*{Equivalent kinematic coupling}
+
+\begin{inputdeck}
+*COUPLING, REF NODE=RP, SURFACE=FLANGE_NODES
+*KINEMATIC
+1, 6
+\end{inputdeck}
 
 \keywordpage{TIE}
 
@@ -166,18 +181,15 @@ Tie and contact solve different modelling problems. A Tie is an equality-type co
 \key{ADJUST} & optional & \val{NO} (default) or \val{YES}. \\
 \end{keywordparameters}
 
+The two regions must already be defined. The distance parameter controls the search tolerance used to identify nodes or faces to tie; ADJUST determines whether the selected nodes may be moved.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *TIE, MASTER=MASTER_FACE,
  SLAVE=SLAVE_NODES,
  DISTANCE=0.5, ADJUST=YES
-\end{femasterdeck}
-\begin{noabaqus}
-Abaqus \cmd{TIE} is currently not imported by the FEMaster Abaqus reader, even though the native solver provides Tie constraints.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{CONNECTOR}
 
@@ -198,9 +210,10 @@ A coupling can reduce a distributed region to a reference node before two refere
 \key{COORDINATESYSTEM} & required & Named coordinate system defining the connector axes. \\
 \end{keywordparameters}
 
+The two node sets define the connector endpoints. The named orientation supplies the local axes along which the HINGE connector constrains and releases relative motion.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *ORIENTATION, NAME=HINGE_AXES,
  TYPE=RECTANGULAR
 1., 0., 0., 0., 1., 0.
@@ -208,11 +221,7 @@ A coupling can reduce a distributed region to a reference node before two refere
 *CONNECTOR, TYPE=HINGE,
  NSET1=PIN_A, NSET2=PIN_B,
  COORDINATESYSTEM=HINGE_AXES
-\end{femasterdeck}
-\begin{noabaqus}
-Connector translation is currently not part of the supported Abaqus input subset.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{RBM}
 
@@ -230,15 +239,12 @@ RBM addresses rigid-body motion itself. Other singularities can instead arise fr
 \key{ELSET} / \key{SET} & optional & Nonempty target structural element set; default \val{EALL}. \\
 \end{keywordparameters}
 
+This command concerns the rigid-body-mode treatment of an existing element set. It does not turn the selected structural elements into infinitely stiff elements.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *RBM, ELSET=FREE_COMPONENT
-\end{femasterdeck}
-\begin{noabaqus}
-No direct RBM-suppression keyword is currently imported by the supported Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{CONTACT}
 \label{sec:contact}
@@ -275,9 +281,10 @@ The user-supplied \key{PENALTY} is a numerical stiffness scale, not a physical m
 \key{FLIP} & optional & \val{NO} (default) or \val{YES}; reverses the master-surface normal. \\
 \end{keywordparameters}
 
+The surfaces, contact penalty and clearance determine which nonpenetration constraints become active. Check surface orientations and consistent contact units for the selected penalty.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *SURFACE, NAME=MASTER_FACE
 MASTER_ELEMENTS, S1
 *SURFACE, NAME=SLAVE_FACE
@@ -287,8 +294,4 @@ SLAVE_ELEMENTS, S2
  SLAVE=SLAVE_FACE,
  PENALTY=1.0e8,
  CLEARANCE=0.0, FLIP=NO
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently does not import the Abaqus contact-definition family. Contact can be added with native FEMaster syntax using surface sets available in the model.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}

@@ -19,24 +19,18 @@ Materials are independent of Parts. The corresponding Section assignment connect
 \key{MATERIAL} / \key{NAME} & required & Unique material identifier. \\
 \end{keywordparameters}
 
+The material definition becomes the active target for ELASTIC and DENSITY. The assigned unit system must be consistent with all geometry, loads, and mass data.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=STEEL
-*ELASTIC, TYPE=ISOTROPIC
-210000., 0.3
-*DENSITY
-7.85e-9
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
 *DENSITY
 7.85e-9
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
 
 \keywordnestedpage{ELASTIC}
 
@@ -101,24 +95,23 @@ Engineering constants & \(E_1,E_2,E_3,\nu_{12},\nu_{13},\nu_{23},G_{12},G_{13},G
 Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},D_{1212},D_{1313},D_{2323}\). \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Isotropic material example}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=UD
-*ELASTIC, TYPE=ENGINEERINGCONSTANTS
-135000., 10000., 10000.,
-0.30, 0.30, 0.40,
-5000., 5000., 3500.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*MATERIAL, NAME=UD
+The first block defines an isotropic steel with Young's modulus and Poisson ratio. The second block supplies nine directional engineering constants for an orthotropic material; its section must use the intended material axes.
+
+\begin{inputdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+\end{inputdeck}
+
+
+\paragraph*{Orthotropic material example}
+\begin{inputdeck}
+*MATERIAL, NAME=COMPOSITE
 *ELASTIC, TYPE=ENGINEERING CONSTANTS
-135000., 10000., 10000.,
-0.30, 0.30, 0.40,
-5000., 5000., 3500.
-\end{abaqusdeck}
-\end{dialectexamples}
+135000., 10000., 10000., 0.30, 0.30, 0.40, 5000., 5000., 3500.
+\end{inputdeck}
 
 \keywordnestedpage{PLASTIC}
 
@@ -140,19 +133,11 @@ When converting uniaxial test data to this table, use true stress and subtract t
 \val{true (Cauchy) yield stress, equivalent plastic strain} & One hardening point per row; the first plastic strain is zero and subsequent strains are strictly increasing. \\
 \end{keyworddata}
 
+The table specifies true yield stress against equivalent plastic strain, with the first plastic strain equal to zero. The second row introduces hardening beyond initial yield.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
-*PLASTIC, TYPE=J2
-250., 0.
-300., 0.02
-350., 0.05
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -160,8 +145,7 @@ When converting uniaxial test data to this table, use true stress and subtract t
 250., 0.
 300., 0.02
 350., 0.05
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{HYPERELASTIC}
 
@@ -188,20 +172,15 @@ Neo-Hooke selector & required & Selects the supported Neo-Hooke constitutive mod
 \val{D1} & Compressibility coefficient. \\
 \end{keyworddata}
 
+The supported Neo-Hooke model is intended for finite-strain elastic behavior. Its constants must be expressed in the same mechanical unit system as the remainder of the model.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=RUBBER
-*HYPERELASTIC, NEOHOOKE
-0.348, 5.0e-6
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *MATERIAL, NAME=RUBBER
 *HYPERELASTIC, NEO HOOKE
 0.348, 5.0e-6
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{DENSITY}
 
@@ -221,20 +200,15 @@ A purely stiffness-based linear static analysis can omit density. Eigenfrequency
 \val{rho} & Scalar mass density. \\
 \end{keyworddata}
 
+For eigenfrequency, inertia, and transient analyses, this value enters the mass matrix. A static stress analysis without inertial loading need not use mass density.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *MATERIAL, NAME=STEEL
 *DENSITY
 7.85e-9
-\end{femasterdeck}
-\begin{abaqusdeck}
-*MATERIAL, NAME=STEEL
-*DENSITY
-7.85e-9
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{EXPANSION}
 
@@ -254,50 +228,60 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature; default \val{0}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
 \val{alpha} & Constant isotropic coefficient of thermal expansion. \\
 \end{keyworddata}
 
-\exampleheading
-
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MATERIAL, NAME=ALUMINIUM
-*EXPANSION, TYPE=ISO
-2.30e-5
-\end{femasterdeck}
-\begin{abaqusdeck}
-*MATERIAL, NAME=ALUMINIUM
-*EXPANSION, TYPE=ISO
-2.30e-5
-\end{abaqusdeck}
-\end{dialectexamples}
-
-\keywordnestedpage{THERMALEXPANSION}
-
-\cmd{THERMALEXPANSION} is the legacy spelling of \cmd{EXPANSION}. Both FEMaster and Abaqus input readers accept it with exactly the same syntax and constant isotropic thermal-expansion behavior. Use \cmd{EXPANSION} for new decks.
-
-\begin{keywordparameters}
-\key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
-\end{keywordparameters}
-
-\begin{keyworddata}
-\val{alpha} & Constant isotropic coefficient of thermal expansion. \\
-\end{keyworddata}
+The coefficient describes free thermal strain per unit change in temperature. The older THERMALEXPANSION spelling shown below selects the same underlying property.
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*MATERIAL, NAME=ALUMINIUM
+*EXPANSION, TYPE=ISO
+2.30e-5
+\end{inputdeck}
+
+\paragraph*{Legacy keyword}
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
 *THERMALEXPANSION
 2.30e-5
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\keywordnestedpage{THERMALEXPANSION}
+
+\cmd{THERMALEXPANSION} is a legacy alias for \cmd{EXPANSION}.
+Both keywords accept the same constant isotropic coefficient,
+optional \key{TYPE} selector, and stress-free reference temperature
+\key{ZERO}. For new decks, prefer \cmd{EXPANSION}; both forms
+remain usable within the unified input language.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature; default \val{0}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{alpha} & Constant isotropic coefficient of thermal expansion. \\
+\end{keyworddata}
+
+This legacy keyword accepts the same value as EXPANSION. New input decks should use the latter, while older files remain readable.
+
+\exampleheading
+
+\begin{inputdeck}
 *MATERIAL, NAME=ALUMINIUM
-*THERMALEXPANSION, TYPE=ISOTROPIC
+*THERMALEXPANSION
 2.30e-5
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Recommended keyword}
+\begin{inputdeck}
+*MATERIAL, NAME=ALUMINIUM
+*EXPANSION
+2.30e-5
+\end{inputdeck}

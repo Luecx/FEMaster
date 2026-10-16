@@ -39,18 +39,15 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 \val{Asy, Asz} & Optional effective transverse-shear areas; default \(5A/6\). \\
 \end{keyworddata}
 
+The profile supplies section constants that a BEAM SECTION can reference by name. It does not by itself assign a section to any element.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *PROFILE, NAME=RECT_EQUIV
 200., 6666.67, 1666.67, 4577.,
 0., 0., 0., 0., 0., 166.667, 166.667.
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently has no standalone Profile mapping for the native FEMaster beam-profile definition.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{SOLID SECTION}
 
@@ -60,7 +57,11 @@ No thickness or area is required because a solid element represents its physical
 
 For isotropic elasticity, changing the material orientation has no effect on the constitutive response because the stiffness is direction independent. For orthotropic or fully anisotropic material data, the orientation is physically significant and must be chosen consistently with the material axes.
 
-The supported Abaqus \cmd{SOLID SECTION} syntax is identical for ordinary solid regions. FEMaster also accepts a special Abaqus-reader use of \cmd{SOLID SECTION} for a pure \val{T3D2} truss set; in that case the data value is interpreted as the truss cross-sectional area. This special case is described again under \cmd{TRUSS SECTION}.
+\cmd{SOLID SECTION} also accepts a positive area data line
+when its ELSET contains only truss elements, including \val{T3}
+and \val{T3D2}. This special case is equivalent to an explicit
+\cmd{TRUSS SECTION}; for an ordinary solid region no area
+data line is permitted.
 
 A Section applies one material system and orientation to its target element set. Different material systems or orientations within one geometric component therefore require separate named element sets and Section assignments. A target set containing incompatible element families does not define a uniform Section interpretation.
 
@@ -70,20 +71,27 @@ A Section applies one material system and orientation to its target element set.
 \key{ORIENTATION} & optional & Named material coordinate system. \\
 \end{keywordparameters}
 
-\exampleheading
+\paragraph*{Solid element section}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+The first form assigns material and, where needed, material orientation to a continuum-element set. For a pure truss ELSET the same keyword takes an area data line instead.
+
+\begin{inputdeck}
 *SOLID SECTION, ELSET=SOLID,
  MATERIAL=STEEL,
  ORIENTATION=MAT_AXES
-\end{femasterdeck}
-\begin{abaqusdeck}
-*SOLID SECTION, ELSET=SOLID,
- MATERIAL=STEEL,
- ORIENTATION=MAT_AXES
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Truss cross-sectional area}
+\begin{inputdeck}
+*SOLID SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+\end{inputdeck}
+
+\paragraph*{Explicit truss section}
+\begin{inputdeck}
+*TRUSS SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+\end{inputdeck}
 
 \keywordnestedpage{SHELL SECTION}
 
@@ -136,21 +144,25 @@ ABD FEMaster & 36 row-major generalized-stiffness entries followed by 4 row-majo
 Abaqus homogeneous form & Thickness and optional integration-point count; the current supported count is 5. \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Integrated shell section}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*SHELL SECTION, ELSET=PANEL,
- MATERIAL=ALUMINIUM,
- TYPE=INTEGRATED
-2.0
-\end{femasterdeck}
-\begin{abaqusdeck}
+An integrated shell section uses a material and thickness; a directly specified ABD section instead supplies membrane, bending, coupling, and transverse-shear stiffnesses.
+
+\begin{inputdeck}
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
 2.0, 5
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Direct ABD stiffness}
+\begin{inputdeck}
+*SHELL SECTION, ELSET=PANEL, TYPE=ABD
+1000000., 0., 0., 0., 0., 0., 0., 1000000., 0., 0., 0., 0., 0., 0., 400000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 5000., 0., 0., 0., 0., 0., 0., 2000., 100000., 0., 0., 100000.
+\end{inputdeck}
+
+The data line contains 40 values: the complete $6\times6$
+generalized membrane--bending stiffness matrix in row-major order,
+followed by the complete $2\times2$ transverse-shear stiffness matrix.
 
 \keywordnestedpage{BEAM SECTION}
 
@@ -182,24 +194,29 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 \key{DENSITY} & optional & Section-local nonnegative density override. \\
 \end{keywordparameters}
 
-\exampleheading
+\paragraph*{Geometric beam section}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*PROFILE, NAME=BEAM_PROFILE
-200., 6666.7, 1666.7, 4577.
+This beam section defines the geometry of a rectangular profile and its local reference direction. A separately defined PROFILE can be used when the section constants are already known.
 
-*BEAM SECTION, ELSET=BEAMS,
- MATERIAL=STEEL, PROFILE=BEAM_PROFILE
-0., 1., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*BEAM GENERAL SECTION, ELSET=BEAMS,
- MATERIAL=STEEL, SECTION=RECT
+\begin{inputdeck}
+*BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
 10., 20.
 0., 1., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+
+
+The keyword \cmd{BEAM GENERAL SECTION} is also accepted with the
+same \key{SECTION} geometry and data lines; only the keyword
+spelling changes. No separate definition is required.
+
+\paragraph*{Predefined profile}
+\begin{inputdeck}
+*PROFILE, NAME=BEAM_PROFILE
+200., 6666.7, 1666.7, 4577.
+*BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, PROFILE=BEAM_PROFILE
+0., 1., 0.
+\end{inputdeck}
 
 \keywordnestedpage{TRUSS SECTION}
 
@@ -213,7 +230,12 @@ The same area also determines material mass per unit length through \(\rho A\) a
 
 The area must therefore use the same unit system as the geometry and material constants and must be strictly positive.
 
-The supported Abaqus reader does not use a literal \cmd{TRUSS SECTION} keyword. Instead, a pure \val{T3D2} element set can be assigned through the supported \cmd{SOLID SECTION} syntax with the cross-sectional area on the data line. The resulting truss mechanics are the same even though the input spelling differs. This mapping is specific to the FEMaster-supported pure \val{T3D2} region and does not describe other Abaqus truss-section workflows.
+\cmd{TRUSS SECTION} is the explicit FEMaster form for assigning
+a truss material and area. Alternatively, \cmd{SOLID SECTION}
+accepts an area data line when the ELSET consists exclusively
+of truss elements (\val{T3} or \val{T3D2}). The resulting
+truss-section properties are the same. Ordinary solid elements,
+in contrast, use \cmd{SOLID SECTION} without an area line.
 
 \begin{keywordparameters}
 \key{MATERIAL} / \key{MAT} & required & Truss material. \\
@@ -224,17 +246,19 @@ The supported Abaqus reader does not use a literal \cmd{TRUSS SECTION} keyword. 
 \val{area} & Strictly positive cross-sectional area. \\
 \end{keyworddata}
 
+A truss carries axial force only. The area given on the data line is the area used for axial stiffness and mass; SOLID SECTION can assign the same area to an exclusively truss-based set.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *TRUSS SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Solid section for truss elements}
+\begin{inputdeck}
 *SOLID SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}

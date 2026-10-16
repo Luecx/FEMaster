@@ -42,22 +42,27 @@ The default CPU/direct configuration avoids iterative convergence and backend-sp
 \key{METHOD} & optional & \val{DIRECT} (default) or \val{INDIRECT}. \\
 \end{keywordparameters}
 
+This example selects an iterative CPU solver for a linear static
+step. The procedure must be declared before \cmd{SOLVER};
+the constraint and load definitions apply to the same step.
+The solver keyword changes the equation solution strategy,
+not the physical analysis type.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*LOADCASE, TYPE=LINEARSTATIC
-*SOLVER, DEVICE=CPU, METHOD=DIRECT
-...
-*END
-\end{femasterdeck}
-\begin{abaqusdeck}
-*STEP
+\begin{inputdeck}
+*STEP, NAME=SERVICE
 *STATIC
 *SOLVER, DEVICE=CPU, METHOD=INDIRECT
-...
+*BOUNDARY
+FIXED, 1, 3, 0.
+*CLOAD
+TIP, 3, -1000.
 *END STEP
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+The same \cmd{SOLVER} command can be placed inside a
+\cmd{LOADCASE}. It must appear after the procedure keyword
+when used inside an Abaqus-compatible \cmd{STEP}.
 
 \keywordnestedpage{CONSTRAINTMETHOD}
 
@@ -127,18 +132,16 @@ For dense or strongly coupled general equations, nullspace projection avoids the
 \end{keywordparameters}
 
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
 *SOLVER, METHOD=INDIRECT
-...
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus input does not expose FEMaster's native constraint-method selection.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{NONLINEAR}
 
@@ -208,9 +211,17 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
 \key{REGULARIZATION_ALPHA} & optional & Regularization scale; default \(10^{-4}\). \\
 \end{keywordparameters}
 
+Arc-length controls are set inside a nonlinear static loadcase.
+The named collectors BC and ACTUATOR must have been defined
+before that loadcase.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=NONLINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+ACTUATOR
 *NONLINEAR, CONTROL=ARC_LENGTH,
  MAX_INCREMENTS=200,
  INITIAL_INCREMENT=0.05,
@@ -218,13 +229,20 @@ This option stabilizes temporary zero-stiffness directions that can occur in non
  MAXIMUM_INCREMENT=0.1,
  MAXITER=40, TOL=1e-8,
  ADAPTIVE=ON
-\end{femasterdeck}
-\begin{abaqusdeck}
+*END
+\end{inputdeck}
+
+\paragraph*{Riks procedure}
+\begin{inputdeck}
 *STEP, NLGEOM=YES, INC=200
 *STATIC, RIKS
 0.05, 1.0, 1e-5, 0.1
-\end{abaqusdeck}
-\end{dialectexamples}
+*BOUNDARY
+ROOT, 1, 3, 0.
+*CLOAD
+TIP, 3, -1000.
+*END STEP
+\end{inputdeck}
 
 \keywordnestedpage{TIME}
 
@@ -242,17 +260,42 @@ The time increment must resolve the highest response frequencies that matter to 
 
 The ratio between \(\Delta t\) and the shortest relevant period \(T_\mathrm{min}\) determines the temporal resolution. Phase and peak-amplitude accuracy generally require many points per period.
 
+In a linear transient loadcase, \cmd{TIME} defines the integration
+window. The previously defined collectors \val{BC} and \val{RAMP_LOAD}
+supply supports and loading. This example integrates 0--2 seconds
+in fixed 0.005-second increments.
+
+\begin{keyworddata}
+\val{t_start, t_end, dt} & Start, end, and fixed time increment; the start time is optional. \\
+\end{keyworddata}
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARTRANSIENT
+*SUPPORTS
+BC
+*LOADS
+RAMP_LOAD
 *TIME
-0.0, 2.0, 0.005
-\end{femasterdeck}
-\begin{abaqusdeck}
+0., 2., 0.005
+*NEWMARK
+0.25, 0.5
+*END
+\end{inputdeck}
+
+\paragraph*{DYNAMIC procedure}
+
+The equivalent DYNAMIC procedure specifies the increment first and the step period second; boundary conditions and loading belong inside STEP.
+\begin{inputdeck}
+*STEP, NAME=TRANSIENT
 *DYNAMIC, DIRECT
 0.005, 2.0
-\end{abaqusdeck}
-\end{dialectexamples}
+*BOUNDARY
+FIXED, 1, 3, 0.
+*CLOAD
+TIP, 1, 100.
+*END STEP
+\end{inputdeck}
 
 \keywordnestedpage{NEWMARK}
 
@@ -278,16 +321,24 @@ For the default parameters the linear method is unconditionally stable for the s
 \val{beta, gamma} & Newmark integration parameters. \\
 \end{keyworddata}
 
+The integration parameters belong to the transient loadcase, together
+with its time interval. Here the previously defined collectors
+\val{BC} and \val{RAMP_LOAD} are activated; the explicit Newmark
+values select the default constant-average-acceleration scheme.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARTRANSIENT
+*SUPPORTS
+BC
+*LOADS
+RAMP_LOAD
+*TIME
+0., 1., 0.01
 *NEWMARK
 0.25, 0.5
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus \cmd{DYNAMIC, DIRECT} mapping uses FEMaster's transient integration but does not expose a separate imported Newmark-parameter card.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}
 
 \keywordnestedpage{DAMPING}
 
@@ -313,16 +364,25 @@ Rayleigh damping is frequency dependent. Coefficients fitted at two frequencies 
 \val{alpha, beta} & Mass- and stiffness-proportional Rayleigh coefficients. \\
 \end{keyworddata}
 
+In this harmonic loadcase, Rayleigh damping is applied to the
+response at every frequency in the sweep. The support and excitation
+collectors must already exist. Here \(\alpha=0\) and
+\(\beta=10^{-5}\); damping affects both resonant amplitudes and
+phases. The same keyword can be used in transient analysis.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARHARMONIC
+*SUPPORTS
+BC
+*LOADS
+HARMONIC
+*FREQUENCIES, SCALE=LINEAR
+10., 1000., 100
 *DAMPING, TYPE=RAYLEIGH
-0.0, 1.0e-5
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently does not import a separate Step damping card.
-\end{noabaqus}
-\end{dialectexamples}
+0., 1.e-5
+*END
+\end{inputdeck}
 
 \keywordnestedpage{FREQUENCIES}
 
@@ -341,18 +401,40 @@ Frequency resolution determines which parts of the response curve are sampled. A
 \key{SCALE} & optional & Currently \val{LINEAR}. \\
 \end{keywordparameters}
 
+\begin{keyworddata}
+\val{f_start, f_end, count} & Frequencies at the ends of the interval and the positive sample count. \\
+\end{keyworddata}
+
+Assuming that the support collector \val{BC} and harmonic-load collector
+\val{HARMONIC} have been defined earlier, this example solves 100
+equally spaced excitation frequencies between 10 and 1000\,Hz.
+\cmd{FREQUENCIES} belongs inside the harmonic loadcase; it does not
+initiate an analysis on its own.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARHARMONIC, NAME=SWEEP
+*SUPPORTS
+BC
+*LOADS
+HARMONIC
 *FREQUENCIES, SCALE=LINEAR
 10., 1000., 100
-\end{femasterdeck}
-\begin{abaqusdeck}
+*END
+\end{inputdeck}
+
+\paragraph*{Steady-state dynamics procedure}
+
+The corresponding Abaqus-compatible procedure defines its frequency range inside a STEP. The force on TIP is defined in the step rather than through a load collector.
+\begin{inputdeck}
+*STEP, NAME=SWEEP
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
 10., 1000., 100, 1., 1.
-\end{abaqusdeck}
-\end{dialectexamples}
+*CLOAD, REAL
+TIP, 3, -100.
+*END STEP
+\end{inputdeck}
 
 \keywordnestedpage{NUMEIGENVALUES}
 
@@ -360,17 +442,36 @@ Frequency resolution determines which parts of the response curve are sampled. A
 
 The requested value is a result count, not a frequency or buckling-factor cutoff. A request for ten modes therefore returns ten eigenpairs but does not independently define the covered spectral range, particularly in the presence of multiplicities or closely spaced eigenvalues.
 
+Here an eigenfrequency loadcase requests 20 modes from the
+assembled stiffness and mass matrices. \val{BC} is a previously
+defined support collector; the mode count is specified inside
+the analysis rather than at model level.
+
+\begin{keyworddata}
+\val{count} & Positive number of requested eigenpairs. \\
+\end{keyworddata}
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=EIGENFREQ
+*SUPPORTS
+BC
 *NUMEIGENVALUES
 20
-\end{femasterdeck}
-\begin{abaqusdeck}
+*END
+\end{inputdeck}
+
+\paragraph*{Frequency extraction procedure}
+
+The frequency extraction procedure requests the number of modes directly. The node set FIXED must already be defined.
+\begin{inputdeck}
+*STEP, PERTURBATION
 *FREQUENCY
 20
-\end{abaqusdeck}
-\end{dialectexamples}
+*BOUNDARY
+FIXED, 1, 6, 0.
+*END STEP
+\end{inputdeck}
 
 \keywordnestedpage{SIGMA}
 
@@ -384,16 +485,28 @@ with elastic stiffness \(A\) and geometric stiffness contribution \(B\), shift-i
 
 \val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates a scale from the pre-buckling solution where possible and falls back to conservative stiffness/geometric-stiffness estimates if necessary. A manual shift directly targets a known approximate spectral range.
 
+In a linear-buckling loadcase, \val{PRELOAD} defines the reference
+loading and \val{BC} defines the supports. The example requests five
+buckling factors and an automatic spectral shift (\val{0.0}).
+The factors multiply the reference load; they are not forces.
+
+\begin{keyworddata}
+\val{sigma} & Spectral shift; zero requests the automatic buckling shift. \\
+\end{keyworddata}
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARBUCKLING
+*SUPPORTS
+BC
+*LOADS
+PRELOAD
+*NUMEIGENVALUES
+5
 *SIGMA
 0.0
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus \cmd{BUCKLE} mapping does not expose native FEMaster's explicit \cmd{SIGMA} control.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}
 
 \keywordnestedpage{WRITEEVERY}
 
@@ -407,16 +520,28 @@ Output sampling must still be fine enough for the quantity being inspected. A tr
 \key{TYPE} & optional & \val{STEPS} (default) or \val{TIME}. \\
 \end{keywordparameters}
 
+\begin{keyworddata}
+\val{interval} & Write frequency in steps or physical time, selected by \key{TYPE}. \\
+\end{keyworddata}
+
+With a fixed time increment of 0.001 seconds over one second,
+the solver performs 1000 integration increments. \cmd{WRITEEVERY}
+saves intermediate results every ten steps without changing the
+integration. The named collectors are defined before the loadcase.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARTRANSIENT
+*SUPPORTS
+BC
+*LOADS
+RAMP_LOAD
+*TIME
+0., 1., 0.001
 *WRITEEVERY, TYPE=STEPS
 10
-\end{femasterdeck}
-\begin{noabaqus}
-Abaqus output-request cards currently do not control FEMaster's transient write cadence.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}
 
 \keywordnestedpage{INITIALVELOCITY}
 
@@ -432,18 +557,23 @@ corresponding to the translational and rotational nodal DOFs.
 \key{FIELD} & required & Existing six-component \val{NODE} Field. \\
 \end{keywordparameters}
 
+Create the initial-velocity field before the transient loadcase.
+The first node starts with an x-velocity of one length unit per
+time unit; unspecified nodes remain at rest.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*FIELD, NAME=V0, TYPE=NODE,
- COLS=6, FILL=ZERO
+\begin{inputdeck}
+*FIELD, NAME=V0, TYPE=NODE, COLS=6, FILL=ZERO
 0, 1., 0., 0., 0., 0., 0.
+
+*LOADCASE, TYPE=LINEARTRANSIENT
+*SUPPORTS
+BC
+*TIME
+0., 1., 0.01
 *INITIALVELOCITY, FIELD=V0
-\end{femasterdeck}
-\begin{noabaqus}
-No initial-velocity mapping is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}
 
 \keywordnestedpage{INERTIARELIEF}
 
@@ -461,15 +591,21 @@ All regular compiled structural elements contribute to the mass properties used 
 \key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{1}. \\
 \end{keywordparameters}
 
+For an intentionally unsupported body, activate inertia relief
+inside a linear static loadcase. Here the previously defined
+\val{FLIGHT_LOADS} collector supplies the unbalanced external loading.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+*LOADS
+FLIGHT_LOADS
 *INERTIARELIEF, CONSIDER_POINT_MASSES=1
-\end{femasterdeck}
-\begin{noabaqus}
-No inertia-relief procedure is currently imported by the supported Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}
+
+Do not add artificial fixed supports to this free-body example:
+the inertial terms balance the rigid-body resultant.
 
 \keywordnestedpage{REBALANCELOADS}
 
@@ -479,12 +615,19 @@ This differs physically from inertia relief. \cmd{REBALANCELOADS} assumes a theo
 
 Rebalancing a load with a physical resultant removes that resultant and thereby defines a different loadcase; it does not supply support to an unsupported model.
 
+Here the load collector \val{BALANCED_LOADS} is assumed to
+contain a physically self-equilibrated loading with small
+numerical residuals. \cmd{REBALANCELOADS} corrects that imbalance
+during the linear static analysis; it must not be used to
+remove a real resultant load.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+BALANCED_LOADS
 *REBALANCELOADS
-\end{femasterdeck}
-\begin{noabaqus}
-No corresponding load-rebalancing input card is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+*END
+\end{inputdeck}

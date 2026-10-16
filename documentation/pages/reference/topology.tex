@@ -33,9 +33,10 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 \key{FIELD} / \key{NAME} & required & Scalar \val{ELEMENT} Field containing element densities. \\
 \end{keywordparameters}
 
+A scalar element field supplies the design densities; the topology-weighted linear static loadcase then reads them through TOPODENSITY. The density values are not nodal displacements or material densities.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -46,11 +47,7 @@ Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly ze
 *TOPOEXPONENT
 3.0
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-Topology-density Fields and \val{LINEARSTATICTOPO} are native FEMaster capabilities.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{TOPOORIENT}
 
@@ -75,9 +72,10 @@ The rotation order is significant because finite rotations about different axes 
 \key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field of Euler angles \((\theta_x,\theta_y,\theta_z)\) in radians. \\
 \end{keywordparameters}
 
+This element field supplies the orientation parameters for the topology-weighted analysis. The field must exist before it is selected by TOPOORIENT.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *FIELD, NAME=ORIENT,
  TYPE=ELEMENT, COLS=3, FILL=ZERO
 0, 0.0, 0.0, 0.0
@@ -87,11 +85,7 @@ The rotation order is significant because finite rotations about different axes 
 *TOPODENSITY, FIELD=RHO
 *TOPOORIENT, FIELD=ORIENT
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-No topology-orientation Field mapping is currently supported by the Abaqus reader.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{TOPOEXPONENT}
 
@@ -114,13 +108,10 @@ The exact reported Field follows FEMaster's topology result definitions, while t
 \val{exponent} & Scalar density penalization exponent \(p\). \\
 \end{keyworddata}
 
+The exponent is applied inside LINEARSTATICTOPO, together with the density field selected by TOPODENSITY. Increasing it penalizes intermediate relative densities more strongly.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *TOPOEXPONENT
 3.0
-\end{femasterdeck}
-\begin{noabaqus}
-No corresponding topology penalization keyword is currently supported in Abaqus input.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
