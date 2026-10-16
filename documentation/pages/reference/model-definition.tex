@@ -38,16 +38,6 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 *END PART
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster-specific syntax}
-\begin{inputdeck}[FEMaster extension]
-*PART, NAME=ROD
-*NODE, NSET=PNODES
-0,   0., 0., 0.
-1, 100., 0., 0.
-*ELEMENT, TYPE=T3, ELSET=BAR
-0, 0, 1
-*END PART
-\end{inputdeck}
 
 \keywordpage{END PART}
 
@@ -105,16 +95,12 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 
 \begin{inputdeck}[Abaqus-compatible]
 *ASSEMBLY, NAME=ASSEMBLY
-...
+*INSTANCE, NAME=LEFT, PART=ROD
+0., 0., 0.
+*END INSTANCE
 *END ASSEMBLY
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster-specific syntax}
-\begin{inputdeck}[FEMaster extension]
-*ASSEMBLY
-...
-*END ASSEMBLY
-\end{inputdeck}
 
 \keywordpage{INSTANCE}
 
