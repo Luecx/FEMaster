@@ -18,7 +18,7 @@ In models with a Part/Instance hierarchy or many named regions, the overview exp
 A structurally plausible overview establishes only the reported model organization. It does not establish the physical consistency of material units, element orientations, shell normals, surface sides, load directions, or boundary conditions.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *OVERVIEW
 \end{inputdeck}
 
@@ -35,7 +35,7 @@ Matrix output is a diagnostic and verification feature distinct from the ordinar
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
 *REQUESTSTIFFNESS, FILE=K_service.txt
 ...
@@ -55,7 +55,7 @@ The command changes output only; it does not modify the preload or buckling eige
 \end{keywordparameters}
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
 *REQUESTSTIFFNESS, FILE=K.txt
 *REQUESTSTGEOM, FILE=KG.txt
@@ -74,7 +74,7 @@ In an unexpectedly singular or over-constrained model, the constraint groups can
 \cmd{CONSTRAINTSUMMARY} does not choose the enforcement method. \cmd{CONSTRAINTMETHOD} separately determines whether the equations are handled by nullspace projection, elimination, or Lagrange multipliers where supported.
 
 \exampleheading
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
 *CONSTRAINTSUMMARY
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
@@ -97,75 +97,63 @@ The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does 
 \cmd{NODE OUTPUT} selects nodal result quantities for the active step. When it is the first explicit output card, the step defaults are cleared before the listed variables are added.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *OUTPUT, FIELD
 *NODE OUTPUT
 U, RF
 \end{inputdeck}
 
-\paragraph*{Alternative: CalculiX-compatible NODE FILE alias}
-\begin{inputdeck}[Alternative]
-*NODE FILE
-U, RF
-\end{inputdeck}
+The CalculiX-compatible \cmd{NODE FILE} keyword accepts the
+same nodal field list and configures the same output request.
 
 \keywordpage{ELEMENT OUTPUT}
 
 \cmd{ELEMENT OUTPUT} selects element-derived result quantities for the active step. It uses the same request set as \cmd{EL FILE}; the spelling does not select a different FEMaster result format.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *OUTPUT, FIELD
 *ELEMENT OUTPUT
 S, E
 \end{inputdeck}
 
-\paragraph*{Alternative: CalculiX-compatible EL FILE alias}
-\begin{inputdeck}[Alternative]
-*EL FILE
-S, E
-\end{inputdeck}
+The CalculiX-compatible \cmd{EL FILE} keyword accepts the
+same element field list and configures the same output request.
 
 \keywordpage{NODE FILE}
 
 \cmd{NODE FILE} is the CalculiX-style alias of \cmd{NODE OUTPUT}. It selects the listed nodal result quantities for the active step but does not force creation of a separate ASCII node-results file.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *NODE FILE
 U, RF
 \end{inputdeck}
 
-\paragraph*{Alternative: NODE OUTPUT with optional OUTPUT container}
-\begin{inputdeck}[Alternative]
-*OUTPUT, FIELD
-*NODE OUTPUT
-U, RF
-\end{inputdeck}
+The equivalent \cmd{NODE OUTPUT} keyword accepts the same
+field list. The surrounding \cmd{OUTPUT, FIELD} is an optional
+compatibility container and does not itself select fields.
 
 \keywordpage{EL FILE}
 
 \cmd{EL FILE} is the CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It selects the listed element-derived result quantities without changing the configured FEMaster result writer.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *EL FILE
 S, E
 \end{inputdeck}
 
-\paragraph*{Alternative: ELEMENT OUTPUT with optional OUTPUT container}
-\begin{inputdeck}[Alternative]
-*OUTPUT, FIELD
-*ELEMENT OUTPUT
-S, E
-\end{inputdeck}
+The equivalent \cmd{ELEMENT OUTPUT} keyword accepts the same
+field list. The surrounding \cmd{OUTPUT, FIELD} is an optional
+compatibility container and does not itself select fields.
 
 \keywordpage{NODE PRINT}
 
 \cmd{NODE PRINT} is accepted and ignored. It does not modify the active field-output request set and does not generate an Abaqus/CalculiX text print table.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *NODE PRINT
 U, RF
 \end{inputdeck}
@@ -175,7 +163,7 @@ U, RF
 \cmd{EL PRINT} is accepted and ignored in the same way as \cmd{NODE PRINT}. It neither filters FEMaster result Fields nor generates a separate textual element-results table.
 
 \exampleheading
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *EL PRINT
 S, E
 \end{inputdeck}
