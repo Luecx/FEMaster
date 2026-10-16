@@ -26,6 +26,8 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \key{NAME} & required & Unique Part name. The name is referenced by \cmd{INSTANCE}. \\
 \end{keywordparameters}
 
+In this example, the truss connectivity refers to the node IDs local to the part. A later INSTANCE can reuse that topology at another placement.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -49,6 +51,8 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 *END PART
 \end{syntax}
 
+The closing keyword terminates the reusable part definition; model-level or assembly-level declarations follow outside its scope.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -71,6 +75,8 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \key{NAME} & optional & Assembly name; default \val{ASSEMBLY}. \\
 \end{keywordparameters}
 
+The assembly refers to a previously defined part and places one reusable instance of it into the model.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -90,6 +96,8 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \begin{syntax}
 *END ASSEMBLY
 \end{syntax}
+
+The assembly is closed after its instances and assembly-level sets have been defined.
 
 \exampleheading
 
@@ -130,6 +138,8 @@ The Part-local node and element labels remain associated with every Instance. As
 \val{x1,y1,z1,x2,y2,z2,angle} & Optional rotation axis through two points and rotation angle in degrees. \\
 \end{keyworddata}
 
+The two data lines below first translate the part and then rotate the placed instance. The part itself retains its original local node coordinates.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -142,6 +152,8 @@ The Part-local node and element labels remain associated with every Instance. As
 \keywordpage{END INSTANCE}
 
 \cmd{END INSTANCE} closes the current Instance definition.
+
+The keyword closes the instance placement scope. Subsequent assembly-level selections can refer to the placed instance by name.
 
 \exampleheading
 
@@ -171,6 +183,8 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 \val{id} & Non-negative user node ID; \val{0} is valid. \\
 \val{x, y, z} & Cartesian reference coordinates. \\
 \end{keyworddata}
+
+These three records create independent user node IDs, even though the coordinates are regularly spaced. Node IDs need not be consecutive.
 
 \exampleheading
 
