@@ -218,6 +218,7 @@ Thermal stress arises when free thermal expansion is restrained or when temperat
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature; default \val{0}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -249,6 +250,7 @@ remain usable within the unified input language.
 
 \begin{keywordparameters}
 \key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\key{ZERO} & optional & Stress-free reference temperature; default \val{0}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -257,7 +259,7 @@ remain usable within the unified input language.
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}[FEMaster legacy alias]
 *MATERIAL, NAME=ALUMINIUM
 *THERMALEXPANSION
 2.30e-5
