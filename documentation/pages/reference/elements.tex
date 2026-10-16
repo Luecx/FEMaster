@@ -468,6 +468,17 @@ triangle. It is useful for curved shell regions, cutouts, and
 unstructured higher-order surface meshes where triangular topology
 is preferred.
 
+The element uses the MITC6-b assumed-strain formulation. Membrane
+strains and curvatures are independently interpolated through the
+in-plane assumed-strain operator, while the transverse shear field
+uses the MITC6-b tying-point interpolation. The formulation evaluates
+nine in-plane tying-point entries and six transverse-shear entries;
+these are distinct from the numerical integration points. Its area
+quadrature is \val{DOMAIN_ISO_TRI}, \val{ORDER_QUARTIC}, using
+\textbf{six integration points}, rather than the former four-point
+cubic rule. The same six-point rule supplies the element's area
+integration and integration-point result locations.
+
 The higher interpolation order improves geometric flexibility but
 does not eliminate sensitivity to mesh quality. Midside nodes must
 follow the intended surface and highly distorted triangles can
