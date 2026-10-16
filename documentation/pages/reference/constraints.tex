@@ -125,6 +125,34 @@ Following lines & One to four \val{target, dof, coefficient} triples per line un
 LEFT, 1, 1.0, RIGHT, 1, -1.0
 \end{inputdeck}
 
+\keywordpage{RIGID BODY}
+
+\cmd{RIGID BODY} couples all six generalized degrees of freedom of
+a node set to a reference node. It is a compact CalculiX-compatible
+way to define a complete kinematic rigid-body constraint. The
+\key{NSET} parameter specifies the coupled nodes; \key{REF NODE}
+selects the reference node (or a one-node set). The optional
+CalculiX \key{ROT NODE} feature is not supported.
+
+\begin{keywordparameters}
+\key{NSET} & required & Node set to be coupled rigidly. \\
+\key{REF NODE} & required & Reference node or one-node set. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{inputdeck}[CalculiX-compatible]
+*RIGID BODY, NSET=FLANGE_NODES, REF NODE=RP
+\end{inputdeck}
+
+\paragraph*{Alternative: Explicit kinematic coupling}
+
+\begin{inputdeck}[Abaqus-compatible]
+*COUPLING, REF NODE=RP, SURFACE=FLANGE_NODES
+*KINEMATIC
+1, 6
+\end{inputdeck}
+
 \keywordpage{TIE}
 
 \cmd{TIE} creates a permanent kinematic connection between slave geometry and master geometry located within a prescribed search distance. The slave may be a node set or a surface set. The master may be a surface set or a line set. FEMaster selects the appropriate supported tie relation from these region types.
