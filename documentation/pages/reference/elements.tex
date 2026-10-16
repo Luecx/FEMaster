@@ -620,7 +620,7 @@ The limitations are deliberate. \val{T3} has no bending stiffness, no torsional 
 
 The Abaqus-compatible name \val{T3D2} selects the same FEMaster truss formulation as \val{T3}.
 
-\begin{inputdeck}[Abaqus-compatible alternative]
+\begin{inputdeck}
 *ELEMENT, TYPE=T3D2, ELSET=BARS
 10, 1, 2
 \end{inputdeck}
@@ -658,7 +658,7 @@ Part-local \val{MASS} elements and their \cmd{MASS} property assignments are cop
 an explicit element ID or ELSET membership, the FEMaster-specific
 \cmd{POINTMASS} keyword assigns a mass directly to an NSET:
 
-\begin{inputdeck}[FEMaster-specific alternative]
+\begin{inputdeck}
 *POINTMASS, NSET=PAYLOAD_NODES
 0.025
 \end{inputdeck}
