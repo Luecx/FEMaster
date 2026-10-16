@@ -1,7 +1,7 @@
 \section{Keyword Index}
 \label{sec:keyword-index}
 
-This section provides a compact index of the input keywords accepted by the current FEMaster and supported Abaqus syntaxes. Every keyword has one canonical explanation in the preceding thematic sections. A check mark means that the spelling is accepted in that input style; a dash means that the same keyword is not available there, although an equivalent modelling operation may be shown on the detailed page.
+This section provides a compact index of the unified FEMaster input language, including Abaqus-compatible keywords and FEMaster-specific extensions. Every keyword has one canonical explanation in the preceding thematic sections. A check mark means that the spelling is accepted in that input style; a dash means that the same keyword is not available there, although an equivalent modelling operation may be shown on the detailed page.
 
 Command names are displayed in the conventional spaced form used in the manual, for example \cmd{END PART}, \cmd{SOLID SECTION}, and \cmd{STEADY STATE DYNAMICS}. \cmd{INERTIALOAD} is shown with the exact native spelling currently accepted by FEMaster.
 
@@ -135,44 +135,11 @@ Command names are displayed in the conventional spaced form used in the manual, 
 
 \subsection{Supported element formulations}
 
-The \cmd{ELEMENT} keyword selects one of the formulations documented in Section~\ref{sec:elements}. The following table provides a compact element-type index. The Abaqus column lists the spelling accepted in Abaqus input when it differs from the native FEMaster name.
-
-\small
-\begin{longtable}{@{}p{0.20\linewidth}p{0.20\linewidth}p{0.50\linewidth}@{}}
-\toprule
-\textbf{FEMaster formulation} & \textbf{Abaqus input} & \textbf{Family} \\
-\midrule
-\endhead
-\val{C3D4} & \val{C3D4} & 4-node linear tetrahedral solid \\
-\val{C3D5} & \val{C3D5} & 5-node pyramid input / transition solid \\
-\val{C3D6} & \val{C3D6} & 6-node linear wedge solid \\
-\val{C3D8} & \val{C3D8} & 8-node full-integration hexahedral solid \\
-\val{C3D8R} & \val{C3D8R} & 8-node reduced-integration hexahedral solid \\
-\val{C3D10} & \val{C3D10} & 10-node quadratic tetrahedral solid \\
-\val{C3D15} & \val{C3D15} & 15-node quadratic wedge solid \\
-\val{C3D20} & \val{C3D20} & 20-node quadratic hexahedral solid \\
-\val{C3D20R} & \val{C3D20R} & 20-node reduced-integration quadratic hexahedral solid \\
-\val{S3} & -- & 3-node finite-rotation triangular shell; native alias; maps to \val{MITC3FRT} \\
-\val{MITC3FRT} & \val{S3}, \val{S3R} & Current finite-rotation 3-node shell \\
-\val{S4} & -- & 4-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC4FRT} \\
-\val{MITC4} & -- & 4-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC4FRT} \\
-\val{MITC4FRT} & \val{S4}, \val{S4R} & Current finite-rotation 4-node MITC shell \\
-\val{S6} & -- & 6-node finite-rotation triangular shell; native alias; maps to \val{MITC6FRT} \\
-\val{MITC6FRT} & \val{S6}, \val{S6R} & Current finite-rotation 6-node shell \\
-\val{S8} & -- & 8-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC8FRT} \\
-\val{MITC8} & -- & 8-node finite-rotation quadrilateral shell; native alias; maps to \val{MITC8FRT} \\
-\val{MITC8FRT} & \val{S8}, \val{S8R} & Current finite-rotation 8-node MITC shell \\
-\val{QSPT} & -- & Native quadrilateral shear-panel element \\
-\val{B33} & \val{B33} & 2-node 3D beam \\
-\val{T3} / \val{T3D2} & \val{T3D2} & 2-node 3D truss; native parser accepts both spellings \\
-\val{MASS} & \val{MASS} & 1-node point element with an isotropic \cmd{MASS} property \\
-\val{ROTARYI} & \val{ROTARYI} & 1-node point element with a diagonal \cmd{ROTARY INERTIA} property \\
-\val{SPRING1} & \val{SPRING1} & 1-node point-to-ground element with a linear \cmd{SPRING} property \\
-\bottomrule
-\end{longtable}
-\normalsize
-
-The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}/\val{S4R} and native \val{S4}/\val{MITC4}/\val{MITC4FRT} all select the current four-node finite-rotation shell. The non-FRT input labels are retained for syntax compatibility but do not retain separate legacy linear formulations. Detailed topology figures and formulation notes are given in the Element Formulations subsection.
+The complete list of supported element names, Abaqus-compatible
+aliases, node connectivity, numerical formulations, and limitations
+is provided directly under \cmd{ELEMENT} in
+Section~\ref{sec:model-definition}. The element-type table and
+individual descriptions are maintained there as the canonical reference.
 
 \subsection{Coverage notes}
 
