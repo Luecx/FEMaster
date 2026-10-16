@@ -49,7 +49,7 @@ Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both loca
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -78,7 +78,7 @@ The local node index is the zero-based position inside the element connectivity 
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *FIELD, NAME=SHELL_NORMALS,
  TYPE=ELEMENT_NODAL, COLS=3, FILL=NAN
 10, 0, 0., 0., 1.
