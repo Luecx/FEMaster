@@ -492,6 +492,9 @@ are retained.
 0, 0, 1
 *TRUSS SECTION, ELSET=MEMBER, MATERIAL=STEEL
 100.
+*SUPPORT, SUPPORT_COLLECTOR=BC
+LEFT, 0., 0., 0., NAN, NAN, NAN
+RIGHT, NAN, 0., 0., NAN, NAN, NAN
 *CLOAD, LOAD_COLLECTOR=PRELOAD
 RIGHT, -1000., 0., 0., 0., 0., 0.
 *LOADCASE, TYPE=LINEARBUCKLING
@@ -562,6 +565,9 @@ are retained.
 1, 1, 2
 *TRUSS SECTION, ELSET=BARS, MATERIAL=STEEL
 100.
+*SUPPORT, SUPPORT_COLLECTOR=BC
+ENDS, 0., 0., 0., NAN, NAN, NAN
+APEX, 0., NAN, 0., NAN, NAN, NAN
 *CLOAD, LOAD_COLLECTOR=P
 APEX, 0., -20000., 0., 0., 0., 0.
 *LOADCASE, TYPE=NONLINEARSTATIC
@@ -627,6 +633,11 @@ complete example above; unchanged geometry and material definitions
 are retained.
 
 \begin{inputdeck}[FEMaster extension (replacement cards)]
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0., 0., 0., NAN, NAN, NAN
+TIP, NAN, 0., 0., NAN, NAN, NAN
+*CLOAD, LOAD_COLLECTOR=P, AMPLITUDE=RAMP
+TIP, 1000., 0., 0., 0., 0., 0.
 *LOADCASE, TYPE=LINEARTRANSIENT
 *SUPPORTS
 BC
@@ -694,6 +705,11 @@ complete example above; unchanged geometry and material definitions
 are retained.
 
 \begin{inputdeck}[FEMaster extension (replacement cards)]
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0., 0., 0., NAN, NAN, NAN
+TIP, NAN, 0., 0., NAN, NAN, NAN
+*CLOAD, LOAD_COLLECTOR=HARMONIC
+TIP, 1., 0., 0., 0., 0., 0.
 *LOADCASE, TYPE=LINEARHARMONIC
 *SUPPORTS
 BC
