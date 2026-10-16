@@ -41,20 +41,20 @@ Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ORIENTATION, NAME=MAT_AXES,
- TYPE=RECTANGULAR
-1., 0., 0.,
-0., 1., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible orientation]
 *ORIENTATION, NAME=MAT_AXES,
  DEFINITION=COORDINATES,
  SYSTEM=RECTANGULAR
 1., 0., 0., 0., 1., 0., 0., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Compact FEMaster orientation}
+\begin{inputdeck}[Alternative]
+*ORIENTATION, NAME=MAT_AXES,
+ TYPE=RECTANGULAR
+1., 0., 0.,
+0., 1., 0.
+\end{inputdeck}
 
 \keywordnestedpage{TRANSFORM}
 
@@ -85,12 +85,13 @@ A node has one effective nodal basis. Overlapping transformed sets with incompat
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{nofemaster}
-Native FEMaster does not use a separate \cmd{TRANSFORM} keyword. Loads, supports, Sections, and other supported features reference named \cmd{ORIENTATION} definitions directly where needed.
-\end{nofemaster}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *TRANSFORM, NSET=CYLINDER_NODES, TYPE=C
 0., 0., 0., 0., 0., 100.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: Rectangular nodal transformation}
+\begin{inputdeck}[Alternative]
+*TRANSFORM, NSET=EDGE_NODES, TYPE=R
+1., 0., 0., 0., 1., 0.
+\end{inputdeck}
