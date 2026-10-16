@@ -40,15 +40,15 @@ Both readers & One to four \val{time, value} pairs per physical line. \\
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *AMPLITUDE, NAME=RAMP,
  DEFINITION=TABULAR, TIME=STEPTIME
 0.0, 0.0, 0.1, 1.0,
 1.0, 1.0
 \end{inputdeck}
 
-\paragraph*{Alternative: Stepwise amplitude interpolation}
-\begin{inputdeck}[Alternative]
+\paragraph*{Stepwise interpolation}
+\begin{inputdeck}
 *AMPLITUDE, NAME=HOLD, TYPE=STEP
 0., 0., 0.5, 1., 1., 1.
 \end{inputdeck}
@@ -79,14 +79,14 @@ Six values & \(U_x,U_y,U_z,R_x,R_y,R_z\); omitted or \val{NAN} means free. \\
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., 0., 0., 0.
 GUIDE, NAN, 0., 0., NAN, NAN, NAN
 \end{inputdeck}
 
-\paragraph*{Alternative: Equivalent BOUNDARY prescriptions}
-\begin{inputdeck}[Alternative]
+\paragraph*{Equivalent boundary conditions}
+\begin{inputdeck}
 *BOUNDARY
 FIXED, 1, 6, 0.
 GUIDE, 2, 3, 0.
@@ -122,14 +122,14 @@ Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus 
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *BOUNDARY, TYPE=DISPLACEMENT
 TIP, 1, 1, 1.5
 TIP, 2, 3, 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster SUPPORT vector}
-\begin{inputdeck}[Alternative]
+\paragraph*{Support vector}
+\begin{inputdeck}
 *SUPPORT, SUPPORT_COLLECTOR=BC
 TIP, 1.5, 0., 0., NAN, NAN, NAN
 \end{inputdeck}
@@ -160,14 +160,14 @@ When a concentrated nodal load represents a physically distributed load, the ide
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *CLOAD
 TIP, 1, 1000.
 TIP, 2, -250.
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster vector form}
-\begin{inputdeck}[Alternative]
+\paragraph*{Vector notation}
+\begin{inputdeck}
 *CLOAD, LOAD_COLLECTOR=TIP_LOAD
 TIP, 1000., -250., 0., 0., 0., 0.
 \end{inputdeck}
@@ -212,27 +212,27 @@ Traction has units of force per unit area. Its total resultant equals the surfac
 \key{REAL}/\key{IMAGINARY} & optional flags & Imaginary distributed loading is unsupported. \\
 \end{keywordparameters}
 
-\exampleheading
+\paragraph*{Gravity acceleration}
 
-\begin{inputdeck}[Abaqus-compatible gravity]
+\begin{inputdeck}
 *DLOAD
 EALL, GRAV, 9810., 0., 0., -1.
 \end{inputdeck}
 
-\paragraph*{Alternative: Global body-force density (Abaqus BX, BY, BZ)}
-\begin{inputdeck}[Alternative]
+\paragraph*{Body-force density}
+\begin{inputdeck}
 *DLOAD
 EALL, BZ, -0.01
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster direct surface-traction vector}
-\begin{inputdeck}[FEMaster extension]
+\paragraph*{Surface traction vector}
+\begin{inputdeck}
 *DLOAD
 SIDE, 0., 2.5, 0.
 \end{inputdeck}
 
-\paragraph*{Alternative: Element-face pressure}
-\begin{inputdeck}[Abaqus-compatible]
+\paragraph*{Element-face pressure}
+\begin{inputdeck}
 *DLOAD
 SOLIDS, P2, 5.0
 \end{inputdeck}
@@ -258,13 +258,13 @@ The surface side and element connectivity determine the pressure direction. Reve
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *PLOAD, LOAD_COLLECTOR=PRESSURE
 INNER_FACE, 2.0
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus-compatible DSLOAD pressure}
-\begin{inputdeck}[Alternative]
+\paragraph*{Equivalent DSLOAD pressure}
+\begin{inputdeck}
 *DSLOAD
 INNER_FACE, P, 2.0
 \end{inputdeck}
@@ -294,23 +294,19 @@ Pressure & \val{surface, P, magnitude}. \\
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *DSLOAD, FOLLOWER=NO
 FACE_A, P, 5.0
 \end{inputdeck}
 
 
-\paragraph*{Alternative: FEMaster PLOAD pressure}
-\begin{inputdeck}[Alternative]
+\paragraph*{Equivalent PLOAD pressure}
+\begin{inputdeck}
 *PLOAD
 FACE_A, 5.0
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster DLOAD vector traction}
-\begin{inputdeck}[Alternative]
-*DLOAD
-FACE_B, 0., 3., 0.
-\end{inputdeck}
+
 
 \keywordpage{VLOAD}
 
@@ -334,13 +330,13 @@ For a gravity load, use a mass-proportional inertial load rather than entering a
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *VLOAD, LOAD_COLLECTOR=BODY_FORCE
 EALL, 0., 0., -0.01
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus-compatible DLOAD component}
-\begin{inputdeck}[Alternative]
+\paragraph*{DLOAD body-force component}
+\begin{inputdeck}
 *DLOAD
 EALL, BZ, -0.01
 \end{inputdeck}
@@ -382,7 +378,7 @@ The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exa
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster extension]
+\begin{inputdeck}
 *INERTIALOAD, LOAD_COLLECTOR=ROT_INERTIA,
  CONSIDER_POINT_MASSES=1
 EALL,
