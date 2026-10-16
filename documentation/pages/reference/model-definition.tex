@@ -28,7 +28,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *PART, NAME=ROD
 *NODE, NSET=PNODES
 0,   0., 0., 0.
@@ -51,7 +51,7 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *PART, NAME=PLATE
 ...
 *END PART
@@ -73,7 +73,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ASSEMBLY, NAME=ASSEMBLY
 *INSTANCE, NAME=ROD_A, PART=ROD
 0., 0., 0.
@@ -93,7 +93,7 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *ASSEMBLY, NAME=ASSEMBLY
 *INSTANCE, NAME=LEFT, PART=ROD
 0., 0., 0.
@@ -132,7 +132,7 @@ The Part-local node and element labels remain associated with every Instance. As
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *INSTANCE, NAME=RIGHT, PART=BRACKET
 100., 0., 0.
 0., 0., 0., 0., 0., 1., 90.
@@ -145,7 +145,7 @@ The Part-local node and element labels remain associated with every Instance. As
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *INSTANCE, NAME=A, PART=BLOCK
 20., 0., 0.
 *END INSTANCE
@@ -174,7 +174,7 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *NODE, NSET=EDGE
 0,  0., 0., 0.
 10, 25., 0., 0.
