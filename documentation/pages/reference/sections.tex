@@ -41,16 +41,11 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[FEMaster extension]
 *PROFILE, NAME=RECT_EQUIV
 200., 6666.67, 1666.67, 4577.,
 0., 0., 0., 0., 0., 166.667, 166.667.
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently has no standalone Profile mapping for the native FEMaster beam-profile definition.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{SOLID SECTION}
 
@@ -72,18 +67,23 @@ A Section applies one material system and orientation to its target element set.
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *SOLID SECTION, ELSET=SOLID,
  MATERIAL=STEEL,
  ORIENTATION=MAT_AXES
-\end{femasterdeck}
-\begin{abaqusdeck}
-*SOLID SECTION, ELSET=SOLID,
- MATERIAL=STEEL,
- ORIENTATION=MAT_AXES
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: Truss cross-sectional area}
+\begin{inputdeck}[Alternative]
+*SOLID SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+\end{inputdeck}
+
+\paragraph*{Alternative: Explicit TRUSS SECTION for trusses}
+\begin{inputdeck}[Alternative]
+*TRUSS SECTION, ELSET=BARS, MATERIAL=STEEL
+100.
+\end{inputdeck}
 
 \keywordnestedpage{SHELL SECTION}
 
@@ -138,19 +138,11 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*SHELL SECTION, ELSET=PANEL,
- MATERIAL=ALUMINIUM,
- TYPE=INTEGRATED
-2.0
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
 2.0, 5
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordnestedpage{BEAM SECTION}
 
@@ -184,22 +176,26 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*PROFILE, NAME=BEAM_PROFILE
-200., 6666.7, 1666.7, 4577.
-
-*BEAM SECTION, ELSET=BEAMS,
- MATERIAL=STEEL, PROFILE=BEAM_PROFILE
-0., 1., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*BEAM GENERAL SECTION, ELSET=BEAMS,
- MATERIAL=STEEL, SECTION=RECT
+\begin{inputdeck}[FEMaster extension]
+*BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
 10., 20.
 0., 1., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Alternative: Abaqus-compatible BEAM GENERAL SECTION}
+\begin{inputdeck}[Alternative]
+*BEAM GENERAL SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
+10., 20.
+0., 1., 0.
+\end{inputdeck}
+
+\paragraph*{Alternative: FEMaster predefined PROFILE}
+\begin{inputdeck}[Alternative]
+*PROFILE, NAME=BEAM_PROFILE
+200., 6666.7, 1666.7, 4577.
+*BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, PROFILE=BEAM_PROFILE
+0., 1., 0.
+\end{inputdeck}
 
 \keywordnestedpage{TRUSS SECTION}
 
@@ -226,15 +222,15 @@ The supported Abaqus reader does not use a literal \cmd{TRUSS SECTION} keyword. 
 
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}[Abaqus-compatible]
 *TRUSS SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Alternative: SOLID SECTION for a truss-only ELSET}
+\begin{inputdeck}[Abaqus-compatible]
 *SOLID SECTION, ELSET=BARS,
  MATERIAL=STEEL
 100.0
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
