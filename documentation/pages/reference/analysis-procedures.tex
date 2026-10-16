@@ -79,7 +79,7 @@ Each loadcase selects the previously defined collectors that participate in that
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC,
  NAME=SERVICE_LOAD
 *SUPPORTS
@@ -89,8 +89,8 @@ SERVICE
 *END
 \end{inputdeck}
 
-\paragraph*{Alternative: Equivalent Abaqus STEP}
-\begin{inputdeck}[Alternative]
+\paragraph*{STEP-based analysis}
+\begin{inputdeck}
 *STEP, NAME=SERVICE_LOAD
 *STATIC
 *BOUNDARY
@@ -112,7 +112,7 @@ Abaqus input has no separate collector-selection keyword. Its \cmd{BOUNDARY} car
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=EIGENFREQ
 *SUPPORTS
 FIXED_SUPPORTS, SYMMETRY_SUPPORTS
@@ -121,15 +121,9 @@ FIXED_SUPPORTS, SYMMETRY_SUPPORTS
 *END
 \end{inputdeck}
 
-\paragraph*{Alternative: Direct BOUNDARY in a STEP}
-\begin{inputdeck}[Alternative]
-*STEP
-*FREQUENCY
-10
-*BOUNDARY
-FIXED, 1, 3, 0.
-*END STEP
-\end{inputdeck}
+Direct boundary conditions can instead be specified with
+\cmd{BOUNDARY} in a \cmd{STEP}. This does not activate a named
+support collector; see the respective keyword pages.
 
 \keywordnestedpage{LOADS}
 
@@ -147,25 +141,16 @@ Abaqus Step-local load cards such as \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} 
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
 *LOADS
 GRAVITY, PRESSURE, ACTUATOR
 *END
 \end{inputdeck}
 
-\paragraph*{Alternative: Direct loads in a STEP}
-\begin{inputdeck}[Alternative]
-*STEP
-*STATIC
-*DLOAD
-EALL, GRAV, 9810., 0., 0., -1.
-*DSLOAD
-PRESSURE_FACE, P, 2.0
-*CLOAD
-ACTUATOR, 1, 500.
-*END STEP
-\end{inputdeck}
+Direct \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} definitions
+may also be specified inside \cmd{STEP}, without first activating
+named load collectors.
 
 \keywordnestedpage{END}
 
@@ -173,19 +158,14 @@ Native \cmd{END} closes the current \cmd{LOADCASE}. It is distinct from \cmd{END
 
 \exampleheading
 
-\begin{inputdeck}[FEMaster syntax]
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
 ...
 *END
 \end{inputdeck}
 
-\paragraph*{Alternative: Abaqus END STEP}
-\begin{inputdeck}[Alternative]
-*STEP
-*STATIC
-...
-*END STEP
-\end{inputdeck}
+A \cmd{STEP} is instead closed by \cmd{END STEP}.
+The two closing keywords apply to different analysis scopes.
 
 \keywordnestedpage{STEP}
 
@@ -205,7 +185,7 @@ Loads and boundary conditions written within the Step belong to that analysis. F
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP, NAME=LARGE_DEFLECTION,
  NLGEOM=YES, INC=100
 *STATIC
@@ -214,8 +194,8 @@ Loads and boundary conditions written within the Step belong to that analysis. F
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{LOADCASE-based analysis}
+\begin{inputdeck}
 *LOADCASE, TYPE=NONLINEARSTATIC
 *NONLINEAR, CONTROL=LOAD,
  MAX_INCREMENTS=100
@@ -258,9 +238,9 @@ Ordinary static & Optional \val{initial, period, minimum, maximum}. \\
 Riks & First four values define the supported path-increment controls; unsupported later termination fields must be omitted. \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Linear static analysis}
 
-\begin{inputdeck}[Linear static STEP]
+\begin{inputdeck}
 *STEP, NAME=SERVICE
 *STATIC
 *BOUNDARY
@@ -270,16 +250,16 @@ TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: Nonlinear arc-length procedure}
-\begin{inputdeck}[Alternative]
+\paragraph*{Nonlinear arc-length analysis}
+\begin{inputdeck}
 *STEP, NAME=POSTBUCKLING, NLGEOM=YES, INC=200
 *STATIC, RIKS
 0.05, 1.0, 1e-5, 0.1
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster nonlinear LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{FEMaster nonlinear loadcase}
+\begin{inputdeck}
 *LOADCASE, TYPE=NONLINEARSTATIC
 *NONLINEAR, CONTROL=ARC_LENGTH, INITIAL_INCREMENT=0.05, MAX_INCREMENTS=200
 *END
@@ -308,7 +288,7 @@ Remaining accepted positions & Additional Abaqus spectral controls not used by t
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP, PERTURBATION
 *FREQUENCY, EIGENSOLVER=LANCZOS
 12
@@ -317,8 +297,8 @@ FIXED, 1, 6, 0.
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster eigenfrequency LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{Eigenfrequency loadcase}
+\begin{inputdeck}
 *LOADCASE, TYPE=EIGENFREQ
 *SUPPORTS
 BC
@@ -341,7 +321,7 @@ The first data value is the positive number of requested buckling modes. \key{EI
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP, PERTURBATION
 *BUCKLE
 5
@@ -352,8 +332,8 @@ The first data value is the positive number of requested buckling modes. \key{EI
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster linear-buckling LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{Buckling loadcase}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
 *SUPPORTS
 BC
@@ -378,7 +358,7 @@ Native FEMaster exposes the same analysis through \val{LINEARTRANSIENT}, \cmd{TI
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP
 *DYNAMIC, DIRECT
 0.01, 1.0
@@ -389,8 +369,8 @@ Native FEMaster exposes the same analysis through \val{LINEARTRANSIENT}, \cmd{TI
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster transient LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{Transient loadcase}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARTRANSIENT
 *SUPPORTS
 BC
@@ -419,7 +399,7 @@ Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
@@ -429,8 +409,8 @@ Native FEMaster specifies a linear frequency sweep with \cmd{FREQUENCIES, SCALE=
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster harmonic LOADCASE}
-\begin{inputdeck}[Alternative]
+\paragraph*{Harmonic loadcase}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARHARMONIC
 *SUPPORTS
 BC
@@ -447,16 +427,13 @@ HARMONIC_FORCE
 
 \exampleheading
 
-\begin{inputdeck}[Abaqus-compatible]
+\begin{inputdeck}
 *STEP
 *STATIC
 ...
 *END STEP
 \end{inputdeck}
 
-\paragraph*{Alternative: FEMaster END}
-\begin{inputdeck}[Alternative]
-*LOADCASE, TYPE=LINEARSTATIC
-...
-*END
-\end{inputdeck}
+The corresponding \cmd{LOADCASE} scope is closed by \cmd{END},
+not by \cmd{END STEP}.
+
