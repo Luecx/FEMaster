@@ -1,17 +1,21 @@
 \chapter{Keyword Reference}
 \label{chap:keyword-reference}
 
-This chapter documents the unified FEMaster input language, combining supported Abaqus-compatible keywords with FEMaster-specific extensions. Commands are grouped by their role in model definition, properties, loading, constraints, analysis setup, and output. Section~\ref{sec:keyword-index} provides a compact index of the accepted keywords and element names.
+This chapter documents the unified FEMaster input language:
+supported Abaqus-compatible definitions, CalculiX-compatible aliases,
+and FEMaster-specific extensions can be used together. Keywords are
+organized by modelling role. Section~\ref{sec:keyword-index}
+provides a compact index.
 
 \paragraph*{Reading the keyword pages}
 
-Each keyword has one canonical location in this manual. Its entry explains
-the modelling purpose, accepted parameters, and input data. Abaqus-
-compatible definitions and FEMaster-specific extensions are part of
-the same input language. Alternative forms are documented where useful;
-some reference pages still display equivalent forms side by side.
-The \cmd{ELEMENT} entry presents general connectivity syntax followed
-by the supported element formulations and their alternative type names.
+Each keyword has one canonical entry, beginning with its modelling
+purpose and supported parameters or data lines. An example of that
+keyword follows. Where a genuinely useful alternative exists, it is
+shown directly below the primary example. Abaqus compatibility and
+FEMaster extensions are identified without presenting separate input
+languages. The \cmd{ELEMENT} reference additionally documents the
+individual numerical formulations and their accepted type aliases.
 
 \input{pages/reference/input-structure}
 
