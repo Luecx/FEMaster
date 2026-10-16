@@ -40,7 +40,7 @@ Direct form & Six positive/inactive selectors for \(U_x,U_y,U_z,R_x,R_y,R_z\). \
 Scoped form & Data belong to \cmd{KINEMATIC} or \cmd{DISTRIBUTING} and use inclusive DOF ranges. \\
 \end{keyworddata}
 
-The reference node REF and target surface LOADED_FACE must already have been defined. The distributing child command controls which generalized DOFs participate.
+The reference node REF and target surface \val{LOADED_FACE} must already have been defined. The distributing child command controls which generalized DOFs participate.
 
 \exampleheading
 
@@ -146,7 +146,7 @@ CalculiX \key{ROT NODE} feature is not supported.
 \key{REF NODE} & required & Reference node or one-node set. \\
 \end{keywordparameters}
 
-The example rigidly constrains the nodes in FLANGE_NODES to the motion of RP. The full six-DOF kinematic coupling shown below represents the same intended rigid-body motion.
+The example rigidly constrains the nodes in \val{FLANGE_NODES} to the motion of RP. The full six-DOF kinematic coupling shown below represents the same intended rigid-body motion.
 
 \exampleheading
 

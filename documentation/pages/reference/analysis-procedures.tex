@@ -115,7 +115,7 @@ Abaqus input has no separate collector-selection keyword. Its \cmd{BOUNDARY} car
 The named support collectors listed here must have been defined earlier with \cmd{SUPPORT}. Multiple names may be activated in one analysis; a collector not listed here does not contribute constraints.
 
 \begin{keyworddata}
-collector_1, collector_2, ... & Names of previously defined support collectors. \\
+\val{collector_1, collector_2, ...} & Names of previously defined support collectors. \\
 \end{keyworddata}
 
 \exampleheading
@@ -150,7 +150,7 @@ Abaqus Step-local load cards such as \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} 
 The loadcase activates three previously defined collectors. This separates reusable load definitions from the choice of load combinations in each analysis.
 
 \begin{keyworddata}
-collector_1, collector_2, ... & Names of previously defined load collectors. \\
+\val{collector_1, collector_2, ...} & Names of previously defined load collectors. \\
 \end{keyworddata}
 
 \exampleheading
