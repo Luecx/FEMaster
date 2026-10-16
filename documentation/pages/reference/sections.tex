@@ -39,6 +39,8 @@ Profile constants follow the unit system of the model. In a consistent N--mm mod
 \val{Asy, Asz} & Optional effective transverse-shear areas; default \(5A/6\). \\
 \end{keyworddata}
 
+The profile supplies section constants that a BEAM SECTION can reference by name. It does not by itself assign a section to any element.
+
 \exampleheading
 
 \begin{inputdeck}
@@ -70,6 +72,8 @@ A Section applies one material system and orientation to its target element set.
 \end{keywordparameters}
 
 \paragraph*{Solid element section}
+
+The first form assigns material and, where needed, material orientation to a continuum-element set. For a pure truss ELSET the same keyword takes an area data line instead.
 
 \begin{inputdeck}
 *SOLID SECTION, ELSET=SOLID,
@@ -142,6 +146,8 @@ Abaqus homogeneous form & Thickness and optional integration-point count; the cu
 
 \paragraph*{Integrated shell section}
 
+An integrated shell section uses a material and thickness; a directly specified ABD section instead supplies membrane, bending, coupling, and transverse-shear stiffnesses.
+
 \begin{inputdeck}
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
@@ -190,6 +196,8 @@ The nonzero orientation vector must not be parallel to the beam tangent. It defi
 
 \paragraph*{Geometric beam section}
 
+This beam section defines the geometry of a rectangular profile and its local reference direction. A separately defined PROFILE can be used when the section constants are already known.
+
 \begin{inputdeck}
 *BEAM SECTION, ELSET=BEAMS, MATERIAL=STEEL, SECTION=RECT
 10., 20.
@@ -237,6 +245,8 @@ in contrast, use \cmd{SOLID SECTION} without an area line.
 \begin{keyworddata}
 \val{area} & Strictly positive cross-sectional area. \\
 \end{keyworddata}
+
+A truss carries axial force only. The area given on the data line is the area used for axial stiffness and mass; SOLID SECTION can assign the same area to an exclusively truss-based set.
 
 \exampleheading
 
