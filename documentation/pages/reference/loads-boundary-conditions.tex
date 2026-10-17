@@ -158,7 +158,7 @@ The target may be an individual node or a node set. When a node set is used, the
 
 \key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading.
 
-Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The supported input accepts real non-follower loading; imaginary and follower concentrated loads are not supported.
+Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The default and \key{REAL} forms both apply real-valued, fixed-direction concentrated loading.
 
 The native six-component vector form supplies a step-local load when no collector is named. Abaqus-style \val{target, dof, magnitude} rows instead update persistent load history per target and DOF. \key{OP=MOD} replaces matching DOF entries; \key{OP=NEW} retires inherited direct CLOAD entries before the current command.
 
@@ -169,8 +169,7 @@ When a concentrated nodal load represents a physically distributed load, the ide
 \key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Named local load basis. \\
 \key{AMPLITUDE} & optional & Named amplitude where supported. \\
-\key{FOLLOWER} & Abaqus flag & Currently unsupported. \\
-\key{REAL}/\key{IMAGINARY} & Abaqus flags & Real loading is supported; imaginary loading is not. \\
+\key{REAL} & optional flag & Real-valued, fixed-direction concentrated loading. \\
 \end{keywordparameters}
 
 A concentrated load can be expressed by DOF number or by a generalized force vector. When a node set is targeted, the specified force is applied separately to every node in the set.
@@ -229,7 +228,7 @@ Traction has units of force per unit area. Its total resultant equals the surfac
 \key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Local traction basis. \\
 \key{AMPLITUDE} & optional & Named time scaling where supported. \\
-\key{REAL}/\key{IMAGINARY} & optional flags & Imaginary distributed loading is unsupported. \\
+\key{REAL} & optional flag & Real-valued distributed loading. \\
 \end{keywordparameters}
 
 \paragraph*{Gravity acceleration}
@@ -301,16 +300,15 @@ named surface set. The supported load label is \val{P}; each data
 record specifies a surface, the label \val{P}, and a pressure
 magnitude. The surface normal determines the load direction.
 
-The current implementation accepts only \key{FOLLOWER=NO};
-follower pressure is not supported in nonlinear analyses.
-\key{AMPLITUDE} may provide time scaling. Vector surface traction
-(\val{TRVEC}) is not supported by \cmd{DSLOAD}; use the FEMaster
-three-component \cmd{DLOAD} form instead.
+\key{FOLLOWER=NO} selects the fixed reference-surface-normal
+pressure definition and is also the default. \key{AMPLITUDE} may
+provide time scaling. For a prescribed surface traction vector,
+use the three-component \cmd{DLOAD} form.
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{AMPLITUDE} & optional & Named amplitude for time scaling. \\
-\key{FOLLOWER} & optional & \val{NO}; follower surface loads are not supported. \\
+\key{FOLLOWER} & optional & \val{NO} (default) for fixed-reference-surface pressure. \\
 \key{OP} & optional & \val{MOD} or \val{NEW} for load history. \\
 \end{keywordparameters}
 
