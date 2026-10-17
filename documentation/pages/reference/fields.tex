@@ -77,7 +77,10 @@ respectively, becomes the initial state; no data lines follow the command.
 Without \key{FIELD}, the command allocates a zero-initialized nodal Field,
 and each row addresses one compiled node by ID or \val{INSTANCE.ID}.
 Omitted or empty component values retain their current values, so later
-rows may selectively update the same node.
+rows may selectively update the same node. A transient analysis uses the
+model's initial velocity state by default; a loadcase-local
+\cmd{INITIALVELOCITY, FIELD=...} selects the specified nodal Field for
+that transient analysis instead.
 
 \begin{keywordparameters}
 \key{TYPE} & required & \val{TEMPERATURE} or \val{VELOCITY}. \\
