@@ -137,9 +137,13 @@ LEFT, 1, 1.0, RIGHT, 1, -1.0
 \cmd{MPC} defines a two-node kinematic multi-point constraint at root
 or Assembly scope. Each row specifies the relation type and two compiled
 node references: the first is the dependent node and the second the
-independent node. The supported types are \val{BEAM}, \val{TIE}, and
-\val{PIN}. FEMaster expands these relations into constraint equations
-alongside supports, ties, and couplings.
+independent node. The three relation types have the following kinematic meaning:
+\begin{itemize}
+  \item \val{PIN} equates the available translational components of both nodes;
+  \item \val{TIE} equates their available translational and rotational components;
+  \item \val{BEAM} applies a small-rotation rigid-link relation with reference offset \(\boldsymbol r=\boldsymbol x_{dep}-\boldsymbol x_{ind}\): \(\boldsymbol u_{dep}=\boldsymbol u_{ind}+\boldsymbol\theta_{ind}\times\boldsymbol r\), and equates available rotations.
+\end{itemize}
+FEMaster expands these relations into constraint equations alongside supports, ties, and couplings.
 
 \begin{keyworddata}
 \val{type, dependent_node, independent_node} & One two-node relation per row; \val{BEAM}, \val{TIE}, or \val{PIN}. \\
