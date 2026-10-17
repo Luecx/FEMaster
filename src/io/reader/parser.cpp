@@ -586,6 +586,10 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     loadcase->id     = next_loadcase_id_++;
     loadcase->writer = &writer_;
     loadcase->model  = model_.get();
+    if (step_state_.step_active) {
+        loadcase->resume       = step_state_.resume;
+        loadcase->perturbation = step_state_.perturbation;
+    }
 
     // Output requests are configured while the step is parsed, but derived
     // fields are recovered later during run(). Bind the model before exposing
@@ -643,6 +647,10 @@ void Parser::end_loadcase() {
             temporary_conditions.emplace_back(family, condition);
         }
     }
+
+    // Restore an independent starting configuration or retain the last
+    // converged state before the concrete analysis starts.
+    loadcase->prepare_state();
 
     // Model assembly reads the active family sets during this numerical solve.
     loadcase->run();

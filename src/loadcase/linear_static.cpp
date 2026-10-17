@@ -318,6 +318,11 @@ void LinearStatic::run() {
         "resolving and writing requested result fields");
 
     transformer->post_check_static(K, f, q);
+
+    // A linear perturbation must not overwrite the underlying base state.
+    if (!perturbation) {
+        commit_state(global_disp_mat);
+    }
     model->step_end();
 }
 

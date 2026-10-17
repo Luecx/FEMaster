@@ -47,12 +47,14 @@ namespace tools {
  *
  * @param model Model whose material and contact state is coordinated.
  */
-NonlinearStateManager::NonlinearStateManager(model::Model& model)
+NonlinearStateManager::NonlinearStateManager(model::Model& model, bool resume)
     : model_(model) {
     // Penalty continuation belongs to the complete nonlinear analysis, not to
     // individual increments. Reset it exactly once when the manager is created.
-    for (const auto& contact : model_._data->contacts) {
-        contact.reset_penalty_adaptation();
+    if (!resume) {
+        for (const auto& contact : model_._data->contacts) {
+            contact.reset_penalty_adaptation();
+        }
     }
 
     material_state_size_ = model_.maximum_material_state_size();
@@ -70,12 +72,22 @@ NonlinearStateManager::NonlinearStateManager(model::Model& model)
         "Nonlinear material input and output states must use separate storage");
 
     const Index material_points = model_._data->field_rows(model::FieldDomain::ELEMENT_MP);
-    *model_._data->material_state_old = model::Field(
-        "MATERIAL_STATE_OLD", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
-    *model_._data->material_state_new = model::Field(
-        "MATERIAL_STATE_NEW", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
 
-    model_.initialize_material_state(*model_._data->material_state_old);
+    // Preserve converged material history only when its storage is initialized
+    // and belongs to the same material-point enumeration.
+    if (!resume || !model_._data->material_state_initialized) {
+        *model_._data->material_state_old = model::Field(
+            "MATERIAL_STATE_OLD", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
+        *model_._data->material_state_new = model::Field(
+            "MATERIAL_STATE_NEW", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
+        model_.initialize_material_state(*model_._data->material_state_old);
+        model_._data->material_state_initialized = true;
+    } else {
+        logging::error(model_._data->material_state_old->rows == material_points
+                    && model_._data->material_state_old->components == material_state_size_,
+            "NONLINEARSTATIC: incompatible committed material history for RESUME");
+    }
+
     reset_material_state();
 }
 

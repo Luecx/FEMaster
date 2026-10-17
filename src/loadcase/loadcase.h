@@ -60,7 +60,9 @@ struct LoadCase : public Castable {
     // Per-step output requests, provided basis fields and lazy recovered fields
     io::writer::OutputRequestHandler output;
 
-    // Diagnostic settings
+    // State continuation and diagnostic settings
+    bool resume             = false;
+    bool perturbation       = false;
     bool report_constraints = false;
 
     // Construction and destruction
@@ -69,6 +71,10 @@ struct LoadCase : public Castable {
     // Concrete analysis identity and execution
     virtual std::string type_name() const = 0;
     virtual void run() = 0;
+
+    // Prepare persistent state and store a converged static configuration
+    void prepare_state() const;
+    void commit_state(const model::Field& displacement) const;
 
     // Assigned load-case identifier
     ID get_id() const { return id; }

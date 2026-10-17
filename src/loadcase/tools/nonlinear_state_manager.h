@@ -51,7 +51,7 @@ namespace tools {
  */
 class NonlinearStateManager {
 public:
-    explicit NonlinearStateManager(model::Model& model);
+    explicit NonlinearStateManager(model::Model& model, bool resume);
     ~NonlinearStateManager() = default;
 
     NonlinearStateManager(const NonlinearStateManager&)            = delete;
