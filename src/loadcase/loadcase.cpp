@@ -22,15 +22,16 @@ namespace loadcase {
  * Prepares the starting configuration of the current analysis.
  *
  * A resumed analysis preserves the prior converged geometry, material history
- * and contact multipliers. Otherwise the reference geometry is restored and
- * material history is marked for initialization by the nonlinear solver.
- * Explicit temperature and initial velocity definitions remain unchanged.
+ * and contact multipliers. An independent analysis restores reference geometry
+ * and discards material history, which is lazily recreated before element
+ * evaluation. Explicit initial temperature and velocity remain unchanged.
  */
 void LoadCase::prepare_state() const {
     if (resume) return;
 
     *model->_data->positions = *model->_data->positions_reference;
-    model->_data->material_state_initialized = false;
+    model->_data->material_state_old.reset();
+    model->_data->material_state_new.reset();
 
     for (const auto& contact : model->_data->contacts) {
         contact.reset_state();

@@ -328,6 +328,9 @@ void LinearStaticTopo::run() {
 
     CT->post_check_static(K, f, q);
 
+    // The final topology-static equilibrium is a physical static state.
+    commit_state(global_disp_mat);
+
     model->_data->element_stiffness_scale = nullptr;
     model->_data->material_orientation    = nullptr;
     model->step_end();

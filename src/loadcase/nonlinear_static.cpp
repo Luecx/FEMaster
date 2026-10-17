@@ -11,7 +11,7 @@
  * External loads and prescribed displacements enter through the affine
  * constraint recovery
  *
- *     u(lambda, q) = lambda * u_particular + T q.
+ *     u(lambda, q) = u_initial + lambda * u_particular + T q.
  *
  * The load case wires stateful nonlinear subsystems into the generic trial
  * callbacks owned by the path controllers. `NonlinearStateManager` owns the
@@ -203,7 +203,7 @@ void NonlinearStatic::run() {
     model->assign_sections();
     model->step_begin();
 
-    tools::NonlinearStateManager nonlinear_state(*model, resume);
+    tools::NonlinearStateManager nonlinear_state(*model);
 
     // Derived nonlinear output recovery must restart from the committed
     // constitutive history before each independent post-processing operation.
@@ -241,10 +241,18 @@ void NonlinearStatic::run() {
     auto equations = groups.flatten();
 
     // Express constraints relative to the carried-over total displacement:
-    // C (u - u_initial) = d - C u_initial.
+    // C (u - u_initial) = d - C u_initial. Suppress roundoff from near-exact
+    // cancellation so an already satisfied Riks constraint stays homogeneous.
+    const Precision rhs_tolerance = constraint::NullSpaceOptions{}.feasibility_tolerance;
     for (auto& equation : equations) {
+        Precision rhs_scale = std::abs(equation.rhs);
         for (const auto& entry : equation.entries) {
-            equation.rhs -= entry.coeff * initial_displacement(entry.node_id, entry.dof);
+            const Precision term = entry.coeff * initial_displacement(entry.node_id, entry.dof);
+            equation.rhs -= term;
+            rhs_scale += std::abs(term);
+        }
+        if (std::abs(equation.rhs) <= rhs_tolerance * rhs_scale) {
+            equation.rhs = Precision(0);
         }
     }
 

@@ -153,9 +153,6 @@ struct ModelData {
     Field::Ptr material_state_old = nullptr;
     Field::Ptr material_state_new = nullptr;
 
-    // Whether the committed field holds initialized or converged material history
-    bool material_state_initialized = false;
-
     // Global assembly regions materialized from the compiled instances. Every
     // collection owns an aggregate *ALL region that receives all dense entities.
     Sets<NodeRegion>    node_sets   {SET_NODE_ALL};
