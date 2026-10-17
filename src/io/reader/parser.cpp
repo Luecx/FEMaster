@@ -52,12 +52,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <utility>
 
 namespace fem::io::reader {
 namespace {
+
+// Preserve the full concrete load definition, including interpolation values
+// and amplitude, while retaining its original shared pointer identity.
+template <typename Load>
+void snapshot_load(const bc::Condition::Ptr& condition,
+                   std::vector<std::function<void()>>& restore) {
+    if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
+        const Load original = *load;
+        restore.emplace_back([load, original]() { *load = original; });
+    }
+}
 
 /**
  * @brief Prepares the start/target history of a physical load in the DSL.
@@ -591,6 +603,33 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
         loadcase->perturbation = step_state_.perturbation;
     }
 
+    if (loadcase->perturbation && loadcase->type_name() == "LINEARSTATIC") {
+        logging::error(loadcase->resume,
+            "LINEARSTATIC PERTURBATION requires RESUME=YES");
+        logging::error(!perturbation_snapshot_,
+            "Parser: an earlier perturbation snapshot is still active");
+        perturbation_snapshot_ = std::make_unique<PerturbationSnapshot>();
+        perturbation_snapshot_->active = conditions();
+        perturbation_snapshot_->inherited = inherited_conditions_;
+        perturbation_snapshot_->current = current_conditions_;
+
+        // MOD/NEW may update existing load objects in place, including objects
+        // shared by named collectors. Restore their original values after run().
+        for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD,
+                                  bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD,
+                                  bc::HEAT_FLUX}) {
+            for (const auto& condition : conditions().get(family)) {
+                auto& restore = perturbation_snapshot_->restore_values;
+                snapshot_load<bc::CLoad>(condition, restore);
+                snapshot_load<bc::DLoad>(condition, restore);
+                snapshot_load<bc::PLoad>(condition, restore);
+                snapshot_load<bc::VLoad>(condition, restore);
+                snapshot_load<bc::InertialLoad>(condition, restore);
+                snapshot_load<bc::HeatFlux>(condition, restore);
+            }
+        }
+    }
+
     // Output requests are configured while the step is parsed, but derived
     // fields are recovered later during run(). Bind the model before exposing
     // the active load case to any child output command.
@@ -654,6 +693,18 @@ void Parser::end_loadcase() {
 
     // Model assembly reads the active family sets during this numerical solve.
     loadcase->run();
+
+    if (perturbation_snapshot_) {
+        // The step's target loads and support definitions are a temporary
+        // linearization experiment; they do not become the next step's base.
+        for (auto& restore : perturbation_snapshot_->restore_values) restore();
+        conditions() = std::move(perturbation_snapshot_->active);
+        inherited_conditions_ = std::move(perturbation_snapshot_->inherited);
+        current_conditions_ = std::move(perturbation_snapshot_->current);
+        perturbation_snapshot_.reset();
+        selected_conditions_.clear();
+        return;
+    }
 
     // Restore direct history by removing only this analysis's insertions.
     for (const auto& [family, condition] : temporary_conditions) {

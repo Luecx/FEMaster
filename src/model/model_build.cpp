@@ -575,6 +575,7 @@ SparseMatrix Model::build_stiffness_matrix(
  * @param base_displacement Base displacement state used for linearization.
  * @param base_temperature Base temperature state used for linearization.
  * @param stiffness_scalar Optional one-component element tangent scale.
+ * @param update_state Whether element evaluations may write trial constitutive history.
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
@@ -584,7 +585,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     const Field*  target_temperature,
     const Field&  base_displacement,
     const Field*  base_temperature,
-    const Field*  stiffness_scalar
+    const Field*  stiffness_scalar,
+    bool          update_state
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "tangent internal force output must use NODE domain");
@@ -610,7 +612,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             target_temperature,
             &base_displacement,
             base_temperature,
-            true
+            update_state
         );
 
         if (stiffness_scalar) {
@@ -640,7 +642,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
                     storage, nullptr, &local_nodal_forces,
                     &target_displacement, target_temperature,
                     &base_displacement, base_temperature,
-                    true);
+                    update_state);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;

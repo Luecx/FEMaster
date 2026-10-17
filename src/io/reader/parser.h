@@ -31,6 +31,7 @@
 #include "../writer/writers.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -128,6 +129,16 @@ class Parser {
     using IdentifierMap = std::unordered_map<std::string, std::vector<bc::Condition::Ptr>>;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
+
+    // A perturbation may modify the current targets while solving but must not
+    // commit those definitions. Preserve both pointer identity and load values.
+    struct PerturbationSnapshot {
+        bc::ConditionManager active;
+        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
+        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current;
+        std::vector<std::function<void()>> restore_values;
+    };
+    std::unique_ptr<PerturbationSnapshot> perturbation_snapshot_;
 
     // Shared collector definitions requested by the current analysis. These
     // are inserted into the manager only while that analysis is running.
