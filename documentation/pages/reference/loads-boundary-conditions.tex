@@ -1,12 +1,16 @@
 \section{Loads and Boundary Conditions}
 \label{sec:loads-bcs}
 
-Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical and thermal load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. The same load definition can therefore be reused in several analyses.
+Loads and boundary conditions define how the finite-element model is forced and supported. FEMaster supports reusable named load and support collectors, step-local native load definitions, and persistent Abaqus-style condition histories. Named collectors are activated with \cmd{LOADS} and \cmd{SUPPORTS}. Unnamed native vector loads and native supports participate in the current analysis, while Abaqus-style \cmd{BOUNDARY}, single-DOF \cmd{CLOAD}, labeled \cmd{DLOAD}, and \cmd{DSLOAD} definitions update persistent conditions that are inherited by subsequent analyses.
 
-Direct \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD}
-definitions can be used in a \cmd{STEP}; named collectors can be reused
-through \cmd{SUPPORTS} and \cmd{LOADS} where applicable. Each keyword
-page shows its own definition first and genuinely useful alternatives below.
+For persistent direct conditions, \key{OP=MOD} (the default)
+replaces matching components or targets; \key{OP=NEW} retires the
+inherited entries in that condition family before applying the new
+ones. For step-local native definitions, the supplied values apply
+to the current analysis; \key{OP=NEW} also clears any inherited direct
+entries of that family. Named collector definitions are reusable
+between analyses. Thermal prescriptions maintain separate temperature,
+heat-flux, and convection histories.
 
 Throughout this section, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
 
@@ -63,14 +67,15 @@ Native \cmd{SUPPORT} prescribes generalized nodal displacements and rotations. E
 \]
 A finite number prescribes that component. \val{0} therefore creates a homogeneous constraint. An omitted entry or \val{NAN} leaves the component free.
 
-\key{SUPPORT_COLLECTOR} specifies the named collector receiving the support. A loadcase activates one or more such collectors using \cmd{SUPPORTS}. This separation represents several support cases, for example a fully fixed case and a second analysis with released directions.
+\key{SUPPORT_COLLECTOR} selects a reusable support collector activated by \cmd{SUPPORTS}. Within an active analysis the same six-component syntax can prescribe an unnamed step-local support. \key{OP=NEW} also clears inherited direct supports before these step-local values are applied.
 
 \key{ORIENTATION} optionally specifies a local coordinate system. The prescribed components are then expressed in that basis, including cylindrical supports, sliders, or boundaries whose constrained direction is not aligned with the global axes.
 
 Every constrained degree of freedom removes an admissible motion. Constraints without a corresponding physical support increase the model stiffness, while missing support constraints can leave a structural nullspace.
 
 \begin{keywordparameters}
-\key{SUPPORT_COLLECTOR} & required & Named support collector. \\
+\key{SUPPORT_COLLECTOR}/\key{NAME} & optional in analysis & Named reusable support collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct supports. \\
 \key{ORIENTATION} & optional & Named local basis for the prescribed components. \\
 \end{keywordparameters}
 
@@ -117,7 +122,8 @@ Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus 
 
 \begin{keywordparameters}
 \key{TYPE} & optional & Supported form \val{DISPLACEMENT}; default \val{DISPLACEMENT}. \\
-\key{AMPLITUDE} & optional & Supported subject to the active-procedure restrictions. \\
+\key{AMPLITUDE} & optional & Named amplitude for the prescribed boundary history. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct support history. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -152,16 +158,18 @@ The target may be an individual node or a node set. When a node set is used, the
 
 \key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading.
 
-Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The supported input accepts real non-follower loading; imaginary and follower concentrated loads are not supported.
+Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The default and \key{REAL} forms both apply real-valued, fixed-direction concentrated loading.
+
+The native six-component vector form supplies a step-local load when no collector is named. Abaqus-style \val{target, dof, magnitude} rows instead update persistent load history per target and DOF. \key{OP=MOD} replaces matching DOF entries; \key{OP=NEW} retires inherited direct CLOAD entries before the current command.
 
 When a concentrated nodal load represents a physically distributed load, the idealization can create local stress singularities or mesh-dependent peaks. Surface loading and distributing couplings represent load introduction over a finite area.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Named local load basis. \\
 \key{AMPLITUDE} & optional & Named amplitude where supported. \\
-\key{FOLLOWER} & Abaqus flag & Currently unsupported. \\
-\key{REAL}/\key{IMAGINARY} & Abaqus flags & Real loading is supported; imaginary loading is not. \\
+\key{REAL} & optional flag & Real-valued, fixed-direction concentrated loading. \\
 \end{keywordparameters}
 
 A concentrated load can be expressed by DOF number or by a generalized force vector. When a node set is targeted, the specified force is applied separately to every node in the set.
@@ -189,6 +197,8 @@ global body-force densities, and \val{P1}, \val{P2}, etc. apply
 pressure to the numbered element face. FEMaster also accepts a
 direct three-component surface-traction vector on a named surface.
 
+The native \val{surface, tx, ty, tz} form supplies an unnamed step-local traction, while labeled Abaqus rows \val{element_region, label, magnitude, ...} create matching persistent history entries. \key{OP=MOD} updates those labeled entries by target and load label; \key{OP=NEW} clears inherited direct DLOAD entries.
+
 The vector form specifies traction force per unit area in the selected
 basis. Where \key{ORIENTATION} is given, those vector components are
 resolved in the local coordinate system. \key{AMPLITUDE} optionally
@@ -214,10 +224,11 @@ Abaqus-compatible command is \cmd{DSLOAD, P}.
 Traction has units of force per unit area. Its total resultant equals the surface integral and therefore coincides numerically with the traction magnitude only when the loaded area is one in the chosen unit system.
 
 \begin{keywordparameters}
-\key{NAME}/\key{LOAD_COLLECTOR} & optional & Name for reusable load definitions; required outside an analysis when applicable. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Local traction basis. \\
 \key{AMPLITUDE} & optional & Named time scaling where supported. \\
-\key{REAL}/\key{IMAGINARY} & optional flags & Imaginary distributed loading is unsupported. \\
+\key{REAL} & optional flag & Real-valued distributed loading. \\
 \end{keywordparameters}
 
 \paragraph*{Gravity acceleration}
@@ -262,7 +273,8 @@ The resulting nodal forces are obtained by surface integration. The load is ther
 The surface side and element connectivity determine the pressure direction. Reversing the load sign can compensate numerically for an opposite orientation, but the same orientation continues to govern contact and shell-result conventions.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct pload entries. \\
 \key{AMPLITUDE} & optional & Named pressure scaling function. \\
 \end{keywordparameters}
 
@@ -288,15 +300,15 @@ named surface set. The supported load label is \val{P}; each data
 record specifies a surface, the label \val{P}, and a pressure
 magnitude. The surface normal determines the load direction.
 
-The current implementation accepts only \key{FOLLOWER=NO};
-follower pressure is not supported in nonlinear analyses.
-\key{AMPLITUDE} may provide time scaling. Vector surface traction
-(\val{TRVEC}) is not supported by \cmd{DSLOAD}; use the FEMaster
-three-component \cmd{DLOAD} form instead.
+\key{FOLLOWER=NO} selects the fixed reference-surface-normal
+pressure definition and is also the default. \key{AMPLITUDE} may
+provide time scaling. For a prescribed surface traction vector,
+use the three-component \cmd{DLOAD} form.
 
 \begin{keywordparameters}
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{AMPLITUDE} & optional & Named amplitude for time scaling. \\
-\key{FOLLOWER} & optional & \val{NO}; follower surface loads are not supported. \\
+\key{FOLLOWER} & optional & \val{NO} (default) for fixed-reference-surface pressure. \\
 \key{OP} & optional & \val{MOD} or \val{NEW} for load history. \\
 \end{keywordparameters}
 
@@ -333,7 +345,8 @@ The resulting force is independent of the mass density assigned to the material.
 For a gravity load, use a mass-proportional inertial load rather than entering acceleration components as \cmd{VLOAD}. The supported Abaqus \cmd{DLOAD} with \val{GRAV} interprets its magnitude and direction as acceleration and includes material density and selected regular concentrated masses via the \texttt{InertialLoad} path. The two commands therefore \emph{must not} be treated as numerically interchangeable. Auxiliary native \cmd{POINTMASS} definitions are not selected through a regular element set.
 
 \begin{keywordparameters}
-\key{LOAD\_COLLECTOR} & native required & Destination load collector. \\
+\key{NAME}/\key{LOAD\_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct vload entries. \\
 \key{ORIENTATION} & native optional & Named local vector basis for the force density. \\
 \key{AMPLITUDE} & native optional & Named time-scaling function. \\
 \end{keywordparameters}
@@ -380,7 +393,8 @@ Density, concentrated masses, geometry, angular velocity, and acceleration must 
 The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exactly.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct inertial-load entries. \\
 \key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{0}. \\
 \end{keywordparameters}
 
@@ -404,4 +418,92 @@ EALL,
 0., 0., 0.,
 0., 0., 10.,
 0., 0., 2.
+\end{inputdeck}
+
+\keywordpage{TEMPERATURE}
+
+\cmd{TEMPERATURE} prescribes the absolute temperature of a node or node
+set. It maintains a temperature-condition history that is distinct from
+the model's initial temperature Field set by
+\cmd{INITIALCONDITION, TYPE=TEMPERATURE}. Each data row provides one
+compiled node reference or node-set name and one temperature value.
+\key{OP=MOD} replaces matching targets and \key{OP=NEW} begins a
+new set of temperature prescriptions.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{target, temperature} & Node ID or node set and absolute temperature. \\
+\end{keyworddata}
+
+For a model with the assembled node set \val{HEATED_NODES}, the command
+prescribes a uniform temperature of 80 using the model's temperature units.
+
+\exampleheading
+\begin{inputdeck}
+*TEMPERATURE, OP=MOD
+HEATED_NODES, 80.
+\end{inputdeck}
+
+\keywordpage{HEATFLUX}
+
+\cmd{HEATFLUX} prescribes a heat-input density on an existing surface
+region. A positive heat flux \(q\) acts into the thermal balance and
+contributes through \(\int_A N^T q\,\mathrm dA\) over the reference
+surface. \key{AMPLITUDE} references a scalar history multiplying the
+heat-input density. \key{OP=MOD} replaces the matching surface target;
+\key{OP=NEW} starts a new heat-flux history.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the heat-input density. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, heat_flux} & Named surface or surface set and heat input per unit area. \\
+\end{keyworddata}
+
+This model-level definition scales a heat flux on the existing
+\val{HOT_FACE} surface from zero to its nominal value during one
+unit of step progression.
+
+\exampleheading
+\begin{inputdeck}
+*AMPLITUDE, NAME=POWER_RAMP,
+ DEFINITION=TABULAR
+0., 0., 1., 1.
+*HEATFLUX, AMPLITUDE=POWER_RAMP
+HOT_FACE, 0.25
+\end{inputdeck}
+
+\keywordpage{CONVECTION}
+
+\cmd{CONVECTION} defines Newton cooling on an existing surface
+region. The surface heat input is
+\[
+q=h(T_\infty-T),
+\]
+where \(h\) is the film coefficient, \(T_\infty\) is the absolute
+ambient temperature, and \(T\) is the local surface temperature.
+Each row supplies the target surface, film coefficient, and ambient
+temperature. A named \key{AMPLITUDE} scales \(h\) while \(T_\infty\)
+remains the specified value. \key{OP=MOD} replaces the matching
+surface target; \key{OP=NEW} starts a new convection history.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the film coefficient. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, h, ambient} & Named surface, film coefficient, and absolute ambient temperature. \\
+\end{keyworddata}
+
+The existing surface \val{COOLED_FACE} exchanges heat with an
+environment at temperature 20 through a film coefficient of 0.015,
+expressed in the model's consistent thermal units.
+
+\exampleheading
+\begin{inputdeck}
+*CONVECTION
+COOLED_FACE, 0.015, 20.
 \end{inputdeck}

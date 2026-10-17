@@ -20,7 +20,7 @@ Computational efficiency is addressed through parallel execution, efficient nume
 
 
 \section{Input format and compatibility}
-\label{sec:input-format}
+\label{sec:input-compatibility}
 
 FEMaster uses a unified keyword-based input format derived from the conventions established by Abaqus and also used by CalculiX. A finite-element model is described through a text file containing definitions for geometry, element connectivity, materials, structural properties, loads, boundary conditions, and analysis procedures. The format is particularly suitable for automated model generation, parameter studies, and reproducible numerical investigations, while remaining sufficiently readable for small models to be created and modified manually.
 
@@ -43,7 +43,7 @@ An important characteristic of FEMaster is its support for six mechanical degree
 
 \textbf{Point elements} introduce concentrated properties such as masses, rotary inertias, and spring stiffnesses at individual nodes. They allow attached equipment, payloads, and simplified elastic supports to be represented without explicitly modelling their geometry.
 
-The different element families can be combined within a single finite-element model, allowing an appropriate balance between computational efficiency and mechanical detail. The available element types, their formulations, numerical characteristics, and limitations are documented in Chapter~\ref{chap:elements}.
+The different element families can be combined within a single finite-element model, allowing an appropriate balance between computational efficiency and mechanical detail. The available element types, their formulations, numerical characteristics, and limitations are documented in Section~\ref{sec:elements}.
 
 
 \section{Supported analysis families}
@@ -82,7 +82,7 @@ Linear steady-state response to harmonic excitation. The procedure solves the fr
 
 The analysis procedures differ not only in their numerical solution methods but also in the physical assumptions underlying their results. Linear static analysis and linearized eigenvalue procedures are generally efficient and suitable for a wide range of engineering investigations, provided their assumptions are appropriate for the problem. Nonlinear static analysis extends the equilibrium formulation to situations in which the structural response changes with deformation, loading, or contact conditions, but typically requires incremental loading and iterative convergence. Dynamic procedures additionally account for mass and inertia, either by integrating the response over time or by evaluating the steady-state response at selected excitation frequencies. These distinctions should be considered when selecting a procedure, since the most computationally demanding analysis is not necessarily the most appropriate one for a particular engineering question.
 
-Both FEMaster-specific analysis definitions and supported Abaqus procedure keywords are available within the input language. The corresponding Abaqus procedures include \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS}. Their accepted parameters, available numerical controls, and relationship to the FEMaster analysis types are documented in Chapter~\ref{chap:analysis-procedures}.
+Both FEMaster-specific analysis definitions and supported Abaqus procedure keywords are available within the input language. The corresponding Abaqus procedures include \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS}. Their accepted parameters, available numerical controls, and relationship to the FEMaster analysis types are documented in Section~\ref{sec:analysis-procedures}.
 
 
 \section{Degree-of-freedom convention}

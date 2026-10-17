@@ -66,6 +66,8 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \midrule
 \cmd{FIELD} & FEMaster extension & Fields \\
 \cmd{NORMAL} & FEMaster extension & Fields \\
+\cmd{INITIALCONDITION} & FEMaster extension & Fields; initial nodal temperature and velocity \\
+\cmd{INITIALCONDITIONS} & Alias & Fields; same syntax as \cmd{INITIALCONDITION} \\
 
 \midrule
 \cmd{AMPLITUDE} & Abaqus-compatible & Loads and Boundary Conditions \\
@@ -77,12 +79,16 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{DSLOAD} & Abaqus-compatible & Loads and Boundary Conditions \\
 \cmd{VLOAD} & FEMaster extension & Loads and Boundary Conditions \\
 \cmd{INERTIALOAD} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{TEMPERATURE} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{HEATFLUX} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{CONVECTION} & FEMaster extension & Loads and Boundary Conditions \\
 
 \midrule
 \cmd{COUPLING} & Compatible + extensions & Constraints and Contact \\
 \cmd{KINEMATIC} & Abaqus-compatible & Constraints and Contact; child of scoped \cmd{COUPLING} \\
 \cmd{DISTRIBUTING} & Abaqus-compatible & Constraints and Contact; child of scoped \cmd{COUPLING} \\
 \cmd{EQUATION} & Abaqus-compatible & Constraints and Contact \\
+\cmd{MPC} & FEMaster extension & Constraints and Contact; two-node kinematics \\
 \cmd{TIE} & FEMaster extension & Constraints and Contact \\
 \cmd{RIGID BODY} & CalculiX-compatible & Constraints and Contact \\
 \cmd{CONNECTOR} & FEMaster extension & Constraints and Contact \\
@@ -127,6 +133,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{ELEMENT OUTPUT} & Abaqus-compatible & Output; selects element-derived result Fields for the active step \\
 \cmd{NODE FILE} & CalculiX-compatible & Output; CalculiX-style alias selecting nodal result Fields \\
 \cmd{EL FILE} & CalculiX-compatible & Output; CalculiX-style alias selecting element-derived result Fields \\
+\cmd{EL OUTPUT} & CalculiX-compatible & Output; element-derived frame Fields \\
 \cmd{NODE PRINT} & Accepted, ignored & Output; accepted and ignored \\
 \cmd{EL PRINT} & Accepted, ignored & Output; accepted and ignored \\
 
@@ -179,6 +186,6 @@ The \cmd{PLASTIC} material card is available with Abaqus-compatible syntax, with
 Other numerical-control keywords have the scopes and restrictions
 documented on their individual reference pages.
 
-Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
+Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
 
 The index, detailed thematic documentation, and applicable complete examples together describe the supported input keywords and element formulations. This keeps the manual aligned with the syntax users can actually run.

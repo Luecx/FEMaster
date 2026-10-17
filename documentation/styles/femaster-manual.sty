@@ -56,6 +56,12 @@
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
+% Start every section level on a fresh page, including consecutive headings.
+% Chapters already start on a fresh page through the book class.
+\AddToHook{cmd/section/before}{\clearpage}
+\AddToHook{cmd/subsection/before}{\clearpage}
+\AddToHook{cmd/subsubsection/before}{\clearpage}
+
 \titleformat{\chapter}
   {\normalfont\huge\bfseries\color{FMDark}}
   {\thechapter}{1em}{}

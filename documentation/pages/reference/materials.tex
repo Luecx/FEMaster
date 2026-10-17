@@ -218,7 +218,7 @@ For eigenfrequency, inertia, and transient analyses, this value enters the mass 
 =\alpha\,\Delta T
 \begin{bmatrix}1&1&1&0&0&0\end{bmatrix}^{T}.
 \]
-Defining \(\alpha\) alone does not load the structure; a temperature Field and reference temperature are required to create \(\Delta T\).
+The thermal strain uses \(\Delta T=T-T_{\mathrm{zero}}\), where \(T_{\mathrm{zero}}\) is set by \key{ZERO}. A nodal temperature Field can be assigned to the model with \cmd{INITIALCONDITION, TYPE=TEMPERATURE}.
 
 The coefficient has units of inverse temperature, for example K\(^{-1}\). Temperature differences in kelvin and degrees Celsius are numerically identical, so either scale may be used for \(\Delta T\) as long as the coefficient is consistent.
 
@@ -243,6 +243,21 @@ The coefficient describes free thermal strain per unit change in temperature. Th
 *MATERIAL, NAME=ALUMINIUM
 *EXPANSION, TYPE=ISO
 2.30e-5
+\end{inputdeck}
+
+\paragraph*{Assigning a temperature state}
+For a previously defined two-node model, the following Field
+specifies a spatial temperature distribution. \cmd{INITIALCONDITION}
+assigns it to the model, and the material's thermal expansion is
+evaluated relative to its \key{ZERO} temperature.
+
+\begin{inputdeck}
+*FIELD, NAME=TEMP_STATE, TYPE=NODE,
+ COLS=1, FILL=ZERO
+1, 20.
+2, 70.
+*INITIALCONDITION, TYPE=TEMPERATURE,
+ FIELD=TEMP_STATE
 \end{inputdeck}
 
 \paragraph*{Legacy keyword}
