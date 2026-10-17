@@ -91,6 +91,9 @@ TEST(NonlinearStateManager, SeparatesResetsAndCommitsMaterialState) {
     element->_model_data = model._data.get();
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
+    EXPECT_EQ(model._data->material_state_old, nullptr);
+    EXPECT_EQ(model._data->material_state_new, nullptr);
+    model.step_begin();
 
     auto enumerated_state_old = model._data->material_state_old;
     auto enumerated_state_new = model._data->material_state_new;
@@ -148,7 +151,7 @@ TEST(NonlinearStateManager, SeparatesResetsAndCommitsMaterialState) {
     EXPECT_EQ(model._data->material_state_new, trial_state);
 }
 
-TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
+TEST(NonlinearStateManager, KeepsInitializedStateForStatelessMaterials) {
     model::Model model;
     model._data = std::make_shared<model::ModelData>();
     model._data->elements.resize(1);
@@ -163,6 +166,9 @@ TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
     element->_model_data = model._data.get();
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
+    EXPECT_EQ(model._data->material_state_old, nullptr);
+    EXPECT_EQ(model._data->material_state_new, nullptr);
+    model.step_begin();
 
     auto enumerated_state_old = model._data->material_state_old;
     auto enumerated_state_new = model._data->material_state_new;

@@ -567,6 +567,15 @@ void Contact::rollback_trial() const {
  * intentionally performed once per nonlinear analysis rather than once per load
  * increment, so a useful adapted penalty persists along the accepted load path.
  */
+/**
+ * Clears contact multipliers, trials and penalty adaptation for a fresh solve.
+ */
+void Contact::reset_state() const {
+    committed_state = State{};
+    trial_states.clear();
+    reset_penalty_adaptation();
+}
+
 void Contact::reset_penalty_adaptation() const {
     penalty                           = initial_penalty;
     previous_augmentation_penetration = Precision(-1);

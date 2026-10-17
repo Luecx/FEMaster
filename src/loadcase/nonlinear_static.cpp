@@ -11,7 +11,7 @@
  * External loads and prescribed displacements enter through the affine
  * constraint recovery
  *
- *     u(lambda, q) = lambda * u_particular + T q.
+ *     u(lambda, q) = u_initial + lambda * u_particular + T q.
  *
  * The load case wires stateful nonlinear subsystems into the generic trial
  * callbacks owned by the path controllers. `NonlinearStateManager` owns the
@@ -189,9 +189,16 @@ void NonlinearStatic::run() {
     logging::error(model->_data->positions_reference != nullptr,
         "NonlinearStatic: positions_reference field not initialized");
 
-    const model::Field original_positions  = *model->_data->positions;
     const model::Field reference_positions = *model->_data->positions_reference;
-    *model->_data->positions = reference_positions;
+
+    // Recover the total displacement carried over from the previous step.
+    // Reference coordinates remain unchanged so elastic strain is retained.
+    model::Field initial_displacement = *model->_data->positions;
+    for (Index node = 0; node < initial_displacement.rows; ++node) {
+        for (Index dof = 0; dof < 3; ++dof) {
+            initial_displacement(node, dof) -= reference_positions(node, dof);
+        }
+    }
 
     model->assign_sections();
     model->step_begin();
@@ -232,6 +239,22 @@ void NonlinearStatic::run() {
 
     report_constraint_groups(groups);
     auto equations = groups.flatten();
+
+    // Express constraints relative to the carried-over total displacement:
+    // C (u - u_initial) = d - C u_initial. Suppress roundoff from near-exact
+    // cancellation so an already satisfied Riks constraint stays homogeneous.
+    const Precision rhs_tolerance = constraint::NullSpaceOptions{}.feasibility_tolerance;
+    for (auto& equation : equations) {
+        Precision rhs_scale = std::abs(equation.rhs);
+        for (const auto& entry : equation.entries) {
+            const Precision term = entry.coeff * initial_displacement(entry.node_id, entry.dof);
+            equation.rhs -= term;
+            rhs_scale += std::abs(term);
+        }
+        if (std::abs(equation.rhs) <= rhs_tolerance * rhs_scale) {
+            equation.rhs = Precision(0);
+        }
+    }
 
     const Index n_active   = active_dof_idx_mat.maxCoeff() + 1;
     const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
@@ -282,13 +305,14 @@ void NonlinearStatic::run() {
     logging::down();
 
     DynamicVector       q_total      = DynamicVector::Zero(transformer->unknowns());
+    const DynamicVector u_initial    = mattools::reduce_mat_to_vec(active_dof_idx_mat, initial_displacement);
     const DynamicVector u_particular = transformer->recover_displacement(q_total);
 
     logging::error(control != NonlinearControl::ArcLength || transformer->homogeneous(),
         "NONLINEARSTATIC ARC LENGTH does not support prescribed displacements");
 
     auto recover_total_displacement = [&](const DynamicVector& q, Precision lambda) -> DynamicVector {
-        return lambda * u_particular + transformer->recover_increment(q);
+        return u_initial + lambda * u_particular + transformer->recover_increment(q);
     };
 
     DynamicVector u_total = recover_total_displacement(q_total, Precision(0));
@@ -957,7 +981,8 @@ void NonlinearStatic::run() {
     output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
 
-    *model->_data->positions = original_positions;
+    // Commit the converged total configuration for the next RESUME step.
+    commit_state(displacement);
     model->step_end();
 }
 

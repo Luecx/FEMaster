@@ -109,6 +109,7 @@ public:
     void begin_trial() const;
     void commit_trial() const;
     void rollback_trial() const;
+    void reset_state() const;
 
     // Numerical augmented-Lagrange penalty adaptation
     void reset_penalty_adaptation() const;

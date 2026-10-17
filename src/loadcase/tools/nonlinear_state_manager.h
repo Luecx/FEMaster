@@ -10,9 +10,8 @@
  *
  * Material history is committed per accepted physical increment. Contact
  * multiplier trials follow the nested predictor, line-search and augmentation
- * transactions of the nonlinear controller, while the numerical contact penalty
- * is initialized once for the complete nonlinear analysis and subsequently
- * managed by the contact definition itself.
+ * transactions of the nonlinear controller. Contact penalty adaptation is
+ * preserved across resumed steps and reset by independent load cases.
  *
  * @see constraint::Contact
  * @see model::ModelData::material_state_old

@@ -106,6 +106,7 @@ struct StepState {
     int         max_increments = 100;
     bool        nlgeom         = false;
     bool        perturbation   = false;
+    bool        resume         = true;
     Precision   step_period    = Precision(1);
 };
 

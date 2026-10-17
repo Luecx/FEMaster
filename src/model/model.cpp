@@ -31,8 +31,10 @@
 #include "../core/config.h"
 #include "../core/parallel.h"
 
+#include <algorithm>
 #include <charconv>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <system_error>
 
@@ -67,6 +69,10 @@ ID parse_local_id(const std::string& source, const char* entity) {
 /**
  * Initializes persistent element state required during one analysis step.
  *
+ * Material-point history is allocated on first use after section assignment,
+ * with a state width matching the current constitutive laws. A subsequent step
+ * reuses the committed field unless an independent analysis has cleared it.
+ *
  * Every compiled structural element receives a lifecycle callback. Elements
  * that do not require persistent step data use the default no-op implementation,
  * while formulations such as finite-rotation shells construct their cached
@@ -80,6 +86,29 @@ ID parse_local_id(const std::string& source, const char* entity) {
  * rethrows the first captured exception.
  */
 void Model::step_begin() {
+    // Initialize material history before element caches inspect constitutive
+    // tangents. Stateless materials still require one addressable component.
+    const Index material_points = _data->field_rows(FieldDomain::ELEMENT_MP);
+    if (material_points > 0) {
+        const Index state_width = std::max<Index>(1, maximum_material_state_size());
+
+        if (!_data->material_state_old) {
+            _data->material_state_old = std::make_shared<Field>(
+                "MATERIAL_STATE_OLD", FieldDomain::ELEMENT_MP, material_points, state_width);
+            _data->material_state_new = std::make_shared<Field>(
+                "MATERIAL_STATE_NEW", FieldDomain::ELEMENT_MP, material_points, state_width);
+
+            initialize_material_state(*_data->material_state_old);
+            _data->material_state_new->values = _data->material_state_old->values;
+        } else {
+            logging::error(_data->material_state_new != nullptr
+                        && _data->material_state_old != _data->material_state_new
+                        && _data->material_state_old->rows == material_points
+                        && _data->material_state_old->components >= state_width,
+                "Model: material history is incompatible with the current mesh or material");
+        }
+    }
+
     const Index element_count = static_cast<Index>(_data->elements.size());
 
     // Initialize independent element state using the shared exception-safe loop
