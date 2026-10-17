@@ -17,6 +17,7 @@
 #include "../../dsl/registry.h"
 
 #include "../parser.h"
+#include "../../../model/model.h"
 
 #include "../../../core/logging.h"
 #include "../../../loadcase/linear_static_topo.h"

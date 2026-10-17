@@ -31,6 +31,7 @@
 #include "writer_res.h"
 
 #include "../../core/config.h"
+#include "../../core/logging.h"
 #include "../../core/parallel.h"
 #include "../../model/element/element.h"
 #include "../../model/model_data.h"
@@ -38,6 +39,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <iomanip>
 #include <string>
 #include <string_view>
 #include <system_error>

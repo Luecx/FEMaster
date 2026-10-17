@@ -6,6 +6,7 @@
  */
 
 #include "quadrature.h"
+#include "csqrt.h"
 
 namespace fem {
 namespace math {

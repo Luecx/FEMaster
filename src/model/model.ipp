@@ -22,8 +22,6 @@
  */
 
 #include "element/element.h"
-#include "element/element_structural.h"
-#include "geometry/surface/surface.h"
 
 /**
  * Adds one node to the currently active semantic part.

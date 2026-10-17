@@ -13,7 +13,6 @@
 
 #pragma once
 
-#include <cstddef>
 #include <functional>
 #include <vector>
 
@@ -23,10 +22,6 @@
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
-
-#ifdef USE_MKL
-#include <Eigen/PardisoSupport>
-#endif
 
 #include "types_num.h"
 

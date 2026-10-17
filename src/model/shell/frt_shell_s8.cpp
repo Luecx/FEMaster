@@ -23,6 +23,10 @@
  */
 
 #include "frt_shell_s8.h"
+#include "../geometry/surface/surface8.h"
+
+#include <Eigen/Geometry>
+#include <Eigen/LU>
 
 #include "../../core/logging.h"
 

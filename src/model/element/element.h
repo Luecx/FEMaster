@@ -20,12 +20,14 @@
 #pragma once
 
 #include "../../core/castable.h"
+#include "../../core/logging.h"
 #include "../../core/types_cls.h"
+#include "../../core/types_eig.h"
 #include "../../section/section.h"
-#include "../geometry/surface/surface.h"
 #include "../model_data.h"
 
 #include <string>
+#include <utility>
 
 namespace fem::model {
 

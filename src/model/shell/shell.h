@@ -18,6 +18,7 @@
 #define SHELL_H
 
 #include "../../core/core.h"
+#include "../../math/quadrature.h"
 #include "../element/element_structural.h"
 #include "../../section/section_shell.h"
 

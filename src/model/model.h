@@ -29,20 +29,19 @@
 #pragma once
 
 #include "../bc/amplitude.h"
-#include "../bc/condition.h"
-#include "../bc/structural/support.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
 #include "../cos/coordinate_system.h"
 #include "element/element.h"
-#include "element/element_structural.h"
-#include "geometry/surface/surface.h"
 #include "instance.h"
 #include "model_data.h"
 #include "part.h"
 
 #include <ostream>
+#include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 namespace fem::model {
 

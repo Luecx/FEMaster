@@ -33,6 +33,7 @@
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
 #include "model.h"
+#include "geometry/surface/surface_interface.h"
 #include "solid/element_solid.h"
 
 #include <algorithm>

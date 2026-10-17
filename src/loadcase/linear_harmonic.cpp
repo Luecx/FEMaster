@@ -23,6 +23,8 @@
 
 #include "linear_harmonic.h"
 
+#include "../io/writer/writers.h"
+
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"

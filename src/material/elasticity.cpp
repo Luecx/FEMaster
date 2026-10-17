@@ -13,6 +13,8 @@
 
 #include "elasticity.h"
 
+#include "../core/logging.h"
+
 #include "strain/axial_strain.h"
 #include "strain/shell_material_strain.h"
 #include "strain/volume_strain.h"

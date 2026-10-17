@@ -22,6 +22,7 @@
 #pragma once
 
 #include "surface_interface.h"
+#include "../../../core/logging.h"
 
 #include <array>
 #include <functional>

@@ -15,14 +15,18 @@
 
 #include "linear_static_topo.h"
 
+#include "../io/writer/writers.h"
+
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../constraints/types/rbm.h"
 #include "../core/logging.h"
+#include "../core/timer.h"
 #include "../mattools/assemble.h"
 #include "../mattools/all_finite.h"
 #include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../model/model.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"

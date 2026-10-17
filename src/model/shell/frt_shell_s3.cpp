@@ -14,6 +14,7 @@
  */
 
 #include "frt_shell_s3.h"
+#include "../geometry/surface/surface3.h"
 
 namespace fem::model {
 

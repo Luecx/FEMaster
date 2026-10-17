@@ -19,7 +19,6 @@
 
 #include "../core/types_eig.h"
 #include "../data/field.h"
-#include <Eigen/Dense>
 
 namespace fem { namespace mattools {
 
