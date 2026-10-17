@@ -64,6 +64,53 @@ The first field stores one scalar value per element; the second stores a three-c
 10, 1, 0., 0., 1.
 \end{inputdeck}
 
+\keywordnestedpage{INITIALCONDITION}
+
+\cmd{INITIALCONDITION} assigns model-level initial nodal temperatures or
+generalized velocities. The spelling \cmd{INITIALCONDITIONS} is equivalent.
+Both commands are processed after the geometry and named Fields are compiled.
+
+\key{TYPE=TEMPERATURE} supplies one scalar per node; \key{TYPE=VELOCITY}
+supplies six components in the order \((v_x,v_y,v_z,\omega_x,\omega_y,\omega_z)\).
+With \key{FIELD}, an existing \val{NODE} Field with one or six components,
+respectively, becomes the initial state; no data lines follow the command.
+Without \key{FIELD}, the command allocates a zero-initialized nodal Field,
+and each row addresses one compiled node by ID or \val{INSTANCE.ID}.
+Omitted or empty component values retain their current values, so later
+rows may selectively update the same node.
+
+\begin{keywordparameters}
+\key{TYPE} & required & \val{TEMPERATURE} or \val{VELOCITY}. \\
+\key{FIELD} & optional & Name of an existing \val{NODE} Field with 1 or 6 components, matching \key{TYPE}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+Temperature & \val{node, temperature} for inline data. \\
+Velocity & \val{node, vx, vy, vz, wx, wy, wz} for inline data. \\
+Named Field & No data rows; the named Field supplies the values. \\
+\end{keyworddata}
+
+The model below uses an existing temperature Field as the initial thermal
+state. A material's \cmd{EXPANSION} coefficient and reference temperature
+\key{ZERO} determine the associated free thermal strain.
+
+\exampleheading
+\begin{inputdeck}
+*FIELD, NAME=START_TEMP, TYPE=NODE,
+ COLS=1, FILL=ZERO
+1, 20.
+2, 60.
+*INITIALCONDITION, TYPE=TEMPERATURE,
+ FIELD=START_TEMP
+\end{inputdeck}
+
+\paragraph*{Initial nodal velocity}
+In a transient model, the second node begins with a downward velocity.
+\begin{inputdeck}
+*INITIALCONDITIONS, TYPE=VELOCITY
+1, 0., 0., 0., 0., 0., 0.
+2, 0., 0., -2., 0., 0., 0.
+\end{inputdeck}
+
 \keywordnestedpage{NORMAL}
 
 \cmd{NORMAL} selects an existing three-component \val{ELEMENT_NODAL} Field as the source of shell element-nodal normals or directors. The referenced Field must already exist, must use \val{TYPE=ELEMENT_NODAL}, and must contain exactly three components.
