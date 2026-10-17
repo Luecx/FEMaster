@@ -62,6 +62,14 @@ void OutputRequestHandler::set_nonlinear(bool nonlinear) {
 }
 
 /**
+ * Selects increment-only recovery about the preloaded configuration.
+ * The borrowed displacement field must outlive write_frame().
+ */
+void OutputRequestHandler::set_perturbation_base(const model::Field* displacement) {
+    perturbation_base_ = displacement;
+}
+
+/**
  * Installs an optional preparation hook for derived model recovery.
  *
  * Linear procedures leave this empty. Nonlinear procedures use it to reset
@@ -266,6 +274,77 @@ void OutputRequestHandler::compute(OutputField field) {
     // This is a no-op for linear analyses and resets nonlinear trial history
     // when the owning step supplied a preparation callback.
     if (before_compute_) before_compute_();
+
+    // U denotes du for linear perturbations. Recover constitutive fields by
+    // affine continuation from the committed base and subtract the base value.
+    if (perturbation_base_) {
+        auto& increment = resolve(OutputField::DISPLACEMENT);
+        model::Field base = *perturbation_base_;
+        model::Field total = base;
+        total += increment;
+        const model::Field* temperature = model_->_data->temperature.get();
+
+        switch (field) {
+            case OutputField::STRESS:
+            case OutputField::STRAIN: {
+                auto [stress, strain] = model_->compute_stress_nodal(
+                    total, temperature, &base, temperature);
+                auto [base_stress, base_strain] = model_->compute_stress_nodal(
+                    base, temperature, &base, temperature);
+                stress -= base_stress;
+                strain -= base_strain;
+                computed_[index(OutputField::STRESS)] = std::move(stress);
+                computed_[index(OutputField::STRAIN)] = std::move(strain);
+                return;
+            }
+            case OutputField::STRESS_TOP:
+            case OutputField::STRESS_BOT: {
+                auto [top, bot] = model_->compute_stress_top_bot(
+                    total, temperature, &base, temperature);
+                auto [base_top, base_bot] = model_->compute_stress_top_bot(
+                    base, temperature, &base, temperature);
+                top -= base_top;
+                bot -= base_bot;
+                computed_[index(OutputField::STRESS_TOP)] = std::move(top);
+                computed_[index(OutputField::STRESS_BOT)] = std::move(bot);
+                return;
+            }
+            case OutputField::SHELL_RESULTANTS: {
+                auto resultants = model_->compute_shell_resultants(
+                    total, temperature, &base, temperature);
+                resultants -= model_->compute_shell_resultants(
+                    base, temperature, &base, temperature);
+                computed_[index(field)] = std::move(resultants);
+                return;
+            }
+            case OutputField::LOCAL_SECTION_FORCES: {
+                auto forces = model_->compute_section_forces(
+                    total, temperature, &base, temperature);
+                forces -= model_->compute_section_forces(
+                    base, temperature, &base, temperature);
+                computed_[index(field)] = std::move(forces);
+                return;
+            }
+            case OutputField::SHEAR_FLOW: {
+                auto flow = model_->compute_shear_flow(total);
+                flow -= model_->compute_shear_flow(base);
+                computed_[index(field)] = std::move(flow);
+                return;
+            }
+            case OutputField::PEEQ: {
+                auto peeq = model_->compute_peeq_nodal();
+                peeq.set_zero();
+                computed_[index(field)] = std::move(peeq);
+                return;
+            }
+            case OutputField::COMPLIANCE:
+            case OutputField::ORIENTATION_GRAD:
+                logging::error(false,
+                    "Linear perturbation does not support compliance or orientation gradients");
+                return;
+            default: break;
+        }
+    }
 
     switch (field) {
         case OutputField::STRESS:

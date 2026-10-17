@@ -66,8 +66,9 @@ class OutputRequestHandler {
     Precision   frame_value_ = std::numeric_limits<Precision>::quiet_NaN();
     std::string frame_suffix_;
 
-    // Kinematic recovery mode selected by the owning analysis step
+    // Kinematic recovery mode selected by the owning analysis step.
     bool nonlinear_ = false;
+    const model::Field* perturbation_base_ = nullptr;
 
     // Optional analysis hook run before each derived model recovery. Nonlinear
     // steps use it to restore constitutive trial storage from committed state.
@@ -79,6 +80,7 @@ public:
     void set_defaults(std::initializer_list<OutputField> fields);
     void use_defaults();
     void set_nonlinear(bool nonlinear);
+    void set_perturbation_base(const model::Field* displacement);
     void set_before_compute(std::function<void()> callback);
 
     // Explicit requests supplied by the input deck

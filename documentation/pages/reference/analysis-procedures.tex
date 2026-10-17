@@ -312,6 +312,51 @@ TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
+\paragraph*{Linear static perturbation}
+
+A resumed \cmd{STEP} with \key{PERTURBATION} assembles the consistent tangent
+stiffness and the internal force at the committed equilibrium \(u_0\). The
+linearized problem is
+\[
+K_T(u_0)\,\Delta u=f_{\mathrm{ext,end}}-f_{\mathrm{int}}(u_0).
+\]
+The right-hand side uses the ordinary assembled \emph{end-of-step total
+loading}, including the inherited loads and any modifications made in the
+perturbation step. Thus load cards retain their normal target-value meaning:
+a \cmd{CLOAD} of 11000 following a step with 10000 denotes a new total target
+of 11000, not an additional 11000. The same assembly applies to all supported
+structural load families; load-dependent follower tangents are not included.
+
+The output displacement, reaction force, stress, strain, and section force
+fields represent incremental responses. No total displacement or material
+state is committed by the perturbation step. On completion, the parser also
+restores the original load and support definitions, including values modified
+through \key{OP=MOD}/\key{OP=NEW}; later steps resume the previous equilibrium
+with its original loads.
+
+\begin{inputdeck}
+*STEP, NAME=PRELOAD, NLGEOM=YES
+*STATIC
+*CLOAD
+TIP, 1, 10000.
+*END STEP
+
+*STEP, NAME=PERTURB, PERTURBATION, RESUME=YES
+*STATIC
+*CLOAD
+TIP, 1, 11000.
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+\end{inputdeck}
+
+The perturbation procedure requires \key{RESUME=YES}. Contact linearization,
+free-body rebalancing and inertia relief are not supported in this mode.
+See \file{examples/08_nonlinear/082_truss_linear_perturbation.inp} for an
+analytically verifiable example.
+
 \paragraph*{Nonlinear arc-length analysis}
 \begin{inputdeck}
 *STEP, NAME=POSTBUCKLING, NLGEOM=YES, INC=200

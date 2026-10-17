@@ -211,7 +211,8 @@ struct Model {
         const Field* target_temperature,
         const Field& base_displacement,
         const Field* base_temperature,
-        const Field* stiffness_scalar = nullptr);
+        const Field* stiffness_scalar = nullptr,
+        bool update_state = true);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
         const Field& target_displacement,

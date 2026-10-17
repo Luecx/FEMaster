@@ -1,0 +1,61 @@
+** Static tangent perturbation using existing start/target load history.
+** Units: N, mm, MPa.
+** PRELOAD: nonlinear equilibrium at total force 10000 N (u = 88.0339 mm).
+** PERTURB: update target force to 11000 N, solve for incremental
+**          displacement du = 1000 / K_T(u0) = approximately 7.84 mm.
+** FOLLOWUP: resume the original 10000 N equilibrium and increase to
+**           11000 N nonlinearly (u = 95.7953 mm).
+** This catches incorrect state or loading-history commits by PERTURB.
+*HEADING
+Linear static perturbation by total load target
+
+*NODE
+1, 0., 0., 0.
+2, 1000., 0., 0.
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+
+*MATERIAL, NAME=MAT
+*ELASTIC
+1000., 0.3
+
+*TRUSS SECTION, ELSET=BAR, MATERIAL=MAT
+100.
+
+*BOUNDARY
+1, 1, 3, 0.
+2, 2, 3, 0.
+
+*STEP, NAME=PRELOAD, NLGEOM=YES, INC=50, RESUME=NO
+*STATIC
+0.1, 1.0, 1e-6, 0.2
+*CLOAD
+2, 1, 10000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+
+** Important: 11000 is the new TOTAL load, not an incremental CLOAD.
+*STEP, NAME=PERTURB, PERTURBATION, RESUME=YES
+*STATIC
+*CLOAD
+2, 1, 11000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+
+*STEP, NAME=FOLLOWUP, NLGEOM=YES, INC=50, RESUME=YES
+*STATIC
+0.1, 1.0, 1e-6, 0.2
+*CLOAD
+2, 1, 11000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
