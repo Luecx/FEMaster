@@ -70,7 +70,7 @@ Commands inside the loadcase select support and load collectors and configure th
 
 A deck may contain several native loadcases, which FEMaster executes in input order. Persistent direct structural conditions (such as Abaqus-style boundary and single-DOF concentrated-load definitions) carry their target values into subsequent analyses until modified. Unnamed native vector loads and supports participate in their current analysis, while named load and support collectors are activated for each analysis by its own \cmd{LOADS} and \cmd{SUPPORTS} selections. The analysis procedure determines which model and solution state it uses.
 
-Each loadcase selects the previously defined collectors that participate in that analysis. A load that exists in the model but is not selected through \cmd{LOADS} does not contribute to the native loadcase.
+A loadcase can activate reusable named collectors with \cmd{SUPPORTS} and \cmd{LOADS}. The active direct condition history also participates in the analysis, independently of the collector selections.
 
 \begin{keywordparameters}
 \key{TYPE} & required & Supported native analysis type listed above. \\
@@ -104,7 +104,7 @@ TIP, 3, -1000.
 
 \keywordnestedpage{SUPPORTS}
 
-\cmd{SUPPORTS} selects one or more native support collectors for the active loadcase. The selected supports are combined with model constraints such as couplings, ties, connectors, and RBM constraints before the equation system is solved.
+\cmd{SUPPORTS} selects one or more named support collectors for the active analysis. Their support equations are combined with active direct supports and model constraints such as couplings, ties, connectors, and RBM constraints before solving.
 
 Several collectors may be listed together. This supports modular models, for example one collector for permanent fixture constraints and another for a symmetry condition used only in a particular analysis.
 
@@ -112,7 +112,7 @@ The command is supported by the structural analysis families that use nodal cons
 
 Abaqus input has no separate collector-selection keyword. Its \cmd{BOUNDARY} cards define the support conditions associated with the Step directly.
 
-The named support collectors listed here must have been defined earlier with \cmd{SUPPORT}. Multiple names may be activated in one analysis; a collector not listed here does not contribute constraints.
+The selected support collectors have been defined earlier with \cmd{SUPPORT}. Multiple collector names may be activated in one analysis. Previously inherited direct \cmd{BOUNDARY} prescriptions also remain in the condition history.
 
 \begin{keyworddata}
 \val{collector_1, collector_2, ...} & Names of previously defined support collectors. \\
@@ -135,13 +135,13 @@ support collector; see the respective keyword pages.
 
 \keywordnestedpage{LOADS}
 
-\cmd{LOADS} selects one or more native load collectors for the active loadcase. The resulting external load is the superposition of the loads contained in all selected collectors.
+\cmd{LOADS} activates one or more named load collectors for the current analysis. The assembled external load combines active direct load history with the loads in these selected collectors and any unnamed loads specified in the current analysis.
 
 For a linear static analysis,
 \[
-f=\sum_c f_c,
+f=f_\mathrm{direct}+\sum_c f_c,
 \]
-where \(f_c\) denotes the contribution of one selected collector. For transient or harmonic analysis, amplitudes may make the corresponding load contribution depend on time or excitation frequency according to the supported load definition.
+where \(f_\mathrm{direct}\) includes active direct loads and \(f_c\) is the contribution of a selected collector. Unnamed native loads specified inside the active analysis also contribute to the current load vector. For transient or harmonic analysis, amplitudes may make the corresponding load contribution depend on time or excitation frequency according to the supported load definition.
 
 \cmd{LOADS} is used by linear static, nonlinear static, buckling, transient, and harmonic analyses. A free-vibration eigenfrequency analysis has no applied external-force vector and therefore does not use a load collector.
 
