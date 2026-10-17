@@ -1,14 +1,16 @@
 \section{Loads and Boundary Conditions}
 \label{sec:loads-bcs}
 
-Loads and boundary conditions define how the finite-element model is forced and supported. FEMaster supports reusable named load and support collectors and direct condition histories. Named collectors are activated for an analysis with \cmd{LOADS} and \cmd{SUPPORTS}; direct conditions in an active step or loadcase update that model's condition history and are inherited by later analyses.
+Loads and boundary conditions define how the finite-element model is forced and supported. FEMaster supports reusable named load and support collectors, step-local native load definitions, and persistent Abaqus-style condition histories. Named collectors are activated with \cmd{LOADS} and \cmd{SUPPORTS}. Unnamed native vector loads and native supports participate in the current analysis, while Abaqus-style \cmd{BOUNDARY}, single-DOF \cmd{CLOAD}, labeled \cmd{DLOAD}, and \cmd{DSLOAD} definitions update persistent conditions that are inherited by subsequent analyses.
 
-For direct conditions, \key{OP=MOD} (the default) updates matching
-components or regions, while \key{OP=NEW} retires the inherited
-conditions of the same family before applying new definitions.
-Named collector definitions can be reused independently in several
-analyses. Thermal conditions have separate temperature, heat-flux,
-and convection histories.
+For persistent direct conditions, \key{OP=MOD} (the default)
+replaces matching components or targets; \key{OP=NEW} retires the
+inherited entries in that condition family before applying the new
+ones. For step-local native definitions, the supplied values apply
+to the current analysis; \key{OP=NEW} also clears any inherited direct
+entries of that family. Named collector definitions are reusable
+between analyses. Thermal prescriptions maintain separate temperature,
+heat-flux, and convection histories.
 
 Throughout this section, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
 
@@ -65,7 +67,7 @@ Native \cmd{SUPPORT} prescribes generalized nodal displacements and rotations. E
 \]
 A finite number prescribes that component. \val{0} therefore creates a homogeneous constraint. An omitted entry or \val{NAN} leaves the component free.
 
-\key{SUPPORT_COLLECTOR} selects a reusable support collector activated by \cmd{SUPPORTS}. Within an active analysis the same six-component syntax can prescribe a direct support without a collector name. Direct supports use \key{OP=MOD} to update matching components and \key{OP=NEW} to begin a new support history.
+\key{SUPPORT_COLLECTOR} selects a reusable support collector activated by \cmd{SUPPORTS}. Within an active analysis the same six-component syntax can prescribe an unnamed step-local support. \key{OP=NEW} also clears inherited direct supports before these step-local values are applied.
 
 \key{ORIENTATION} optionally specifies a local coordinate system. The prescribed components are then expressed in that basis, including cylindrical supports, sliders, or boundaries whose constrained direction is not aligned with the global axes.
 
@@ -73,7 +75,7 @@ Every constrained degree of freedom removes an admissible motion. Constraints wi
 
 \begin{keywordparameters}
 \key{SUPPORT_COLLECTOR}/\key{NAME} & optional in analysis & Named reusable support collector; required outside an analysis. \\
-\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct support history. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct supports. \\
 \key{ORIENTATION} & optional & Named local basis for the prescribed components. \\
 \end{keywordparameters}
 
@@ -158,6 +160,8 @@ The target may be an individual node or a node set. When a node set is used, the
 
 Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The supported input accepts real non-follower loading; imaginary and follower concentrated loads are not supported.
 
+The native six-component vector form supplies a step-local load when no collector is named. Abaqus-style \val{target, dof, magnitude} rows instead update persistent load history per target and DOF. \key{OP=MOD} replaces matching DOF entries; \key{OP=NEW} retires inherited direct CLOAD entries before the current command.
+
 When a concentrated nodal load represents a physically distributed load, the idealization can create local stress singularities or mesh-dependent peaks. Surface loading and distributing couplings represent load introduction over a finite area.
 
 \begin{keywordparameters}
@@ -193,6 +197,8 @@ mass-proportional acceleration, \val{BX}/\val{BY}/\val{BZ} prescribe
 global body-force densities, and \val{P1}, \val{P2}, etc. apply
 pressure to the numbered element face. FEMaster also accepts a
 direct three-component surface-traction vector on a named surface.
+
+The native \val{surface, tx, ty, tz} form supplies an unnamed step-local traction, while labeled Abaqus rows \val{element_region, label, magnitude, ...} create matching persistent history entries. \key{OP=MOD} updates those labeled entries by target and load label; \key{OP=NEW} clears inherited direct DLOAD entries.
 
 The vector form specifies traction force per unit area in the selected
 basis. Where \key{ORIENTATION} is given, those vector components are
@@ -269,7 +275,7 @@ The surface side and element connectivity determine the pressure direction. Reve
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
-\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct pload entries. \\
 \key{AMPLITUDE} & optional & Named pressure scaling function. \\
 \end{keywordparameters}
 
@@ -342,7 +348,7 @@ For a gravity load, use a mass-proportional inertial load rather than entering a
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD\_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
-\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct vload entries. \\
 \key{ORIENTATION} & native optional & Named local vector basis for the force density. \\
 \key{AMPLITUDE} & native optional & Named time-scaling function. \\
 \end{keywordparameters}
@@ -390,7 +396,7 @@ The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exa
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
-\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
+\key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct inertial-load entries. \\
 \key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{0}. \\
 \end{keywordparameters}
 
