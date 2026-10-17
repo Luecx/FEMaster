@@ -1,0 +1,59 @@
+** Linear perturbation about a geometrically nonlinear T3 equilibrium.
+** Units: N, mm, MPa.
+**
+** Step 1: total force 10000 N -> u2x = 88.03391469 mm.
+** Step 2: additional perturbation force 1000 N -> du2x = 7.83866953 mm.
+**         The preloaded configuration must remain unchanged.
+** Step 3: total force 11000 N -> u2x = 95.7953 mm (nonlinear equilibrium).
+*HEADING
+Truss linear perturbation around nonlinear prestress
+
+*NODE
+1, 0., 0., 0.
+2, 1000., 0., 0.
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+
+*MATERIAL, NAME=MAT
+*ELASTIC
+1000., 0.3
+
+*TRUSS SECTION, ELSET=BAR, MATERIAL=MAT
+100.
+
+*BOUNDARY
+1, 1, 3, 0.
+2, 2, 3, 0.
+
+*STEP, NAME=PRELOAD, NLGEOM=YES, INC=50, RESUME=NO
+*STATIC
+0.1, 1.0, 1e-6, 0.2
+*CLOAD
+2, 1, 10000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+
+*STEP, NAME=LINEAR_PERTURBATION, PERTURBATION, RESUME=YES
+*STATIC
+*CLOAD
+2, 1, 1000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+
+*STEP, NAME=POST_PERTURBATION, NLGEOM=YES, INC=50, RESUME=YES
+*STATIC
+0.1, 1.0, 1e-6, 0.2
+*CLOAD
+2, 1, 11000.
+*NODE OUTPUT
+U, RF, CF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP

@@ -911,6 +911,9 @@ static bool update_load_target(bc::Condition& current, const bc::Condition& inco
  */
 void Parser::modify_conditions(bc::ConditionFamily family, const std::string& identifier,
                                std::vector<bc::Condition::Ptr> replacements) {
+    logging::error(!active_loadcase_ || !active_loadcase_->perturbation ||
+        active_loadcase_->type_name() != "LINEARSTATIC",
+        "LINEARSTATIC PERTURBATION: persistent condition modifications are not supported");
     for (const auto& condition : replacements) {
         logging::error(condition != nullptr, "Cannot modify a null condition");
     }
@@ -969,6 +972,9 @@ void Parser::modify_conditions(bc::ConditionFamily family, const std::string& id
  * all previously registered direct definitions of this family.
  */
 void Parser::clear_conditions(bc::ConditionFamily family) {
+    logging::error(!active_loadcase_ || !active_loadcase_->perturbation ||
+        active_loadcase_->type_name() != "LINEARSTATIC",
+        "LINEARSTATIC PERTURBATION: OP=NEW and persistent condition clearing are not supported");
     auto& inherited = inherited_conditions_[family];
     for (auto& [identifier, entries] : inherited) {
         for (const auto& condition : entries) {
@@ -1000,6 +1006,11 @@ void Parser::select_collector_condition(bc::ConditionFamily family, bc::Conditio
     // Reject invalid collector definitions before recording active selection.
     logging::error(condition != nullptr,
         "Cannot select a null condition");
+    if (active_loadcase_ && active_loadcase_->perturbation &&
+        active_loadcase_->type_name() == "LINEARSTATIC") {
+        logging::error(family == bc::CLOAD,
+            "LINEARSTATIC PERTURBATION: only concentrated incremental loads are supported");
+    }
 
     // Named load definitions may have been parsed outside any analysis. Reject
     // implicit follower pressure when it is actually selected for a nonlinear

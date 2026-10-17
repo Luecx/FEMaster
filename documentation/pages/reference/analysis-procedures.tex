@@ -312,6 +312,44 @@ TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
+\paragraph*{Linear static perturbation about a converged configuration}
+
+A \key{PERTURBATION} static step with \key{RESUME=YES} retains the preceding
+converged displacement and material state, assembles the consistent tangent
+stiffness at that base state, and solves
+\[
+K_T(u_0)\,\Delta u=\Delta f.
+\]
+Existing supports constrain \emph{increments}; concentrated loads declared
+inside the perturbation step contribute only \(\Delta f\) and do not replace
+or modify the pre-existing load history. Output displacement, stress, strain,
+reactions and section forces are incremental quantities, not totals.
+The base configuration and material history remain unchanged, so a subsequent
+general step resumes the equilibrium from before the perturbation.
+
+\begin{inputdeck}
+*STEP, NAME=PRELOAD, NLGEOM=YES
+*STATIC
+0.1, 1.0, 1e-6, 0.2
+*CLOAD
+TIP, 1, 10000.
+*END STEP
+
+*STEP, NAME=INCREMENT, PERTURBATION, RESUME=YES
+*STATIC
+*CLOAD
+TIP, 1, 1000.
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+\end{inputdeck}
+
+At present, incremental \cmd{CLOAD} is the supported perturbation load family.
+Changing \cmd{BOUNDARY}, using \key{OP=NEW} or applying contact and
+free-body rebalancing inside a perturbation step is not supported.
+
 \paragraph*{Nonlinear arc-length analysis}
 \begin{inputdeck}
 *STEP, NAME=POSTBUCKLING, NLGEOM=YES, INC=200
