@@ -324,7 +324,9 @@ void LinearStatic::run() {
         // The linearized residual includes the base support reaction, which
         // does not belong in incremental output. Subtract the base reaction,
         // and expose f_ext(end)-f_ext(start) rather than the total applied load.
-        auto starting_load = model->build_load_matrix(Precision(0), Precision(0));
+        // Evaluate both load generations at the same amplitude time so a
+        // retained time-dependent amplitude is not mistaken for a new load.
+        auto starting_load = model->build_load_matrix(step_period, Precision(0));
         const auto f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, starting_load);
         r_support -= (f_reference - f_start);
         global_load_mat -= starting_load;
