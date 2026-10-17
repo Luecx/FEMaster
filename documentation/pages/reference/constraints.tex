@@ -132,6 +132,29 @@ This two-term constraint relates displacement component 1 on two named node sets
 LEFT, 1, 1.0, RIGHT, 1, -1.0
 \end{inputdeck}
 
+\keywordpage{MPC}
+
+\cmd{MPC} defines a two-node kinematic multi-point constraint at root
+or Assembly scope. Each row specifies the relation type and two compiled
+node references: the first is the dependent node and the second the
+independent node. The supported types are \val{BEAM}, \val{TIE}, and
+\val{PIN}. FEMaster expands these relations into constraint equations
+alongside supports, ties, and couplings.
+
+\begin{keyworddata}
+\val{type, dependent_node, independent_node} & One two-node relation per row; \val{BEAM}, \val{TIE}, or \val{PIN}. \\
+\end{keyworddata}
+
+For the already defined node pairs, the first relation connects them
+with beam kinematics and the second defines a pin connection.
+
+\exampleheading
+\begin{inputdeck}
+*MPC
+BEAM, 101, 102
+PIN, 201, 202
+\end{inputdeck}
+
 \keywordpage{RIGID BODY}
 
 \cmd{RIGID BODY} couples all six generalized degrees of freedom of
