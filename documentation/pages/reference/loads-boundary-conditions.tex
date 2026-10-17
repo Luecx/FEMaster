@@ -1,12 +1,14 @@
 \section{Loads and Boundary Conditions}
 \label{sec:loads-bcs}
 
-Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical and thermal load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. The same load definition can therefore be reused in several analyses.
+Loads and boundary conditions define how the finite-element model is forced and supported. FEMaster supports reusable named load and support collectors and direct condition histories. Named collectors are activated for an analysis with \cmd{LOADS} and \cmd{SUPPORTS}; direct conditions in an active step or loadcase update that model's condition history and are inherited by later analyses.
 
-Direct \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD}
-definitions can be used in a \cmd{STEP}; named collectors can be reused
-through \cmd{SUPPORTS} and \cmd{LOADS} where applicable. Each keyword
-page shows its own definition first and genuinely useful alternatives below.
+For direct conditions, \key{OP=MOD} (the default) updates matching
+components or regions, while \key{OP=NEW} retires the inherited
+conditions of the same family before applying new definitions.
+Named collector definitions can be reused independently in several
+analyses. Thermal conditions have separate temperature, heat-flux,
+and convection histories.
 
 Throughout this section, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
 
@@ -63,14 +65,15 @@ Native \cmd{SUPPORT} prescribes generalized nodal displacements and rotations. E
 \]
 A finite number prescribes that component. \val{0} therefore creates a homogeneous constraint. An omitted entry or \val{NAN} leaves the component free.
 
-\key{SUPPORT_COLLECTOR} specifies the named collector receiving the support. A loadcase activates one or more such collectors using \cmd{SUPPORTS}. This separation represents several support cases, for example a fully fixed case and a second analysis with released directions.
+\key{SUPPORT_COLLECTOR} selects a reusable support collector activated by \cmd{SUPPORTS}. Within an active analysis the same six-component syntax can prescribe a direct support without a collector name. Direct supports use \key{OP=MOD} to update matching components and \key{OP=NEW} to begin a new support history.
 
 \key{ORIENTATION} optionally specifies a local coordinate system. The prescribed components are then expressed in that basis, including cylindrical supports, sliders, or boundaries whose constrained direction is not aligned with the global axes.
 
 Every constrained degree of freedom removes an admissible motion. Constraints without a corresponding physical support increase the model stiffness, while missing support constraints can leave a structural nullspace.
 
 \begin{keywordparameters}
-\key{SUPPORT_COLLECTOR} & required & Named support collector. \\
+\key{SUPPORT_COLLECTOR}/\key{NAME} & optional in analysis & Named reusable support collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct support history. \\
 \key{ORIENTATION} & optional & Named local basis for the prescribed components. \\
 \end{keywordparameters}
 
@@ -117,7 +120,8 @@ Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus 
 
 \begin{keywordparameters}
 \key{TYPE} & optional & Supported form \val{DISPLACEMENT}; default \val{DISPLACEMENT}. \\
-\key{AMPLITUDE} & optional & Supported subject to the active-procedure restrictions. \\
+\key{AMPLITUDE} & optional & Named amplitude for the prescribed boundary history. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct support history. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -157,7 +161,8 @@ Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent f
 When a concentrated nodal load represents a physically distributed load, the idealization can create local stress singularities or mesh-dependent peaks. Surface loading and distributing couplings represent load introduction over a finite area.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Named local load basis. \\
 \key{AMPLITUDE} & optional & Named amplitude where supported. \\
 \key{FOLLOWER} & Abaqus flag & Currently unsupported. \\
@@ -214,7 +219,8 @@ Abaqus-compatible command is \cmd{DSLOAD, P}.
 Traction has units of force per unit area. Its total resultant equals the surface integral and therefore coincides numerically with the traction magnitude only when the loaded area is one in the chosen unit system.
 
 \begin{keywordparameters}
-\key{NAME}/\key{LOAD_COLLECTOR} & optional & Name for reusable load definitions; required outside an analysis when applicable. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Local traction basis. \\
 \key{AMPLITUDE} & optional & Named time scaling where supported. \\
 \key{REAL}/\key{IMAGINARY} & optional flags & Imaginary distributed loading is unsupported. \\
@@ -262,7 +268,8 @@ The resulting nodal forces are obtained by surface integration. The load is ther
 The surface side and element connectivity determine the pressure direction. Reversing the load sign can compensate numerically for an opposite orientation, but the same orientation continues to govern contact and shell-result conventions.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{AMPLITUDE} & optional & Named pressure scaling function. \\
 \end{keywordparameters}
 
@@ -295,6 +302,7 @@ follower pressure is not supported in nonlinear analyses.
 three-component \cmd{DLOAD} form instead.
 
 \begin{keywordparameters}
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{AMPLITUDE} & optional & Named amplitude for time scaling. \\
 \key{FOLLOWER} & optional & \val{NO}; follower surface loads are not supported. \\
 \key{OP} & optional & \val{MOD} or \val{NEW} for load history. \\
@@ -333,7 +341,8 @@ The resulting force is independent of the mass density assigned to the material.
 For a gravity load, use a mass-proportional inertial load rather than entering acceleration components as \cmd{VLOAD}. The supported Abaqus \cmd{DLOAD} with \val{GRAV} interprets its magnitude and direction as acceleration and includes material density and selected regular concentrated masses via the \texttt{InertialLoad} path. The two commands therefore \emph{must not} be treated as numerically interchangeable. Auxiliary native \cmd{POINTMASS} definitions are not selected through a regular element set.
 
 \begin{keywordparameters}
-\key{LOAD\_COLLECTOR} & native required & Destination load collector. \\
+\key{NAME}/\key{LOAD\_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Named local vector basis for the force density. \\
 \key{AMPLITUDE} & native optional & Named time-scaling function. \\
 \end{keywordparameters}
@@ -380,7 +389,8 @@ Density, concentrated masses, geometry, angular velocity, and acceleration must 
 The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exactly.
 
 \begin{keywordparameters}
-\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
+\key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{0}. \\
 \end{keywordparameters}
 
