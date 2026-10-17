@@ -249,8 +249,9 @@ void LinearStatic::run() {
             "ELIMINATION| GPU cuDSS | Yes          | Yes");
     }
 
+    // The prestressed tangent can be indefinite or nonsymmetric.
     const auto direct_matrix_type =
-        constraint_method == ConstraintTransformer::Method::Lagrange
+        perturbation || constraint_method == ConstraintTransformer::Method::Lagrange
             ? solver::DirectSolverMatrixType::General
             : solver::DirectSolverMatrixType::SPD;
 
