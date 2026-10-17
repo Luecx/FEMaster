@@ -237,6 +237,21 @@ TIP, 3, -200.
 *END STEP
 \end{inputdeck}
 
+\paragraph*{Step selecting reusable collectors}
+The same \val{BC} and \val{SERVICE} collectors used in native loadcases
+may also be selected from a \cmd{STEP} after the procedure card. The
+collector contents are defined before the analysis by \cmd{SUPPORT,
+SUPPORT_COLLECTOR=BC} and \cmd{CLOAD, LOAD_COLLECTOR=SERVICE}.
+\begin{inputdeck}
+*STEP, NAME=SERVICE_FROM_COLLECTORS
+*STATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
+*END STEP
+\end{inputdeck}
+
 \paragraph*{LOADCASE-based analysis}
 \begin{inputdeck}
 *LOADCASE, TYPE=NONLINEARSTATIC
