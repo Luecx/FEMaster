@@ -415,3 +415,91 @@ EALL,
 0., 0., 10.,
 0., 0., 2.
 \end{inputdeck}
+
+\keywordpage{TEMPERATURE}
+
+\cmd{TEMPERATURE} prescribes the absolute temperature of a node or node
+set. It maintains a temperature-condition history that is distinct from
+the model's initial temperature Field set by
+\cmd{INITIALCONDITION, TYPE=TEMPERATURE}. Each data row provides one
+compiled node reference or node-set name and one temperature value.
+\key{OP=MOD} replaces matching targets and \key{OP=NEW} begins a
+new set of temperature prescriptions.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{target, temperature} & Node ID or node set and absolute temperature. \\
+\end{keyworddata}
+
+For a model with the assembled node set \val{HEATED_NODES}, the command
+prescribes a uniform temperature of 80 using the model's temperature units.
+
+\exampleheading
+\begin{inputdeck}
+*TEMPERATURE, OP=MOD
+HEATED_NODES, 80.
+\end{inputdeck}
+
+\keywordpage{HEATFLUX}
+
+\cmd{HEATFLUX} prescribes a heat-input density on an existing surface
+region. A positive heat flux \(q\) acts into the thermal balance and
+contributes through \(\int_A N^T q\,\mathrm dA\) over the reference
+surface. \key{AMPLITUDE} references a scalar history multiplying the
+heat-input density. \key{OP=MOD} replaces the matching surface target;
+\key{OP=NEW} starts a new heat-flux history.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the heat-input density. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, heat_flux} & Named surface or surface set and heat input per unit area. \\
+\end{keyworddata}
+
+This model-level definition scales a heat flux on the existing
+\val{HOT_FACE} surface from zero to its nominal value during one
+unit of step progression.
+
+\exampleheading
+\begin{inputdeck}
+*AMPLITUDE, NAME=POWER_RAMP,
+ DEFINITION=TABULAR
+0., 0., 1., 1.
+*HEATFLUX, AMPLITUDE=POWER_RAMP
+HOT_FACE, 0.25
+\end{inputdeck}
+
+\keywordpage{CONVECTION}
+
+\cmd{CONVECTION} defines Newton cooling on an existing surface
+region. The surface heat input is
+\[
+q=h(T_\infty-T),
+\]
+where \(h\) is the film coefficient, \(T_\infty\) is the absolute
+ambient temperature, and \(T\) is the local surface temperature.
+Each row supplies the target surface, film coefficient, and ambient
+temperature. A named \key{AMPLITUDE} scales \(h\) while \(T_\infty\)
+remains the specified value. \key{OP=MOD} replaces the matching
+surface target; \key{OP=NEW} starts a new convection history.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the film coefficient. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, h, ambient} & Named surface, film coefficient, and absolute ambient temperature. \\
+\end{keyworddata}
+
+The existing surface \val{COOLED_FACE} exchanges heat with an
+environment at temperature 20 through a film coefficient of 0.015,
+expressed in the model's consistent thermal units.
+
+\exampleheading
+\begin{inputdeck}
+*CONVECTION
+COOLED_FACE, 0.015, 20.
+\end{inputdeck}
