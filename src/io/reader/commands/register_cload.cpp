@@ -137,7 +137,8 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                 parser.activate_load_collector(collector_name);
                 *collector = model._data->load_cols.get();
             }
-            logging::error(!parser.step_state().perturbation || keys.raw("OP") != "NEW",
+            logging::error(!parser.step_state().step_active ||
+                !parser.step_state().perturbation || keys.raw("OP") != "NEW",
                 "CLOAD: OP=NEW is not supported in a perturbation step");
             if (collector_name.empty() && keys.raw("OP") == "NEW")
                 parser.clear_conditions(bc::CLOAD);
@@ -162,7 +163,8 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
 
                 // Perturbation loads are additional, transient increments.
                 // They must neither replace inherited loads nor survive END STEP.
-                if (*collector || !persistent || parser.step_state().perturbation) {
+                if (*collector || !persistent ||
+                    (parser.step_state().step_active && parser.step_state().perturbation)) {
                     auto load = std::make_shared<bc::CLoad>();
                     load->region_      = std::move(load_region);
                     load->orientation_ = std::move(load_orientation);

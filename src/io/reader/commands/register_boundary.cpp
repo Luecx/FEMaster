@@ -68,7 +68,7 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
             auto& state = parser.step_state();
             logging::error(!state.step_active || parser.active_loadcase(),
                 "BOUNDARY: inside STEP must appear after a supported procedure");
-            logging::error(!state.perturbation ||
+            logging::error(!state.step_active || !state.perturbation ||
                 parser.active_loadcase()->type_name() != "LINEARSTATIC",
                 "BOUNDARY: perturbation-step boundary modifications are not yet supported");
 

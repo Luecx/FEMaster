@@ -228,7 +228,8 @@ void LinearStatic::run() {
     // General step: K0 u = f_ext - f_int(0,T).
     // Perturbation: KT(u0) du = df_ext; the pre-existing base equilibrium
     // and its internal forces must not be applied to the incremental RHS.
-    auto f = perturbation ? f_external : (f_external - f_reference);
+    DynamicVector f = f_external;
+    if (!perturbation) f -= f_reference;
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
