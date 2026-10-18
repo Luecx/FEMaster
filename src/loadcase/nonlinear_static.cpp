@@ -1013,13 +1013,6 @@ void NonlinearStatic::run() {
     output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
 
-    // An equilibrated nonlinear step resets the linear total-response history.
-    // Its exact internal nodal force is the base for a subsequent tangent step;
-    // other constitutive fields can be recovered exactly on first use.
-    auto response = std::make_shared<io::writer::StaticResponse>();
-    response->fields[static_cast<std::size_t>(OutputField::INTERNAL_FORCES)] = final_internal;
-    committed_static_response = std::move(response);
-
     // Commit the converged total configuration for the next RESUME step.
     commit_state(displacement);
     model->step_end();
