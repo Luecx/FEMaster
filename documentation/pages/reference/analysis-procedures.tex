@@ -198,6 +198,7 @@ Abaqus-style \cmd{BOUNDARY}, single-DOF \cmd{CLOAD}, labeled \cmd{DLOAD} and \cm
 \key{NAME} & optional & Descriptive Step name. \\
 \key{NLGEOM} & optional & Bare/\val{YES} enables geometric nonlinearity; \val{NO}/\val{OFF} disables it. \\
 \key{INC} & optional & Positive maximum increment count; default 100. \\
+\key{RESUME} & optional & \val{YES} (default) retains converged geometry, material and temperature; \val{NO} restores reference state. \\
 \key{PERTURBATION} & optional flag & Selects linear perturbation semantics. \\
 \end{keywordparameters}
 
@@ -274,6 +275,9 @@ With neither geometric nonlinearity nor Riks path following, the analysis is lin
 Ku=f.
 \]
 A \key{PERTURBATION} Step also uses the linear static formulation.
+The structural \cmd{TEMPERATURE} card specifies a nodal target field.
+General linear static steps commit this field on success; a perturbation
+uses the target only for the incremental calculation and discards it.
 
 If \key{NLGEOM} is enabled or \key{RIKS} is present, the procedure uses nonlinear static equilibrium. The nonlinear residual is
 \[
@@ -284,7 +288,11 @@ and Newton iterations solve the linearized equilibrium equation
 K_T\Delta u=-r.
 \]
 
-Without \key{RIKS}, \(\lambda\) is advanced by load control. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
+Without \key{RIKS}, \(\lambda\) is advanced by load control. In a nonlinear
+structural step, any prescribed target temperature acts fully in every
+increment and Newton iteration; unlike the mechanical loads, it is not
+ramped with \(\lambda\). Temperature changes are not supported with
+\key{RIKS} in this implementation. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
 
 \key{DIRECT} requests fixed nonlinear load increments rather than adaptive stepping where supported.
 
@@ -318,7 +326,7 @@ A resumed \cmd{STEP} with \key{PERTURBATION} assembles the consistent tangent
 stiffness and the internal force at the committed equilibrium \(u_0\). The
 linearized problem is
 \[
-K_T(u_0)\,\Delta u=f_{\mathrm{ext,end}}-f_{\mathrm{int}}(u_0).
+K_T(u_0,T_0)\,\Delta u=f_{\mathrm{ext,end}}-f_{\mathrm{int}}(u_0,T_{\mathrm{target}}).
 \]
 The right-hand side uses the ordinary assembled \emph{end-of-step total
 loading}, including the inherited loads and any modifications made in the
@@ -328,7 +336,8 @@ of 11000, not an additional 11000. The same assembly applies to all supported
 structural load families; load-dependent follower tangents are not included.
 
 The output displacement, reaction force, stress, strain, and section force
-fields represent incremental responses. No total displacement or material
+fields represent incremental responses. The reported temperature is the
+absolute target field. No total displacement, temperature or material
 state is committed by the perturbation step. On completion, the parser also
 restores the original load and support definitions, including values modified
 through \key{OP=MOD}/\key{OP=NEW}; later steps resume the previous equilibrium
