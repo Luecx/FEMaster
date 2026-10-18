@@ -61,12 +61,22 @@
 namespace fem::io::reader {
 namespace {
 
-// Preserve the original mutable definition for both restoring shared pointers
-// and assembling the base external load independently of subsequent OP=MOD/NEW.
+/**
+ * Captures one mutable load before parsing a perturbation step.
+ *
+ * The independent copy supplies the unchanged base loading at any requested
+ * amplitude time. The restore callback assigns the saved values back to the
+ * original object so named collectors retain their existing pointer identity.
+ *
+ * @param condition Active physical definition.
+ * @param family Input-history family of the saved definition.
+ * @param base_loads Independent copies used for base-force assembly.
+ * @param restore Callbacks restoring original shared objects after the step.
+ */
 template <typename Load>
-void snapshot_load(const bc::Condition::Ptr&       condition,
-                   bc::ConditionFamily             family,
-                   bc::ConditionManager&           base_loads,
+void snapshot_load(const bc::Condition::Ptr&           condition,
+                   bc::ConditionFamily                family,
+                   bc::ConditionManager&              base_loads,
                    std::vector<std::function<void()>>& restore) {
     if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
         auto original = std::make_shared<Load>(*load);
