@@ -195,7 +195,8 @@ struct Model {
 
     // Structural conditions are read from the current direct history and named
     // selections in ModelData; callers supply only assembly/analysis parameters.
-    Field build_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
+    Field build_load_matrix(Precision time = 0, Precision step_progress = Precision(1),
+                            const bc::ConditionManager* source = nullptr);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis();
 
