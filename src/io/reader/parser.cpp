@@ -383,6 +383,13 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("INITIALCONDITION");
     root.execute_children("INITIALCONDITIONS");
 
+    // Snapshot the parsed initial temperature independently of named FIELD
+    // storage: RESUME=NO must recover it even after subsequent step commits.
+    if (model_->_data->temperature) {
+        model_->_data->temperature_reference =
+            std::make_shared<model::Field>(*model_->_data->temperature);
+    }
+
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
     root.execute_children("TIE");
     for (const auto* assembly : root.children("ASSEMBLY")) {
@@ -603,6 +610,14 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
         loadcase->perturbation = step_state_.perturbation;
     }
 
+    // Prepare an independent temperature target BEFORE step-local keywords
+    // execute. A fresh step starts from the original reference on RESUME=NO.
+    auto& data = *model_->_data;
+    const auto& temperature_base = loadcase->resume
+        ? data.temperature : data.temperature_reference;
+    data.temperature_target = temperature_base
+        ? std::make_shared<model::Field>(*temperature_base) : nullptr;
+
     if (loadcase->perturbation && loadcase->type_name() == "LINEARSTATIC") {
         logging::error(loadcase->resume,
             "LINEARSTATIC PERTURBATION requires RESUME=YES");
@@ -691,6 +706,17 @@ void Parser::end_loadcase() {
     // converged state before the concrete analysis starts.
     loadcase->prepare_state();
 
+    // A partial *TEMPERATURE without an initial field leaves unassigned
+    // nodes undefined; zero is not a valid substitute for material T_zero.
+    if (model_->_data->temperature_target) {
+        const auto& target = *model_->_data->temperature_target;
+        for (Index node = 0; node < target.rows; ++node) {
+            logging::error(std::isfinite(target(node, 0)),
+                "TEMPERATURE: no finite temperature specified for node ", node,
+                " (provide an initial temperature or prescribe every node)");
+        }
+    }
+
     // Model assembly reads the active family sets during this numerical solve.
     loadcase->run();
 
@@ -703,8 +729,14 @@ void Parser::end_loadcase() {
         current_conditions_ = std::move(perturbation_snapshot_->current);
         perturbation_snapshot_.reset();
         selected_conditions_.clear();
+        model_->_data->temperature_target.reset();
         return;
     }
+
+    // Successful general steps commit the temperature used by structural
+    // recovery. Subsequent RESUME=YES steps inherit this converged state.
+    model_->_data->temperature =
+        std::move(model_->_data->temperature_target);
 
     // Restore direct history by removing only this analysis's insertions.
     for (const auto& [family, condition] : temporary_conditions) {
