@@ -340,11 +340,15 @@ linearization. Prescribed displacements are likewise converted into increments,
 \(C\,\Delta u = d - C\,u_0\).
 
 An ordinary linear static step reports total displacement \(u_0+\Delta u\)
-and total constitutive results, and commits that total configuration on success.
-The base-temperature and target-temperature fields may differ. This is a single
-tangent step, not an iterative nonlinear equilibrium correction; large changes
-may require \key{NLGEOM=YES} instead. A perturbation uses the same increment
-solve but reports incremental results and restores its original base state.
+and advances the committed internal force, reaction, stress, strain and section
+resultants exclusively by their linearized increments. Subsequent resumed
+linear steps start from these committed total fields, rather than reevaluating
+their total response with the nonlinear constitutive law at the deformed base.
+These constitutive fields are retained even if not requested for output in the
+intermediate steps. The base-temperature and target-temperature fields may differ.
+This is a single tangent step, not an iterative nonlinear equilibrium correction;
+large changes may require \key{NLGEOM=YES} instead. A perturbation reports
+increments only and leaves the committed total results unchanged.
 
 \paragraph*{Linear static perturbation}
 
