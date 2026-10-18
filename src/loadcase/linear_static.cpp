@@ -3,7 +3,7 @@
  * @brief Implements the linear static load case leveraging constraint maps.
  *
  * The structural analysis reads loads and support prescriptions directly from
- * ModelData, reduces K u = f through the chosen constraint map and recovers
+ * ModelData, reduces K_T du = delta f through the chosen constraint map and recovers
  * global response fields. Optional inertia relief and load rebalancing use the
  * actual active support state. Condition replacement semantics belong to the DSL;
  * model assembly owns physical load integration and equation construction.
@@ -54,7 +54,7 @@ using constraint::ConstraintTransformer;
  * configuration. Resume selects the converged base; independent steps use
  * the reference configuration. Only perturbations discard the increment.
  *
- * The affine constraint map reduces K u = f to the configured sparse backend.
+ * The affine constraint map reduces K_T du = delta f to the configured backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
  * requested result fields are written and analysis-local element caches released.
  * Model condition definitions and collector-derived activations are read, never copied into
