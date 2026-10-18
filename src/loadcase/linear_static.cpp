@@ -50,9 +50,9 @@ using constraint::ConstraintTransformer;
  * state; balancing changes only the assembled force field, and the temporary
  * inertia-relief RBM is removed after constraint collection.
  *
- * General statics solves against the reference state, while a linear
- * perturbation assembles the consistent tangent and internal forces at the
- * committed equilibrium and solves for its load-induced displacement increment.
+ * Every linear static step solves for an increment around its prepared base
+ * configuration. Resume selects the converged base; independent steps use
+ * the reference configuration. Only perturbations discard the increment.
  *
  * The affine constraint map reduces K u = f to the configured sparse backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
@@ -148,31 +148,32 @@ void LinearStatic::run() {
         "REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
 
-    if (perturbation) {
-        const auto& current = *model->_data->positions;
-        const auto& reference = *model->_data->positions_reference;
-        for (Index node = 0; node < reference_displacement.rows; ++node) {
-            for (Index dof = 0; dof < 3; ++dof) {
-                reference_displacement(node, dof) = current(node, dof) - reference(node, dof);
-            }
-            for (Index dof = 3; dof < 6; ++dof) {
-                reference_displacement(node, dof) = current(node, dof);
-            }
+    // Always linearize around the prepared base configuration. RESUME=NO
+    // restored reference positions before run(); RESUME=YES preserved u0.
+    const auto& current = *model->_data->positions;
+    const auto& reference = *model->_data->positions_reference;
+    for (Index node = 0; node < reference_displacement.rows; ++node) {
+        for (Index dof = 0; dof < 3; ++dof) {
+            reference_displacement(node, dof) = current(node, dof) - reference(node, dof);
         }
+        for (Index dof = 3; dof < 6; ++dof) {
+            reference_displacement(node, dof) = current(node, dof);
+        }
+    }
 
-        // Rewrite C (u0 + du) = d into C du = d - C u0.
-        const Precision tolerance = constraint::NullSpaceOptions{}.feasibility_tolerance;
-        for (auto& equation : equations) {
-            Precision scale = std::abs(equation.rhs);
-            for (const auto& entry : equation.entries) {
-                const Precision term =
-                    entry.coeff * reference_displacement(entry.node_id, entry.dof);
-                equation.rhs -= term;
-                scale += std::abs(term);
-            }
-            if (std::abs(equation.rhs) <= tolerance * scale) {
-                equation.rhs = Precision(0);
-            }
+    // Constraints act on total displacement: C(u0 + du) = d.
+    // Their incremental right-hand side must therefore be d - C u0.
+    const Precision tolerance = constraint::NullSpaceOptions{}.feasibility_tolerance;
+    for (auto& equation : equations) {
+        Precision scale = std::abs(equation.rhs);
+        for (const auto& entry : equation.entries) {
+            const Precision term =
+                entry.coeff * reference_displacement(entry.node_id, entry.dof);
+            equation.rhs -= term;
+            scale += std::abs(term);
+        }
+        if (std::abs(equation.rhs) <= tolerance * scale) {
+            equation.rhs = Precision(0);
         }
     }
 
@@ -180,38 +181,22 @@ void LinearStatic::run() {
         "REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
     reference_internal.set_zero();
 
+    // K_T is evaluated at the base (u0, T0), while the internal-force anchor
+    // uses the target temperature. The residual is the effective load increment
+    // for an equilibrated base, with any pre-existing residual retained.
     auto K = Timer::measure(
         [&]() {
-            if (perturbation) {
-                // Assemble both K_T(u0) and f_int(u0) in one read-only pass.
-                return model->build_tangent_stiffness_matrix(
-                    active_dof_idx_mat,
-                    reference_internal,
-                    reference_displacement,
-                    target_temperature,
-                    reference_displacement,
-                    model->_data->temperature.get(),
-                    nullptr,
-                    false);
-            }
-            return model->build_stiffness_matrix(active_dof_idx_mat);
+            return model->build_tangent_stiffness_matrix(
+                active_dof_idx_mat,
+                reference_internal,
+                reference_displacement,
+                target_temperature,
+                reference_displacement,
+                model->_data->temperature.get(),
+                nullptr,
+                false);
         },
-        "constructing stiffness matrix K");
-
-    if (!perturbation) {
-        Timer::measure(
-            [&]() {
-                model->build_internal_force(
-                    reference_internal,
-                    reference_displacement,
-                    target_temperature,
-                    nullptr,
-                    nullptr,
-                    false,
-                    nullptr);
-            },
-            "constructing reference internal force");
-    }
+        "constructing base tangent stiffness K_T and internal force");
 
     auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
@@ -376,9 +361,11 @@ void LinearStatic::run() {
         global_load_mat -= starting_load;
     }
 
-    auto global_disp_mat = Timer::measure(
+    auto increment_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
-        "expanding displacement vector to matrix form");
+        "expanding displacement increment to matrix form");
+    model::Field total_disp_mat = increment_disp_mat;
+    total_disp_mat += reference_displacement;
 
     auto global_react_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
@@ -424,9 +411,12 @@ void LinearStatic::run() {
             // handler if the active request set actually needs them.
             if (perturbation) {
                 output.set_perturbation_base(&reference_displacement);
+            } else {
+                output.set_linearization_base(&reference_displacement);
             }
             output.begin_frame();
-            output.provide(OutputField::DISPLACEMENT,        global_disp_mat);
+            output.provide(OutputField::DISPLACEMENT,
+                perturbation ? increment_disp_mat : total_disp_mat);
             output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
             output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
@@ -443,7 +433,7 @@ void LinearStatic::run() {
 
     // A linear perturbation must not overwrite the underlying base state.
     if (!perturbation) {
-        commit_state(global_disp_mat);
+        commit_state(total_disp_mat);
     }
     model->step_end();
 }
