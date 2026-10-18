@@ -80,6 +80,12 @@ void LinearStatic::run() {
             "LINEARSTATIC PERTURBATION: a DIRECT solver is required for general tangents");
     }
 
+    // Structural temperatures are prescribed fields, not thermal constraints.
+    // The solver evaluates thermal forces at the step's target temperature.
+    const model::Field* target_temperature = model->_data->temperature_target
+        ? model->_data->temperature_target.get()
+        : model->_data->temperature.get();
+
     // Enumerate the current structural system in global generalized coordinates
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
@@ -182,7 +188,7 @@ void LinearStatic::run() {
                     active_dof_idx_mat,
                     reference_internal,
                     reference_displacement,
-                    model->_data->temperature.get(),
+                    target_temperature,
                     reference_displacement,
                     model->_data->temperature.get(),
                     nullptr,
@@ -198,7 +204,7 @@ void LinearStatic::run() {
                 model->build_internal_force(
                     reference_internal,
                     reference_displacement,
-                    model->_data->temperature.get(),
+                    target_temperature,
                     nullptr,
                     nullptr,
                     false,
@@ -386,8 +392,9 @@ void LinearStatic::run() {
             output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
             output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-            if (model->_data->temperature) {
-                output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+            if (target_temperature) {
+                output.provide(OutputField::TEMPERATURE,
+                    *const_cast<model::Field*>(target_temperature));
             }
 
             output.write_frame(*writer, model->_data.get());
