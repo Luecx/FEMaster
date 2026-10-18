@@ -130,15 +130,20 @@ class Parser {
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
 
-    // A perturbation may modify the current targets while solving but must not
-    // commit those definitions. Preserve both pointer identity and load values.
+    // Perturbations temporarily modify condition membership and shared load
+    // objects. Keep their previous identities and values for restoration, and
+    // independent load copies for assembling the original external force.
     struct PerturbationSnapshot {
         bc::ConditionManager active;
+        bc::ConditionManager base_loads;
         std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
         std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current;
         std::vector<std::function<void()>> restore_values;
     };
     std::unique_ptr<PerturbationSnapshot> perturbation_snapshot_;
+
+    // Restore temporary condition changes without replacing shared object identities
+    void restore_perturbation();
 
     // Shared collector definitions requested by the current analysis. These
     // are inserted into the manager only while that analysis is running.
