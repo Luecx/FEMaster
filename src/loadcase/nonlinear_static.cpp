@@ -972,6 +972,7 @@ void NonlinearStatic::run() {
     }
 
     auto global_load_final = model->build_load_matrix(load_factor * step_period, load_factor);
+    committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,
         global_load_final,
