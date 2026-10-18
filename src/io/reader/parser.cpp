@@ -248,7 +248,7 @@ void Parser::run(const std::string& input_path,
     selected_conditions_.clear();
     perturbation_snapshot_.reset();
     committed_structural_load_.reset();
-    committed_static_response_.reset();
+    last_committed_static_nonlinear_ = false;
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -626,7 +626,6 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     // reconstruction from definitions that later OP=MOD/NEW may mutate.
     if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
         linear->step_start_load = loadcase->resume ? committed_structural_load_ : nullptr;
-        linear->start_static_response = loadcase->resume ? committed_static_response_ : nullptr;
     }
 
     // Prepare an independent temperature target BEFORE step-local keywords
@@ -743,7 +742,7 @@ void Parser::end_loadcase() {
         // Perturbations leave both the mechanical and loading states intact.
         if (!loadcase->perturbation && loadcase->committed_structural_load) {
             committed_structural_load_ = std::move(loadcase->committed_structural_load);
-            committed_static_response_ = std::move(loadcase->committed_static_response);
+            last_committed_static_nonlinear_ = loadcase->type_name() == "NONLINEARSTATIC";
         }
     } catch (...) {
         // Restore shared input definitions even if preparation or solving fails.
