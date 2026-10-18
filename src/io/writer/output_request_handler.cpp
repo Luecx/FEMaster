@@ -70,6 +70,14 @@ void OutputRequestHandler::set_perturbation_base(const model::Field* displacemen
 }
 
 /**
+ * Recovers total constitutive output by linear continuation from a base state.
+ * In contrast to perturbations, general static output remains total.
+ */
+void OutputRequestHandler::set_linearization_base(const model::Field* displacement) {
+    linearization_base_ = displacement;
+}
+
+/**
  * Installs an optional preparation hook for derived model recovery.
  *
  * Linear procedures leave this empty. Nonlinear procedures use it to reset
@@ -357,8 +365,8 @@ void OutputRequestHandler::compute(OutputField field) {
             auto [stress, strain] = model_->compute_stress_nodal(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
             computed_[index(OutputField::STRESS)] = std::move(stress);
             computed_[index(OutputField::STRAIN)] = std::move(strain);
@@ -371,8 +379,8 @@ void OutputRequestHandler::compute(OutputField field) {
             auto [top, bot] = model_->compute_stress_top_bot(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
             computed_[index(OutputField::STRESS_TOP)] = std::move(top);
             computed_[index(OutputField::STRESS_BOT)] = std::move(bot);
@@ -384,8 +392,8 @@ void OutputRequestHandler::compute(OutputField field) {
             computed_[index(field)] = model_->compute_shell_resultants(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
             return;
         }
 
@@ -394,8 +402,8 @@ void OutputRequestHandler::compute(OutputField field) {
             computed_[index(field)] = model_->compute_section_forces(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
             return;
         }
 
