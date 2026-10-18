@@ -185,8 +185,8 @@ void LinearStatic::run() {
     reference_internal.set_zero();
 
     // K_T is evaluated at the base (u0, T0), while the internal-force anchor
-    // uses the target temperature. The residual is the effective load increment
-    // for an equilibrated base, with any pre-existing residual retained.
+    // uses the target temperature. The difference of internal forces at fixed
+    // u0 supplies only the thermal contribution to the load increment.
     auto K = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
@@ -212,10 +212,10 @@ void LinearStatic::run() {
     );
 
     // The tangent assembly evaluated internal force at the target temperature.
-    // For incremental NFORC and RF, also retain the actual base internal force.
-    // Skip this extra element traversal when the thermal state did not change.
+    // Compare against the exact base internal force when temperature changes,
+    // for both general linear steps and perturbations.
     DynamicVector f_base_internal = f_reference;
-    if (perturbation) {
+    {
         const auto* base_temperature = model->_data->temperature.get();
         bool temperature_changed = (target_temperature == nullptr) != (base_temperature == nullptr);
 
@@ -244,9 +244,17 @@ void LinearStatic::run() {
         }
     }
 
-    // For an equilibrated base, this is K_T * du = delta(f_ext - f_thermal).
-    // Using the full base residual also tolerates small convergence errors.
-    DynamicVector f = f_external - f_reference;
+    // The actual last committed loading is independent of mutable definitions
+    // and collector activation. Independent steps instead start at zero.
+    DynamicVector f_start = DynamicVector::Zero(f_external.size());
+    if (resume && step_start_load) {
+        f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, *step_start_load);
+    }
+
+    // Strict increment: no inherited equilibrium residual is corrected.
+    // Identical loads, temperatures and constraints therefore yield du=0.
+    // The difference of internal forces at fixed u0 is the thermal increment.
+    DynamicVector f = (f_external - f_start) - (f_reference - f_base_internal);
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
@@ -349,18 +357,13 @@ void LinearStatic::run() {
         "computing support reactions via multipliers (C_supp^T lambda)");
 
     if (perturbation) {
-        // Use the unmodified base definitions rather than the current targets
-        // at progress zero: amplitudes scale the target even at progress zero.
-        // Direct C++ callers without parser history retain the former fallback.
-        auto starting_load = perturbation_start_load
-            ? *perturbation_start_load
-            : model->build_load_matrix(step_period, Precision(0));
-        const auto f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, starting_load);
-
-        // Subtract the actual base reaction, including the base thermal stress.
-        // This preserves thermal contributions in incremental NFORC and RF.
-        r_support -= (f_base_internal - f_start);
-        global_load_mat -= starting_load;
+        // The increment system already supplies incremental reactions and
+        // internal forces. Only the external-force output needs conversion.
+        if (step_start_load) global_load_mat -= *step_start_load;
+    } else {
+        // The reduced increment system supplies delta reactions; reconstruct
+        // total reactions by adding the physical base reaction.
+        r_support += f_base_internal - f_start;
     }
 
     auto increment_disp_mat = Timer::measure(
@@ -433,9 +436,11 @@ void LinearStatic::run() {
 
     transformer->post_check_static(K, f, q);
 
-    // General statics commits the total u0 + du; perturbations only output du.
+    // General statics commits both the total displacement and its applied
+    // load. Perturbations leave both parts of the starting state unchanged.
     if (!perturbation) {
         commit_state(total_disp_mat);
+        committed_structural_load = std::make_shared<model::Field>(global_load_mat);
     }
     model->step_end();
 }
