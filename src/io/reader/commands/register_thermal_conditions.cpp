@@ -2,18 +2,12 @@
  * @file register_thermal_conditions.cpp
  * @brief Registers persistent scalar thermal boundary-condition histories.
  *
- * TEMPERATURE prescribes nodal primary variables, HEATFLUX prescribes heat input
- * per reference surface area, and CONVECTION defines Newton cooling. The native
- * and shared STEP grammar use the same ModelData::conditions as structural
- * commands. OP=MOD replaces matching targets within one input family; OP=NEW
- * retires only inherited definitions from that family before the block is read.
+ * TEMPERATURE defines structural target-temperature fields. HEATFLUX and
+ * CONVECTION remain thermal condition histories for heat-transfer analyses.
+ * OP=NEW on TEMPERATURE resets only the current step's target field.
  *
- * Initial thermal definitions may appear outside an analysis and remain active
- * until later input modifies them. Conditions are not copied into collectors at
- * analysis completion. Named thermal grouping remains available through the
- * Model registration API independently of these direct commands.
+ * Thermal boundary conditions are distinct from structural predefined fields.
  *
- * @see bc::Temperature
  * @see bc::HeatFlux
  * @see bc::Convection
  * @see bc::ConditionManager
@@ -27,10 +21,10 @@
 #include "../../dsl/registry.h"
 #include "../../../bc/thermal/convection.h"
 #include "../../../bc/thermal/heat_flux.h"
-#include "../../../bc/thermal/temperature.h"
 #include "../../../core/logging.h"
 #include "../../../model/model.h"
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>
@@ -40,11 +34,8 @@ namespace fem::io::reader::commands {
 /**
  * Registers the three independent thermal input-history families.
  *
- * Each keyword directly changes the current model state. No name or private
- * collector is required. Temperatures resolve node regions and are stored as
- * absolute scalar prescriptions. Heat flux and convection resolve compiled
- * surface regions; amplitudes scale heat density or film coefficient during
- * assembly, while ambient temperature is a constant replacement value.
+ * TEMPERATURE writes nodal structural target fields. HEATFLUX and CONVECTION
+ * remain separate thermal condition histories for future heat-transfer steps.
  *
  * @param registry Registry receiving the thermal command grammar.
  * @param parser Parser exposing the authoritative model state.
@@ -52,17 +43,26 @@ namespace fem::io::reader::commands {
 void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parser) {
     namespace dsl = fem::io::dsl;
 
-    // Prescribed temperature changes only the scalar primary-variable history
+    // Predefined temperatures are structural field values, not constraints on
+    // thermal DOFs. Heat-transfer Dirichlet conditions remain separate.
     registry.command("TEMPERATURE", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
-        command.doc("Prescribe absolute nodal temperatures in the current model history.");
+        command.allow_if(dsl::Condition::parent_is({"LOADCASE", "STATIC"}));
+        command.doc("Set absolute nodal target temperatures for a structural static step.");
         command.keyword(dsl::KeywordSpec::make()
             .key("OP").optional("MOD").allowed({"MOD", "NEW"})
         );
         command.on_enter([&parser](const dsl::Keys& keys) {
-            // NEW affects only temperature prescriptions, including initial ones
+            auto* active = parser.active_loadcase();
+            logging::error(active != nullptr &&
+                           (active->type_name() == "LINEARSTATIC" ||
+                            active->type_name() == "NONLINEARSTATIC"),
+                "TEMPERATURE: requires a structural static analysis");
             if (keys.raw("OP") == "NEW") {
-                parser.clear_conditions(bc::TEMPERATURE);
+                auto& data = *parser.model()._data;
+                const auto& base = active->resume
+                    ? data.temperature : data.temperature_reference;
+                data.temperature_target = base
+                    ? std::make_shared<model::Field>(*base) : nullptr;
             }
         });
         command.variant(dsl::Variant::make()
@@ -70,23 +70,32 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Compiled node set or scalar node reference")
-                    .one<Precision>().name("TEMPERATURE").desc("Absolute prescribed temperature")
+                    .one<Precision>().name("TEMPERATURE").desc("Absolute target temperature")
                 )
                 .bind([&parser](const std::string& target, Precision value) {
-                    // Replace only the matching nodal target in temperature history
-                    auto temperature = std::make_shared<bc::Temperature>(
-                        parser.model().resolve_node_region(target), value
-                    );
-                    parser.modify_conditions(bc::TEMPERATURE,
-                        (parser.model()._data->node_sets.has(target) ? "NSET:" : "NODE:") + target,
-                        {std::move(temperature)});
+                    logging::error(std::isfinite(value),
+                        "TEMPERATURE: prescribed value must be finite");
+                    auto& data = *parser.model()._data;
+                    if (!data.temperature_target) {
+                        data.temperature_target = std::make_shared<model::Field>(
+                            "TEMPERATURE_TARGET", model::FieldDomain::NODE,
+                            data.field_rows(model::FieldDomain::NODE), 1);
+                        data.temperature_target->fill_nan();
+                    }
+                    const auto region = parser.model().resolve_node_region(target);
+                    for (const ID id : region->data()) {
+                        logging::error(id >= 0 &&
+                            static_cast<Index>(id) < data.temperature_target->rows,
+                            "TEMPERATURE: node index out of bounds: ", id);
+                        (*data.temperature_target)(static_cast<Index>(id), 0) = value;
+                    }
                 })
             )
         );
 
-        // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
-        command.variant(fem::io::dsl::Variant::make()
-            .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
+        // Empty OP=NEW blocks reset this step's target to its starting field.
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::key_equals("OP", "NEW"))
         );
     });
 
