@@ -42,8 +42,8 @@ struct LinearStatic : public LoadCase {
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
     Precision step_period = Precision(1); ///< Step-end time for evaluating prescribed load amplitudes.
 
-    // Original external load provided by the parser for incremental perturbation output
-    model::Field::Ptr perturbation_start_load = nullptr;
+    // Actual load from the last committed static state; null means zero baseline.
+    model::Field::Ptr step_start_load = nullptr;
 
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
     bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
