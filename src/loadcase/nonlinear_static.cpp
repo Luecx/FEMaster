@@ -213,9 +213,11 @@ void NonlinearStatic::run() {
         nonlinear_state.reset_material_state();
     });
 
-    // Temperature is a persistent model state. Until a dedicated temperature
-    // state manager is introduced it remains constant throughout this step and
-    // is read directly by the element formulations.
+    // A predefined target temperature acts in full from the first Newton
+    // evaluation; only structural loads follow the incremental load factor.
+    const model::Field* step_temperature = model->_data->temperature_target
+        ? model->_data->temperature_target.get()
+        : model->_data->temperature.get();
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
