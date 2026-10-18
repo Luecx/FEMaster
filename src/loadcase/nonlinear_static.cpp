@@ -218,6 +218,24 @@ void NonlinearStatic::run() {
     model::Field* step_temperature = model->_data->temperature_target
         ? model->_data->temperature_target.get()
         : model->_data->temperature.get();
+
+    // The temperature jump is not parameterized by the Riks load factor.
+    // Allow Riks only when the prescribed field equals the carried base.
+    if (control == NonlinearControl::ArcLength) {
+        const model::Field* base_temperature = model->_data->temperature.get();
+        bool changed = (step_temperature == nullptr) != (base_temperature == nullptr);
+        if (!changed && step_temperature) {
+            for (Index i = 0; i < step_temperature->rows; ++i) {
+                if ((*step_temperature)(i, 0) != (*base_temperature)(i, 0)) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        logging::error(!changed,
+            "NONLINEARSTATIC RIKS: predefined temperature changes are not supported");
+    }
+
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -361,6 +379,7 @@ void NonlinearStatic::run() {
 
     Index         last_converged_increment = 0;
     Precision     residual_reference_force = Precision(0);
+    Precision     fixed_temperature_force   = Precision(0);
     Precision     current_evaluation_lambda = Precision(0);
     DynamicVector increment_start_displacement = u_total;
 
@@ -555,8 +574,9 @@ void NonlinearStatic::run() {
             // For homogeneous constraints T^T(f - K u_p) = T^T f.
             // Keep the same residual normalization as the tangent predictor
             // without the otherwise unnecessary stiffness assembly.
-            residual_reference_force =
-                std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>();
+            residual_reference_force = std::max(
+                std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>(),
+                fixed_temperature_force);
             return;
         }
 
@@ -581,8 +601,17 @@ void NonlinearStatic::run() {
 
         const DynamicVector predictor_rhs =
             transformer->assemble_system_rhs(accepted_full_tangent, f_total);
-        residual_reference_force =
-            std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>();
+        // A temperature jump can drive Newton even when the mechanical load
+        // increment is zero. Retain the starting residual as the normalization
+        // scale so its relative force residual remains finite.
+        if (step_temperature != model->_data->temperature.get()) {
+            fixed_temperature_force = std::max(
+                fixed_temperature_force,
+                accepted_residual.lpNorm<Eigen::Infinity>());
+        }
+        residual_reference_force = std::max(
+            std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>(),
+            fixed_temperature_force);
 
         if (can_extrapolate) {
             const Precision scale =
