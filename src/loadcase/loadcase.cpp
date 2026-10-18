@@ -30,6 +30,9 @@ void LoadCase::prepare_state() const {
     if (resume) return;
 
     *model->_data->positions = *model->_data->positions_reference;
+    const auto& reference_temperature = model->_data->temperature_reference;
+    model->_data->temperature = reference_temperature
+        ? std::make_shared<model::Field>(*reference_temperature) : nullptr;
     model->_data->material_state_old.reset();
     model->_data->material_state_new.reset();
 
