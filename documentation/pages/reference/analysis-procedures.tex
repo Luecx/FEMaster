@@ -320,43 +320,40 @@ TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
-Every linear static step uses the same base-state increment formulation:
+Ordinary linear static analysis always uses the reference displacement
+\(u_0=0\) and reference temperature \(T_{\mathrm{ref}}\) as its
+linearization point. Each step solves the total linear problem
 \[
-K_T(u_0,T_0)\,\Delta u =
-    (f_{\mathrm{ext,end}}-f_{\mathrm{ext,start}})
-    - (f_{\mathrm{int}}(u_0,T_{\mathrm{target}})
-       - f_{\mathrm{int}}(u_0,T_0)).
+K_0\,u = f_{\mathrm{ext}}-f_{\mathrm{int}}(0,T_{\mathrm{target}}),
+\qquad K_0=K_T(0,T_{\mathrm{ref}}).
 \]
-The external start load is the actual load at the last committed static state,
-including temporarily activated collectors and the final load factor of a
-nonlinear step. Independent steps use a zero external start load. Mechanical
-and thermal load changes are applied without an additional correction of
-pre-existing equilibrium residuals: identical loads, temperatures and boundary
-conditions produce no further displacement.
-With \key{RESUME=NO}, the base displacement is zero and the reference
-initial temperature is restored. With \key{RESUME=YES}, the previously
-converged displacement, material state and temperature are used for the
-linearization. Prescribed displacements are likewise converted into increments,
-\(C\,\Delta u = d - C\,u_0\).
+The previously calculated linear displacement is not added to the next
+solution: the next linear step recomputes the total displacement from
+its current total loads and prescribed boundary conditions. Stress,
+strain, internal forces, and section resultants use that same reference
+linearization. No historical stress or force fields are required.
 
-An ordinary linear static step reports total displacement \(u_0+\Delta u\)
-and advances the committed internal force, reaction, stress, strain and section
-resultants exclusively by their linearized increments. Subsequent resumed
-linear steps start from these committed total fields, rather than reevaluating
-their total response with the nonlinear constitutive law at the deformed base.
-These constitutive fields are retained even if not requested for output in the
-intermediate steps. The base-temperature and target-temperature fields may differ.
-This is a single tangent step, not an iterative nonlinear equilibrium correction;
-large changes may require \key{NLGEOM=YES} instead. A perturbation reports
-increments only and leaves the committed total results unchanged.
+With \key{RESUME=NO}, the reference temperature and geometry are restored
+before the independent solve. With \key{RESUME=YES}, load definitions and
+the latest prescribed temperature may be carried over, but a regular
+linear step still solves from reference geometry. A regular linear
+step cannot resume a nonlinear static solution; to analyze its
+prestressed tangent response, use \key{PERTURBATION}, or start an
+independent linear analysis with \key{RESUME=NO}.
 
 \paragraph*{Linear static perturbation}
 
-A resumed \cmd{STEP} with \key{PERTURBATION} uses precisely the same
-increment equation as general linear statics, linearized at the committed
-base state \(u_0,T_0\). Its external load difference is measured from the
-last committed force field, rather than recomputed from input definitions
-that may have been modified within the step. Thus load cards retain their
+A resumed \cmd{STEP} with \key{PERTURBATION} instead solves the
+incremental tangent problem at the committed base state \((u_0,T_0)\):
+\[
+K_T(u_0,T_0)\,\Delta u =
+ (f_{\mathrm{ext,end}}-f_{\mathrm{ext,start}})
+ - \bigl[f_{\mathrm{int}}(u_0,T_{\mathrm{target}})
+         -f_{\mathrm{int}}(u_0,T_0)\bigr].
+\]
+The external start load is the last committed applied load, retained
+even when input load definitions change or a preceding nonlinear step
+converged at a non-unit load factor. Thus load cards retain their
 normal target-value meaning:
 a \cmd{CLOAD} of 11000 following a step with 10000 denotes a new total target
 of 11000, not an additional 11000. The same assembly applies to all supported
