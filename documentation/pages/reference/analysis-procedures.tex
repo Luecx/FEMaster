@@ -320,6 +320,28 @@ TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
 
+Every linear static step uses the same base-state increment formulation:
+\[
+K_T(u_0,T_0)\,\Delta u = f_{\mathrm{ext,target}}
+    - f_{\mathrm{int}}(u_0,T_{\mathrm{target}}).
+\]
+The right-hand side is the effective change in load, including a prescribed
+thermal change and any small remaining equilibrium residual at the base.
+With \key{RESUME=NO}, the base displacement is zero and the reference
+initial temperature is restored. With \key{RESUME=YES}, the previously
+converged displacement, material state and temperature are used for the
+linearization. Prescribed displacements are likewise converted into increments,
+\(C\,\Delta u = d - C\,u_0\).
+
+An ordinary linear static step reports total displacement \(u_0+\Delta u\)
+and total constitutive results, and commits that total configuration on success.
+The base-temperature and target-temperature fields may differ. This is a single
+tangent step, not an iterative nonlinear equilibrium correction; large changes
+may require \key{NLGEOM=YES} instead. A perturbation uses the same increment
+solve but reports incremental results and restores its original base state.
+See \file{examples/99_regression/996_regression_linear_static_resume.inp}
+for a multi-step example covering restart, continuation and perturbation.
+
 \paragraph*{Linear static perturbation}
 
 A resumed \cmd{STEP} with \key{PERTURBATION} assembles the consistent tangent
