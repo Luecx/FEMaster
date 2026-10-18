@@ -339,16 +339,23 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
-    // Internal nodal force is a primary equilibrium quantity of the solved
-    // system. In a perturbation it includes both the thermal force change
-    // at u0 and the tangent response to the displacement increment.
-    // Keep it available even though it is not part of the historical
-    // default output set so an explicit request can report it without another
-    // model recovery pass.
+    // The tangent predicts only the internal-force increment. The total
+    // internal force must be continued from the last committed field rather
+    // than evaluated anew at the deformed base, which would insert the
+    // nonlinear residual of earlier linear steps.
+    DynamicVector starting_internal = f_base_internal;
+    if (resume && start_static_response) {
+        const auto& previous = start_static_response->fields[
+            static_cast<std::size_t>(io::writer::OutputField::INTERNAL_FORCES)];
+        if (previous) starting_internal =
+            mattools::reduce_mat_to_vec(active_dof_idx_mat, *previous);
+    }
+
     auto internal_active = Timer::measure(
         [&]() {
-            return perturbation ? DynamicVector(f_reference - f_base_internal + K * u)
-                                : DynamicVector(f_reference + K * u);
+            const DynamicVector increment_internal = f_reference - f_base_internal + K * u;
+            return perturbation ? DynamicVector(increment_internal)
+                                : DynamicVector(starting_internal + increment_internal);
         },
         "computing total or incremental internal nodal forces");
 
@@ -361,9 +368,9 @@ void LinearStatic::run() {
         // internal forces. Only the external-force output needs conversion.
         if (step_start_load) global_load_mat -= *step_start_load;
     } else {
-        // The reduced increment system supplies delta reactions; reconstruct
-        // total reactions by adding the physical base reaction.
-        r_support += f_base_internal - f_start;
+        // Reactions are continued consistently with the committed internal
+        // force, not with a fresh nonlinear evaluation at the base geometry.
+        r_support += starting_internal - f_start;
     }
 
     auto increment_disp_mat = Timer::measure(
@@ -418,6 +425,7 @@ void LinearStatic::run() {
                 output.set_perturbation_base(&reference_displacement);
             } else {
                 output.set_linearization_base(&reference_displacement);
+                output.set_static_response_base(start_static_response.get());
             }
             output.begin_frame();
             output.provide(OutputField::DISPLACEMENT,
@@ -436,11 +444,20 @@ void LinearStatic::run() {
 
     transformer->post_check_static(K, f, q);
 
-    // General statics commits both the total displacement and its applied
-    // load. Perturbations leave both parts of the starting state unchanged.
+    // The constitutive totals must be saved even if the output request did
+    // not ask for them. Future resumed steps may request them for the first
+    // time, and cannot reconstruct the intervening affine history from u alone.
     if (!perturbation) {
+        auto response = std::make_shared<io::writer::StaticResponse>(
+            output.capture_static_response());
+        response->fields[static_cast<std::size_t>(io::writer::OutputField::INTERNAL_FORCES)] =
+            global_internal_mat;
+        response->fields[static_cast<std::size_t>(io::writer::OutputField::REACTION_FORCES)] =
+            reaction_masked;
+
         commit_state(total_disp_mat);
         committed_structural_load = std::make_shared<model::Field>(global_load_mat);
+        committed_static_response = std::move(response);
     }
     model->step_end();
 }
