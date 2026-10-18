@@ -36,6 +36,18 @@ namespace fem::io::writer {
 struct ResultWriters;
 
 /**
+ * Committed total response of a structural static step. A subsequent linear
+ * step carries these fields forward by tangent increments rather than
+ * reconstructing the total response from deformed geometry.
+ */
+struct StaticResponse {
+    static constexpr std::size_t field_count =
+        static_cast<std::size_t>(OutputField::COUNT);
+    std::array<std::optional<model::Field>, field_count> fields{};
+};
+
+
+/**
  * @brief Resolves and writes requested result quantities for one analysis step.
  *
  * The handler owns request state and lazily recovered fields. Fields supplied
@@ -70,6 +82,7 @@ class OutputRequestHandler {
     bool nonlinear_ = false;
     const model::Field* perturbation_base_ = nullptr;
     const model::Field* linearization_base_ = nullptr;
+    const StaticResponse* static_response_base_ = nullptr;
 
     // Optional analysis hook run before each derived model recovery. Nonlinear
     // steps use it to restore constitutive trial storage from committed state.
@@ -83,6 +96,8 @@ public:
     void set_nonlinear(bool nonlinear);
     void set_perturbation_base(const model::Field* displacement);
     void set_linearization_base(const model::Field* displacement);
+    void set_static_response_base(const StaticResponse* response);
+    StaticResponse capture_static_response();
     void set_before_compute(std::function<void()> callback);
 
     // Explicit requests supplied by the input deck
