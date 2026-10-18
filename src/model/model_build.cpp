@@ -311,9 +311,12 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * generalized master-node loads only after all contributions have been summed.
  *
  * @param time Evaluation time supplied to load amplitudes.
+ * @param step_progress Normalized interpolation of non-amplitude loads.
+ * @param source Optional alternate condition set for read-only base load assembly.
  * @return Six-component global nodal load field for the current model state.
  */
-Field Model::build_load_matrix(Precision time, Precision step_progress) {
+Field Model::build_load_matrix(Precision time, Precision step_progress,
+                               const bc::ConditionManager* source) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -321,6 +324,10 @@ Field Model::build_load_matrix(Precision time, Precision step_progress) {
     constraint::Equations equations{};
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
+
+    // An optional snapshot supplies unmodified base definitions for perturbation
+    // output, while the default path keeps the live model condition history.
+    const auto& active_conditions = source ? *source : _data->conditions;
 
     // Input-history families identify structural loads without physical RTTI.
     // DLOAD and DSLOAD may each contain several concrete load implementations.
@@ -333,7 +340,7 @@ Field Model::build_load_matrix(Precision time, Precision step_progress) {
         bc::INERTIAL_LOAD
     };
     for (const auto family : load_families) {
-        for (const auto& condition : _data->conditions.get(family)) {
+        for (const auto& condition : active_conditions.get(family)) {
             condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
                              time, false, step_progress);
         }
