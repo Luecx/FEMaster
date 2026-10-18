@@ -142,8 +142,8 @@ void LinearStatic::run() {
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
-    // The initial state is zero for ordinary linear statics, or the last
-    // converged total displacement for linear perturbations.
+    // Every linear step solves for du, using either the reset reference
+    // configuration or the last converged total displacement as its base.
     model::Field reference_displacement = model->_data->create_field_(
         "REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
@@ -152,12 +152,15 @@ void LinearStatic::run() {
     // restored reference positions before run(); RESUME=YES preserved u0.
     const auto& current = *model->_data->positions;
     const auto& reference = *model->_data->positions_reference;
+    bool has_deformed_base = false;
     for (Index node = 0; node < reference_displacement.rows; ++node) {
         for (Index dof = 0; dof < 3; ++dof) {
             reference_displacement(node, dof) = current(node, dof) - reference(node, dof);
+            has_deformed_base |= reference_displacement(node, dof) != Precision(0);
         }
         for (Index dof = 3; dof < 6; ++dof) {
             reference_displacement(node, dof) = current(node, dof);
+            has_deformed_base |= reference_displacement(node, dof) != Precision(0);
         }
     }
 
@@ -241,9 +244,8 @@ void LinearStatic::run() {
         }
     }
 
-    // The same equilibrium linearization works at both base configurations:
-    //    K_T(u0) du = f_ext(end) - f_int(u0).
-    // No load-family-specific branch or subtraction is required here.
+    // For an equilibrated base, this is K_T * du = delta(f_ext - f_thermal).
+    // Using the full base residual also tolerates small convergence errors.
     DynamicVector f = f_external - f_reference;
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
@@ -264,9 +266,9 @@ void LinearStatic::run() {
             "ELIMINATION| GPU cuDSS | Yes          | Yes");
     }
 
-    // Prestress may make the tangent indefinite or nonsymmetric.
+    // A deformed/prestressed base may have an indefinite or nonsymmetric tangent.
     const auto direct_matrix_type =
-        perturbation || constraint_method == ConstraintTransformer::Method::Lagrange
+        perturbation || has_deformed_base || constraint_method == ConstraintTransformer::Method::Lagrange
             ? solver::DirectSolverMatrixType::General
             : solver::DirectSolverMatrixType::SPD;
 
@@ -431,7 +433,7 @@ void LinearStatic::run() {
 
     transformer->post_check_static(K, f, q);
 
-    // A linear perturbation must not overwrite the underlying base state.
+    // General statics commits the total u0 + du; perturbations only output du.
     if (!perturbation) {
         commit_state(total_disp_mat);
     }
