@@ -145,7 +145,7 @@ class Parser {
     // state. Unlike mutable input definitions, this also retains prior
     // collector activations and the final nonlinear load factor.
     model::Field::Ptr committed_structural_load_;
-    std::shared_ptr<io::writer::StaticResponse> committed_static_response_;
+    bool last_committed_static_nonlinear_ = false;
 
     // Restore temporary condition changes without replacing shared object identities
     void restore_perturbation();
