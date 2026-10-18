@@ -67,7 +67,13 @@ void LinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
-    // Prepare section assignments and material history before element assembly.
+    // Ordinary linear statics never continues a deformed tangent: the
+    // reference configuration is its geometry throughout assembly.
+    // Perturbations retain the prestressed configuration unmodified.
+    if (!perturbation) {
+        *model->_data->positions = *model->_data->positions_reference;
+    }
+
     model->assign_sections();
     model->step_begin();
     if (perturbation) {
