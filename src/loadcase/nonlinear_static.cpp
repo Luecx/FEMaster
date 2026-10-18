@@ -1018,7 +1018,6 @@ void NonlinearStatic::run() {
     // other constitutive fields can be recovered exactly on first use.
     auto response = std::make_shared<io::writer::StaticResponse>();
     response->fields[static_cast<std::size_t>(OutputField::INTERNAL_FORCES)] = final_internal;
-    response->fields[static_cast<std::size_t>(OutputField::REACTION_FORCES)] = reaction_masked;
     committed_static_response = std::move(response);
 
     // Commit the converged total configuration for the next RESUME step.
