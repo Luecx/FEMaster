@@ -417,10 +417,9 @@ void LinearStatic::run() {
 
             writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
-            // The static step exposes only quantities obtained directly from
-            // the solved equilibrium state. Stress, strain, shell resultants,
-            // section forces and shear flow are recovered lazily by the output
-            // handler if the active request set actually needs them.
+            // Direct force and displacement fields come from the increment
+            // solve. The output handler continues requested constitutive
+            // results and retains every total constitutive field on commit.
             if (perturbation) {
                 output.set_perturbation_base(&reference_displacement);
             } else {
