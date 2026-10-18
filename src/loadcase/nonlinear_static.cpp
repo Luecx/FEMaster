@@ -215,7 +215,7 @@ void NonlinearStatic::run() {
 
     // A predefined target temperature acts in full from the first Newton
     // evaluation; only structural loads follow the incremental load factor.
-    const model::Field* step_temperature = model->_data->temperature_target
+    model::Field* step_temperature = model->_data->temperature_target
         ? model->_data->temperature_target.get()
         : model->_data->temperature.get();
     auto active_dof_idx_mat = Timer::measure(
@@ -398,9 +398,9 @@ void NonlinearStatic::run() {
                 active_dof_idx_mat,
                 internal_mat,
                 displacement_evaluation,
-                model->_data->temperature.get(),
+                step_temperature,
                 displacement_evaluation,
-                model->_data->temperature.get()
+                step_temperature
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -479,9 +479,9 @@ void NonlinearStatic::run() {
             model->build_internal_force(
                 internal_mat,
                 displacement_evaluation,
-                model->_data->temperature.get(),
+                step_temperature,
                 &displacement_evaluation,
-                model->_data->temperature.get(),
+                step_temperature,
                 true,
                 &active_dof_idx_mat
             );
@@ -705,9 +705,9 @@ void NonlinearStatic::run() {
         model->build_internal_force(
             increment_internal,
             displacement,
-            model->_data->temperature.get(),
+            step_temperature,
             &displacement,
-            model->_data->temperature.get(),
+            step_temperature,
             true,
             &active_dof_idx_mat
         );
@@ -740,8 +740,8 @@ void NonlinearStatic::run() {
         output.provide(OutputField::EXTERNAL_FORCES,     increment_external);
         output.provide(OutputField::INTERNAL_FORCES,     increment_internal);
         output.provide(OutputField::REACTION_FORCES,     increment_reactions);
-        if (model->_data->temperature) {
-            output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+        if (step_temperature) {
+            output.provide(OutputField::TEMPERATURE, *step_temperature);
         }
         output.provide(OutputField::LAMBDA,              lambda_field);
         output.write_frame(*writer, model->_data.get());
@@ -923,9 +923,9 @@ void NonlinearStatic::run() {
                 active_dof_idx_mat,
                 final_internal,
                 displacement,
-                model->_data->temperature.get(),
+                step_temperature,
                 displacement,
-                model->_data->temperature.get()
+                step_temperature
             );
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
@@ -977,8 +977,8 @@ void NonlinearStatic::run() {
     output.provide(OutputField::EXTERNAL_FORCES,     global_load_final);
     output.provide(OutputField::INTERNAL_FORCES,     final_internal);
     output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-    if (model->_data->temperature) {
-        output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+    if (step_temperature) {
+        output.provide(OutputField::TEMPERATURE, *step_temperature);
     }
     output.provide(OutputField::LAMBDA,              final_lambda);
     output.write_frame(*writer, model->_data.get());
