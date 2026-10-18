@@ -622,10 +622,16 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
         loadcase->perturbation = step_state_.perturbation;
     }
 
-    // RESUME selects the actual last committed structural force, not a
-    // reconstruction from definitions that later OP=MOD/NEW may mutate.
+    // A regular linear solve always uses the reference tangent. Do not
+    // silently follow a nonlinear state with a total linear solve while
+    // claiming continuation; use a tangent perturbation or RESUME=NO.
     if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
-        linear->step_start_load = loadcase->resume ? committed_structural_load_ : nullptr;
+        logging::error(!loadcase->resume || loadcase->perturbation ||
+                       !last_committed_static_nonlinear_,
+            "LINEARSTATIC after NONLINEARSTATIC with RESUME=YES is not supported; "
+            "use PERTURBATION or start an independent step with RESUME=NO");
+        linear->step_start_load = loadcase->perturbation && loadcase->resume
+            ? committed_structural_load_ : nullptr;
     }
 
     // Prepare an independent temperature target BEFORE step-local keywords
