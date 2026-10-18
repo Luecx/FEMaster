@@ -452,8 +452,6 @@ void LinearStatic::run() {
             output.capture_static_response());
         response->fields[static_cast<std::size_t>(io::writer::OutputField::INTERNAL_FORCES)] =
             global_internal_mat;
-        response->fields[static_cast<std::size_t>(io::writer::OutputField::REACTION_FORCES)] =
-            reaction_masked;
 
         commit_state(total_disp_mat);
         committed_structural_load = std::make_shared<model::Field>(global_load_mat);
