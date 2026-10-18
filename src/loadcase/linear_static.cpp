@@ -53,7 +53,8 @@ using constraint::ConstraintTransformer;
  * Ordinary linear statics solves total equilibrium about the reference
  * state. Perturbations alone linearize about a committed, prestressed base.
  *
- * The affine constraint map reduces K_T du = delta f to the configured backend.
+ * The constraint map solves total linear equilibrium for general steps and
+ * tangent increments for perturbations with the same configured backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
  * requested result fields are written and analysis-local element caches released.
  * Model condition definitions and collector-derived activations are read, never copied into
@@ -330,10 +331,9 @@ void LinearStatic::run() {
         global_load_mat -= *step_start_load;
     }
 
-    auto increment_disp_mat = Timer::measure(
+    auto global_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
-        "expanding displacement increment to matrix form");
-    model::Field total_disp_mat = increment_disp_mat;
+        "expanding solved displacement to nodal field");
 
     auto global_react_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
@@ -381,7 +381,7 @@ void LinearStatic::run() {
             }
             output.begin_frame();
             output.provide(OutputField::DISPLACEMENT,
-                perturbation ? increment_disp_mat : total_disp_mat);
+                global_disp_mat);
             output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
             output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
@@ -398,7 +398,7 @@ void LinearStatic::run() {
 
     // Commit the total displacement only for ordinary linear statics.
     if (!perturbation) {
-        commit_state(total_disp_mat);
+        commit_state(global_disp_mat);
         committed_structural_load = std::make_shared<model::Field>(global_load_mat);
     }
     model->step_end();
