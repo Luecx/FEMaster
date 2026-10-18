@@ -64,24 +64,19 @@ namespace {
 /**
  * Captures one mutable load before parsing a perturbation step.
  *
- * The independent copy supplies the unchanged base loading at any requested
- * amplitude time. The restore callback assigns the saved values back to the
- * original object so named collectors retain their existing pointer identity.
+ * The saved values restore shared input objects (including named collectors)
+ * after the perturbation. The physical start load is retained separately as
+ * the actual committed load field from the preceding structural step.
  *
  * @param condition Active physical definition.
- * @param family Input-history family of the saved definition.
- * @param base_loads Independent copies used for base-force assembly.
  * @param restore Callbacks restoring original shared objects after the step.
  */
 template <typename Load>
 void snapshot_load(const bc::Condition::Ptr&           condition,
-                   bc::ConditionFamily                family,
-                   bc::ConditionManager&              base_loads,
                    std::vector<std::function<void()>>& restore) {
     if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
         auto original = std::make_shared<Load>(*load);
         restore.emplace_back([load, original]() { *load = *original; });
-        base_loads.add(family, std::move(original));
     }
 }
 
@@ -251,6 +246,8 @@ void Parser::run(const std::string& input_path,
     for (auto& index : inherited_conditions_) index.clear();
     for (auto& index : current_conditions_) index.clear();
     selected_conditions_.clear();
+    perturbation_snapshot_.reset();
+    committed_structural_load_.reset();
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -624,6 +621,12 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
         loadcase->perturbation = step_state_.perturbation;
     }
 
+    // RESUME selects the actual last committed structural force, not a
+    // reconstruction from definitions that later OP=MOD/NEW may mutate.
+    if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
+        linear->step_start_load = loadcase->resume ? committed_structural_load_ : nullptr;
+    }
+
     // Prepare an independent temperature target BEFORE step-local keywords
     // execute. A fresh step starts from the original reference on RESUME=NO.
     auto& data = *model_->_data;
@@ -649,12 +652,12 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
                                   bc::HEAT_FLUX}) {
             for (const auto& condition : conditions().get(family)) {
                 auto& snapshot = *perturbation_snapshot_;
-                snapshot_load<bc::CLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
-                snapshot_load<bc::DLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
-                snapshot_load<bc::PLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
-                snapshot_load<bc::VLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
-                snapshot_load<bc::InertialLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
-                snapshot_load<bc::HeatFlux>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::CLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::DLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::PLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::VLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::InertialLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::HeatFlux>(condition, snapshot.restore_values);
             }
         }
     }
@@ -731,19 +734,14 @@ void Parser::end_loadcase() {
             }
         }
 
-        // Recover the original external load at the actual perturbation
-        // amplitude time, using independent copies made before OP=MOD/NEW.
-        if (perturbation_snapshot_) {
-            auto* linear = loadcase->as<loadcase::LinearStatic>();
-            logging::error(linear != nullptr,
-                "Perturbation snapshot requires a linear static load case");
-            linear->perturbation_start_load = std::make_shared<model::Field>(
-                model_->build_load_matrix(
-                    linear->step_period, Precision(1), &perturbation_snapshot_->base_loads));
-        }
-
         // Assemble and solve with the current step's target conditions.
         loadcase->run();
+
+        // Only a committed static analysis changes the force baseline.
+        // Perturbations leave both the mechanical and loading states intact.
+        if (!loadcase->perturbation && loadcase->committed_structural_load) {
+            committed_structural_load_ = std::move(loadcase->committed_structural_load);
+        }
     } catch (...) {
         // Restore shared input definitions even if preparation or solving fails.
         if (perturbation_snapshot_) restore_perturbation();
