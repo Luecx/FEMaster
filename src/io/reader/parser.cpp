@@ -69,9 +69,9 @@ void snapshot_load(const bc::Condition::Ptr&       condition,
                    bc::ConditionManager&           base_loads,
                    std::vector<std::function<void()>>& restore) {
     if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
-        const Load original = *load;
-        restore.emplace_back([load, original]() { *load = original; });
-        base_loads.add(family, std::make_shared<Load>(original));
+        auto original = std::make_shared<Load>(*load);
+        restore.emplace_back([load, original]() { *load = *original; });
+        base_loads.add(family, std::move(original));
     }
 }
 
@@ -697,43 +697,51 @@ void Parser::end_loadcase() {
 
     auto loadcase = std::move(active_loadcase_);
 
-    // Insert only missing collector pointers and remember precisely those
-    // references. Previously active direct conditions must survive cleanup.
     std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> temporary_conditions;
-    for (const auto& [family, condition] : selected_conditions_) {
-        if (conditions().add(family, condition)) {
-            temporary_conditions.emplace_back(family, condition);
+    try {
+        // Insert collector selections only for this solve. Previously active
+        // direct definitions must retain their shared pointer identities.
+        for (const auto& [family, condition] : selected_conditions_) {
+            if (conditions().add(family, condition)) {
+                temporary_conditions.emplace_back(family, condition);
+            }
         }
-    }
 
-    // Restore an independent starting configuration or retain the last
-    // converged state before the concrete analysis starts.
-    loadcase->prepare_state();
+        // Restore the reference state for RESUME=NO before structural assembly.
+        loadcase->prepare_state();
 
-    // A partial *TEMPERATURE without an initial field leaves unassigned
-    // nodes undefined; zero is not a valid substitute for material T_zero.
-    if (model_->_data->temperature_target) {
-        const auto& target = *model_->_data->temperature_target;
-        for (Index node = 0; node < target.rows; ++node) {
-            logging::error(std::isfinite(target(node, 0)),
-                "TEMPERATURE: no finite temperature specified for node ", node,
-                " (provide an initial temperature or prescribe every node)");
+        // A partial temperature field without an initial state leaves nodes
+        // undefined; zero must not replace material stress-free temperature.
+        if (model_->_data->temperature_target) {
+            const auto& target = *model_->_data->temperature_target;
+            for (Index node = 0; node < target.rows; ++node) {
+                logging::error(std::isfinite(target(node, 0)),
+                    "TEMPERATURE: no finite temperature specified for node ", node,
+                    " (provide an initial temperature or prescribe every node)");
+            }
         }
-    }
 
-    // Model assembly reads the active family sets during this numerical solve.
-    loadcase->run();
+        // Recover the original external load at the actual perturbation
+        // amplitude time, using independent copies made before OP=MOD/NEW.
+        if (perturbation_snapshot_) {
+            auto* linear = loadcase->as<loadcase::LinearStatic>();
+            logging::error(linear != nullptr,
+                "Perturbation snapshot requires a linear static load case");
+            linear->perturbation_start_load = std::make_shared<model::Field>(
+                model_->build_load_matrix(
+                    linear->step_period, Precision(1), &perturbation_snapshot_->base_loads));
+        }
+
+        // Assemble and solve with the current step's target conditions.
+        loadcase->run();
+    } catch (...) {
+        // Restore shared input definitions even if preparation or solving fails.
+        if (perturbation_snapshot_) restore_perturbation();
+        throw;
+    }
 
     if (perturbation_snapshot_) {
-        // The step's target loads and support definitions are a temporary
-        // linearization experiment; they do not become the next step's base.
-        for (auto& restore : perturbation_snapshot_->restore_values) restore();
-        conditions() = std::move(perturbation_snapshot_->active);
-        inherited_conditions_ = std::move(perturbation_snapshot_->inherited);
-        current_conditions_ = std::move(perturbation_snapshot_->current);
-        perturbation_snapshot_.reset();
-        selected_conditions_.clear();
-        model_->_data->temperature_target.reset();
+        restore_perturbation();
         return;
     }
 
@@ -782,6 +790,32 @@ void Parser::end_loadcase() {
         }
         current.clear();
     }
+}
+
+/**
+ * Restores the input state saved before a linear perturbation step.
+ *
+ * Original shared Condition objects are assigned their saved numeric values
+ * before restoring manager membership and identifier maps. This preserves
+ * references held by named collectors and discards step-local definitions.
+ * The target temperature is an independent model field and is discarded.
+ */
+void Parser::restore_perturbation() {
+    logging::error(perturbation_snapshot_ != nullptr,
+        "Parser: no perturbation snapshot to restore");
+
+    auto& snapshot = *perturbation_snapshot_;
+
+    // Restore mutated objects before returning their original ownership sets
+    for (auto& restore : snapshot.restore_values) restore();
+
+    conditions()          = std::move(snapshot.active);
+    inherited_conditions_ = std::move(snapshot.inherited);
+    current_conditions_   = std::move(snapshot.current);
+
+    selected_conditions_.clear();
+    model_->_data->temperature_target.reset();
+    perturbation_snapshot_.reset();
 }
 
 /**
