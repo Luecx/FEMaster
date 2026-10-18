@@ -69,6 +69,10 @@ struct LoadCase : public Castable {
     // The parser carries it across resumed steps without inspecting mutable loads.
     model::Field::Ptr committed_structural_load = nullptr;
 
+    // Committed total structural results, independent of later relinearization.
+    std::shared_ptr<io::writer::StaticResponse> start_static_response = nullptr;
+    std::shared_ptr<io::writer::StaticResponse> committed_static_response = nullptr;
+
     // Construction and destruction
     virtual ~LoadCase() = default;
 
