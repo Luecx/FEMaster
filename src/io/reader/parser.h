@@ -131,8 +131,7 @@ class Parser {
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
 
     // Perturbations temporarily modify condition membership and shared load
-    // objects. Keep their previous identities and values for restoration, and
-    // independent load copies for assembling the original external force.
+    // objects. Keep previous identities and values solely for restoration.
     struct PerturbationSnapshot {
         bc::ConditionManager active;
         std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
