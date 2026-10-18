@@ -135,12 +135,16 @@ class Parser {
     // independent load copies for assembling the original external force.
     struct PerturbationSnapshot {
         bc::ConditionManager active;
-        bc::ConditionManager base_loads;
         std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
         std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current;
         std::vector<std::function<void()>> restore_values;
     };
     std::unique_ptr<PerturbationSnapshot> perturbation_snapshot_;
+
+    // Actual final external loading of the last committed structural static
+    // state. Unlike mutable input definitions, this also retains prior
+    // collector activations and the final nonlinear load factor.
+    model::Field::Ptr committed_structural_load_;
 
     // Restore temporary condition changes without replacing shared object identities
     void restore_perturbation();
