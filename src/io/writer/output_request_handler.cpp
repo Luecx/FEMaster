@@ -78,6 +78,31 @@ void OutputRequestHandler::set_linearization_base(const model::Field* displaceme
 }
 
 /**
+ * Supplies the previous committed total constitutive fields, if available.
+ */
+void OutputRequestHandler::set_static_response_base(const StaticResponse* response) {
+    static_response_base_ = response;
+}
+
+/**
+ * Retains all constitutive fields of a successful general linear step, even
+ * when not explicitly requested in the output deck. Later steps must not
+ * silently replace them with nonlinear recovery at the new geometry.
+ */
+StaticResponse OutputRequestHandler::capture_static_response() {
+    StaticResponse response;
+    for (const OutputField field : {
+        OutputField::STRESS, OutputField::STRAIN,
+        OutputField::STRESS_TOP, OutputField::STRESS_BOT,
+        OutputField::SHELL_RESULTANTS, OutputField::LOCAL_SECTION_FORCES,
+        OutputField::SHEAR_FLOW
+    }) {
+        response.fields[index(field)] = resolve(field);
+    }
+    return response;
+}
+
+/**
  * Installs an optional preparation hook for derived model recovery.
  *
  * Linear procedures leave this empty. Nonlinear procedures use it to reset
@@ -288,6 +313,16 @@ void OutputRequestHandler::compute(OutputField field) {
         : model_->_data->temperature.get();
     const model::Field* base_temperature = model_->_data->temperature.get();
 
+    // A prior linear step committed a linearly continued total result rather
+    // than the constitutive model's exact value at its deformed geometry.
+    // Carry that committed value forward and add only this step's affine
+    // increment; never silently replace the previous total by exact recovery.
+    const auto committed = [&](OutputField which) -> const model::Field* {
+        if (!linearization_base_ || !static_response_base_) return nullptr;
+        const auto& entry = static_response_base_->fields[index(which)];
+        return entry ? &*entry : nullptr;
+    };
+
     // U denotes du for linear perturbations. Recover constitutive fields by
     // affine continuation from the committed base and subtract the base value.
     if (perturbation_base_) {
@@ -368,6 +403,22 @@ void OutputRequestHandler::compute(OutputField field) {
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
+            const auto* committed_stress = committed(OutputField::STRESS);
+            const auto* committed_strain = committed(OutputField::STRAIN);
+            if (committed_stress || committed_strain) {
+                auto base = *linearization_base_;
+                auto [exact_stress, exact_strain] = model_->compute_stress_nodal(
+                    base, base_temperature, &base, base_temperature);
+                if (committed_stress) {
+                    stress -= exact_stress;
+                    stress += *committed_stress;
+                }
+                if (committed_strain) {
+                    strain -= exact_strain;
+                    strain += *committed_strain;
+                }
+            }
+
             computed_[index(OutputField::STRESS)] = std::move(stress);
             computed_[index(OutputField::STRAIN)] = std::move(strain);
             return;
@@ -382,6 +433,22 @@ void OutputRequestHandler::compute(OutputField field) {
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
+            const auto* committed_top = committed(OutputField::STRESS_TOP);
+            const auto* committed_bot = committed(OutputField::STRESS_BOT);
+            if (committed_top || committed_bot) {
+                auto base = *linearization_base_;
+                auto [exact_top, exact_bot] = model_->compute_stress_top_bot(
+                    base, base_temperature, &base, base_temperature);
+                if (committed_top) {
+                    top -= exact_top;
+                    top += *committed_top;
+                }
+                if (committed_bot) {
+                    bot -= exact_bot;
+                    bot += *committed_bot;
+                }
+            }
+
             computed_[index(OutputField::STRESS_TOP)] = std::move(top);
             computed_[index(OutputField::STRESS_BOT)] = std::move(bot);
             return;
@@ -389,28 +456,48 @@ void OutputRequestHandler::compute(OutputField field) {
 
         case OutputField::SHELL_RESULTANTS: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            computed_[index(field)] = model_->compute_shell_resultants(
+            auto resultants = model_->compute_shell_resultants(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
+            if (const auto* previous = committed(field)) {
+                auto base = *linearization_base_;
+                resultants -= model_->compute_shell_resultants(
+                    base, base_temperature, &base, base_temperature);
+                resultants += *previous;
+            }
+            computed_[index(field)] = std::move(resultants);
             return;
         }
 
         case OutputField::LOCAL_SECTION_FORCES: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            computed_[index(field)] = model_->compute_section_forces(
+            auto forces = model_->compute_section_forces(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
+            if (const auto* previous = committed(field)) {
+                auto base = *linearization_base_;
+                forces -= model_->compute_section_forces(
+                    base, base_temperature, &base, base_temperature);
+                forces += *previous;
+            }
+            computed_[index(field)] = std::move(forces);
             return;
         }
 
-        case OutputField::SHEAR_FLOW:
-            computed_[index(field)] =
-                model_->compute_shear_flow(resolve(OutputField::DISPLACEMENT));
+        case OutputField::SHEAR_FLOW: {
+            auto flow = model_->compute_shear_flow(resolve(OutputField::DISPLACEMENT));
+            if (const auto* previous = committed(field)) {
+                auto base = *linearization_base_;
+                flow -= model_->compute_shear_flow(base);
+                flow += *previous;
+            }
+            computed_[index(field)] = std::move(flow);
             return;
+        }
 
         case OutputField::COMPLIANCE:
             computed_[index(field)] =
