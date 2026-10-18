@@ -223,6 +223,39 @@ void LinearStatic::run() {
         "reducing reference internal force -> active vector"
     );
 
+    // The tangent assembly evaluated internal force at the target temperature.
+    // For incremental NFORC and RF, also retain the actual base internal force.
+    // Skip this extra element traversal when the thermal state did not change.
+    DynamicVector f_base_internal = f_reference;
+    if (perturbation) {
+        const auto* base_temperature = model->_data->temperature.get();
+        bool temperature_changed = (target_temperature == nullptr) != (base_temperature == nullptr);
+
+        if (!temperature_changed && target_temperature) {
+            for (Index node = 0; node < target_temperature->rows; ++node) {
+                if ((*target_temperature)(node, 0) != (*base_temperature)(node, 0)) {
+                    temperature_changed = true;
+                    break;
+                }
+            }
+        }
+
+        if (temperature_changed) {
+            model::Field base_internal = model->_data->create_field_(
+                "BASE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
+            base_internal.set_zero();
+            model->build_internal_force(
+                base_internal,
+                reference_displacement,
+                base_temperature,
+                &reference_displacement,
+                base_temperature,
+                false,
+                nullptr);
+            f_base_internal = mattools::reduce_mat_to_vec(active_dof_idx_mat, base_internal);
+        }
+    }
+
     // The same equilibrium linearization works at both base configurations:
     //    K_T(u0) du = f_ext(end) - f_int(u0).
     // No load-family-specific branch or subtraction is required here.
@@ -312,12 +345,14 @@ void LinearStatic::run() {
         "recovering full displacement vector u");
 
     // Internal nodal force is a primary equilibrium quantity of the solved
-    // system. Keep it available even though it is not part of the historical
+    // system. In a perturbation it includes both the thermal force change
+    // at u0 and the tangent response to the displacement increment.
+    // Keep it available even though it is not part of the historical
     // default output set so an explicit request can report it without another
     // model recovery pass.
     auto internal_active = Timer::measure(
         [&]() {
-            return perturbation ? DynamicVector(K * u)
+            return perturbation ? DynamicVector(f_reference - f_base_internal + K * u)
                                 : DynamicVector(f_reference + K * u);
         },
         "computing total or incremental internal nodal forces");
@@ -327,14 +362,17 @@ void LinearStatic::run() {
         "computing support reactions via multipliers (C_supp^T lambda)");
 
     if (perturbation) {
-        // The linearized residual includes the base support reaction, which
-        // does not belong in incremental output. Subtract the base reaction,
-        // and expose f_ext(end)-f_ext(start) rather than the total applied load.
-        // Evaluate both load generations at the same amplitude time so a
-        // retained time-dependent amplitude is not mistaken for a new load.
-        auto starting_load = model->build_load_matrix(step_period, Precision(0));
+        // Use the unmodified base definitions rather than the current targets
+        // at progress zero: amplitudes scale the target even at progress zero.
+        // Direct C++ callers without parser history retain the former fallback.
+        auto starting_load = perturbation_start_load
+            ? *perturbation_start_load
+            : model->build_load_matrix(step_period, Precision(0));
         const auto f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, starting_load);
-        r_support -= (f_reference - f_start);
+
+        // Subtract the actual base reaction, including the base thermal stress.
+        // This preserves thermal contributions in incremental NFORC and RF.
+        r_support -= (f_base_internal - f_start);
         global_load_mat -= starting_load;
     }
 
