@@ -71,6 +71,7 @@ class OutputRequestHandler {
     bool nonlinear_ = false;
     const model::Field* perturbation_base_ = nullptr;
     const model::Field* linearization_base_ = nullptr;
+    const model::Field* linearization_temperature_ = nullptr;
 
     // Optional analysis hook run before each derived model recovery. Nonlinear
     // steps use it to restore constitutive trial storage from committed state.
@@ -83,7 +84,8 @@ public:
     void use_defaults();
     void set_nonlinear(bool nonlinear);
     void set_perturbation_base(const model::Field* displacement);
-    void set_linearization_base(const model::Field* displacement);
+    void set_linearization_base(const model::Field* displacement,
+                                const model::Field* temperature);
     void set_before_compute(std::function<void()> callback);
 
     // Explicit requests supplied by the input deck
