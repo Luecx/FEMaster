@@ -42,6 +42,7 @@
 #include "../../bc/thermal/convection.h"
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
+#include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_transient.h"
 #include "../../loadcase/nonlinear_static.h"
 #include "../../model/model.h"
@@ -60,14 +61,17 @@
 namespace fem::io::reader {
 namespace {
 
-// Preserve the full concrete load definition, including interpolation values
-// and amplitude, while retaining its original shared pointer identity.
+// Preserve the original mutable definition for both restoring shared pointers
+// and assembling the base external load independently of subsequent OP=MOD/NEW.
 template <typename Load>
-void snapshot_load(const bc::Condition::Ptr& condition,
+void snapshot_load(const bc::Condition::Ptr&       condition,
+                   bc::ConditionFamily             family,
+                   bc::ConditionManager&           base_loads,
                    std::vector<std::function<void()>>& restore) {
     if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
         const Load original = *load;
         restore.emplace_back([load, original]() { *load = original; });
+        base_loads.add(family, std::make_shared<Load>(original));
     }
 }
 
@@ -634,13 +638,13 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
                                   bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD,
                                   bc::HEAT_FLUX}) {
             for (const auto& condition : conditions().get(family)) {
-                auto& restore = perturbation_snapshot_->restore_values;
-                snapshot_load<bc::CLoad>(condition, restore);
-                snapshot_load<bc::DLoad>(condition, restore);
-                snapshot_load<bc::PLoad>(condition, restore);
-                snapshot_load<bc::VLoad>(condition, restore);
-                snapshot_load<bc::InertialLoad>(condition, restore);
-                snapshot_load<bc::HeatFlux>(condition, restore);
+                auto& snapshot = *perturbation_snapshot_;
+                snapshot_load<bc::CLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::DLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::PLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::VLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::InertialLoad>(condition, family, snapshot.base_loads, snapshot.restore_values);
+                snapshot_load<bc::HeatFlux>(condition, family, snapshot.base_loads, snapshot.restore_values);
             }
         }
     }
