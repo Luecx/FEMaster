@@ -73,8 +73,10 @@ void OutputRequestHandler::set_perturbation_base(const model::Field* displacemen
  * Recovers total constitutive output by linear continuation from a base state.
  * In contrast to perturbations, general static output remains total.
  */
-void OutputRequestHandler::set_linearization_base(const model::Field* displacement) {
+void OutputRequestHandler::set_linearization_base(const model::Field* displacement,
+                                                  const model::Field* temperature) {
     linearization_base_ = displacement;
+    linearization_temperature_ = temperature;
 }
 
 /**
@@ -286,7 +288,8 @@ void OutputRequestHandler::compute(OutputField field) {
     const model::Field* target_temperature = model_->_data->temperature_target
         ? model_->_data->temperature_target.get()
         : model_->_data->temperature.get();
-    const model::Field* base_temperature = model_->_data->temperature.get();
+    const model::Field* base_temperature = linearization_base_
+        ? linearization_temperature_ : model_->_data->temperature.get();
 
     // U denotes du for linear perturbations. Recover constitutive fields by
     // affine continuation from the committed base and subtract the base value.
