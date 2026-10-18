@@ -10,7 +10,8 @@
  * @author Finn Eggers
  * @date 06.03.2025
  *
- * Solves K u = f with the configured constraint transformer and sparse backend.
+ * Solves K_T(u0) du = f_ext,target - f_int(u0,T_target) about the prepared
+ * base configuration with the configured constraint transformer and sparse backend.
  * Loads and prescribed displacements are assembled from the current ModelData
  * history and collector-derived activations during run(). Only solver, output and free-body
  * balancing settings belong to this analysis; reusable condition definitions
