@@ -339,8 +339,6 @@ The base-temperature and target-temperature fields may differ. This is a single
 tangent step, not an iterative nonlinear equilibrium correction; large changes
 may require \key{NLGEOM=YES} instead. A perturbation uses the same increment
 solve but reports incremental results and restores its original base state.
-See \file{examples/99_regression/996_regression_linear_static_resume.inp}
-for a multi-step example covering restart, continuation and perturbation.
 
 \paragraph*{Linear static perturbation}
 
@@ -385,8 +383,6 @@ S, E, SF
 
 The perturbation procedure requires \key{RESUME=YES}. Contact linearization,
 free-body rebalancing and inertia relief are not supported in this mode.
-See \file{examples/08_nonlinear/082_truss_linear_perturbation.inp} for an
-analytically verifiable example.
 
 \paragraph*{Nonlinear arc-length analysis}
 \begin{inputdeck}
