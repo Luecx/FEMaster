@@ -82,7 +82,7 @@ void LinearStatic::run() {
 
     // Structural temperatures are prescribed fields, not thermal constraints.
     // The solver evaluates thermal forces at the step's target temperature.
-    const model::Field* target_temperature = model->_data->temperature_target
+    model::Field* target_temperature = model->_data->temperature_target
         ? model->_data->temperature_target.get()
         : model->_data->temperature.get();
 
@@ -394,7 +394,7 @@ void LinearStatic::run() {
             output.provide(OutputField::REACTION_FORCES,     reaction_masked);
             if (target_temperature) {
                 output.provide(OutputField::TEMPERATURE,
-                    *const_cast<model::Field*>(target_temperature));
+                    *target_temperature);
             }
 
             output.write_frame(*writer, model->_data.get());
