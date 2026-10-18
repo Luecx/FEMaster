@@ -325,8 +325,8 @@ Field Model::build_load_matrix(Precision time, Precision step_progress,
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
-    // An optional snapshot supplies unmodified base definitions for perturbation
-    // output, while the default path keeps the live model condition history.
+    // An optional alternate source supplies independent condition definitions,
+    // while the default path keeps the live model condition history.
     const auto& active_conditions = source ? *source : _data->conditions;
 
     // Input-history families identify structural loads without physical RTTI.
