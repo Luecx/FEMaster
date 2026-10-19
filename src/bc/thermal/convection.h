@@ -71,6 +71,9 @@ struct Convection : Condition {
     // ignore_amplitude uses the nominal coefficient. There is currently no
     // start/target history for convection, so step_progress is unused.
     // Constraint equations remain unchanged.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<Convection>(*this); }
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

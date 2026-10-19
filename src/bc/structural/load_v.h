@@ -80,6 +80,9 @@ struct VLoad : Condition {
     // scaling because this load is already a force per unit volume.
     //
     // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<VLoad>(*this); }
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

@@ -158,8 +158,12 @@ TEST(Reader_Parser, LinearStaticSamplesNamedAmplitudeAtStepEnd) {
         load->amplitude_  = parser.model()._data->amplitudes.get("CURVE");
         parser.add_condition(bc::CLOAD, load, "NODE:1");
 
-        const auto at_start = parser.model().build_load_matrix(Precision(0));
-        const auto at_end   = parser.model().build_load_matrix(linear->step_period);
+        const auto at_start = parser.model().build_load_matrix(
+            active->initial_conditions, active->target_conditions,
+            active->previous_end_time, linear->step_period, Precision(0), Precision(0));
+        const auto at_end = parser.model().build_load_matrix(
+            active->initial_conditions, active->target_conditions,
+            active->previous_end_time, linear->step_period, linear->step_period, Precision(1));
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
@@ -607,34 +611,31 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
 
 TEST(Reader_Conditions, NewPreservesLoadsDefinedInCurrentStep) {
     io::reader::Parser parser;
-
     auto inherited = std::make_shared<bc::CLoad>();
     inherited->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, inherited, "NODE:1");
 
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-
     auto current = std::make_shared<bc::CLoad>();
     current->values_[0] = Precision(200);
     parser.add_condition(bc::CLOAD, current, "NODE:2");
 
     parser.clear_conditions(bc::CLOAD);
 
-    // NEW retires the definition inherited at step entry, not the new load.
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, inherited));
+    // OP=NEW removes inherited target prescriptions without mutating objects.
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, inherited));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, current));
-    EXPECT_DOUBLE_EQ(inherited->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(current->values_[0], Precision(200));
+    EXPECT_DOUBLE_EQ(inherited->values_[0], Precision(100));
 
-    // The current-step source remains indexed and survives another MOD.
     auto replacement = std::make_shared<bc::CLoad>();
     replacement->values_[0] = Precision(300);
     parser.modify_conditions(bc::CLOAD, "NODE:2", {replacement});
-    EXPECT_DOUBLE_EQ(current->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(replacement->values_[0], Precision(300));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, current));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, replacement));
+    EXPECT_DOUBLE_EQ(current->values_[0], Precision(200));
 }
 
-TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
+TEST(Reader_Conditions, ModReplacesTargetWithoutMutatingOldDefinition) {
     io::reader::Parser parser;
     auto region = std::make_shared<model::NodeRegion>("SOURCE");
     region->add(0);
@@ -643,11 +644,7 @@ TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
     original->region_ = region;
     original->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, original, "NSET:SOURCE");
-
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    // Represent an already applied load inherited from a completed step.
-    original->values_start_[0] = Precision(100);
-    EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
 
     for (const Precision magnitude : {Precision(200), Precision(300)}) {
         auto incoming = std::make_shared<bc::CLoad>();
@@ -655,19 +652,18 @@ TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
         incoming->values_[0] = magnitude;
         parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {incoming});
 
-        // No duplicate object: only its target changes.
         EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 1u);
-        EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, original));
-        EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
-        EXPECT_DOUBLE_EQ(original->values_[0], magnitude);
+        EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, original));
+        EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
+        EXPECT_DOUBLE_EQ(original->values_[0], Precision(100));
     }
 
-    // NEW affects only still-inherited input definitions.
+    // OP=NEW preserves definitions introduced in the current step.
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(original->values_[0], Precision(300));
+    EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 1u);
 }
 
-TEST(Reader_Conditions, ModRetiresOldAndAddsNewSourceWhenOrientationChanges) {
+TEST(Reader_Conditions, ModReplacesOldSourceWhenOrientationChanges) {
     io::reader::Parser parser;
     auto old_region = std::make_shared<model::NodeRegion>("OLD");
     auto new_region = std::make_shared<model::NodeRegion>("NEW");
@@ -678,24 +674,20 @@ TEST(Reader_Conditions, ModRetiresOldAndAddsNewSourceWhenOrientationChanges) {
     original->region_ = old_region;
     original->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, original, "NSET:SOURCE");
-
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    original->values_start_[0] = Precision(100);
 
     auto incoming = std::make_shared<bc::CLoad>();
     incoming->region_ = new_region;
     incoming->values_[0] = Precision(200);
     parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {incoming});
 
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, original));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, original));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
-    EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
-    EXPECT_DOUBLE_EQ(original->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(incoming->values_start_[0], Precision(0));
+    EXPECT_DOUBLE_EQ(original->values_[0], Precision(100));
     EXPECT_DOUBLE_EQ(incoming->values_[0], Precision(200));
 
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(incoming->values_[0], Precision(200));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
 }
 
 TEST(Reader_Conditions, ModMatchesOriginalSourceNotOverlappingRegion) {
@@ -714,28 +706,29 @@ TEST(Reader_Conditions, ModMatchesOriginalSourceNotOverlappingRegion) {
     parser.add_condition(bc::CLOAD, second, "NSET:RIGHT");
 
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-
     auto update = std::make_shared<bc::CLoad>();
     update->region_ = region;
     update->values_[0] = Precision(300);
     parser.modify_conditions(bc::CLOAD, "NSET:LEFT", {update});
 
     EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 2u);
-    EXPECT_DOUBLE_EQ(first->values_[0], Precision(300));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, first));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, update));
+    EXPECT_DOUBLE_EQ(first->values_[0], Precision(100));
     EXPECT_DOUBLE_EQ(second->values_[0], Precision(200));
 
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(first->values_[0], Precision(300));
-    EXPECT_DOUBLE_EQ(second->values_[0], Precision(0));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, second));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, update));
 }
 
-TEST(Reader_Conditions, ModRetiresAmplitudeFromItsEffectiveInitialValue) {
+TEST(Reader_Conditions, ModPreservesAmplitudeDefinitionWhenReplacing) {
     io::reader::Parser parser;
     auto region = std::make_shared<model::NodeRegion>("SOURCE");
     region->add(0);
 
     auto amp = std::make_shared<bc::Amplitude>("HISTORY");
-    amp->add_sample(Precision(0), Precision(0.25));
+    amp->add_sample(Precision(0), Precision(0));
     amp->add_sample(Precision(1), Precision(1));
 
     auto old_load = std::make_shared<bc::CLoad>();
@@ -744,19 +737,17 @@ TEST(Reader_Conditions, ModRetiresAmplitudeFromItsEffectiveInitialValue) {
     old_load->amplitude_ = amp;
     parser.add_condition(bc::CLOAD, old_load, "NSET:SOURCE");
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    old_load->values_start_[0] = Precision(100);
 
     auto new_load = std::make_shared<bc::CLoad>();
     new_load->region_ = region;
     new_load->values_[0] = Precision(200);
     parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {new_load});
 
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, old_load));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, old_load));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, new_load));
-    EXPECT_EQ(old_load->amplitude_, nullptr);
-    EXPECT_DOUBLE_EQ(old_load->values_start_[0], Precision(25));
-    EXPECT_DOUBLE_EQ(old_load->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(new_load->values_start_[0], Precision(0));
+    EXPECT_EQ(old_load->amplitude_, amp);
+    EXPECT_DOUBLE_EQ(old_load->values_[0], Precision(100));
+    EXPECT_DOUBLE_EQ(new_load->values_[0], Precision(200));
 }
 
 TEST(Reader_Conditions, NewPreservesTemperatureDefinedInCurrentStep) {

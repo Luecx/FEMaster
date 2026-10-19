@@ -94,6 +94,9 @@ struct Temperature : Condition {
     // time, ignore_amplitude and step_progress are unused.
     //
     // Only equations is modified; rhs, system_dof_ids and matrix are unchanged.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<Temperature>(*this); }
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

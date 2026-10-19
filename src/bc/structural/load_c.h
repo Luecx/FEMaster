@@ -85,6 +85,9 @@ struct CLoad : Condition {
     //
     // Structural loads contribute only to rhs. The equation collection,
     // system DOF indices and matrix remain unchanged.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<CLoad>(*this); }
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

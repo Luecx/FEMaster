@@ -129,6 +129,7 @@ class Parser {
     using IdentifierMap = std::unordered_map<std::string, std::vector<bc::Condition::Ptr>>;
 
     bc::ConditionState committed_conditions_;
+    bc::ConditionState pending_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> committed_identifiers_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;

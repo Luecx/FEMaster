@@ -107,11 +107,14 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
     L2->values_[0] = 2.0;
     collector->add(L2);
 
-    // The DSL-equivalent activation expands collector definitions into model state
+    // Collector entries belong to a step target, not the compiled model.
+    bc::ConditionState target;
     for (const auto& condition : *collector) {
-        mdl._data->conditions.add(bc::CLOAD, condition);
+        target.add(bc::CLOAD, condition);
     }
-    const model::Field bc = mdl.build_load_matrix();
+    const model::Field bc = mdl.build_load_matrix(
+        bc::ConditionState{}, target, Precision(0), Precision(1),
+        Precision(1), Precision(1));
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);

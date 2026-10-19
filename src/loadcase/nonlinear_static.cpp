@@ -244,8 +244,8 @@ void NonlinearStatic::run() {
     // Assemble the load derivative for the proportional path controllers.
     // A carried-over force already acts at lambda=0, so the predictor direction
     // is the difference between the target and initial load, not the target.
-    const auto global_load_start = model->build_load_matrix(Precision(0), Precision(0));
-    const auto global_load_total = model->build_load_matrix(step_period, Precision(1));
+    const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0));
+    const auto global_load_total = build_step_load_matrix(step_period, Precision(1));
     auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
 
     const DynamicVector f_total = mattools::reduce_mat_to_vec(
@@ -438,7 +438,7 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -517,7 +517,7 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -741,7 +741,7 @@ void NonlinearStatic::run() {
             &active_dof_idx_mat
         );
 
-        auto increment_external = model->build_load_matrix(lambda * step_period, lambda);
+        auto increment_external = build_step_load_matrix(lambda * step_period, lambda);
 
         auto increment_reaction_full = subtract_field(
             increment_internal,
@@ -971,7 +971,9 @@ void NonlinearStatic::run() {
         io::writer::write_mtx(stiffness_file + "_A.mtx", final_A);
     }
 
-    auto global_load_final = model->build_load_matrix(load_factor * step_period, load_factor);
+    // Preserve the accepted path time, not merely the nominal step limit.
+    end_time = load_factor * step_period;
+    auto global_load_final = build_step_load_matrix(end_time, load_factor);
     committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,

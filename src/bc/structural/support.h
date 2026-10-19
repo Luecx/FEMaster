@@ -115,6 +115,9 @@ public:
 
     // Expand the active region and append one scalar constraint equation for
     // every finite prescribed generalized component at every resolved node.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<Support>(*this); }
+
     void apply(model::ModelData&      model_data,
                model::Field&          rhs,
                constraint::Equations& equations,

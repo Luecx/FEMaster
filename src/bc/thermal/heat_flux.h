@@ -63,6 +63,9 @@ struct HeatFlux : Condition {
     // Positive flux adds heat to the scalar thermal balance.
     //
     // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Construct an independent physical condition for a new step.
+    Condition::Ptr clone() const override { return std::make_shared<HeatFlux>(*this); }
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

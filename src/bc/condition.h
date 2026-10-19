@@ -192,6 +192,9 @@ struct Condition : Printable {
         return previous * (Precision(1) - amplitude_->evaluate(time) / end);
     }
 
+    // Duplicate the physical definition for independently owned step states.
+    virtual Ptr clone() const = 0;
+
     virtual void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,

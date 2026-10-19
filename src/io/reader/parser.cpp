@@ -93,6 +93,7 @@ void Parser::run(const std::string& input_path,
     step_state_ = StepState{};
     node_transforms.clear();
     committed_conditions_ = bc::ConditionState{};
+    pending_conditions_   = bc::ConditionState{};
     for (auto& index : committed_identifiers_) index.clear();
     for (auto& index : inherited_conditions_) index.clear();
     for (auto& index : current_conditions_) index.clear();
@@ -504,11 +505,11 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     // the active load case to any child output command.
     loadcase->output.bind(model_.get());
 
-    // Freeze the previous accepted prescriptions. The first step starts with
-    // zero external loading even if root-level target definitions already exist.
+    // Freeze the last accepted prescriptions independently of any root-level
+    // edits made between analyses. The first step starts from zero loading.
     loadcase->initial_conditions = loadcase->id == 1
         ? bc::ConditionState{} : committed_conditions_;
-    loadcase->target_conditions = committed_conditions_;
+    loadcase->target_conditions = pending_conditions_;
     loadcase->previous_end_time = committed_end_time_;
 
     // Collector selections are analysis-local: deselect their previous target
@@ -611,9 +612,10 @@ void Parser::end_loadcase() {
         return;
     }
 
-    // Commit only the successful target. This is the sole condition history
-    // retained between analyses; previous load case objects are destroyed.
+    // Commit only the successful target. A shallow pending copy permits further
+    // root-level edits without modifying the just-converged initial state.
     committed_conditions_ = std::move(loadcase->target_conditions);
+    pending_conditions_   = committed_conditions_;
     committed_collector_conditions_ = std::move(selected);
     committed_end_time_ = loadcase->end_time;
 
@@ -657,14 +659,14 @@ const StepState& Parser::step_state() const {
  * and replacement semantics are maintained independently by the input reader.
  */
 bc::ConditionState& Parser::conditions() {
-    return active_loadcase_ ? active_loadcase_->target_conditions : committed_conditions_;
+    return active_loadcase_ ? active_loadcase_->target_conditions : pending_conditions_;
 }
 
 /**
  * Forwards read-only access to the current ModelData condition history.
  */
 const bc::ConditionState& Parser::conditions() const {
-    return active_loadcase_ ? active_loadcase_->target_conditions : committed_conditions_;
+    return active_loadcase_ ? active_loadcase_->target_conditions : pending_conditions_;
 }
 
 /**
