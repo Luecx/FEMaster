@@ -70,6 +70,11 @@ The first field stores one scalar value per element; the second stores a three-c
 generalized velocities. The spelling \cmd{INITIALCONDITIONS} is equivalent.
 Both commands are processed after the geometry and named Fields are compiled.
 
+For temperatures, FEMaster preserves an independent reference snapshot so that
+\key{RESUME=NO} restores the original nodal field even after later structural
+steps changed their temperature targets. Material stress-free temperature
+(\key{ZERO} on \cmd{THERMALEXPANSION}) is a separate material property.
+
 \key{TYPE=TEMPERATURE} supplies one scalar per node; \key{TYPE=VELOCITY}
 supplies six components in the order \((v_x,v_y,v_z,\omega_x,\omega_y,\omega_z)\).
 With \key{FIELD}, an existing \val{NODE} Field with one or six components,

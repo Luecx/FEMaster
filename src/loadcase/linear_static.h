@@ -10,7 +10,8 @@
  * @author Finn Eggers
  * @date 06.03.2025
  *
- * Solves K u = f with the configured constraint transformer and sparse backend.
+ * Solves K_T(u0,T0) du = (f_ext,end-f_ext,start) - (f_int(u0,T_target)-f_int(u0,T0))
+ * about the prepared base with the configured constraint transformer and solver.
  * Loads and prescribed displacements are assembled from the current ModelData
  * history and collector-derived activations during run(). Only solver, output and free-body
  * balancing settings belong to this analysis; reusable condition definitions
@@ -40,6 +41,10 @@ struct LinearStatic : public LoadCase {
         constraint::ConstraintTransformer::Method::Elimination; ///< Constraint backend selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
     Precision step_period = Precision(1); ///< Step-end time for evaluating prescribed load amplitudes.
+
+    // Actual load from the last committed static state; null means zero baseline.
+    model::Field::Ptr step_start_load = nullptr;
+
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
     bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
 	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).

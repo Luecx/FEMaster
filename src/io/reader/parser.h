@@ -31,6 +31,7 @@
 #include "../writer/writers.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -128,6 +129,25 @@ class Parser {
     using IdentifierMap = std::unordered_map<std::string, std::vector<bc::Condition::Ptr>>;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
+
+    // Perturbations temporarily modify condition membership and shared load
+    // objects. Keep previous identities and values solely for restoration.
+    struct PerturbationSnapshot {
+        bc::ConditionManager active;
+        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
+        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current;
+        std::vector<std::function<void()>> restore_values;
+    };
+    std::unique_ptr<PerturbationSnapshot> perturbation_snapshot_;
+
+    // Actual final external loading of the last committed structural static
+    // state. Unlike mutable input definitions, this also retains prior
+    // collector activations and the final nonlinear load factor.
+    model::Field::Ptr committed_structural_load_;
+    bool last_committed_static_nonlinear_ = false;
+
+    // Restore temporary condition changes without replacing shared object identities
+    void restore_perturbation();
 
     // Shared collector definitions requested by the current analysis. These
     // are inserted into the manager only while that analysis is running.

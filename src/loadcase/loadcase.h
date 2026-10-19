@@ -65,6 +65,11 @@ struct LoadCase : public Castable {
     bool perturbation       = false;
     bool report_constraints = false;
 
+    // Final applied structural load, filled only by committed static analyses.
+    // The parser carries it across resumed steps without inspecting mutable loads.
+    model::Field::Ptr committed_structural_load = nullptr;
+
+
     // Construction and destruction
     virtual ~LoadCase() = default;
 

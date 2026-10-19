@@ -422,13 +422,23 @@ EALL,
 
 \keywordpage{TEMPERATURE}
 
-\cmd{TEMPERATURE} prescribes the absolute temperature of a node or node
-set. It maintains a temperature-condition history that is distinct from
-the model's initial temperature Field set by
-\cmd{INITIALCONDITION, TYPE=TEMPERATURE}. Each data row provides one
-compiled node reference or node-set name and one temperature value.
-\key{OP=MOD} replaces matching targets and \key{OP=NEW} begins a
-new set of temperature prescriptions.
+\cmd{TEMPERATURE} sets the absolute target temperature of a node or node
+set in a structural static analysis. It is a predefined field, not a
+thermal constraint or a solved temperature degree of freedom.
+\cmd{INITIALCONDITION, TYPE=TEMPERATURE} defines the immutable reference
+temperature, which is restored by \key{RESUME=NO}. The last committed
+temperature is inherited by \key{RESUME=YES}.
+\key{OP=MOD} (the default) changes only selected target nodes;
+\key{OP=NEW} resets the current step's target to its starting temperature
+field before applying the following rows. Without an initial temperature
+field, the first definition must specify all nodes; unspecified nodes
+cannot be assigned an arbitrary zero temperature.
+
+A nonlinear static procedure uses the complete target temperature from
+its first Newton evaluation, without interpolating it over the mechanical
+load increments. A linear perturbation uses the difference from the base
+temperature to calculate the thermal response but does not commit it.
+Successful general static steps commit their temperature targets.
 
 \begin{keywordparameters}
 \key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
@@ -437,8 +447,8 @@ new set of temperature prescriptions.
 \val{target, temperature} & Node ID or node set and absolute temperature. \\
 \end{keyworddata}
 
-For a model with the assembled node set \val{HEATED_NODES}, the command
-prescribes a uniform temperature of 80 using the model's temperature units.
+Within a structural static step, the following command prescribes a
+uniform target temperature of 80 on \val{HEATED_NODES}.
 
 \exampleheading
 \begin{inputdeck}

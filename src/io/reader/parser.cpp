@@ -42,6 +42,7 @@
 #include "../../bc/thermal/convection.h"
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
+#include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_transient.h"
 #include "../../loadcase/nonlinear_static.h"
 #include "../../model/model.h"
@@ -52,12 +53,32 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <utility>
 
 namespace fem::io::reader {
 namespace {
+
+/**
+ * Captures one mutable load before parsing a perturbation step.
+ *
+ * The saved values restore shared input objects (including named collectors)
+ * after the perturbation. The physical start load is retained separately as
+ * the actual committed load field from the preceding structural step.
+ *
+ * @param condition Active physical definition.
+ * @param restore Callbacks restoring original shared objects after the step.
+ */
+template <typename Load>
+void snapshot_load(const bc::Condition::Ptr&           condition,
+                   std::vector<std::function<void()>>& restore) {
+    if (auto load = std::dynamic_pointer_cast<Load>(condition)) {
+        auto original = std::make_shared<Load>(*load);
+        restore.emplace_back([load, original]() { *load = *original; });
+    }
+}
 
 /**
  * @brief Prepares the start/target history of a physical load in the DSL.
@@ -225,6 +246,9 @@ void Parser::run(const std::string& input_path,
     for (auto& index : inherited_conditions_) index.clear();
     for (auto& index : current_conditions_) index.clear();
     selected_conditions_.clear();
+    perturbation_snapshot_.reset();
+    committed_structural_load_.reset();
+    last_committed_static_nonlinear_ = false;
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -370,6 +394,13 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // until a later analysis procedure explicitly evolves them.
     root.execute_children("INITIALCONDITION");
     root.execute_children("INITIALCONDITIONS");
+
+    // Snapshot the parsed initial temperature independently of named FIELD
+    // storage: RESUME=NO must recover it even after subsequent step commits.
+    if (model_->_data->temperature) {
+        model_->_data->temperature_reference =
+            std::make_shared<model::Field>(*model_->_data->temperature);
+    }
 
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
     root.execute_children("TIE");
@@ -591,6 +622,53 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
         loadcase->perturbation = step_state_.perturbation;
     }
 
+    // A regular linear solve always uses the reference tangent. Do not
+    // silently follow a nonlinear state with a total linear solve while
+    // claiming continuation; use a tangent perturbation or RESUME=NO.
+    if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
+        logging::error(!loadcase->resume || loadcase->perturbation ||
+                       !last_committed_static_nonlinear_,
+            "LINEARSTATIC after NONLINEARSTATIC with RESUME=YES is not supported; "
+            "use PERTURBATION or start an independent step with RESUME=NO");
+        linear->step_start_load = loadcase->perturbation && loadcase->resume
+            ? committed_structural_load_ : nullptr;
+    }
+
+    // Prepare an independent temperature target BEFORE step-local keywords
+    // execute. A fresh step starts from the original reference on RESUME=NO.
+    auto& data = *model_->_data;
+    const auto& temperature_base = loadcase->resume
+        ? data.temperature : data.temperature_reference;
+    data.temperature_target = temperature_base
+        ? std::make_shared<model::Field>(*temperature_base) : nullptr;
+
+    if (loadcase->perturbation && loadcase->type_name() == "LINEARSTATIC") {
+        logging::error(loadcase->resume,
+            "LINEARSTATIC PERTURBATION requires RESUME=YES");
+        logging::error(!perturbation_snapshot_,
+            "Parser: an earlier perturbation snapshot is still active");
+        perturbation_snapshot_ = std::make_unique<PerturbationSnapshot>();
+        perturbation_snapshot_->active = conditions();
+        perturbation_snapshot_->inherited = inherited_conditions_;
+        perturbation_snapshot_->current = current_conditions_;
+
+        // MOD/NEW may update existing load objects in place, including objects
+        // shared by named collectors. Restore their original values after run().
+        for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD,
+                                  bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD,
+                                  bc::HEAT_FLUX}) {
+            for (const auto& condition : conditions().get(family)) {
+                auto& snapshot = *perturbation_snapshot_;
+                snapshot_load<bc::CLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::DLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::PLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::VLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::InertialLoad>(condition, snapshot.restore_values);
+                snapshot_load<bc::HeatFlux>(condition, snapshot.restore_values);
+            }
+        }
+    }
+
     // Output requests are configured while the step is parsed, but derived
     // fields are recovered later during run(). Bind the model before exposing
     // the active load case to any child output command.
@@ -639,21 +717,54 @@ void Parser::end_loadcase() {
 
     auto loadcase = std::move(active_loadcase_);
 
-    // Insert only missing collector pointers and remember precisely those
-    // references. Previously active direct conditions must survive cleanup.
     std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> temporary_conditions;
-    for (const auto& [family, condition] : selected_conditions_) {
-        if (conditions().add(family, condition)) {
-            temporary_conditions.emplace_back(family, condition);
+    try {
+        // Insert collector selections only for this solve. Previously active
+        // direct definitions must retain their shared pointer identities.
+        for (const auto& [family, condition] : selected_conditions_) {
+            if (conditions().add(family, condition)) {
+                temporary_conditions.emplace_back(family, condition);
+            }
         }
+
+        // Restore the reference state for RESUME=NO before structural assembly.
+        loadcase->prepare_state();
+
+        // A partial temperature field without an initial state leaves nodes
+        // undefined; zero must not replace material stress-free temperature.
+        if (model_->_data->temperature_target) {
+            const auto& target = *model_->_data->temperature_target;
+            for (Index node = 0; node < target.rows; ++node) {
+                logging::error(std::isfinite(target(node, 0)),
+                    "TEMPERATURE: no finite temperature specified for node ", node,
+                    " (provide an initial temperature or prescribe every node)");
+            }
+        }
+
+        // Assemble and solve with the current step's target conditions.
+        loadcase->run();
+
+        // Only a committed static analysis changes the force baseline.
+        // Perturbations leave both the mechanical and loading states intact.
+        if (!loadcase->perturbation && loadcase->committed_structural_load) {
+            committed_structural_load_ = std::move(loadcase->committed_structural_load);
+            last_committed_static_nonlinear_ = loadcase->type_name() == "NONLINEARSTATIC";
+        }
+    } catch (...) {
+        // Restore shared input definitions even if preparation or solving fails.
+        if (perturbation_snapshot_) restore_perturbation();
+        throw;
     }
 
-    // Restore an independent starting configuration or retain the last
-    // converged state before the concrete analysis starts.
-    loadcase->prepare_state();
+    if (perturbation_snapshot_) {
+        restore_perturbation();
+        return;
+    }
 
-    // Model assembly reads the active family sets during this numerical solve.
-    loadcase->run();
+    // Successful general steps commit the temperature used by structural
+    // recovery. Subsequent RESUME=YES steps inherit this converged state.
+    model_->_data->temperature =
+        std::move(model_->_data->temperature_target);
 
     // Restore direct history by removing only this analysis's insertions.
     for (const auto& [family, condition] : temporary_conditions) {
@@ -695,6 +806,32 @@ void Parser::end_loadcase() {
         }
         current.clear();
     }
+}
+
+/**
+ * Restores the input state saved before a linear perturbation step.
+ *
+ * Original shared Condition objects are assigned their saved numeric values
+ * before restoring manager membership and identifier maps. This preserves
+ * references held by named collectors and discards step-local definitions.
+ * The target temperature is an independent model field and is discarded.
+ */
+void Parser::restore_perturbation() {
+    logging::error(perturbation_snapshot_ != nullptr,
+        "Parser: no perturbation snapshot to restore");
+
+    auto& snapshot = *perturbation_snapshot_;
+
+    // Restore mutated objects before returning their original ownership sets
+    for (auto& restore : snapshot.restore_values) restore();
+
+    conditions()          = std::move(snapshot.active);
+    inherited_conditions_ = std::move(snapshot.inherited);
+    current_conditions_   = std::move(snapshot.current);
+
+    selected_conditions_.clear();
+    model_->_data->temperature_target.reset();
+    perturbation_snapshot_.reset();
 }
 
 /**

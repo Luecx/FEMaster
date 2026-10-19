@@ -198,6 +198,7 @@ Abaqus-style \cmd{BOUNDARY}, single-DOF \cmd{CLOAD}, labeled \cmd{DLOAD} and \cm
 \key{NAME} & optional & Descriptive Step name. \\
 \key{NLGEOM} & optional & Bare/\val{YES} enables geometric nonlinearity; \val{NO}/\val{OFF} disables it. \\
 \key{INC} & optional & Positive maximum increment count; default 100. \\
+\key{RESUME} & optional & \val{YES} (default) retains converged geometry, material and temperature; \val{NO} restores reference state. \\
 \key{PERTURBATION} & optional flag & Selects linear perturbation semantics. \\
 \end{keywordparameters}
 
@@ -274,6 +275,9 @@ With neither geometric nonlinearity nor Riks path following, the analysis is lin
 Ku=f.
 \]
 A \key{PERTURBATION} Step also uses the linear static formulation.
+The structural \cmd{TEMPERATURE} card specifies a nodal target field.
+General linear static steps commit this field on success; a perturbation
+uses the target only for the incremental calculation and discards it.
 
 If \key{NLGEOM} is enabled or \key{RIKS} is present, the procedure uses nonlinear static equilibrium. The nonlinear residual is
 \[
@@ -284,7 +288,11 @@ and Newton iterations solve the linearized equilibrium equation
 K_T\Delta u=-r.
 \]
 
-Without \key{RIKS}, \(\lambda\) is advanced by load control. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
+Without \key{RIKS}, \(\lambda\) is advanced by load control. In a nonlinear
+structural step, any prescribed target temperature acts fully in every
+increment and Newton iteration; unlike the mechanical loads, it is not
+ramped with \(\lambda\). Temperature changes are not supported with
+\key{RIKS} in this implementation. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
 
 \key{DIRECT} requests fixed nonlinear load increments rather than adaptive stepping where supported.
 
@@ -311,6 +319,74 @@ ROOT, 1, 6, 0.
 TIP, 3, -1000.
 *END STEP
 \end{inputdeck}
+
+Ordinary linear static analysis always uses the reference displacement
+\(u_0=0\) and reference temperature \(T_{\mathrm{ref}}\) as its
+linearization point. Each step solves the total linear problem
+\[
+K_0\,u = f_{\mathrm{ext}}-f_{\mathrm{int}}(0,T_{\mathrm{target}}),
+\qquad K_0=K_T(0,T_{\mathrm{ref}}).
+\]
+The previously calculated linear displacement is not added to the next
+solution: the next linear step recomputes the total displacement from
+its current total loads and prescribed boundary conditions. Stress,
+strain, internal forces, and section resultants use that same reference
+linearization. No historical stress or force fields are required.
+
+With \key{RESUME=NO}, the reference temperature and geometry are restored
+before the independent solve. With \key{RESUME=YES}, load definitions and
+the latest prescribed temperature may be carried over, but a regular
+linear step still solves from reference geometry. A regular linear
+step cannot resume a nonlinear static solution; to analyze its
+prestressed tangent response, use \key{PERTURBATION}, or start an
+independent linear analysis with \key{RESUME=NO}.
+
+\paragraph*{Linear static perturbation}
+
+A resumed \cmd{STEP} with \key{PERTURBATION} instead solves the
+incremental tangent problem at the committed base state \((u_0,T_0)\):
+\[
+K_T(u_0,T_0)\,\Delta u =
+ (f_{\mathrm{ext,end}}-f_{\mathrm{ext,start}})
+ - \bigl[f_{\mathrm{int}}(u_0,T_{\mathrm{target}})
+         -f_{\mathrm{int}}(u_0,T_0)\bigr].
+\]
+The external start load is the last committed applied load, retained
+even when input load definitions change or a preceding nonlinear step
+converged at a non-unit load factor. Thus load cards retain their
+normal target-value meaning:
+a \cmd{CLOAD} of 11000 following a step with 10000 denotes a new total target
+of 11000, not an additional 11000. The same assembly applies to all supported
+structural load families; load-dependent follower tangents are not included.
+
+The output displacement, reaction force, stress, strain, and section force
+fields represent incremental responses. The reported temperature is the
+absolute target field. No total displacement, temperature or material
+state is committed by the perturbation step. On completion, the parser also
+restores the original load and support definitions, including values modified
+through \key{OP=MOD}/\key{OP=NEW}; later steps resume the previous equilibrium
+with its original loads.
+
+\begin{inputdeck}
+*STEP, NAME=PRELOAD, NLGEOM=YES
+*STATIC
+*CLOAD
+TIP, 1, 10000.
+*END STEP
+
+*STEP, NAME=PERTURB, PERTURBATION, RESUME=YES
+*STATIC
+*CLOAD
+TIP, 1, 11000.
+*NODE OUTPUT
+U, RF
+*ELEMENT OUTPUT
+S, E, SF
+*END STEP
+\end{inputdeck}
+
+The perturbation procedure requires \key{RESUME=YES}. Contact linearization,
+free-body rebalancing and inertia relief are not supported in this mode.
 
 \paragraph*{Nonlinear arc-length analysis}
 \begin{inputdeck}

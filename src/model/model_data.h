@@ -139,8 +139,11 @@ struct ModelData {
     Field::Ptr material_orientation        = nullptr;
     Field::Ptr shell_element_nodal_normals = nullptr;
 
-    // fields set by initial conditions
+    // Structural temperature states. The reference is immutable after input
+    // initialization; target is a per-step working copy.
+    Field::Ptr temperature_reference       = nullptr;
     Field::Ptr temperature                 = nullptr;
+    Field::Ptr temperature_target          = nullptr;
     Field::Ptr velocity                    = nullptr;
 
     // offsets to access certain field types

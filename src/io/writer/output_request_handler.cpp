@@ -62,6 +62,24 @@ void OutputRequestHandler::set_nonlinear(bool nonlinear) {
 }
 
 /**
+ * Selects increment-only recovery about the preloaded configuration.
+ * The borrowed displacement field must outlive write_frame().
+ */
+void OutputRequestHandler::set_perturbation_base(const model::Field* displacement) {
+    perturbation_base_ = displacement;
+}
+
+/**
+ * Recovers total constitutive output by linear continuation from a base state.
+ * In contrast to perturbations, general static output remains total.
+ */
+void OutputRequestHandler::set_linearization_base(const model::Field* displacement,
+                                                  const model::Field* temperature) {
+    linearization_base_ = displacement;
+    linearization_temperature_ = temperature;
+}
+
+/**
  * Installs an optional preparation hook for derived model recovery.
  *
  * Linear procedures leave this empty. Nonlinear procedures use it to reset
@@ -267,16 +285,91 @@ void OutputRequestHandler::compute(OutputField field) {
     // when the owning step supplied a preparation callback.
     if (before_compute_) before_compute_();
 
+    const model::Field* target_temperature = model_->_data->temperature_target
+        ? model_->_data->temperature_target.get()
+        : model_->_data->temperature.get();
+    const model::Field* base_temperature = linearization_base_
+        ? linearization_temperature_ : model_->_data->temperature.get();
+
+    // U denotes du for linear perturbations. Recover constitutive fields by
+    // affine continuation from the committed base and subtract the base value.
+    if (perturbation_base_) {
+        auto& increment = resolve(OutputField::DISPLACEMENT);
+        model::Field base = *perturbation_base_;
+        model::Field total = base;
+        total += increment;
+
+        switch (field) {
+            case OutputField::STRESS:
+            case OutputField::STRAIN: {
+                auto [stress, strain] = model_->compute_stress_nodal(
+                    total, target_temperature, &base, base_temperature);
+                auto [base_stress, base_strain] = model_->compute_stress_nodal(
+                    base, base_temperature, &base, base_temperature);
+                stress -= base_stress;
+                strain -= base_strain;
+                computed_[index(OutputField::STRESS)] = std::move(stress);
+                computed_[index(OutputField::STRAIN)] = std::move(strain);
+                return;
+            }
+            case OutputField::STRESS_TOP:
+            case OutputField::STRESS_BOT: {
+                auto [top, bot] = model_->compute_stress_top_bot(
+                    total, target_temperature, &base, base_temperature);
+                auto [base_top, base_bot] = model_->compute_stress_top_bot(
+                    base, base_temperature, &base, base_temperature);
+                top -= base_top;
+                bot -= base_bot;
+                computed_[index(OutputField::STRESS_TOP)] = std::move(top);
+                computed_[index(OutputField::STRESS_BOT)] = std::move(bot);
+                return;
+            }
+            case OutputField::SHELL_RESULTANTS: {
+                auto resultants = model_->compute_shell_resultants(
+                    total, target_temperature, &base, base_temperature);
+                resultants -= model_->compute_shell_resultants(
+                    base, base_temperature, &base, base_temperature);
+                computed_[index(field)] = std::move(resultants);
+                return;
+            }
+            case OutputField::LOCAL_SECTION_FORCES: {
+                auto forces = model_->compute_section_forces(
+                    total, target_temperature, &base, base_temperature);
+                forces -= model_->compute_section_forces(
+                    base, base_temperature, &base, base_temperature);
+                computed_[index(field)] = std::move(forces);
+                return;
+            }
+            case OutputField::SHEAR_FLOW: {
+                auto flow = model_->compute_shear_flow(total);
+                flow -= model_->compute_shear_flow(base);
+                computed_[index(field)] = std::move(flow);
+                return;
+            }
+            case OutputField::PEEQ: {
+                auto peeq = model_->compute_peeq_nodal();
+                peeq.set_zero();
+                computed_[index(field)] = std::move(peeq);
+                return;
+            }
+            case OutputField::COMPLIANCE:
+            case OutputField::ORIENTATION_GRAD:
+                logging::error(false,
+                    "Linear perturbation does not support compliance or orientation gradients");
+                return;
+            default: break;
+        }
+    }
+
     switch (field) {
         case OutputField::STRESS:
         case OutputField::STRAIN: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            const model::Field* target_temperature = model_->_data->temperature.get();
             auto [stress, strain] = model_->compute_stress_nodal(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
             computed_[index(OutputField::STRESS)] = std::move(stress);
             computed_[index(OutputField::STRAIN)] = std::move(strain);
@@ -286,12 +379,11 @@ void OutputRequestHandler::compute(OutputField field) {
         case OutputField::STRESS_TOP:
         case OutputField::STRESS_BOT: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            const model::Field* target_temperature = model_->_data->temperature.get();
             auto [top, bot] = model_->compute_stress_top_bot(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
             computed_[index(OutputField::STRESS_TOP)] = std::move(top);
             computed_[index(OutputField::STRESS_BOT)] = std::move(bot);
@@ -300,23 +392,23 @@ void OutputRequestHandler::compute(OutputField field) {
 
         case OutputField::SHELL_RESULTANTS: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            const model::Field* target_temperature = model_->_data->temperature.get();
-            computed_[index(field)] = model_->compute_shell_resultants(
+            auto resultants = model_->compute_shell_resultants(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
+            computed_[index(field)] = std::move(resultants);
             return;
         }
 
         case OutputField::LOCAL_SECTION_FORCES: {
             auto& displacement = resolve(OutputField::DISPLACEMENT);
-            const model::Field* target_temperature = model_->_data->temperature.get();
-            computed_[index(field)] = model_->compute_section_forces(
+            auto forces = model_->compute_section_forces(
                 displacement,
                 target_temperature,
-                nonlinear_ ? &displacement : nullptr,
-                nonlinear_ ? target_temperature : nullptr);
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
+            computed_[index(field)] = std::move(forces);
             return;
         }
 
@@ -352,7 +444,7 @@ void OutputRequestHandler::compute(OutputField field) {
         case OutputField::STRAIN_REAL: {
             auto [stress, strain] = model_->compute_stress_nodal(
                 resolve(OutputField::DISPLACEMENT_REAL),
-                model_->_data->temperature.get(),
+                target_temperature,
                 nullptr,
                 nullptr);
 
@@ -365,7 +457,7 @@ void OutputRequestHandler::compute(OutputField field) {
         case OutputField::STRAIN_IMAG: {
             auto [stress, strain] = model_->compute_stress_nodal(
                 resolve(OutputField::DISPLACEMENT_IMAG),
-                model_->_data->temperature.get(),
+                target_temperature,
                 nullptr,
                 nullptr);
 
