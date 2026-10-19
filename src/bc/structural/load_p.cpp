@@ -82,27 +82,13 @@ void PLoad::apply(
     logging::error(std::isfinite(pressure_),
         "PLOAD: pressure must be finite");
 
-    // Determine the start and target pressure weights. Without an amplitude,
-    // p(lambda) = (1 - lambda) * p_start + lambda * p_end.
-    // An explicit amplitude replaces this interpolation with p = A(time) * p_end.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // An undefined initial pressure represents a zero starting load.
-    const Precision start = std::isfinite(pressure_start_)
-        ? pressure_start_ : Precision(0);
-    const Precision pressure = start_scale * start + end_scale * pressure_;
+    const Precision pressure = factor * pressure_;
 
     if (pressure == Precision(0)) return;
 

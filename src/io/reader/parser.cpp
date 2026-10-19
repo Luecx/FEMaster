@@ -99,7 +99,8 @@ void Parser::run(const std::string& input_path,
     for (auto& index : current_conditions_) index.clear();
     selected_conditions_.clear();
     committed_collector_conditions_.clear();
-    committed_end_time_ = Precision(0);
+    committed_end_time_         = Precision(0);
+    committed_nominal_end_time_ = Precision(1);
     committed_structural_load_.reset();
     last_committed_static_nonlinear_ = false;
 
@@ -510,7 +511,8 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     loadcase->initial_conditions = loadcase->id == 1
         ? bc::ConditionState{} : committed_conditions_;
     loadcase->target_conditions = pending_conditions_;
-    loadcase->previous_end_time = committed_end_time_;
+    loadcase->previous_end_time         = committed_end_time_;
+    loadcase->previous_nominal_end_time = committed_nominal_end_time_;
 
     // Collector selections are analysis-local: deselect their previous target
     // contributions, but retain them in the frozen initial state for unloading.
@@ -558,6 +560,10 @@ void Parser::end_loadcase() {
     } else if (auto* transient = loadcase->as<loadcase::Transient>()) {
         loadcase->end_time = static_cast<Precision>(transient->t_end);
     }
+
+    // Preserve the nominal limit separately from the accepted Riks path time.
+    // For non-amplitude ramps the ratio recovers the actual carried-over load.
+    loadcase->nominal_end_time = loadcase->end_time;
 
     // Apply only explicitly selected collectors to the step target. Reusable
     // definitions stay unmodified, and the next target omits these selections
@@ -617,7 +623,8 @@ void Parser::end_loadcase() {
     committed_conditions_ = std::move(loadcase->target_conditions);
     pending_conditions_   = committed_conditions_;
     committed_collector_conditions_ = std::move(selected);
-    committed_end_time_ = loadcase->end_time;
+    committed_end_time_         = loadcase->end_time;
+    committed_nominal_end_time_ = loadcase->nominal_end_time;
 
     for (std::size_t i = 0; i < bc::N_CONDITION_FAMILIES; ++i) {
         auto& inherited = inherited_conditions_[i];

@@ -82,26 +82,13 @@ void HeatFlux::apply(
     logging::error(std::isfinite(heat_flux_),
         "HEATFLUX: prescribed heat flux must be finite");
 
-    // Without an amplitude, q(lambda) = (1-lambda)*q_start + lambda*q_end.
-    // An assigned amplitude instead evaluates q(time) = A(time)*q_end.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // An unspecified initial flux represents a zero starting contribution.
-    const Precision start = std::isfinite(heat_flux_start_)
-        ? heat_flux_start_ : Precision(0);
-    const Precision flux = start_scale * start + end_scale * heat_flux_;
+    const Precision flux = factor * heat_flux_;
 
     logging::error(std::isfinite(flux),
         "HEATFLUX: effective heat flux must be finite");

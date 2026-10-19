@@ -78,33 +78,16 @@ void VLoad::apply(
     logging::error(region_ != nullptr,
         "VLOAD: target element region is not initialized");
 
-    // Without an amplitude, linearly interpolate between the initial and
-    // target force densities. An assigned amplitude scales only the target.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // Construct the effective force-density vector [bx, by, bz]. Omitted
-    // target components contribute zero; undefined initial components are zero.
+    // Density-independent body-force components are prescribed in local axes.
     Vec3 body_force = Vec3::Zero();
-
     for (Dim i = 0; i < 3; ++i) {
-        if (std::isnan(values_[i])) continue;
-
-        const Precision start = std::isfinite(values_start_[i])
-            ? values_start_[i] : Precision(0);
-
-        body_force[i] = start_scale * start + end_scale * values_[i];
+        if (std::isfinite(values_[i])) body_force[i] = factor * values_[i];
     }
 
     if (body_force.isZero()) return;

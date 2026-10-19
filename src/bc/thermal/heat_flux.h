@@ -44,19 +44,13 @@ struct HeatFlux : Condition {
     // Compiled surfaces on which the prescribed heat flux is integrated
     model::SurfaceRegion::Ptr region_ = nullptr;
 
-    // Target and initial heat-flow densities per unit reference surface area.
-    // A NaN initial value indicates an unspecified start, interpreted as zero
-    // when interpolating the prescribed heat flux over a step.
-    Precision heat_flux_       = Precision(0);
-    Precision heat_flux_start_ = NAN;
+    // Nominal heat-flow density per unit reference surface area
+    Precision heat_flux_ = Precision(0);
 
     // Integrate the prescribed scalar heat flux over every surface in region_
     // and accumulate equivalent nodal heat-flow contributions in rhs.
     //
-    // Without an amplitude, the effective flux is interpolated from
-    // heat_flux_start_ to heat_flux_ using step_progress. An assigned amplitude
-    // instead scales the target flux at time. ignore_amplitude uses the nominal
-    // target flux without scaling or interpolation.
+    // Initial and target step states scale the nominal heat flux independently.
     //
     // Each surface integrates q_e = integral(N^T * q dGamma) in the reference
     // configuration, including its shape functions and physical area Jacobian.

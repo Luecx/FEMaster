@@ -50,12 +50,8 @@ struct VLoad : Condition {
     // Types
     using Ptr = std::shared_ptr<VLoad>;
 
-    // Target and initial body-force density components [bx, by, bz].
-    // NaN in values_ omits a component, while NaN in values_start_ indicates
-    // an unspecified initial value, interpreted as zero during interpolation.
-    // The effective force density is assembled per unit physical volume.
-    Vec3 values_       = {NAN, NAN, NAN};
-    Vec3 values_start_ = {NAN, NAN, NAN};
+    // Nominal generalized components. NaN omits a component.
+    Vec3 values_ = {NAN, NAN, NAN};
 
     // Target structural elements over whose physical volumes the load is integrated
     model::ElementRegion::Ptr region_ = nullptr;

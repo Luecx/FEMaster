@@ -65,20 +65,8 @@ struct InertialLoad : Condition {
     Vec3 omega_      = Vec3::Zero();
     Vec3 alpha_      = Vec3::Zero();
 
-    // Optional initial rigid-body kinematics for step transitions. The center
-    // is a geometric reference rather than a force magnitude. A linear ramp
-    // of equivalent inertia forces cannot be implemented by simply ramping
-    // omega: the centripetal and gyroscopic terms depend quadratically on it.
-    // apply() interpolates complete inertia forces and moments derived from
-    // the start and target states, rather than interpolating omega itself.
-    Vec3 center_acc_start_ = Vec3::Constant(NAN);
-    Vec3 omega_start_      = Vec3::Constant(NAN);
-    Vec3 alpha_start_      = Vec3::Constant(NAN);
-
-    // Scales the assembled initial inertia contribution, not its kinematics.
-    // This is needed when an amplitude-driven load is retired: omega terms
-    // enter quadratically, so scaling omega itself would be incorrect.
-    Precision start_scale_ = Precision(1);
+    // Step transitions scale complete inertia contributions instead of
+    // interpolating angular velocity, whose forces depend quadratically on omega.
 
     // Structural elements whose distributed or compiled point mass contributes
     model::ElementRegion::Ptr region_ = nullptr;
@@ -100,11 +88,8 @@ struct InertialLoad : Condition {
     // rotary inertia is defined, the corresponding Euler/gyroscopic moments.
     // Auxiliary point masses are included when consider_point_masses_ is true.
     //
-    // Without an amplitude, start and target inertia contributions are
-    // interpolated using step_progress. The complete contributions are blended,
-    // rather than angular velocities, because the centripetal and gyroscopic
-    // terms are quadratic in omega. An assigned amplitude scales the target
-    // contribution at time; ignore_amplitude assembles the nominal target.
+    // Initial and target step instances evaluate their complete inertia forces
+    // independently. The temporal multiplier scales the final contributions.
     //
     // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
     // Construct an independent physical condition for a new step.

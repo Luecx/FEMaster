@@ -75,34 +75,16 @@ void CLoad::apply(
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
 
-    // Determine the contributions of the start and target values.
-    // An explicit amplitude overrides the linear step interpolation.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // Assemble the local generalized load vector [Fx, Fy, Fz, Mx, My, Mz].
-    // NaN target components are omitted; undefined start values are zero.
+    // Omitted generalized components contribute no nodal forces or moments.
     Vec6 values = Vec6::Zero();
-
-    // fill in the 6 components if they are not NaN, otherwise they remain zero
     for (Dim i = 0; i < 6; ++i) {
-        if (std::isnan(values_[i])) continue;
-
-        const Precision start = std::isfinite(values_start_[i])
-            ? values_start_[i] : Precision(0);
-
-        values[i] = start_scale * start + end_scale * values_[i];
+        if (std::isfinite(values_[i])) values[i] = factor * values_[i];
     }
 
     // if no components are active, return early

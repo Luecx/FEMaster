@@ -198,8 +198,8 @@ struct Model {
     // selections in ModelData; callers supply only assembly/analysis parameters.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
-                            Precision previous_end_time, Precision end_time,
-                            Precision time, Precision step_progress);
+                            Precision previous_end_time, Precision previous_nominal_end_time,
+                            Precision end_time, Precision time, Precision step_progress);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);

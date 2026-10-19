@@ -95,42 +95,21 @@ void InertialLoad::apply(
 
     const auto& positions = *model_data.positions;
 
-    // Interpolate complete inertia contributions, not angular velocities:
-    // the centripetal acceleration and gyroscopic moment are quadratic in omega.
-    // An explicit amplitude overrides the linear step interpolation.
-    const bool has_start = center_acc_start_.allFinite()
-                        && omega_start_.allFinite()
-                        && alpha_start_.allFinite();
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    Precision start_scale = has_start ? (Precision(1) - step_progress) * start_scale_ : Precision(0);
-    Precision end_scale   = step_progress;
+    if (factor == Precision(0)) return;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // Evaluate the negative rigid-body acceleration at the current position.
-    // The optional start state is skipped entirely if its weight is zero,
-    // avoiding arithmetic with unset (NaN) start components.
+    // Evaluate complete centripetal and Euler acceleration before scaling.
+    // Scaling omega itself would produce an incorrect quadratic contribution.
     const auto inertia_acceleration = [&](const Vec3& position) -> Vec3 {
-        const Vec3 r      = position - center_;
-        const Vec3 target = center_acc_ + alpha_.cross(r) + omega_.cross(omega_.cross(r));
-        Vec3 result       = end_scale * target;
-
-        if (start_scale != Precision(0)) {
-            result += start_scale * (
-                center_acc_start_ + alpha_start_.cross(r)
-                + omega_start_.cross(omega_start_.cross(r))
-            );
-        }
-        return -result;
+        const Vec3 r = position - center_;
+        const Vec3 acceleration =
+            center_acc_ + alpha_.cross(r) + omega_.cross(omega_.cross(r));
+        return -factor * acceleration;
     };
 
     // Apply the concentrated inertia load to a compiled or auxiliary point
@@ -149,7 +128,7 @@ void InertialLoad::apply(
         const Index node     = static_cast<Index>(node_id);
         const Vec3  position = positions.row_vec3(node);
 
-        // F = -m a(x), including the start/target history evaluated above.
+        // F = -m a(x), including the effective step multiplier.
         const Vec3 force = section->mass_ * inertia_acceleration(position);
 
         for (Dim i = 0; i < 3; ++i) {
@@ -158,20 +137,10 @@ void InertialLoad::apply(
 
         if (rhs.components < 6) return;
 
-        // Blend the complete Euler and gyroscopic moments. Only the target
-        // is evaluated when start_scale is zero.
+        // Scale the complete Euler and gyroscopic moments at this point mass.
         const Vec3 J_omega = section->rotary_inertia_.cwiseProduct(omega_);
-        Vec3 moment        = -end_scale * (
-            section->rotary_inertia_.cwiseProduct(alpha_) + omega_.cross(J_omega)
-        );
-
-        if (start_scale != Precision(0)) {
-            const Vec3 J_omega_start = section->rotary_inertia_.cwiseProduct(omega_start_);
-            moment -= start_scale * (
-                section->rotary_inertia_.cwiseProduct(alpha_start_)
-                + omega_start_.cross(J_omega_start)
-            );
-        }
+        const Vec3 moment = -factor * (
+            section->rotary_inertia_.cwiseProduct(alpha_) + omega_.cross(J_omega));
 
         for (Dim i = 0; i < 3; ++i) {
             rhs(node, i + 3) += moment[i];

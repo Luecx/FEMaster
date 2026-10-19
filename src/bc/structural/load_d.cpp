@@ -67,44 +67,16 @@ void DLoad::apply(
     logging::error(region_ != nullptr,
         "DLOAD: target surface region is not initialized");
 
-    // Determine the interpolation weights for the prescribed traction.
-    //
-    // Without an amplitude, the load changes linearly from its initial
-    // value t_start to the target value t_end:
-    //
-    //     t(lambda) = (1 - lambda) * t_start + lambda * t_end
-    //
-    // An explicit amplitude instead scales the target traction directly:
-    //
-    //     t(time) = A(time) * t_end
-    //
-    // ignore_amplitude bypasses both and uses the nominal target traction.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
+    // Step-local interpolation scales the complete nominal contribution.
+    const Precision factor = interpolation
+        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
+        : ignore_amplitude ? Precision(1)
+        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
 
-    if (interpolation) {
-        start_scale = Precision(0);
-        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
-    } else if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // Construct the effective traction vector in the prescribed coordinate
-    // system. NaN marks an omitted target component, while an undefined
-    // initial component is interpreted as zero.
+    // Transform the scaled local traction at each surface quadrature point.
     Vec3 traction = Vec3::Zero();
-
     for (Dim i = 0; i < 3; ++i) {
-        if (std::isnan(values_[i])) continue;
-
-        const Precision start = std::isfinite(values_start_[i])
-            ? values_start_[i] : Precision(0);
-
-        traction[i] = start_scale * start + end_scale * values_[i];
+        if (std::isfinite(values_[i])) traction[i] = factor * values_[i];
     }
 
     if (traction.isZero()) return;

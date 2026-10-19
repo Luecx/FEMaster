@@ -103,8 +103,9 @@ namespace fem::bc {
  */
 struct LoadInterpolation {
     bool      initial           = false;
-    Precision previous_end_time = Precision(0);
-    Precision end_time          = Precision(1);
+    Precision previous_end_time         = Precision(0);
+    Precision previous_nominal_end_time = Precision(1);
+    Precision end_time                  = Precision(1);
 };
 
 struct Condition : Printable {
@@ -175,7 +176,12 @@ struct Condition : Printable {
                           bool ignore_amplitude) const {
         if (ignore_amplitude) return Precision(1);
         if (!amplitude_) {
-            return interpolation.initial ? Precision(1) - step_progress : step_progress;
+            if (!interpolation.initial) return step_progress;
+            logging::error(std::abs(interpolation.previous_nominal_end_time) > Precision(1e-12),
+                "LOAD: previous nominal end time must be nonzero");
+            const Precision accepted_factor =
+                interpolation.previous_end_time / interpolation.previous_nominal_end_time;
+            return accepted_factor * (Precision(1) - step_progress);
         }
 
         const Precision start = amplitude_->evaluate(Precision(0));
