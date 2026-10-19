@@ -315,8 +315,10 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * @param source Optional alternate condition set for read-only base load assembly.
  * @return Six-component global nodal load field for the current model state.
  */
-Field Model::build_load_matrix(Precision time, Precision step_progress,
-                               const bc::ConditionManager* source) {
+Field Model::build_load_matrix(const bc::ConditionState& initial,
+                               const bc::ConditionState& target,
+                               Precision previous_end_time, Precision end_time,
+                               Precision time, Precision step_progress) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -325,26 +327,24 @@ Field Model::build_load_matrix(Precision time, Precision step_progress,
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
-    // An optional alternate source supplies independent condition definitions,
-    // while the default path keeps the live model condition history.
-    const auto& active_conditions = source ? *source : _data->conditions;
-
-    // Input-history families identify structural loads without physical RTTI.
-    // DLOAD and DSLOAD may each contain several concrete load implementations.
+    // Evaluate old and new physical definitions independently at the trial time.
+    // Each condition handles the scalar interpolation of its complete force.
     const bc::ConditionFamily load_families[] = {
-        bc::CLOAD,
-        bc::DLOAD,
-        bc::DSLOAD,
-        bc::PLOAD,
-        bc::VLOAD,
-        bc::INERTIAL_LOAD
+        bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
+        bc::VLOAD, bc::INERTIAL_LOAD
     };
-    for (const auto family : load_families) {
-        for (const auto& condition : active_conditions.get(family)) {
-            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
-                             time, false, step_progress);
+    const auto assemble = [&](const bc::ConditionState& state, bool is_initial) {
+        const bc::LoadInterpolation interpolation{is_initial, previous_end_time, end_time};
+        for (const auto family : load_families) {
+            for (const auto& condition : state.get(family)) {
+                condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
+                                 time, false, step_progress, &interpolation);
+            }
         }
-    }
+    };
+
+    assemble(initial, true);
+    assemble(target, false);
 
     // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
@@ -370,7 +370,7 @@ Field Model::build_load_matrix(Precision time, Precision step_progress,
  *
  * @return Amplitude pointers paired with unscaled global nodal load fields.
  */
-std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
+std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const bc::ConditionState& target) {
     // Prepare the numerical spatial bases and outputs unused by structural loads
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
     constraint::Equations equations{};
@@ -403,7 +403,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
         bc::INERTIAL_LOAD
     };
     for (const auto family : load_families) {
-        for (const auto& condition : _data->conditions.get(family)) {
+        for (const auto& condition : target.get(family)) {
             add_condition(condition);
         }
     }
@@ -433,7 +433,8 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
  * @return Constraint equations grouped and annotated by their origin.
  */
-constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids) {
+constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
+                                                           const bc::ConditionState& target) {
     // Prepare grouped equations and temporary data required by support prescriptions
     constraint::ConstraintGroups groups{};
     Field                       rhs{};
@@ -479,7 +480,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     // Each constraint family receives its own source indexing and output group.
     using Source = constraint::EquationSourceKind;
 
-    collect(_data->conditions.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
+    collect(target.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
     collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
     collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
     collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);

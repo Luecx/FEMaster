@@ -107,7 +107,8 @@ void Convection::apply(
     TripletList&           matrix,
     Precision              time,
     bool                   ignore_amplitude,
-    Precision
+    Precision,
+    const LoadInterpolation* 
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
     apply_rhs(model_data, rhs, time, ignore_amplitude);

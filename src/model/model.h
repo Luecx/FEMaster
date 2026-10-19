@@ -39,6 +39,7 @@
 #include "geometry/surface/surface.h"
 #include "instance.h"
 #include "model_data.h"
+#include "../bc/condition_state.h"
 #include "part.h"
 
 #include <ostream>
@@ -189,16 +190,19 @@ struct Model {
     // Thermal passes use direct thermal history and optional named thermal
     // selections in ModelData. Each pass supplies complete valid apply outputs
     // and retains only the contribution required by the caller.
-    Field build_thermal_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
-    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, Precision time = 0);
-    constraint::Equations collect_thermal_constraints();
+    Field build_thermal_load_matrix(const bc::ConditionState& target, Precision time = 0, Precision step_progress = Precision(1));
+    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
+    constraint::Equations collect_thermal_constraints(const bc::ConditionState& target);
 
     // Structural conditions are read from the current direct history and named
     // selections in ModelData; callers supply only assembly/analysis parameters.
-    Field build_load_matrix(Precision time = 0, Precision step_progress = Precision(1),
-                            const bc::ConditionManager* source = nullptr);
-    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids);
-    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis();
+    Field build_load_matrix(const bc::ConditionState& initial,
+                            const bc::ConditionState& target,
+                            Precision previous_end_time, Precision end_time,
+                            Precision time, Precision step_progress);
+    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
+                                                    const bc::ConditionState& target);
+    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
 
     // Element operators use active numbering and optional element scaling
     SparseMatrix build_stiffness_matrix(

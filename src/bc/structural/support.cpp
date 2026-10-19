@@ -127,7 +127,9 @@ void Support::apply(model::ModelData&      model_data,
                     TripletList&,
                     Precision,
                     bool,
-                    Precision) {
+                    Precision,
+    const LoadInterpolation* 
+) {
     // Validate the semantic target before traversing compiled topology
     const int active_regions = static_cast<int>(node_region_    != nullptr)
                              + static_cast<int>(element_region_ != nullptr)

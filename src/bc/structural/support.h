@@ -122,7 +122,8 @@ public:
                TripletList&           matrix,
                Precision              time,
                bool                   ignore_amplitude = false,
-               Precision              step_progress   = Precision(1)) override;
+               Precision              step_progress = Precision(1),
+        const LoadInterpolation* interpolation = nullptr) override;
 
     // Diagnostics
     std::string str() const override;

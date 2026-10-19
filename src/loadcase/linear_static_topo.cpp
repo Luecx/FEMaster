@@ -81,13 +81,13 @@ void LinearStaticTopo::run() {
 
     // Assemble direct history and collector-activated conditions from the current model
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(); },
+        [&]() { return build_step_load_matrix(end_time, Precision(1)); },
         "constructing load matrix (node x 6)"
     );
 
     // Free-body load balancing requires the complete active support state to be empty
     const bool supports_active =
-        !model->_data->conditions.get(bc::SUPPORT).empty();
+        !target_conditions.get(bc::SUPPORT).empty();
 
     if (inertia_relief) {
         logging::error(!supports_active,
@@ -126,7 +126,7 @@ void LinearStaticTopo::run() {
     }
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints"
     );
     report_constraint_groups(groups);

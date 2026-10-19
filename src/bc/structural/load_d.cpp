@@ -59,7 +59,8 @@ void DLoad::apply(
     TripletList&,
     Precision              time,
     bool                   ignore_amplitude,
-    Precision              step_progress
+    Precision              step_progress,
+    const LoadInterpolation* interpolation
 ) {
     logging::error(model_data.positions != nullptr,
         "DLOAD: positions field is not initialized");
@@ -81,7 +82,10 @@ void DLoad::apply(
     Precision start_scale = Precision(1) - step_progress;
     Precision end_scale   = step_progress;
 
-    if (ignore_amplitude) {
+    if (interpolation) {
+        start_scale = Precision(0);
+        end_scale   = load_factor(time, step_progress, *interpolation, ignore_amplitude);
+    } else if (ignore_amplitude) {
         start_scale = Precision(0);
         end_scale   = Precision(1);
     } else if (amplitude_) {

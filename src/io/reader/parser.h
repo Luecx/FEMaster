@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "../../bc/condition_manager.h"
+#include "../../bc/condition_state.h"
 #include "../../core/types_num.h"
 #include "../../loadcase/loadcase.h"
 #include "../dsl/deck.h"
@@ -31,7 +31,6 @@
 #include "../writer/writers.h"
 
 #include <array>
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -124,21 +123,23 @@ class Parser {
     int                     next_loadcase_id_ = 1;
     StepState               step_state_;
 
-    // Reader-owned input identity, separate from active physical conditions.
-    // One identifier may resolve to multiple TRANSFORM fragments.
+    // Only the final successful target is carried between steps. The working
+    // identifier generations belong to the currently parsed step; perturbation
+    // edits are discarded rather than restored to shared physical objects.
     using IdentifierMap = std::unordered_map<std::string, std::vector<bc::Condition::Ptr>>;
+
+    bc::ConditionState committed_conditions_;
+    std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> committed_identifiers_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
 
-    // Perturbations temporarily modify condition membership and shared load
-    // objects. Keep previous identities and values solely for restoration.
-    struct PerturbationSnapshot {
-        bc::ConditionManager active;
-        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited;
-        std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current;
-        std::vector<std::function<void()>> restore_values;
-    };
-    std::unique_ptr<PerturbationSnapshot> perturbation_snapshot_;
+    Precision committed_end_time_ = Precision(0);
+
+    // Collectors are per-step selections. Their previous contributions remain
+    // in the frozen initial state but are omitted from the next target until
+    // explicitly selected again.
+    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> selected_conditions_;
+    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> committed_collector_conditions_;
 
     // Actual final external loading of the last committed structural static
     // state. Unlike mutable input definitions, this also retains prior
@@ -146,12 +147,6 @@ class Parser {
     model::Field::Ptr committed_structural_load_;
     bool last_committed_static_nonlinear_ = false;
 
-    // Restore temporary condition changes without replacing shared object identities
-    void restore_perturbation();
-
-    // Shared collector definitions requested by the current analysis. These
-    // are inserted into the manager only while that analysis is running.
-    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> selected_conditions_;
 
 public:
     // we allow *TRANSFORM to be parsed but we don't really transform the DOFs. Instead,
@@ -185,8 +180,8 @@ public:
     const StepState& step_state() const;
 
     // Physical conditions remain model-owned; input identities remain here.
-    bc::ConditionManager&       conditions();
-    const bc::ConditionManager& conditions() const;
+    bc::ConditionState&       conditions();
+    const bc::ConditionState& conditions() const;
 
     // MOD replaces one complete logical source/DOF group. Compatible physical
     // fragments retain their start values; changed bases keep both histories.

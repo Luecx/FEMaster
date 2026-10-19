@@ -54,7 +54,7 @@ namespace fem::io::reader::commands {
  *
  * STEP stores the current procedure controls. Exactly one supported procedure
  * card must appear before direct structural conditions. Direct definitions mutate
- * ModelData::conditions; LOADS and SUPPORTS activate reusable collector entries
+ * LoadCase::target_conditions; LOADS and SUPPORTS activate reusable collector entries
  * in that same manager.
  *
  * END STEP executes the active analysis immediately. Omitted direct condition

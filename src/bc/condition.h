@@ -35,6 +35,7 @@
 
 #include "../constraints/types/equation.h"
 #include "../core/printable.h"
+#include "../core/logging.h"
 #include "../core/types_eig.h"
 #include "../core/types_num.h"
 
@@ -94,6 +95,18 @@ namespace fem::bc {
  * the input reader and the appropriate numerical analysis. The concrete
  * condition classes store their own physical magnitudes and geometry.
  */
+/**
+ * @brief Evaluates a condition as either the old or new contribution.
+ *
+ * Initial conditions ramp down from their previously accepted amplitude;
+ * target conditions ramp up using their current step-local amplitude.
+ */
+struct LoadInterpolation {
+    bool      initial           = false;
+    Precision previous_end_time = Precision(0);
+    Precision end_time          = Precision(1);
+};
+
 struct Condition : Printable {
     // Shared ownership retains physical definitions in model history or reusable
     // named groups without coupling their lifetime to an analysis object.
@@ -155,6 +168,30 @@ struct Condition : Printable {
     // Every derived condition is responsible for evaluating its own physical
     // contribution, including coordinate transformations and integration
     // over the relevant nodes, surfaces or elements.
+    // Scale a nominal condition contribution for the current transition.
+    // Nonlinear loads apply this scale to complete physical force terms.
+    Precision load_factor(Precision time, Precision step_progress,
+                          const LoadInterpolation& interpolation,
+                          bool ignore_amplitude) const {
+        if (ignore_amplitude) return Precision(1);
+        if (!amplitude_) {
+            return interpolation.initial ? Precision(1) - step_progress : step_progress;
+        }
+
+        const Precision start = amplitude_->evaluate(Precision(0));
+        const Precision end   = amplitude_->evaluate(interpolation.end_time);
+        logging::error(std::abs(start) <= Precision(1e-12),
+            "AMPLITUDE: effective value at the start of a step must be zero");
+
+        if (!interpolation.initial) return amplitude_->evaluate(time);
+
+        const Precision previous = amplitude_->evaluate(interpolation.previous_end_time);
+        if (previous == Precision(0)) return Precision(0);
+        logging::error(std::abs(end) > Precision(1e-12),
+            "AMPLITUDE: cannot ramp down a nonzero load with zero end amplitude");
+        return previous * (Precision(1) - amplitude_->evaluate(time) / end);
+    }
+
     virtual void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
@@ -163,7 +200,8 @@ struct Condition : Printable {
         TripletList&           matrix,
         Precision              time,
         bool                   ignore_amplitude = false,
-        Precision              step_progress    = Precision(1)
+        Precision              step_progress    = Precision(1),
+        const LoadInterpolation* interpolation = nullptr
     ) = 0;
 
     // Diagnostics

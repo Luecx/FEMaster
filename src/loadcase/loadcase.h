@@ -57,6 +57,16 @@ struct LoadCase : public Castable {
     io::writer::ResultWriters* writer = nullptr;
     model::Model*              model  = nullptr;
 
+    // Step-owned input conditions. The initial state is frozen while the parser
+    // edits only the target state; no active conditions live in ModelData.
+    bc::ConditionState initial_conditions;
+    bc::ConditionState target_conditions;
+
+    // The previous accepted end time defines inherited amplitude values.
+    // The current end time is step-local and may be updated by path following.
+    Precision previous_end_time = Precision(0);
+    Precision end_time          = Precision(1);
+
     // Per-step output requests, provided basis fields and lazy recovered fields
     io::writer::OutputRequestHandler output;
 
@@ -80,6 +90,10 @@ struct LoadCase : public Castable {
     // Prepare persistent state and store a converged static configuration
     void prepare_state() const;
     void commit_state(const model::Field& displacement) const;
+
+    // Evaluate a transition or the nominal active target at analysis time
+    model::Field build_step_load_matrix  (Precision time, Precision progress) const;
+    model::Field build_target_load_matrix(Precision time) const;
 
     // Assigned load-case identifier
     ID get_id() const { return id; }

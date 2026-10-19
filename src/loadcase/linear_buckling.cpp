@@ -201,7 +201,7 @@ void LinearBuckling::run() {
     // (2) Build constraint equations from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -210,7 +210,7 @@ void LinearBuckling::run() {
 
     // (3) Global load matrix (node x 6) -> keep for reporting if you like
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(Precision(1)); },
+        [&]() { return build_target_load_matrix(Precision(1)); },
         "building global load matrix"
     );
 

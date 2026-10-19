@@ -90,7 +90,8 @@ struct DLoad : Condition {
         TripletList&           matrix,
         Precision              time,
         bool                   ignore_amplitude = false,
-        Precision              step_progress   = Precision(1)
+        Precision              step_progress = Precision(1),
+        const LoadInterpolation* interpolation = nullptr
     ) override;
 
     // Diagnostics

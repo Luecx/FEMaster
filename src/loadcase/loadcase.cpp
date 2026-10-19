@@ -62,6 +62,31 @@ void LoadCase::commit_state(const model::Field& displacement) const {
 }
 
 /**
+ * Assembles structural loading between the frozen initial prescriptions and
+ * the step target at the specified step-local time and normalized progress.
+ *
+ * Physical load types evaluate their own nominal contributions; the supplied
+ * states determine independent ramp-down and ramp-up evaluations.
+ */
+model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress) const {
+    return model->build_load_matrix(
+        initial_conditions, target_conditions,
+        previous_end_time, end_time, time, progress);
+}
+
+/**
+ * Evaluates only the target definitions at their prescribed amplitude.
+ *
+ * Frequency and transient analyses consume physical load definitions without
+ * superimposing a static unloading transition on their forcing time history.
+ */
+model::Field LoadCase::build_target_load_matrix(Precision time) const {
+    return model->build_load_matrix(
+        bc::ConditionState{}, target_conditions,
+        previous_end_time, end_time, time, Precision(1));
+}
+
+/**
  * @copydoc LoadCase::report_constraint_groups
  */
 void LoadCase::report_constraint_groups(const constraint::ConstraintGroups& groups) const {

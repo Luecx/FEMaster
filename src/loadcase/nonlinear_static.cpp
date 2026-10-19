@@ -178,7 +178,7 @@ void NonlinearStatic::run() {
             bc::VLOAD, bc::INERTIAL_LOAD
         };
         for (const auto family : load_families) {
-            for (const auto& condition : model->_data->conditions.get(family)) {
+            for (const auto& condition : target_conditions.get(family)) {
                 logging::error(condition->amplitude_ == nullptr,
                     "NONLINEARSTATIC: named load AMPLITUDE is not supported with RIKS arc-length control");
             }
@@ -253,7 +253,7 @@ void NonlinearStatic::run() {
     );
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints"
     );
 
