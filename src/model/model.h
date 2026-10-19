@@ -187,15 +187,14 @@ struct Model {
     SparseMatrix build_thermal_conductivity_matrix(
         const SystemDofIds& system_dof_ids);
 
-    // Thermal passes use direct thermal history and optional named thermal
-    // selections in ModelData. Each pass supplies complete valid apply outputs
-    // and retains only the contribution required by the caller.
+    // Thermal passes read explicitly provided target conditions and retain
+    // only the operator or right-hand side contribution required by the caller.
     Field build_thermal_load_matrix(const bc::ConditionState& target, Precision time = 0, Precision step_progress = Precision(1));
     SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
     constraint::Equations collect_thermal_constraints(const bc::ConditionState& target);
 
-    // Structural conditions are read from the current direct history and named
-    // selections in ModelData; callers supply only assembly/analysis parameters.
+    // Structural loading interpolates the initial and target condition states.
+    // Supports are assembled from the target state only.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
                             Precision previous_end_time, Precision previous_nominal_end_time,

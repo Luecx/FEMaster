@@ -82,7 +82,7 @@ struct DocOptions {
  * crosses from sparse Part/Instance topology to dense assembly storage. No
  * command activation state is stored in the DSL registry.
  *
- * Input-condition history is resolved here, not in ConditionManager. Each
+ * Input-condition history is resolved here, not in ConditionState. Each
  * history family has two identifier maps tracking inherited and current names
  * to one or more physical Condition pointers. Input identifiers are never
  * stored on Condition objects. One CLOAD may create multiple physical pointers
@@ -91,11 +91,9 @@ struct DocOptions {
  * current-step identifiers are kept separately; the manager owns only active
  * physical Condition pointers.
  *
- * Named collector definitions are independent of direct input history.
- * Selecting a named collector records the shared physical definitions for
- * the current analysis. When that analysis executes, only pointers that were
- * not already active are inserted temporarily and removed afterward.
- * This preserves direct conditions that happen to share a collector pointer.
+ * Named collectors hold reusable definitions independently of direct history.
+ * The reader selects them into the current target state and tracks temporary
+ * activation for automatic removal from the following target state.
  */
 /**
  * Step syntax is a scope; its procedure constructs the actual load case.

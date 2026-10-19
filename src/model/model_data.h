@@ -169,8 +169,8 @@ struct ModelData {
     std::vector<constraint::Rbm>       rbms;
     std::vector<constraint::Equation>  equations;
 
-    // Reusable named definitions remain separate from active model conditions.
-    // The parser selects their entries for an individual analysis.
+    // Reusable named definitions remain independent of step-owned conditions.
+    // The parser selects their entries for each analysis.
     Sets<bc::SupportCollector> supp_cols;
     Sets<bc::LoadCollector>    load_cols;
     Sets<bc::ThermalCollector> thermal_cols;

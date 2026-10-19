@@ -18,12 +18,11 @@
  * interface general without introducing separate Dirichlet, Neumann, Mixed or
  * load-capability hierarchies.
  *
- * Condition history remains independent of assembly. ConditionManager owns the
- * active condition pointers grouped by input-history family, while the input
- * reader resolves the original identifiers and semantic replacement rules.
+ * Condition history remains independent of assembly. The load case owns independent initial and target condition states, while
+ * the reader resolves original identifiers and semantic replacement rules.
  * Named collectors retain reusable definitions independently of the active set.
  *
- * @see ConditionManager
+ * @see ConditionState
  *
  * @author Finn Eggers
  * @date 07.10.2026
@@ -54,8 +53,8 @@ namespace fem::bc {
  * @brief Common polymorphic definition of a FEMaster condition.
  *
  * A Condition represents one physical prescription such as a structural
- * support, concentrated load or thermal convection boundary. ModelData owns a
- * ConditionManager containing the currently active shared pointers. Named
+ * support, concentrated load or thermal convection boundary. LoadCase owns two ConditionState collections for the initial and target
+ * physical prescriptions. Named
  * collectors retain reusable definitions, while the reader decides which
  * definitions participate in an analysis. The solver does not own additional
  * condition history or look up original input identifiers.
@@ -65,7 +64,7 @@ namespace fem::bc {
  * comparisons and all original input identifiers belong entirely to the
  * reader; the physical Condition remains independent of input syntax.
  *
- * ConditionManager membership is based solely on shared pointer identity;
+ * ConditionState membership is based solely on shared pointer identity;
  * distinct condition objects may intentionally address overlapping regions.
  *
  * `apply()` is the single solver-facing assembly interface. Every call receives
@@ -169,8 +168,14 @@ struct Condition : Printable {
     // Every derived condition is responsible for evaluating its own physical
     // contribution, including coordinate transformations and integration
     // over the relevant nodes, surfaces or elements.
-    // Scale a nominal condition contribution for the current transition.
-    // Nonlinear loads apply this scale to complete physical force terms.
+    /**
+     * Evaluates the scalar multiplier for an initial or target step condition.
+     *
+     * Target definitions follow the prescribed amplitude or the linear step
+     * progress. Initial conditions decay from their previously accepted
+     * effective value to zero. Nonlinear inertia terms are scaled only after
+     * evaluating the complete physical contribution.
+     */
     Precision load_factor(Precision time, Precision step_progress,
                           const LoadInterpolation& interpolation,
                           bool ignore_amplitude) const {

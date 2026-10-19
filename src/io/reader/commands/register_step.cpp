@@ -105,7 +105,7 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             state.step_period    = Precision(1);
 
             // The procedure card creates the concrete analysis and clears only
-            // previous collector-derived ConditionManager activations. Direct
+            // previous collector-derived activations. Direct
             // condition history remains persistent until explicitly modified.
         });
 

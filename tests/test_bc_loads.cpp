@@ -24,8 +24,8 @@
 
 using namespace fem;
 
-TEST(BC_Loads, ConditionManagerFamilyIsolation) {
-    bc::ConditionManager manager;
+TEST(BC_Loads, ConditionStateFamilyIsolation) {
+    bc::ConditionState manager;
     auto load         = std::make_shared<bc::CLoad>();
     auto other_load   = std::make_shared<bc::CLoad>();
     auto support      = std::make_shared<bc::Support>();
@@ -48,6 +48,68 @@ TEST(BC_Loads, ConditionManagerFamilyIsolation) {
 
     EXPECT_TRUE(manager.remove(bc::SUPPORT, support));
     EXPECT_TRUE(manager.get(bc::SUPPORT).empty());
+}
+
+TEST(BC_Loads, ConditionStateCloneCopiesLoads) {
+    bc::ConditionState original;
+    auto load = std::make_shared<bc::CLoad>();
+    load->values_[0] = Precision(100);
+    original.add(bc::CLOAD, load);
+
+    auto cloned = original.clone();
+    ASSERT_EQ(cloned.get(bc::CLOAD).size(), 1u);
+    const auto copied = std::dynamic_pointer_cast<bc::CLoad>(*cloned.get(bc::CLOAD).begin());
+    ASSERT_NE(copied, nullptr);
+    EXPECT_NE(copied.get(), load.get());
+
+    copied->values_[0] = Precision(200);
+    EXPECT_DOUBLE_EQ(load->values_[0], Precision(100));
+}
+
+TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto amplitude = std::make_shared<bc::Amplitude>("RAMP");
+    amplitude->add_sample(Precision(0), Precision(0));
+    amplitude->add_sample(Precision(1), Precision(0.6));
+    amplitude->add_sample(Precision(2), Precision(1));
+
+    auto load = std::make_shared<bc::CLoad>();
+    load->region_ = region;
+    load->values_[0] = Precision(100);
+    load->amplitude_ = amplitude;
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, load);
+    target.add(bc::CLOAD, load);
+
+    // Identical endpoints preserve 60 N through ramp-down plus ramp-up.
+    for (const Precision time : {Precision(0), Precision(0.5), Precision(1)}) {
+        const auto force = mdl.build_load_matrix(
+            initial, target, Precision(1), Precision(1),
+            Precision(1), time, time);
+        EXPECT_NEAR(force(0, 0), 60, 1e-12);
+    }
+
+    // Changing the endpoint transitions from 100 N to 60 N continuously.
+    const auto start = mdl.build_load_matrix(
+        initial, target, Precision(2), Precision(1),
+        Precision(1), Precision(0), Precision(0));
+    const auto middle = mdl.build_load_matrix(
+        initial, target, Precision(2), Precision(1),
+        Precision(1), Precision(0.5), Precision(0.5));
+    const auto end = mdl.build_load_matrix(
+        initial, target, Precision(2), Precision(1),
+        Precision(1), Precision(1), Precision(1));
+    EXPECT_NEAR(start(0, 0), 100, 1e-12);
+    EXPECT_NEAR(middle(0, 0), 80, 1e-12);
+    EXPECT_NEAR(end(0, 0), 60, 1e-12);
 }
 
 TEST(BC_Loads, ParserMatchesOnlySelectedIdentifierAndComponent) {

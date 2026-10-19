@@ -2,9 +2,9 @@
  * @file loadcase.h
  * @brief Declares the base class for load-case execution.
  *
- * Load cases contain analysis settings and execute the associated solution
- * procedure. Loads, supports and their active named groups belong to ModelData;
- * run() assembles exactly the model state present when the analysis executes.
+ * Load cases contain analysis settings and execute a solution procedure.
+ * Each load case owns frozen initial and editable target condition states;
+ * the compiled FE model supplies geometry and material data for assembly.
  *
  * @see src/loadcase/loadcase.cpp
  * @author Finn Eggers
@@ -39,9 +39,8 @@ namespace loadcase {
  * command can observe it. Derived classes provide the canonical input-deck type
  * name and implement the actual analysis in @ref run.
  *
- * Conditions and collector-activated conditions belong exclusively to ModelData. Derived
- * analyses assemble that current state during run(), without storing collector
- * lists, direct-condition copies or input-history transitions.
+ * The reader resolves direct and collector input into the step target state.
+ * Solvers evaluate initial and target contributions without mutating definitions.
  *
  * Castable provides mutable and const runtime access to concrete implementations.
  *

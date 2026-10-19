@@ -57,8 +57,8 @@ using constraint::ConstraintTransformer;
  * tangent increments for perturbations with the same configured backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
  * requested result fields are written and analysis-local element caches released.
- * Model condition definitions and collector-derived activations are read, never copied into
- * the analysis or modified by this procedure.
+ * The analysis evaluates its step-owned initial and target conditions without
+ * mutating the physical definitions.
  */
 void LinearStatic::run() {
     logging::info(true, "");

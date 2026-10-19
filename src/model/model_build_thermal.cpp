@@ -4,7 +4,7 @@
  *
  * The thermal system uses one scalar primary variable per active node. Volume
  * conduction is assembled from the conductivity matrices supplied by
- * `ThermalElement`. Direct thermal histories in ModelData::conditions and optional
+ * `ThermalElement`. Direct thermal histories in step-owned target conditions and optional
  * selected ThermalCollector entries contribute prescribed heat flow, convection
  * operators and temperature constraints through Condition::apply.
  *
@@ -245,7 +245,7 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
  * K_h = integral_Gamma h N N^T dGamma in active scalar equation numbering.
  * Condition::apply also evaluates the ambient source into a temporary nodal RHS;
  * only the matrix is retained by this pass. The reader has already grouped
- * active thermal definitions into the appropriate ConditionManager families.
+ * active thermal definitions into the appropriate ConditionState families.
  *
  * Eigen sums overlapping entries while constructing the final sparse operator.
  * Temperature and heat-flux conditions are assembled in their own families.

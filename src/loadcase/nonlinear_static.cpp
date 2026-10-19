@@ -116,7 +116,7 @@ Precision calculate_relative_force_residual(
 /**
  * Follows nonlinear equilibrium using current model loads and prescriptions.
  *
- * ModelData's active conditions define the initial and target external loads.
+ * The load case owns its initial and target external conditions.
  * Each trial evaluates condition-defined interpolation at its actual load
  * factor; affine prescribed displacements retain their existing constraints.
  * Incremental load control or arc-length control solves the reduced residual

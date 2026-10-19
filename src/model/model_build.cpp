@@ -312,7 +312,11 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  *
  * @param time Evaluation time supplied to load amplitudes.
  * @param step_progress Normalized interpolation of non-amplitude loads.
- * @param source Optional alternate condition set for read-only base load assembly.
+ * @param initial Frozen initial condition state.
+ * @param target Prescribed target condition state.
+ * @param previous_end_time Accepted end time of the previous step.
+ * @param previous_nominal_end_time Nominal end time of the previous step.
+ * @param end_time End time of the current step.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
@@ -422,7 +426,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
 /**
  * Generates and categorizes the current model's linear constraint equations.
  *
- * Current SUPPORT conditions contribute prescribed displacements and rotations.
+ * Target SUPPORT conditions contribute prescribed displacements and rotations.
  * Inactive reusable collector definitions do not impose constraints. Each prescription is
  * expanded through the common Condition::apply interface and annotated with its
  * origin for rank diagnostics and constraint reporting.

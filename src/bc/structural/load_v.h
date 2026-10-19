@@ -66,9 +66,8 @@ struct VLoad : Condition {
     // Integrate the prescribed body-force density over every structural element
     // in region_ and accumulate the consistent equivalent forces in the RHS.
     //
-    // Without an amplitude, values_start_ and values_ are interpolated using
-    // step_progress. With an amplitude, the target is scaled by its value at
-    // time instead. ignore_amplitude applies the nominal target directly.
+    // Each step evaluates this nominal force density using its initial or
+    // target amplitude factor, without modifying the physical definition.
     //
     // NaN target components are omitted. An optional local coordinate system
     // is transformed to global coordinates at each integration point.

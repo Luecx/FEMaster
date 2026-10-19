@@ -120,7 +120,7 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
 /**
  * Solves the harmonic response for each configured excitation frequency.
  *
- * Supports and topology constraints are assembled from the current ModelData.
+ * Supports and topology constraints are assembled from the target ConditionState.
  * The constrained stiffness/mass operators and Rayleigh damping define the real
  * block representation of (K - omega^2 M + i omega C) u_hat = f_hat. The model
  * evaluates current direct loads and collector-activated conditions at each frequency,
