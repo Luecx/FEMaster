@@ -106,9 +106,9 @@ Precision calculate_relative_force_residual(
         return residual_force / reference_force;
     }
 
-    return residual_force == Precision(0)
-        ? Precision(0)
-        : std::numeric_limits<Precision>::infinity();
+    // Without a mechanical reference load, use the absolute force residual.
+    // An arbitrarily small roundoff residual must not become infinity.
+    return residual_force;
 }
 
 } // namespace
@@ -251,6 +251,16 @@ void NonlinearStatic::run() {
     const DynamicVector f_total = mattools::reduce_mat_to_vec(
         active_dof_idx_mat, global_load_delta
     );
+
+    // A continuation step may retain a nonzero force while changing no load.
+    // Its load derivative is then zero, but that must not also zero the
+    // reference force used for Newton's relative residual.
+    const DynamicVector f_initial = mattools::reduce_mat_to_vec(
+        active_dof_idx_mat, global_load_start
+    );
+    const Precision initial_force_scale = f_initial.size() > 0
+        ? f_initial.lpNorm<Eigen::Infinity>()
+        : Precision(0);
 
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
@@ -574,9 +584,11 @@ void NonlinearStatic::run() {
             // For homogeneous constraints T^T(f - K u_p) = T^T f.
             // Keep the same residual normalization as the tangent predictor
             // without the otherwise unnecessary stiffness assembly.
-            residual_reference_force = std::max(
+            residual_reference_force = std::max({
+                initial_force_scale,
                 std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>(),
-                fixed_temperature_force);
+                fixed_temperature_force
+            });
             return;
         }
 
@@ -609,9 +621,11 @@ void NonlinearStatic::run() {
                 fixed_temperature_force,
                 accepted_residual.lpNorm<Eigen::Infinity>());
         }
-        residual_reference_force = std::max(
+        residual_reference_force = std::max({
+            initial_force_scale,
             std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>(),
-            fixed_temperature_force);
+            fixed_temperature_force
+        });
 
         if (can_extrapolate) {
             const Precision scale =
@@ -913,8 +927,10 @@ void NonlinearStatic::run() {
 
         arc_length_control.update_active_set = update_active_set;
 
-        residual_reference_force =
-            reduced_total_load.lpNorm<Eigen::Infinity>();
+        residual_reference_force = std::max(
+            initial_force_scale,
+            reduced_total_load.lpNorm<Eigen::Infinity>()
+        );
 
         converged = arc_length_control.solve(
             q_total,
