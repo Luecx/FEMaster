@@ -303,7 +303,8 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  *
  * Active structural conditions are traversed by family. The parser has already
  * resolved input history and selected named collectors for this analysis.
- * Each condition contributes its transformed, amplitude-scaled force or moment.
+ * Static procedures ramp nominal initial and target forces; dynamic procedures
+ * optionally evaluate the target's named amplitudes.
  *
  * Current structural loads write only the six-component RHS. Empty equation,
  * numbering and triplet outputs satisfy the common Condition::apply interface;
@@ -311,17 +312,19 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * generalized master-node loads only after all contributions have been summed.
  *
  * @param time Evaluation time supplied to load amplitudes.
- * @param step_progress Normalized interpolation of non-amplitude loads.
+ * @param step_progress Normalized progress for a static load transition.
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
  * @param previous_end_time Accepted end time of the previous step.
  * @param end_time End time of the current step.
+ * @param evaluate_amplitudes Whether to evaluate named amplitudes for dynamic targets.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
                                Precision previous_end_time, Precision end_time,
-                               Precision time, Precision step_progress) {
+                               Precision time, Precision step_progress,
+                               bool evaluate_amplitudes) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -330,8 +333,8 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
-    // Evaluate old and new physical definitions independently at the trial time.
-    // Each condition handles the scalar interpolation of its complete force.
+    // Static callers suppress amplitudes and ramp both nominal contributions.
+    // Dynamic callers evaluate only the time-dependent target state.
     const bc::ConditionFamily load_families[] = {
         bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
         bc::VLOAD, bc::INERTIAL_LOAD
@@ -340,7 +343,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
         for (const auto family : load_families) {
             for (const auto& condition : state.get(family)) {
                 condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
-                                 time, false, step_progress, is_initial,
+                                 time, !evaluate_amplitudes, step_progress, is_initial,
                                  previous_end_time, end_time);
             }
         }

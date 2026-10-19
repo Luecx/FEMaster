@@ -1,6 +1,6 @@
 /**
  * @file test_nonlinear_step_continuation.cpp
- * @brief Regressions for Newton residual scaling after an inherited nonlinear load.
+ * @brief Regression tests for nonlinear step continuation and amplitude-independent statics.
  */
 
 #include "../src/io/reader/parser.h"
@@ -17,7 +17,7 @@ using namespace fem;
 namespace {
 
 // Exercise the actual STEP/parser history and nonlinear solver, not only the
-// individual load factor functions. Both regressions used to fail at the first
+// individual load factor functions. The initial regressions failed at the first
 // Newton evaluation of the continuation step with a zero load derivative.
 void run_continuation(const std::string& label,
                       const std::string& steps,
@@ -123,6 +123,24 @@ U, CF
 *OUTPUT, FIELD
 *NODE OUTPUT
 U, CF
+*END STEP
+)", Precision(0.071421));
+}
+
+TEST(NonlinearContinuation, RiksIgnoresInitialAndTargetAmplitudes) {
+    run_continuation("RIKS_AMPLITUDE", R"(*AMPLITUDE, NAME=PULSE
+0., 2., 1., 0.
+*STEP, NAME=PRELOAD, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*CLOAD, AMPLITUDE=PULSE
+2, 1, 1000.
+*END STEP
+*STEP, NAME=RIKS, NLGEOM=YES, INC=80
+*STATIC, RIKS
+0.1, 1., 1.e-5, 0.2
+*CLOAD, OP=MOD, AMPLITUDE=PULSE
+2, 1, 1500.
 *END STEP
 )", Precision(0.071421));
 }

@@ -66,7 +66,7 @@ TEST(BC_Loads, ConditionStateCloneCopiesLoads) {
     EXPECT_DOUBLE_EQ(load->values_[0], Precision(100));
 }
 
-TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
+TEST(BC_Loads, StaticHistoryIgnoresNamedAmplitudes) {
     model::Model mdl;
     mdl.set_node(0, 0, 0, 0);
     mdl.compile();
@@ -74,9 +74,56 @@ TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
     auto region = std::make_shared<model::NodeRegion>("NODE");
     region->add(0);
 
-    auto amplitude = std::make_shared<bc::Amplitude>("RAMP");
-    amplitude->add_sample(Precision(0), Precision(0));
-    amplitude->add_sample(Precision(1), Precision(0.6));
+    // Both endpoints would have rejected the old interpolation: A(0) != 0
+    // and A(step_end) == 0. Neither matters for a nominal static ramp.
+    auto amplitude = std::make_shared<bc::Amplitude>("PULSE");
+    amplitude->add_sample(Precision(0), Precision(2));
+    amplitude->add_sample(Precision(1), Precision(1));
+    amplitude->add_sample(Precision(2), Precision(0));
+
+    auto old_load = std::make_shared<bc::CLoad>();
+    old_load->region_ = region;
+    old_load->values_[0] = Precision(100);
+    old_load->amplitude_ = amplitude;
+
+    auto new_load = std::make_shared<bc::CLoad>();
+    new_load->region_ = region;
+    new_load->values_[0] = Precision(200);
+    new_load->amplitude_ = amplitude;
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, old_load);
+    target.add(bc::CLOAD, new_load);
+
+    const auto at = [&](Precision time, Precision progress) {
+        return mdl.build_load_matrix(
+            initial, target, Precision(1), Precision(2), time, progress)(0, 0);
+    };
+    EXPECT_NEAR(at(Precision(0), Precision(0)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(150), 1e-12);
+    EXPECT_NEAR(at(Precision(1), Precision(1)), Precision(200), 1e-12);
+
+    // An unchanged physical load is constant across a static step even when
+    // its named amplitude varies.
+    target.remove(bc::CLOAD, new_load);
+    target.add(bc::CLOAD, old_load);
+    EXPECT_NEAR(at(Precision(0), Precision(0)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(1), Precision(1)), Precision(100), 1e-12);
+}
+
+TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto amplitude = std::make_shared<bc::Amplitude>("PULSE");
+    amplitude->add_sample(Precision(0), Precision(2));
+    amplitude->add_sample(Precision(1), Precision(0));
     amplitude->add_sample(Precision(2), Precision(1));
 
     auto load = std::make_shared<bc::CLoad>();
@@ -84,28 +131,19 @@ TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
     load->values_[0] = Precision(100);
     load->amplitude_ = amplitude;
 
-    bc::ConditionState initial;
     bc::ConditionState target;
-    initial.add(bc::CLOAD, load);
     target.add(bc::CLOAD, load);
 
-    // Identical endpoints preserve 60 N through ramp-down plus ramp-up.
-    for (const Precision time : {Precision(0), Precision(0.5), Precision(1)}) {
-        const auto force = mdl.build_load_matrix(
-            initial, target, Precision(1), Precision(1), time, time);
-        EXPECT_NEAR(force(0, 0), 60, 1e-12);
-    }
-
-    // Changing the endpoint transitions from 100 N to 60 N continuously.
-    const auto start = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1), Precision(0), Precision(0));
-    const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1), Precision(0.5), Precision(0.5));
-    const auto end = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1), Precision(1), Precision(1));
-    EXPECT_NEAR(start(0, 0), 100, 1e-12);
-    EXPECT_NEAR(middle(0, 0), 80, 1e-12);
-    EXPECT_NEAR(end(0, 0), 60, 1e-12);
+    const auto at = [&](Precision time) {
+        // The final flag matches transient/harmonic build_target_load_matrix().
+        return mdl.build_load_matrix(
+            bc::ConditionState{}, target,
+            Precision(0), Precision(1), time, Precision(1), true)(0, 0);
+    };
+    EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(1)), Precision(0), 1e-12);
+    EXPECT_NEAR(at(Precision(2)), Precision(100), 1e-12);
 }
 
 TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {

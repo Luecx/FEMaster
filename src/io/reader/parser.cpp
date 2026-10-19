@@ -569,26 +569,27 @@ void Parser::end_loadcase() {
         }
     }
 
-    // Validate the time-history boundary conditions once per step.
-    // Ramp-up uses A(t) directly and ramp-down divides by A(t_end).
-    for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD,
-                              bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD,
-                              bc::HEAT_FLUX}) {
-        for (const auto& condition : loadcase->target_conditions.get(family)) {
-            if (!condition->amplitude_) continue;
-            logging::error(std::abs(condition->amplitude_->evaluate(Precision(0))) <= Precision(1e-12),
-                "AMPLITUDE: initial value must be zero");
+    // Static solvers ramp nominal load values; named amplitudes are reserved for
+    // transient and harmonic analyses. Warn once per step, not per Newton trial.
+    const std::string analysis_type = loadcase->type_name();
+    const bool static_analysis =
+        analysis_type == "LINEARSTATIC" ||
+        analysis_type == "NONLINEARSTATIC" ||
+        analysis_type == "LINEARSTATICTOPO" ||
+        analysis_type == "LINEARBUCKLING";
+
+    if (static_analysis) {
+        bool ignored_amplitude = false;
+        for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD,
+                                  bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD}) {
+            for (const auto* state : {&loadcase->initial_conditions, &loadcase->target_conditions}) {
+                for (const auto& condition : state->get(family)) {
+                    ignored_amplitude |= condition->amplitude_ != nullptr;
+                }
+            }
         }
-        for (const auto& condition : loadcase->initial_conditions.get(family)) {
-            if (!condition->amplitude_) continue;
-            const Precision a0  = condition->amplitude_->evaluate(Precision(0));
-            const Precision old = condition->amplitude_->evaluate(loadcase->previous_end_time);
-            const Precision end = condition->amplitude_->evaluate(loadcase->end_time);
-            logging::error(std::abs(a0) <= Precision(1e-12),
-                "AMPLITUDE: initial value must be zero");
-            logging::error(std::abs(old) <= Precision(1e-12) || std::abs(end) > Precision(1e-12),
-                "AMPLITUDE: cannot unload a nonzero start force with zero end amplitude");
-        }
+        logging::warning(!ignored_amplitude,
+            "Static analysis ignores load AMPLITUDE; using linear step ramps");
     }
 
     // Restore the reference configuration for independent analyses and validate

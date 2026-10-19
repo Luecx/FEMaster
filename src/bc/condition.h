@@ -142,52 +142,30 @@ struct Condition : Printable {
     //                  A value of 0 represents the beginning of the step,
     //                  while 1 represents its target state.
     //
-    // Initial and target conditions are evaluated independently. With no
-    // amplitude, each uses complementary normalized step progress. With an
-    // explicit amplitude the target follows A(time), while the inherited
-    // contribution decays from A(previous_end_time) to zero.
+    // Static conditions use complementary step-progress factors for their
+    // nominal initial/target values, even if a named amplitude is attached.
+    // Dynamic target conditions use A(time) when an amplitude is present.
     //
-    // Setting ignore_amplitude bypasses amplitude scaling and interpolation
-    // for supported load conditions, allowing the nominal target contribution
-    // to be assembled directly. This is used, for example, when constructing
-    // spatial load bases for transient analyses.
+    // ignore_amplitude suppresses only amplitude scaling: the progress ramp
+    // still applies. At target progress one, this gives the nominal load
+    // required for transient spatial-basis construction.
     //
     // Every derived condition is responsible for evaluating its own physical
     // contribution, including coordinate transformations and integration
     // over the relevant nodes, surfaces or elements.
     /**
-     * Evaluates the scalar multiplier for an initial or target step condition.
+     * Returns a nominal static ramp, or a dynamic target's amplitude.
      *
-     * The initial or target step selects the direction of the scalar ramp.
-     * With no explicit amplitude, step_progress determines the loading.
-     * With an amplitude, the old contribution decays from A(previous_end_time)
-     * to zero, and the new contribution follows A(time).
+     * Dynamic solvers assemble only target conditions; inherited conditions
+     * always ramp down linearly. Static solvers set ignore_amplitude.
      */
     Precision load_factor(Precision time, Precision step_progress,
-                          bool initial, Precision previous_end_time,
-                          Precision end_time, bool ignore_amplitude) const {
-        if (ignore_amplitude) return Precision(1);
-
-        // The implicit step ramp uses normalized progress.
-        if (!amplitude_) {
-            return initial ? Precision(1) - step_progress : step_progress;
-        }
-
-        const Precision start = amplitude_->evaluate(Precision(0));
-        logging::error(std::abs(start) <= Precision(1e-12),
-            "AMPLITUDE: effective value at the start of a step must be zero");
-
-        if (!initial) return amplitude_->evaluate(time);
-
-        // Inherited loading starts at its accepted previous amplitude and
-        // decays to zero at the end of the current step.
-        const Precision previous = amplitude_->evaluate(previous_end_time);
-        if (previous == Precision(0)) return Precision(0);
-
-        const Precision end = amplitude_->evaluate(end_time);
-        logging::error(std::abs(end) > Precision(1e-12),
-            "AMPLITUDE: cannot ramp down a nonzero load with zero end amplitude");
-        return previous * (Precision(1) - amplitude_->evaluate(time) / end);
+                          bool initial, Precision /*previous_end_time*/,
+                          Precision /*end_time*/, bool ignore_amplitude) const {
+        const Precision ramp = initial
+            ? Precision(1) - step_progress : step_progress;
+        if (ignore_amplitude || initial || !amplitude_) return ramp;
+        return amplitude_->evaluate(time);
     }
 
     // Duplicate the physical definition for independently owned step states.

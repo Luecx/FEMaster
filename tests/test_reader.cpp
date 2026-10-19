@@ -118,13 +118,13 @@ TEST(Reader_Parser, RejectsStepAmplitudeModes) {
     std::filesystem::remove(path);
 }
 
-TEST(Reader_Parser, LinearStaticSamplesNamedAmplitudeAtStepEnd) {
+TEST(Reader_Parser, LinearStaticIgnoresNamedAmplitudeAtStepEnd) {
     const std::string path = "tests/TMP_LINEAR_STATIC_AMPLITUDE.INP";
     {
         std::ofstream out(path);
         ASSERT_TRUE(out.is_open());
         out << "*AMPLITUDE, NAME=CURVE\n";
-        out << "0.0, 0.0, 2.5, 1.0\n";
+        out << "0.0, 2.0, 2.5, 0.0\n";
         out << "*STEP\n*STATIC\n0.25, 2.5\n*END STEP\n";
     }
 
@@ -284,21 +284,6 @@ TEST(Reader_Parser, OrientationAcceptsTypeOrSystemButNotBoth) {
 
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
-}
-
-TEST(Reader_Parser, RiksRejectsNamedLoadAmplitudes) {
-    io::reader::Parser parser;
-
-    auto nonlinear = std::make_unique<loadcase::NonlinearStatic>();
-    nonlinear->control = loadcase::NonlinearControl::ArcLength;
-    parser.begin_loadcase(std::move(nonlinear));
-
-    auto load = std::make_shared<bc::CLoad>();
-    load->amplitude_ = std::make_shared<bc::Amplitude>("HISTORY");
-    parser.add_condition(bc::CLOAD, std::move(load), "NODE:1");
-
-    ASSERT_NE(parser.active_loadcase(), nullptr);
-    EXPECT_THROW(parser.active_loadcase()->run(), std::exception);
 }
 
 TEST(Reader_Parser, BoundaryCreatesDirectStructuralSupportsAndRejectsThermalDofs) {

@@ -62,11 +62,9 @@ void LoadCase::commit_state(const model::Field& displacement) const {
 }
 
 /**
- * Assembles structural loading between the frozen initial prescriptions and
- * the step target at the specified step-local time and normalized progress.
+ * Assembles the static transition between initial and target nominal loads.
  *
- * Physical load types evaluate their own nominal contributions; the supplied
- * states determine independent ramp-down and ramp-up evaluations.
+ * Every static procedure uses a linear progress ramp independent of amplitude.
  */
 model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress) const {
     return model->build_load_matrix(
@@ -75,15 +73,14 @@ model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress
 }
 
 /**
- * Evaluates only the target definitions at their prescribed amplitude.
+ * Evaluates only the target definitions with time-dependent amplitudes.
  *
- * Frequency and transient analyses consume physical load definitions without
- * superimposing a static unloading transition on their forcing time history.
+ * Transient and frequency-domain analyses do not perform static load ramps.
  */
 model::Field LoadCase::build_target_load_matrix(Precision time) const {
     return model->build_load_matrix(
         bc::ConditionState{}, target_conditions,
-        previous_end_time, end_time, time, Precision(1));
+        previous_end_time, end_time, time, Precision(1), true);
 }
 
 /**

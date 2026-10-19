@@ -170,20 +170,6 @@ void NonlinearStatic::run() {
         "NONLINEARSTATIC currently supports only NULLSPACE constraints");
     logging::error(method == solver::DIRECT,
         "NONLINEARSTATIC currently supports only DIRECT solver method");
-    // Arc-length uses a fixed proportional reference load and does not
-    // linearize arbitrary prescribed amplitude histories with respect to lambda.
-    if (control == NonlinearControl::ArcLength) {
-        const bc::ConditionFamily load_families[] = {
-            bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
-            bc::VLOAD, bc::INERTIAL_LOAD
-        };
-        for (const auto family : load_families) {
-            for (const auto& condition : target_conditions.get(family)) {
-                logging::error(condition->amplitude_ == nullptr,
-                    "NONLINEARSTATIC: named load AMPLITUDE is not supported with RIKS arc-length control");
-            }
-        }
-    }
     logging::error(model->_data->positions != nullptr,
         "NonlinearStatic: positions field not initialized");
     logging::error(model->_data->positions_reference != nullptr,
