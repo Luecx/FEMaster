@@ -142,10 +142,10 @@ struct Condition : Printable {
     //                  A value of 0 represents the beginning of the step,
     //                  while 1 represents its target state.
     //
-    // Without an amplitude, applicable load conditions interpolate between
-    // their stored start and target values using step_progress. With an
-    // amplitude, the target value is scaled by the amplitude evaluated at
-    // time, independently of the stored start value.
+    // Initial and target conditions are evaluated independently. With no
+    // amplitude, each uses complementary normalized step progress. With an
+    // explicit amplitude the target follows A(time), while the inherited
+    // contribution decays from A(previous_end_time) to zero.
     //
     // Setting ignore_amplitude bypasses amplitude scaling and interpolation
     // for supported load conditions, allowing the nominal target contribution

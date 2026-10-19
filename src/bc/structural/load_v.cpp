@@ -71,9 +71,9 @@ void VLoad::apply(
     Precision              time,
     bool                   ignore_amplitude,
     Precision              step_progress,
-    bool initial,
-    Precision previous_end_time,
-    Precision end_time
+    bool                   initial,
+    Precision              previous_end_time,
+    Precision              end_time
 ) {
     logging::error(model_data.positions != nullptr,
         "VLOAD: positions field is not initialized");

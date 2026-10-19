@@ -108,6 +108,39 @@ TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
     EXPECT_NEAR(end(0, 0), 60, 1e-12);
 }
 
+TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto old_load = std::make_shared<bc::CLoad>();
+    old_load->region_   = region;
+    old_load->values_[0] = Precision(100);
+
+    auto new_load = std::make_shared<bc::CLoad>();
+    new_load->region_   = region;
+    new_load->values_[0] = Precision(200);
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, old_load);
+    target.add(bc::CLOAD, new_load);
+
+    const auto start = mdl.build_load_matrix(
+        initial, target, Precision(1), Precision(1), Precision(0), Precision(0));
+    const auto middle = mdl.build_load_matrix(
+        initial, target, Precision(1), Precision(1), Precision(0.5), Precision(0.5));
+    const auto end = mdl.build_load_matrix(
+        initial, target, Precision(1), Precision(1), Precision(1), Precision(1));
+
+    EXPECT_NEAR(start(0, 0), 100, 1e-12);
+    EXPECT_NEAR(middle(0, 0), 150, 1e-12);
+    EXPECT_NEAR(end(0, 0), 200, 1e-12);
+}
+
 TEST(BC_Loads, ParserMatchesOnlySelectedIdentifierAndComponent) {
     io::reader::Parser parser;
 

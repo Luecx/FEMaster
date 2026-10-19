@@ -86,9 +86,9 @@ void InertialLoad::apply(
     Precision              time,
     bool                   ignore_amplitude,
     Precision              step_progress,
-    bool initial,
-    Precision previous_end_time,
-    Precision end_time
+    bool                   initial,
+    Precision              previous_end_time,
+    Precision              end_time
 ) {
     logging::error(region_ != nullptr,
         "INERTIAL: target element region is not initialized");

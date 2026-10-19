@@ -79,10 +79,10 @@ struct PLoad : Condition {
         TripletList&           matrix,
         Precision              time,
         bool                   ignore_amplitude = false,
-        Precision              step_progress = Precision(1),
-        bool initial = false,
-        Precision previous_end_time = Precision(0),
-        Precision end_time = Precision(1)
+        Precision              step_progress    = Precision(1),
+        bool                   initial          = false,
+        Precision              previous_end_time = Precision(0),
+        Precision              end_time          = Precision(1)
     ) override;
 
     // Diagnostics
