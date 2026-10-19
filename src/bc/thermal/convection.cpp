@@ -108,7 +108,9 @@ void Convection::apply(
     Precision              time,
     bool                   ignore_amplitude,
     Precision,
-    const LoadInterpolation* 
+    bool,
+    Precision,
+    Precision
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
     apply_rhs(model_data, rhs, time, ignore_amplitude);

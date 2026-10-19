@@ -63,10 +63,8 @@ struct LoadCase : public Castable {
 
     // The previous accepted end time defines inherited amplitude values.
     // The current end time is step-local and may be updated by path following.
-    Precision previous_end_time         = Precision(0);
-    Precision previous_nominal_end_time = Precision(1);
-    Precision nominal_end_time          = Precision(1);
-    Precision end_time                  = Precision(1);
+    Precision previous_end_time = Precision(0);
+    Precision end_time          = Precision(1);
 
     // Per-step output requests, provided basis fields and lazy recovered fields
     io::writer::OutputRequestHandler output;

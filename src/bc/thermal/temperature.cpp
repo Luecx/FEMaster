@@ -76,7 +76,9 @@ void Temperature::apply(
     Precision,
     bool,
     Precision,
-    const LoadInterpolation* 
+    bool,
+    Precision,
+    Precision
 ) {
     // Exactly one semantic target is permitted. The resulting node indices
     // must refer to the compiled geometry used by the thermal system.

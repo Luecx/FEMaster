@@ -68,7 +68,9 @@ void CLoad::apply(
     Precision              time,
     bool                   ignore_amplitude,
     Precision              step_progress,
-    const LoadInterpolation* interpolation
+    bool initial,
+    Precision previous_end_time,
+    Precision end_time
 ) {
     logging::error(model_data.positions != nullptr,
         "CLOAD: positions field is not initialized");
@@ -76,10 +78,8 @@ void CLoad::apply(
         "CLOAD: target node region is not initialized");
 
     // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = interpolation
-        ? load_factor(time, step_progress, *interpolation, ignore_amplitude)
-        : ignore_amplitude ? Precision(1)
-        : amplitude_ ? amplitude_->evaluate(time) : step_progress;
+    const Precision factor = load_factor(
+        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
 
     // Omitted generalized components contribute no nodal forces or moments.
     Vec6 values = Vec6::Zero();

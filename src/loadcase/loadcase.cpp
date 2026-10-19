@@ -71,7 +71,7 @@ void LoadCase::commit_state(const model::Field& displacement) const {
 model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress) const {
     return model->build_load_matrix(
         initial_conditions, target_conditions,
-        previous_end_time, previous_nominal_end_time, end_time, time, progress);
+        previous_end_time, end_time, time, progress);
 }
 
 /**
@@ -83,7 +83,7 @@ model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress
 model::Field LoadCase::build_target_load_matrix(Precision time) const {
     return model->build_load_matrix(
         bc::ConditionState{}, target_conditions,
-        previous_end_time, previous_nominal_end_time, end_time, time, Precision(1));
+        previous_end_time, end_time, time, Precision(1));
 }
 
 /**

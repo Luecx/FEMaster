@@ -315,14 +315,13 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
  * @param previous_end_time Accepted end time of the previous step.
- * @param previous_nominal_end_time Nominal end time of the previous step.
  * @param end_time End time of the current step.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
-                               Precision previous_end_time, Precision previous_nominal_end_time,
-                               Precision end_time, Precision time, Precision step_progress) {
+                               Precision previous_end_time, Precision end_time,
+                               Precision time, Precision step_progress) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -338,12 +337,11 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
         bc::VLOAD, bc::INERTIAL_LOAD
     };
     const auto assemble = [&](const bc::ConditionState& state, bool is_initial) {
-        const bc::LoadInterpolation interpolation{
-            is_initial, previous_end_time, previous_nominal_end_time, end_time};
         for (const auto family : load_families) {
             for (const auto& condition : state.get(family)) {
                 condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
-                                 time, false, step_progress, &interpolation);
+                                 time, false, step_progress, is_initial,
+                                 previous_end_time, end_time);
             }
         }
     };

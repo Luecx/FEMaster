@@ -92,21 +92,17 @@ TEST(BC_Loads, IdenticalAmplitudeLoadsRemainConstantAcrossStep) {
     // Identical endpoints preserve 60 N through ramp-down plus ramp-up.
     for (const Precision time : {Precision(0), Precision(0.5), Precision(1)}) {
         const auto force = mdl.build_load_matrix(
-            initial, target, Precision(1), Precision(1),
-            Precision(1), time, time);
+            initial, target, Precision(1), Precision(1), time, time);
         EXPECT_NEAR(force(0, 0), 60, 1e-12);
     }
 
     // Changing the endpoint transitions from 100 N to 60 N continuously.
     const auto start = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1),
-        Precision(1), Precision(0), Precision(0));
+        initial, target, Precision(2), Precision(1), Precision(0), Precision(0));
     const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1),
-        Precision(1), Precision(0.5), Precision(0.5));
+        initial, target, Precision(2), Precision(1), Precision(0.5), Precision(0.5));
     const auto end = mdl.build_load_matrix(
-        initial, target, Precision(2), Precision(1),
-        Precision(1), Precision(1), Precision(1));
+        initial, target, Precision(2), Precision(1), Precision(1), Precision(1));
     EXPECT_NEAR(start(0, 0), 100, 1e-12);
     EXPECT_NEAR(middle(0, 0), 80, 1e-12);
     EXPECT_NEAR(end(0, 0), 60, 1e-12);
@@ -175,8 +171,7 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
         target.add(bc::CLOAD, condition);
     }
     const model::Field bc = mdl.build_load_matrix(
-        bc::ConditionState{}, target, Precision(0), Precision(1),
-        Precision(1), Precision(1));
+        bc::ConditionState{}, target, Precision(0), Precision(1), Precision(1), Precision(1));
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);

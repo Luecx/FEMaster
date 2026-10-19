@@ -94,19 +94,6 @@ namespace fem::bc {
  * the input reader and the appropriate numerical analysis. The concrete
  * condition classes store their own physical magnitudes and geometry.
  */
-/**
- * @brief Evaluates a condition as either the old or new contribution.
- *
- * Initial conditions ramp down from their previously accepted amplitude;
- * target conditions ramp up using their current step-local amplitude.
- */
-struct LoadInterpolation {
-    bool      initial           = false;
-    Precision previous_end_time         = Precision(0);
-    Precision previous_nominal_end_time = Precision(1);
-    Precision end_time                  = Precision(1);
-};
-
 struct Condition : Printable {
     // Shared ownership retains physical definitions in model history or reusable
     // named groups without coupling their lifetime to an analysis object.
@@ -171,33 +158,33 @@ struct Condition : Printable {
     /**
      * Evaluates the scalar multiplier for an initial or target step condition.
      *
-     * Target definitions follow the prescribed amplitude or the linear step
-     * progress. Initial conditions decay from their previously accepted
-     * effective value to zero. Nonlinear inertia terms are scaled only after
-     * evaluating the complete physical contribution.
+     * The initial or target step selects the direction of the scalar ramp.
+     * With no explicit amplitude, step_progress determines the loading.
+     * With an amplitude, the old contribution decays from A(previous_end_time)
+     * to zero, and the new contribution follows A(time).
      */
     Precision load_factor(Precision time, Precision step_progress,
-                          const LoadInterpolation& interpolation,
-                          bool ignore_amplitude) const {
+                          bool initial, Precision previous_end_time,
+                          Precision end_time, bool ignore_amplitude) const {
         if (ignore_amplitude) return Precision(1);
+
+        // The implicit step ramp uses normalized progress.
         if (!amplitude_) {
-            if (!interpolation.initial) return step_progress;
-            logging::error(std::abs(interpolation.previous_nominal_end_time) > Precision(1e-12),
-                "LOAD: previous nominal end time must be nonzero");
-            const Precision accepted_factor =
-                interpolation.previous_end_time / interpolation.previous_nominal_end_time;
-            return accepted_factor * (Precision(1) - step_progress);
+            return initial ? Precision(1) - step_progress : step_progress;
         }
 
         const Precision start = amplitude_->evaluate(Precision(0));
-        const Precision end   = amplitude_->evaluate(interpolation.end_time);
         logging::error(std::abs(start) <= Precision(1e-12),
             "AMPLITUDE: effective value at the start of a step must be zero");
 
-        if (!interpolation.initial) return amplitude_->evaluate(time);
+        if (!initial) return amplitude_->evaluate(time);
 
-        const Precision previous = amplitude_->evaluate(interpolation.previous_end_time);
+        // Inherited loading starts at its accepted previous amplitude and
+        // decays to zero at the end of the current step.
+        const Precision previous = amplitude_->evaluate(previous_end_time);
         if (previous == Precision(0)) return Precision(0);
+
+        const Precision end = amplitude_->evaluate(end_time);
         logging::error(std::abs(end) > Precision(1e-12),
             "AMPLITUDE: cannot ramp down a nonzero load with zero end amplitude");
         return previous * (Precision(1) - amplitude_->evaluate(time) / end);
@@ -215,7 +202,9 @@ struct Condition : Printable {
         Precision              time,
         bool                   ignore_amplitude = false,
         Precision              step_progress    = Precision(1),
-        const LoadInterpolation* interpolation = nullptr
+        bool                   initial           = false,
+        Precision              previous_end_time = Precision(0),
+        Precision              end_time          = Precision(1)
     ) = 0;
 
     // Diagnostics

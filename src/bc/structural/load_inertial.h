@@ -104,7 +104,9 @@ struct InertialLoad : Condition {
         Precision              time,
         bool                   ignore_amplitude = false,
         Precision              step_progress = Precision(1),
-        const LoadInterpolation* interpolation = nullptr
+        bool initial = false,
+        Precision previous_end_time = Precision(0),
+        Precision end_time = Precision(1)
     ) override;
 
     // Diagnostics
