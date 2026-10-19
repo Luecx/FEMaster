@@ -689,9 +689,18 @@ void NonlinearStatic::run() {
         const Precision increment_max = increment_displacement.size() > 0
             ? increment_displacement.lpNorm<Eigen::Infinity>()
             : Precision(0);
+        const Precision total_max = u_after.size() > 0
+            ? u_after.lpNorm<Eigen::Infinity>()
+            : Precision(0);
 
-        if (increment_max > Precision(0)) {
-            return correction_max / increment_max;
+        // When a step carries an equilibrated displacement but changes no
+        // load, its displacement increment can be as small as the Newton
+        // correction itself. Normalizing by that increment alone yields a
+        // spurious relative correction of one and prevents convergence.
+        // Include the existing total displacement as a stable scale.
+        const Precision displacement_scale = std::max(increment_max, total_max);
+        if (displacement_scale > Precision(0)) {
+            return correction_max / displacement_scale;
         }
 
         return correction_max == Precision(0)
