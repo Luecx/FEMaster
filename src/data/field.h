@@ -208,6 +208,12 @@ struct Field {
     Field& operator*=(const Field& other);
     Field& operator/=(const Field& other);
 
+    // Componentwise field arithmetic
+    [[nodiscard]] Field operator+(const Field& other) const;
+    [[nodiscard]] Field operator-(const Field& other) const;
+    [[nodiscard]] Field operator*(const Field& other) const;
+    [[nodiscard]] Field operator/(const Field& other) const;
+
 private:
     // Validates domain and dimensions for an element-wise operation
     void validate_compatible(const Field& other, const char* operation) const;

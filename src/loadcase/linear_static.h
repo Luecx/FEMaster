@@ -1,3 +1,4 @@
+
 /**
  * @file linear_static.h
  * @brief Declares the linear static load case.
@@ -35,23 +36,40 @@ namespace loadcase {
  * @brief Executes a linear static analysis on the model.
  */
 struct LinearStatic : public LoadCase {
-    solver::SolverDevice device = solver::CPU; ///< Solver device selection.
-    solver::SolverMethod method = solver::DIRECT; ///< Solver method selection.
-    constraint::ConstraintTransformer::Method constraint_method =
-        constraint::ConstraintTransformer::Method::Elimination; ///< Constraint backend selection.
-    std::string stiffness_file; ///< Optional path for stiffness matrix output.
-    Precision step_period = Precision(1); ///< Step-end time for evaluating prescribed load amplitudes.
+    using Method = constraint::ConstraintTransformer::Method;
 
-    // Actual load from the last committed static state; null means zero baseline.
+    // Solver backend and constraint enforcement method
+    solver::SolverDevice device = solver::CPU;
+    solver::SolverMethod method = solver::DIRECT;
+    Method constraint_method    = Method::Elimination;
+
+    // Optional file path for exporting the assembled stiffness matrices
+    std::string stiffness_file;
+
+    // Physical step duration used for evaluating prescribed load amplitudes
+    Precision step_period = Precision(1);
+
+    // Stores the actual external nodal load at the end of the last committed
+    // static analysis. Linear perturbations use this field as the reference
+    // load to determine the incremental loading (f_target - f_start).
+    // Unlike the mutable load definitions, this field preserves the complete
+    // assembled load, including previously activated collectors and the final
+    // load factor of a nonlinear analysis. A null pointer represents zero
+    // reference loading.
     model::Field::Ptr step_start_load = nullptr;
 
-    bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
-    bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
-	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).
+    // Optional free-body equilibrium methods. Inertia relief introduces
+    // equivalent inertial forces to balance the applied loads and can include
+    // concentrated point masses. Load rebalancing instead adjusts the applied
+    // loads to eliminate the resultant force and moment.
+    bool inertia_relief                       = false;
+    bool inertia_relief_consider_point_masses = true;
+    bool rebalance_loads                      = false;
 
-    // Construction and default result requests
+    // Initialize the default structural output requests
     LinearStatic() {
         using io::writer::OutputField;
+
         output.set_defaults({
             OutputField::DISPLACEMENT,
             OutputField::STRAIN,
@@ -66,10 +84,10 @@ struct LinearStatic : public LoadCase {
         });
     }
 
-
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARSTATIC"; }
     void run() override;
 };
+
 } // namespace loadcase
 } // namespace fem

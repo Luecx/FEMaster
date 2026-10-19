@@ -75,16 +75,26 @@ void LinearStatic::run() {
         *model->_data->positions = *model->_data->positions_reference;
     }
 
+    // error checks if we are in a perturbation analysis
+    logging::error(!perturbation || model->_data->contacts.empty(),
+        "LINEARSTATIC PERTURBATION: contact tangent is not supported");
+    logging::error(!perturbation || (!inertia_relief && !rebalance_loads),
+        "LINEARSTATIC PERTURBATION: inertia relief and rebalancing are not supported");
+    logging::error(!perturbation || method == solver::DIRECT,
+        "LINEARSTATIC PERTURBATION: a DIRECT solver is required for general tangents");
+    logging::error(constraint_method != Method::Lagrange || method != solver::INDIRECT,
+        "LAGRANGE constraints require a DIRECT solver");
+    logging::error(!inertia_relief || (model->_data->elem_sets.has("EALL") && model->_data->elem_sets.get("EALL") != nullptr),
+        "InertiaRelief: EALL element set is not available");
+    logging::error(!inertia_relief || model->_data->conditions.get(bc::SUPPORT).empty(),
+       "InertiaRelief: requires no active structural supports. "
+       "Clear direct SUPPORT history and remove active support collector definitions.");
+    logging::error(!rebalance_loads || model->_data->conditions.get(bc::SUPPORT).empty(),
+        "Rebalancing Loads: requires no active structural supports. "
+        "Clear direct SUPPORT history and deselect non-empty support collectors.");
+
     model->assign_sections();
     model->step_begin();
-    if (perturbation) {
-        logging::error(model->_data->contacts.empty(),
-            "LINEARSTATIC PERTURBATION: contact tangent is not supported");
-        logging::error(!inertia_relief && !rebalance_loads,
-            "LINEARSTATIC PERTURBATION: inertia relief and rebalancing are not supported");
-        logging::error(method == solver::DIRECT,
-            "LINEARSTATIC PERTURBATION: a DIRECT solver is required for general tangents");
-    }
 
     // Structural temperatures are prescribed fields, not thermal constraints.
     // The solver evaluates thermal forces at the step's target temperature.
@@ -102,49 +112,28 @@ void LinearStatic::run() {
         [&]() { return model->build_load_matrix(step_period); },
         "constructing load matrix (node x 6)");
 
-    // Free-body load balancing requires the complete active support state to be empty
-    const bool supports_active =
-        !model->_data->conditions.get(bc::SUPPORT).empty();
-
     if (inertia_relief) {
-        logging::error(!supports_active,
-            "InertiaRelief: requires no active structural supports. "
-            "Clear direct SUPPORT history and remove active support collector definitions.");
-
+        // Inertia relief adds one temporary RBM directly to the same
+        // collection used by parser-created constraints. It is removed
+        // again immediately after constraint collection below.
         Timer::measure(
-            [&]() {
-                fem::apply_inertia_relief(
-                    *model->_data,
-                    global_load_mat,
-                    inertia_relief_consider_point_masses
-                );
-
-                logging::error(model->_data->elem_sets.has("EALL")
-                            && model->_data->elem_sets.get("EALL") != nullptr,
-                    "InertiaRelief: EALL element set is not available");
-
-                // Inertia relief adds one temporary RBM directly to the same
-                // collection used by parser-created constraints. It is removed
-                // again immediately after constraint collection below.
+            [&]() {fem::apply_inertia_relief(*model->_data, global_load_mat, inertia_relief_consider_point_masses);
                 model->_data->rbms.emplace_back(model->_data->elem_sets.get("EALL"));
-            },
-            "InertiaRelief: adjusting external load matrix and adding RBM");
+            },"InertiaRelief: adjusting external load matrix and adding RBM");
     }
 
     if (rebalance_loads) {
-        logging::error(!supports_active,
-            "Rebalancing Loads: requires no active structural supports. "
-            "Clear direct SUPPORT history and deselect non-empty support collectors.");
-
         Timer::measure(
             [&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
             "rebalancing of loads");
     }
 
+    // collector all the constraints that are active in this analysis
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat); },
         "building constraints");
 
+    // report if required by the user and turn into equations
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
@@ -155,7 +144,7 @@ void LinearStatic::run() {
     base_displacement.set_zero();
 
     if (perturbation) {
-        const auto& current = *model->_data->positions;
+        const auto& current   = *model->_data->positions;
         const auto& reference = *model->_data->positions_reference;
         for (Index node = 0; node < base_displacement.rows; ++node) {
             for (Index dof = 0; dof < 3; ++dof) {
@@ -201,13 +190,11 @@ void LinearStatic::run() {
 
     auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing external load matrix -> active vector"
-    );
+        "reducing external load matrix -> active vector");
 
     auto f_reference = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
-        "reducing reference internal force -> active vector"
-    );
+        "reducing reference internal force -> active vector");
 
     // General linear statics: K0 u = F - fint(0,Ttarget).
     // Perturbation: K(u0,T0) du = dF - [fint(u0,Ttarget)-fint(u0,T0)].
@@ -230,22 +217,9 @@ void LinearStatic::run() {
         f = (f_external - f_start) - (f_reference - f_base_internal);
     }
 
-    if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
-        logging::error(false,
-            "Invalid solver/constraint combination\n"
-            "Constraint | Backend   | DIRECT       | INDIRECT\n"
-            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
-            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
-            "NULLSPACE  | GPU       | Yes          | Yes\n"
-            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
-            "LAGRANGE   | CPU MKL   | Yes          | No\n"
-            "LAGRANGE   | CPU Eigen | Limited      | No\n"
-            "LAGRANGE   | GPU       | No           | No\n"
-            "LAGRANGE   | GPU cuDSS | Yes          | No\n"
-            "ELIMINATION| CPU MKL   | Yes          | Yes\n"
-            "ELIMINATION| CPU Eigen | Yes          | Yes\n"
-            "ELIMINATION| GPU       | Yes          | Yes\n"
-            "ELIMINATION| GPU cuDSS | Yes          | Yes");
+    // Convert external forces to increments for perturbation output
+    if (perturbation && step_start_load) {
+        global_load_mat -= *step_start_load;
     }
 
     // Only perturbations may inherit a prestressed/indefinite tangent.
@@ -269,27 +243,19 @@ void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", transformer->report().equations);
-    logging::info(true, "n (cols of C)     : ", transformer->report().dofs);
-    if (transformer->rank_known()) {
-        logging::info(true, "rank(C)           : ", transformer->rank());
-    } else {
-        logging::info(true, "rank(C)           : not computed");
-    }
-    logging::info(true, "method            : ", transformer->method_name());
-    logging::info(true, "solver unknowns   : ", transformer->unknowns());
-    logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
-    logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
-    if (!transformer->feasible()) {
-        logging::info(true, "residual ||C u - d|| : ", transformer->report().residual_norm);
-    }
+    logging::info(true, "m (rows of C)        : ", transformer->report().equations);
+    logging::info(true, "n (cols of C)        : ", transformer->report().dofs);
+    logging::info(true, "rank(C)              : ", transformer->rank_known () ? std::to_string(transformer->rank()) : "not computed");
+    logging::info(true, "method               : ", transformer->method_name());
+    logging::info(true, "solver unknowns      : ", transformer->unknowns   ());
+    logging::info(true, "homogeneous          : ", transformer->homogeneous() ? "true" : "false");
+    logging::info(true, "feasible             : ", transformer->feasible   () ? "true" : "false");
+    logging::info(true, "residual ||C u - d|| : ", transformer->feasible   () ? "within tolerance" : std::to_string(transformer->report().residual_norm));
     logging::down();
 
-    if (inertia_relief) {
-        logging::error(!model->_data->rbms.empty(),
-            "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
+    // Remove the temporary inertia-relief RBM after constraint collection
+    if (inertia_relief)
         model->_data->rbms.pop_back();
-    }
 
     auto A = Timer::measure(
         [&]() { return transformer->assemble_system_matrix(K); },
@@ -327,10 +293,6 @@ void LinearStatic::run() {
         [&]() { return transformer->support_reactions(K, f, q); },
         "computing support reactions");
 
-    if (perturbation && step_start_load) {
-        global_load_mat -= *step_start_load;
-    }
-
     auto global_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
         "expanding solved displacement to nodal field");
@@ -343,28 +305,15 @@ void LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, internal_active); },
         "expanding internal nodal forces to matrix form");
 
+    // export stiffness files in .mtx format
     if (!stiffness_file.empty()) {
-        io::writer::write_mtx(stiffness_file + "_K.mtx", K);
-        io::writer::write_mtx(stiffness_file + "_A.mtx", A);
+        io::writer::write_mtx      (stiffness_file + "_K.mtx", K);
+        io::writer::write_mtx      (stiffness_file + "_A.mtx", A);
         io::writer::write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
-    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
-    support_mask.setConstant(false);
-    for (const auto& eq : groups.supports) {
-        for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 && e.node_id < support_mask.rows()
-             && e.dof < support_mask.cols()
-             && active_dof_idx_mat(e.node_id, e.dof) != -1) {
-                support_mask(e.node_id, e.dof) = true;
-            }
-        }
-    }
-
     auto reaction_masked = mattools::mask_field(
-        global_react_mat,
-        support_mask,
-        "REACTION_FORCES"
+        global_react_mat, groups.support_mask(active_dof_idx_mat), "REACTION_FORCES"
     );
 
     Timer::measure(
@@ -380,14 +329,12 @@ void LinearStatic::run() {
                 output.set_linearization_base(&base_displacement, base_temperature);
             }
             output.begin_frame();
-            output.provide(OutputField::DISPLACEMENT,
-                global_disp_mat);
-            output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
-            output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
-            output.provide(OutputField::REACTION_FORCES,     reaction_masked);
+            output.provide(OutputField::DISPLACEMENT   , global_disp_mat);
+            output.provide(OutputField::EXTERNAL_FORCES, global_load_mat);
+            output.provide(OutputField::INTERNAL_FORCES, global_internal_mat);
+            output.provide(OutputField::REACTION_FORCES, reaction_masked);
             if (target_temperature) {
-                output.provide(OutputField::TEMPERATURE,
-                    *target_temperature);
+                output.provide(OutputField::TEMPERATURE,*target_temperature);
             }
 
             output.write_frame(*writer, model->_data.get());
