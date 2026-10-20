@@ -160,10 +160,10 @@ TEST(Reader_Parser, LinearStaticIgnoresNamedAmplitudeAtStepEnd) {
 
         const auto at_start = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            active->previous_end_time, linear->step_period, Precision(0), Precision(0));
+            Precision(0), Precision(0));
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            active->previous_end_time, linear->step_period, linear->step_period, Precision(1));
+            linear->step_period, Precision(1));
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
@@ -543,7 +543,7 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
         constraint::Equations equations;
         SystemDofIds dof_ids;
         TripletList triplets;
-        support->apply(model_data, rhs, equations, dof_ids, triplets, Precision(0));
+        support->apply(model_data, rhs, equations, dof_ids, triplets);
         ASSERT_EQ(equations.size(), 1u);
 
         const bool local_x = std::isfinite(support->values()[0]);
@@ -592,6 +592,14 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
 
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
+}
+
+TEST(Reader_Conditions, PerturbationRequiresCommittedStaticState) {
+    io::reader::Parser parser;
+    auto linear = std::make_unique<loadcase::LinearStatic>();
+    linear->resume = true;
+    linear->perturbation = true;
+    EXPECT_THROW(parser.begin_loadcase(std::move(linear)), std::exception);
 }
 
 TEST(Reader_Conditions, NewPreservesLoadsDefinedInCurrentStep) {

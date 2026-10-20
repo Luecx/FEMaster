@@ -50,20 +50,18 @@ TEST(BC_Loads, ConditionStateFamilyIsolation) {
     EXPECT_TRUE(manager.get(bc::SUPPORT).empty());
 }
 
-TEST(BC_Loads, ConditionStateCloneCopiesLoads) {
+TEST(BC_Loads, ConditionStateCopiesOnlyMembership) {
     bc::ConditionState original;
     auto load = std::make_shared<bc::CLoad>();
     load->values_[0] = Precision(100);
     original.add(bc::CLOAD, load);
 
-    auto cloned = original.clone();
-    ASSERT_EQ(cloned.get(bc::CLOAD).size(), 1u);
-    const auto copied = std::dynamic_pointer_cast<bc::CLoad>(*cloned.get(bc::CLOAD).begin());
-    ASSERT_NE(copied, nullptr);
-    EXPECT_NE(copied.get(), load.get());
-
-    copied->values_[0] = Precision(200);
-    EXPECT_DOUBLE_EQ(load->values_[0], Precision(100));
+    // A state copy has independent membership, but shares immutable definitions.
+    auto copied = original;
+    EXPECT_TRUE(copied.contains(bc::CLOAD, load));
+    copied.remove(bc::CLOAD, load);
+    EXPECT_TRUE(original.contains(bc::CLOAD, load));
+    EXPECT_FALSE(copied.contains(bc::CLOAD, load));
 }
 
 TEST(BC_Loads, StaticHistoryIgnoresNamedAmplitudes) {
@@ -98,7 +96,7 @@ TEST(BC_Loads, StaticHistoryIgnoresNamedAmplitudes) {
 
     const auto at = [&](Precision time, Precision progress) {
         return mdl.build_load_matrix(
-            initial, target, Precision(1), Precision(2), time, progress)(0, 0);
+            initial, target, time, progress)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0), Precision(0)), Precision(100), 1e-12);
     EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(150), 1e-12);
@@ -137,8 +135,7 @@ TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
     const auto at = [&](Precision time) {
         // The final flag matches transient/harmonic build_target_load_matrix().
         return mdl.build_load_matrix(
-            bc::ConditionState{}, target,
-            Precision(0), Precision(1), time, Precision(1), true)(0, 0);
+            bc::ConditionState{}, target, time, Precision(1), true)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
     EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
@@ -168,11 +165,11 @@ TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
     target.add(bc::CLOAD, new_load);
 
     const auto start = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1), Precision(0), Precision(0));
+        initial, target, Precision(0), Precision(0));
     const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1), Precision(0.5), Precision(0.5));
+        initial, target, Precision(0.5), Precision(0.5));
     const auto end = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1), Precision(1), Precision(1));
+        initial, target, Precision(1), Precision(1));
 
     EXPECT_NEAR(start(0, 0), 100, 1e-12);
     EXPECT_NEAR(middle(0, 0), 150, 1e-12);
@@ -242,7 +239,7 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
         target.add(bc::CLOAD, condition);
     }
     const model::Field bc = mdl.build_load_matrix(
-        bc::ConditionState{}, target, Precision(0), Precision(1), Precision(1), Precision(1));
+        bc::ConditionState{}, target, Precision(1), Precision(1));
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -286,7 +283,7 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -340,18 +337,18 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, Precision(0.5));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
     }
 
-    // Unit volume, density 7 and acceleration 2 give 14 force, scaled by amplitude 0.5.
+    // Unit volume, density 7 and acceleration 2 give 14 force; the caller scales by 0.5.
     EXPECT_NEAR(total_x, 7.0, 1e-12);
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0, true);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
@@ -391,12 +388,12 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);
