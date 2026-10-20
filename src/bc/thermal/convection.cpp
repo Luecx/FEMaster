@@ -53,18 +53,13 @@ namespace fem::bc {
  * @param ignore_amplitude Use the nominal coefficient directly when true.
  * @return Validated effective film coefficient.
  */
-Precision Convection::effective_film_coefficient(
-    Precision time,
-    bool      ignore_amplitude
-) const {
+Precision Convection::effective_film_coefficient(Precision scale) const {
     // Validate the physical parameters before applying temporal scaling.
     logging::error(std::isfinite(film_coefficient_) && film_coefficient_ >= Precision(0),
         "CONVECTION: film coefficient must be finite and non-negative");
     logging::error(std::isfinite(ambient_temperature_),
         "CONVECTION: ambient temperature must be finite");
 
-    const Precision scale = amplitude_ && !ignore_amplitude
-        ? amplitude_->evaluate(time) : Precision(1);
     const Precision h = film_coefficient_ * scale;
 
     logging::error(std::isfinite(h) && h >= Precision(0),
@@ -105,16 +100,11 @@ void Convection::apply(
     constraint::Equations&,
     const SystemDofIds&    system_dof_ids,
     TripletList&           matrix,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision,
-    bool,
-    Precision,
-    Precision
+    Precision              scale
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
-    apply_rhs(model_data, rhs, time, ignore_amplitude);
-    apply_matrix(model_data, system_dof_ids, matrix, time, ignore_amplitude);
+    apply_rhs(model_data, rhs, scale);
+    apply_matrix(model_data, system_dof_ids, matrix, scale);
 }
 
 /**
@@ -136,8 +126,7 @@ void Convection::apply(
 void Convection::apply_rhs(
     model::ModelData& model_data,
     model::Field&     rhs,
-    Precision         time,
-    bool              ignore_amplitude
+    Precision         scale
 ) {
     // Validate the surface target, reference geometry and scalar RHS domain.
     logging::error(region_ != nullptr,
@@ -148,7 +137,7 @@ void Convection::apply_rhs(
         "CONVECTION: target field must be a NODE field with exactly one component");
 
     // The film coefficient is shared by the ambient source and operator.
-    const Precision h = effective_film_coefficient(time, ignore_amplitude);
+    const Precision h = effective_film_coefficient(scale);
     if (h == Precision(0)) return;
 
     const Precision source = h * ambient_temperature_;
@@ -252,8 +241,7 @@ void Convection::apply_matrix(
     model::ModelData&   model_data,
     const SystemDofIds& system_dof_ids,
     TripletList&        matrix,
-    Precision           time,
-    bool                ignore_amplitude
+    Precision           scale
 ) {
     // Validate the surface geometry and scalar thermal equation numbering.
     logging::error(region_ != nullptr,
@@ -265,7 +253,7 @@ void Convection::apply_matrix(
     logging::error(system_dof_ids.cols() == 1,
         "CONVECTION: thermal DOF map must contain exactly one component");
 
-    const Precision h = effective_film_coefficient(time, ignore_amplitude);
+    const Precision h = effective_film_coefficient(scale);
     if (h == Precision(0)) return;
 
     const auto& positions     = *model_data.positions_reference;

@@ -68,12 +68,7 @@ void HeatFlux::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress,
-    bool                   initial,
-    Precision              previous_end_time,
-    Precision              end_time
+    Precision              scale
 ) {
     logging::error(region_ != nullptr,
         "HEATFLUX: target surface region is not set");
@@ -84,11 +79,9 @@ void HeatFlux::apply(
     logging::error(std::isfinite(heat_flux_),
         "HEATFLUX: prescribed heat flux must be finite");
 
-    // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = load_factor(
-        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
+    // Scale the complete nominal resultant using the analysis-supplied scale.
 
-    const Precision flux = factor * heat_flux_;
+    const Precision flux = scale * heat_flux_;
 
     logging::error(std::isfinite(flux),
         "HEATFLUX: effective heat flux must be finite");

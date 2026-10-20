@@ -73,12 +73,7 @@ void Temperature::apply(
     constraint::Equations& equations,
     const SystemDofIds&,
     TripletList&,
-    Precision,
-    bool,
-    Precision,
-    bool,
-    Precision,
-    Precision
+    Precision              /*scale*/
 ) {
     // Exactly one semantic target is permitted. The resulting node indices
     // must refer to the compiled geometry used by the thermal system.

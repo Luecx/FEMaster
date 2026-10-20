@@ -230,8 +230,12 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
     // the parser has already selected any applicable collector definitions.
     for (const auto family : {bc::HEAT_FLUX, bc::CONVECTION}) {
         for (const auto& condition : target.get(family)) {
-            condition->apply(*_data, rhs, equations, system_dof_ids, matrix,
-                             time, false, step_progress);
+            // Thermal fluxes retain the previous ramp when no amplitude is assigned;
+            // convection coefficients remain nominal unless explicitly modulated.
+            const Precision scale = condition->amplitude_
+                ? condition->amplitude_->evaluate(time)
+                : (family == bc::HEAT_FLUX ? step_progress : Precision(1));
+            condition->apply(*_data, rhs, equations, system_dof_ids, matrix, scale);
         }
     }
 
@@ -273,7 +277,9 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
 
     // Active convection contributes both source and film operator; retain K_h
     for (const auto& condition : target.get(bc::CONVECTION)) {
-        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, time);
+        const Precision scale = condition->amplitude_
+            ? condition->amplitude_->evaluate(time) : Precision(1);
+        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, scale);
     }
 
     // Sum duplicate boundary entries into the global active thermal operator
@@ -308,7 +314,7 @@ constraint::Equations Model::collect_thermal_constraints(const bc::ConditionStat
 
     // Initial and analysis-local temperatures share the same persistent history
     for (const auto& condition : target.get(bc::TEMPERATURE)) {
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
     }
 
     return equations;

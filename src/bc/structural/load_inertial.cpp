@@ -83,12 +83,7 @@ void InertialLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress,
-    bool                   initial,
-    Precision              previous_end_time,
-    Precision              end_time
+    Precision              scale
 ) {
     logging::error(region_ != nullptr,
         "INERTIAL: target element region is not initialized");
@@ -97,11 +92,9 @@ void InertialLoad::apply(
 
     const auto& positions = *model_data.positions;
 
-    // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = load_factor(
-        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
+    // Scale the complete nominal resultant using the analysis-supplied scale.
 
-    if (factor == Precision(0)) return;
+    if (scale == Precision(0)) return;
 
     // Evaluate complete centripetal and Euler acceleration before scaling.
     // Scaling omega itself would produce an incorrect quadratic contribution.
@@ -109,7 +102,7 @@ void InertialLoad::apply(
         const Vec3 r = position - center_;
         const Vec3 acceleration =
             center_acc_ + alpha_.cross(r) + omega_.cross(omega_.cross(r));
-        return -factor * acceleration;
+        return -scale * acceleration;
     };
 
     // Apply the concentrated inertia load to a compiled or auxiliary point
@@ -139,7 +132,7 @@ void InertialLoad::apply(
 
         // Scale the complete Euler and gyroscopic moments at this point mass.
         const Vec3 J_omega = section->rotary_inertia_.cwiseProduct(omega_);
-        const Vec3 moment = -factor * (
+        const Vec3 moment = -scale * (
             section->rotary_inertia_.cwiseProduct(alpha_) + omega_.cross(J_omega));
 
         for (Dim i = 0; i < 3; ++i) {

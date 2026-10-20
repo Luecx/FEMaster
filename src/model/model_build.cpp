@@ -315,14 +315,11 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * @param step_progress Normalized progress for a static load transition.
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
- * @param previous_end_time Accepted end time of the previous step.
- * @param end_time End time of the current step.
  * @param evaluate_amplitudes Whether to evaluate named amplitudes for dynamic targets.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
-                               Precision previous_end_time, Precision end_time,
                                Precision time, Precision step_progress,
                                bool evaluate_amplitudes) {
     // Initialize global generalized forces and the unused common outputs
@@ -342,9 +339,10 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
     const auto assemble = [&](const bc::ConditionState& state, bool is_initial) {
         for (const auto family : load_families) {
             for (const auto& condition : state.get(family)) {
-                condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
-                                 time, !evaluate_amplitudes, step_progress, is_initial,
-                                 previous_end_time, end_time);
+                const Precision scale = is_initial ? Precision(1) - step_progress
+                    : (evaluate_amplitudes && condition->amplitude_
+                        ? condition->amplitude_->evaluate(time) : step_progress);
+                condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
             }
         }
     };
@@ -396,7 +394,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
         }
 
         // Retain nominal magnitudes; the transient solver evaluates time scaling
-        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix, Precision(0), true);
+        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix);
     };
 
     // Use the same independent structural input families as direct RHS assembly
@@ -478,7 +476,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     // the generated equations are returned for grouping.
     auto get_supports = [&](const bc::Condition::Ptr& condition) {
         constraint::Equations equations{};
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
         return equations;
     };
 
