@@ -4,7 +4,7 @@
  *
  * The thermal system uses one scalar primary variable per active node. Volume
  * conduction is assembled from the conductivity matrices supplied by
- * `ThermalElement`. Direct thermal histories in ModelData::conditions and optional
+ * `ThermalElement`. Direct thermal histories in step-owned target conditions and optional
  * selected ThermalCollector entries contribute prescribed heat flow, convection
  * operators and temperature constraints through Condition::apply.
  *
@@ -213,7 +213,8 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
  * @param time Analysis time supplied to amplitude-dependent conditions.
  * @return Scalar nodal thermal RHS for the current model state.
  */
-Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) {
+Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
+                                      Precision time, Precision step_progress) {
     // Validate the scalar nodal domain before preparing common assembly outputs
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
@@ -228,9 +229,13 @@ Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) 
     // Heat flux and convection occupy separate active history families;
     // the parser has already selected any applicable collector definitions.
     for (const auto family : {bc::HEAT_FLUX, bc::CONVECTION}) {
-        for (const auto& condition : _data->conditions.get(family)) {
-            condition->apply(*_data, rhs, equations, system_dof_ids, matrix,
-                             time, false, step_progress);
+        for (const auto& condition : target.get(family)) {
+            // Thermal fluxes retain the previous ramp when no amplitude is assigned;
+            // convection coefficients remain nominal unless explicitly modulated.
+            const Precision scale = condition->amplitude_
+                ? condition->amplitude_->evaluate(time)
+                : (family == bc::HEAT_FLUX ? step_progress : Precision(1));
+            condition->apply(*_data, rhs, equations, system_dof_ids, matrix, scale);
         }
     }
 
@@ -244,7 +249,7 @@ Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) 
  * K_h = integral_Gamma h N N^T dGamma in active scalar equation numbering.
  * Condition::apply also evaluates the ambient source into a temporary nodal RHS;
  * only the matrix is retained by this pass. The reader has already grouped
- * active thermal definitions into the appropriate ConditionManager families.
+ * active thermal definitions into the appropriate ConditionState families.
  *
  * Eigen sums overlapping entries while constructing the final sparse operator.
  * Temperature and heat-flux conditions are assembled in their own families.
@@ -253,7 +258,8 @@ Field Model::build_thermal_load_matrix(Precision time, Precision step_progress) 
  * @param time Analysis time supplied to amplitude-dependent conditions.
  * @return Thermal boundary operator K_h for the current model state.
  */
-SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, Precision time) {
+SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids,
+                                                  const bc::ConditionState& target, Precision time) {
     // Validate the scalar equation numbering and compiled nodal domain
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
@@ -270,8 +276,10 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
     TripletList           triplets{};
 
     // Active convection contributes both source and film operator; retain K_h
-    for (const auto& condition : _data->conditions.get(bc::CONVECTION)) {
-        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, time);
+    for (const auto& condition : target.get(bc::CONVECTION)) {
+        const Precision scale = condition->amplitude_
+            ? condition->amplitude_->evaluate(time) : Precision(1);
+        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, scale);
     }
 
     // Sum duplicate boundary entries into the global active thermal operator
@@ -295,7 +303,7 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
  *
  * @return Scalar temperature equations for the current model state.
  */
-constraint::Equations Model::collect_thermal_constraints() {
+constraint::Equations Model::collect_thermal_constraints(const bc::ConditionState& target) {
     // Prepare all common outputs, retaining only prescribed-temperature rows
     Field rhs = _data->create_field_("THERMAL_CONSTRAINT_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
@@ -305,8 +313,8 @@ constraint::Equations Model::collect_thermal_constraints() {
     TripletList           matrix{};
 
     // Initial and analysis-local temperatures share the same persistent history
-    for (const auto& condition : _data->conditions.get(bc::TEMPERATURE)) {
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+    for (const auto& condition : target.get(bc::TEMPERATURE)) {
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
     }
 
     return equations;

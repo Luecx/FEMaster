@@ -120,13 +120,11 @@ Support::Support(SurfaceRegionPtr          surface_region,
  * @param time Analysis time unused by the current support formulation.
  * @param ignore_amplitude Amplitude bypass flag unused by the current support formulation.
  */
-void Support::apply(model::ModelData&      model_data,
+void Support::apply(model::ModelData& model_data,
                     model::Field&,
                     constraint::Equations& equations,
                     const SystemDofIds&,
                     TripletList&,
-                    Precision,
-                    bool,
                     Precision) {
     // Validate the semantic target before traversing compiled topology
     const int active_regions = static_cast<int>(node_region_    != nullptr)

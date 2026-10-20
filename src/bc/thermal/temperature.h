@@ -90,19 +90,17 @@ struct Temperature : Condition {
     // shared nodes are deduplicated before equations are appended.
     //
     // This condition prescribes an absolute temperature, not a thermal load.
-    // It does not interpolate temperature histories or evaluate amplitudes:
-    // time, ignore_amplitude and step_progress are unused.
+    // It does not interpolate temperature histories or scale prescribed values.
     //
     // Only equations is modified; rhs, system_dof_ids and matrix are unchanged.
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress   = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Diagnostics

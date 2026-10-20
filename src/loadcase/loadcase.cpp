@@ -62,6 +62,28 @@ void LoadCase::commit_state(const model::Field& displacement) const {
 }
 
 /**
+ * Assembles the static transition between initial and target nominal loads.
+ *
+ * Every static procedure uses a linear progress ramp independent of amplitude.
+ */
+model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress) const {
+    return model->build_load_matrix(
+        initial_conditions, target_conditions,
+        time, progress);
+}
+
+/**
+ * Evaluates only the target definitions with time-dependent amplitudes.
+ *
+ * Transient and frequency-domain analyses do not perform static load ramps.
+ */
+model::Field LoadCase::build_target_load_matrix(Precision time) const {
+    return model->build_load_matrix(
+        bc::ConditionState{}, target_conditions,
+        time, Precision(1), true);
+}
+
+/**
  * @copydoc LoadCase::report_constraint_groups
  */
 void LoadCase::report_constraint_groups(const constraint::ConstraintGroups& groups) const {

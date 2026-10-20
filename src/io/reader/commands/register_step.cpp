@@ -54,7 +54,7 @@ namespace fem::io::reader::commands {
  *
  * STEP stores the current procedure controls. Exactly one supported procedure
  * card must appear before direct structural conditions. Direct definitions mutate
- * ModelData::conditions; LOADS and SUPPORTS activate reusable collector entries
+ * LoadCase::target_conditions; LOADS and SUPPORTS activate reusable collector entries
  * in that same manager.
  *
  * END STEP executes the active analysis immediately. Omitted direct condition
@@ -105,7 +105,7 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             state.step_period    = Precision(1);
 
             // The procedure card creates the concrete analysis and clears only
-            // previous collector-derived ConditionManager activations. Direct
+            // previous collector-derived activations. Direct
             // condition history remains persistent until explicitly modified.
         });
 

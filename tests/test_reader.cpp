@@ -23,6 +23,8 @@
 #include "../src/bc/structural/load_inertial.h"
 #include "../src/bc/thermal/temperature.h"
 #include "../src/loadcase/linear_static.h"
+#include "../src/loadcase/linear_eigenfreq.h"
+#include "../src/loadcase/linear_buckling.h"
 #include "../src/loadcase/nonlinear_static.h"
 #include "../src/material/orthotropic_elasticity.h"
 #include "../src/material/strain/shell_material_strain.h"
@@ -118,13 +120,13 @@ TEST(Reader_Parser, RejectsStepAmplitudeModes) {
     std::filesystem::remove(path);
 }
 
-TEST(Reader_Parser, LinearStaticSamplesNamedAmplitudeAtStepEnd) {
+TEST(Reader_Parser, LinearStaticIgnoresNamedAmplitudeAtStepEnd) {
     const std::string path = "tests/TMP_LINEAR_STATIC_AMPLITUDE.INP";
     {
         std::ofstream out(path);
         ASSERT_TRUE(out.is_open());
         out << "*AMPLITUDE, NAME=CURVE\n";
-        out << "0.0, 0.0, 2.5, 1.0\n";
+        out << "0.0, 2.0, 2.5, 0.0\n";
         out << "*STEP\n*STATIC\n0.25, 2.5\n*END STEP\n";
     }
 
@@ -158,8 +160,12 @@ TEST(Reader_Parser, LinearStaticSamplesNamedAmplitudeAtStepEnd) {
         load->amplitude_  = parser.model()._data->amplitudes.get("CURVE");
         parser.add_condition(bc::CLOAD, load, "NODE:1");
 
-        const auto at_start = parser.model().build_load_matrix(Precision(0));
-        const auto at_end   = parser.model().build_load_matrix(linear->step_period);
+        const auto at_start = parser.model().build_load_matrix(
+            active->initial_conditions, active->target_conditions,
+            Precision(0), Precision(0));
+        const auto at_end = parser.model().build_load_matrix(
+            active->initial_conditions, active->target_conditions,
+            linear->step_period, Precision(1));
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
@@ -280,21 +286,6 @@ TEST(Reader_Parser, OrientationAcceptsTypeOrSystemButNotBoth) {
 
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
-}
-
-TEST(Reader_Parser, RiksRejectsNamedLoadAmplitudes) {
-    io::reader::Parser parser;
-
-    auto nonlinear = std::make_unique<loadcase::NonlinearStatic>();
-    nonlinear->control = loadcase::NonlinearControl::ArcLength;
-    parser.begin_loadcase(std::move(nonlinear));
-
-    auto load = std::make_shared<bc::CLoad>();
-    load->amplitude_ = std::make_shared<bc::Amplitude>("HISTORY");
-    parser.add_condition(bc::CLOAD, std::move(load), "NODE:1");
-
-    ASSERT_NE(parser.active_loadcase(), nullptr);
-    EXPECT_THROW(parser.active_loadcase()->run(), std::exception);
 }
 
 TEST(Reader_Parser, BoundaryCreatesDirectStructuralSupportsAndRejectsThermalDofs) {
@@ -554,7 +545,7 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
         constraint::Equations equations;
         SystemDofIds dof_ids;
         TripletList triplets;
-        support->apply(model_data, rhs, equations, dof_ids, triplets, Precision(0));
+        support->apply(model_data, rhs, equations, dof_ids, triplets);
         ASSERT_EQ(equations.size(), 1u);
 
         const bool local_x = std::isfinite(support->values()[0]);
@@ -605,36 +596,62 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
     std::filesystem::remove(output_path);
 }
 
+TEST(Reader_Conditions, EigenvaluePerturbationsNeedNoCommittedStaticLoad) {
+    // Abaqus STEP, PERTURBATION supports both eigenvalue procedures without
+    // a previous structural static solve. The static-only guard must not apply.
+    {
+        io::reader::Parser parser;
+        parser.step_state().step_active  = true;
+        parser.step_state().perturbation = true;
+        ASSERT_NO_THROW(parser.begin_loadcase(std::make_unique<loadcase::LinearEigenfrequency>()));
+        ASSERT_NE(parser.active_loadcase(), nullptr);
+        EXPECT_TRUE(parser.active_loadcase()->perturbation);
+    }
+    {
+        io::reader::Parser parser;
+        parser.step_state().step_active  = true;
+        parser.step_state().perturbation = true;
+        ASSERT_NO_THROW(parser.begin_loadcase(std::make_unique<loadcase::LinearBuckling>()));
+        ASSERT_NE(parser.active_loadcase(), nullptr);
+        EXPECT_TRUE(parser.active_loadcase()->perturbation);
+    }
+}
+
+TEST(Reader_Conditions, PerturbationRequiresCommittedStaticState) {
+    io::reader::Parser parser;
+    auto linear = std::make_unique<loadcase::LinearStatic>();
+    linear->resume = true;
+    linear->perturbation = true;
+    EXPECT_THROW(parser.begin_loadcase(std::move(linear)), std::exception);
+}
+
 TEST(Reader_Conditions, NewPreservesLoadsDefinedInCurrentStep) {
     io::reader::Parser parser;
-
     auto inherited = std::make_shared<bc::CLoad>();
     inherited->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, inherited, "NODE:1");
 
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-
     auto current = std::make_shared<bc::CLoad>();
     current->values_[0] = Precision(200);
     parser.add_condition(bc::CLOAD, current, "NODE:2");
 
     parser.clear_conditions(bc::CLOAD);
 
-    // NEW retires the definition inherited at step entry, not the new load.
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, inherited));
+    // OP=NEW removes inherited target prescriptions without mutating objects.
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, inherited));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, current));
-    EXPECT_DOUBLE_EQ(inherited->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(current->values_[0], Precision(200));
+    EXPECT_DOUBLE_EQ(inherited->values_[0], Precision(100));
 
-    // The current-step source remains indexed and survives another MOD.
     auto replacement = std::make_shared<bc::CLoad>();
     replacement->values_[0] = Precision(300);
     parser.modify_conditions(bc::CLOAD, "NODE:2", {replacement});
-    EXPECT_DOUBLE_EQ(current->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(replacement->values_[0], Precision(300));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, current));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, replacement));
+    EXPECT_DOUBLE_EQ(current->values_[0], Precision(200));
 }
 
-TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
+TEST(Reader_Conditions, ModReplacesTargetWithoutMutatingOldDefinition) {
     io::reader::Parser parser;
     auto region = std::make_shared<model::NodeRegion>("SOURCE");
     region->add(0);
@@ -643,11 +660,7 @@ TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
     original->region_ = region;
     original->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, original, "NSET:SOURCE");
-
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    // Represent an already applied load inherited from a completed step.
-    original->values_start_[0] = Precision(100);
-    EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
 
     for (const Precision magnitude : {Precision(200), Precision(300)}) {
         auto incoming = std::make_shared<bc::CLoad>();
@@ -655,19 +668,18 @@ TEST(Reader_Conditions, ModMutatesCompatibleLoadAndPreservesStepStart) {
         incoming->values_[0] = magnitude;
         parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {incoming});
 
-        // No duplicate object: only its target changes.
         EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 1u);
-        EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, original));
-        EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
-        EXPECT_DOUBLE_EQ(original->values_[0], magnitude);
+        EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, original));
+        EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
+        EXPECT_DOUBLE_EQ(original->values_[0], Precision(100));
     }
 
-    // NEW affects only still-inherited input definitions.
+    // OP=NEW preserves definitions introduced in the current step.
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(original->values_[0], Precision(300));
+    EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 1u);
 }
 
-TEST(Reader_Conditions, ModRetiresOldAndAddsNewSourceWhenOrientationChanges) {
+TEST(Reader_Conditions, ModReplacesOldSourceWhenOrientationChanges) {
     io::reader::Parser parser;
     auto old_region = std::make_shared<model::NodeRegion>("OLD");
     auto new_region = std::make_shared<model::NodeRegion>("NEW");
@@ -678,24 +690,20 @@ TEST(Reader_Conditions, ModRetiresOldAndAddsNewSourceWhenOrientationChanges) {
     original->region_ = old_region;
     original->values_[0] = Precision(100);
     parser.add_condition(bc::CLOAD, original, "NSET:SOURCE");
-
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    original->values_start_[0] = Precision(100);
 
     auto incoming = std::make_shared<bc::CLoad>();
     incoming->region_ = new_region;
     incoming->values_[0] = Precision(200);
     parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {incoming});
 
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, original));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, original));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
-    EXPECT_DOUBLE_EQ(original->values_start_[0], Precision(100));
-    EXPECT_DOUBLE_EQ(original->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(incoming->values_start_[0], Precision(0));
+    EXPECT_DOUBLE_EQ(original->values_[0], Precision(100));
     EXPECT_DOUBLE_EQ(incoming->values_[0], Precision(200));
 
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(incoming->values_[0], Precision(200));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, incoming));
 }
 
 TEST(Reader_Conditions, ModMatchesOriginalSourceNotOverlappingRegion) {
@@ -714,28 +722,29 @@ TEST(Reader_Conditions, ModMatchesOriginalSourceNotOverlappingRegion) {
     parser.add_condition(bc::CLOAD, second, "NSET:RIGHT");
 
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-
     auto update = std::make_shared<bc::CLoad>();
     update->region_ = region;
     update->values_[0] = Precision(300);
     parser.modify_conditions(bc::CLOAD, "NSET:LEFT", {update});
 
     EXPECT_EQ(parser.conditions().get(bc::CLOAD).size(), 2u);
-    EXPECT_DOUBLE_EQ(first->values_[0], Precision(300));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, first));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, update));
+    EXPECT_DOUBLE_EQ(first->values_[0], Precision(100));
     EXPECT_DOUBLE_EQ(second->values_[0], Precision(200));
 
     parser.clear_conditions(bc::CLOAD);
-    EXPECT_DOUBLE_EQ(first->values_[0], Precision(300));
-    EXPECT_DOUBLE_EQ(second->values_[0], Precision(0));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, second));
+    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, update));
 }
 
-TEST(Reader_Conditions, ModRetiresAmplitudeFromItsEffectiveInitialValue) {
+TEST(Reader_Conditions, ModPreservesAmplitudeDefinitionWhenReplacing) {
     io::reader::Parser parser;
     auto region = std::make_shared<model::NodeRegion>("SOURCE");
     region->add(0);
 
     auto amp = std::make_shared<bc::Amplitude>("HISTORY");
-    amp->add_sample(Precision(0), Precision(0.25));
+    amp->add_sample(Precision(0), Precision(0));
     amp->add_sample(Precision(1), Precision(1));
 
     auto old_load = std::make_shared<bc::CLoad>();
@@ -744,19 +753,17 @@ TEST(Reader_Conditions, ModRetiresAmplitudeFromItsEffectiveInitialValue) {
     old_load->amplitude_ = amp;
     parser.add_condition(bc::CLOAD, old_load, "NSET:SOURCE");
     parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
-    old_load->values_start_[0] = Precision(100);
 
     auto new_load = std::make_shared<bc::CLoad>();
     new_load->region_ = region;
     new_load->values_[0] = Precision(200);
     parser.modify_conditions(bc::CLOAD, "NSET:SOURCE", {new_load});
 
-    EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, old_load));
+    EXPECT_FALSE(parser.conditions().contains(bc::CLOAD, old_load));
     EXPECT_TRUE(parser.conditions().contains(bc::CLOAD, new_load));
-    EXPECT_EQ(old_load->amplitude_, nullptr);
-    EXPECT_DOUBLE_EQ(old_load->values_start_[0], Precision(25));
-    EXPECT_DOUBLE_EQ(old_load->values_[0], Precision(0));
-    EXPECT_DOUBLE_EQ(new_load->values_start_[0], Precision(0));
+    EXPECT_EQ(old_load->amplitude_, amp);
+    EXPECT_DOUBLE_EQ(old_load->values_[0], Precision(100));
+    EXPECT_DOUBLE_EQ(new_load->values_[0], Precision(200));
 }
 
 TEST(Reader_Conditions, NewPreservesTemperatureDefinedInCurrentStep) {

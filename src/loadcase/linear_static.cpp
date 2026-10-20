@@ -2,8 +2,8 @@
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
  *
- * The structural analysis reads loads and support prescriptions directly from
- * ModelData, reduces K_T du = delta f through the chosen constraint map and recovers
+ * The analysis assembles step-owned loads and supports, then reduces
+ * K_T du = delta f through the chosen constraint map and recovers
  * global response fields. Optional inertia relief and load rebalancing use the
  * actual active support state. Condition replacement semantics belong to the DSL;
  * model assembly owns physical load integration and equation construction.
@@ -57,8 +57,8 @@ using constraint::ConstraintTransformer;
  * tangent increments for perturbations with the same configured backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
  * requested result fields are written and analysis-local element caches released.
- * Model condition definitions and collector-derived activations are read, never copied into
- * the analysis or modified by this procedure.
+ * The analysis evaluates its step-owned initial and target conditions without
+ * mutating the physical definitions.
  */
 void LinearStatic::run() {
     logging::info(true, "");
@@ -86,10 +86,10 @@ void LinearStatic::run() {
         "LAGRANGE constraints require a DIRECT solver");
     logging::error(!inertia_relief || (model->_data->elem_sets.has("EALL") && model->_data->elem_sets.get("EALL") != nullptr),
         "InertiaRelief: EALL element set is not available");
-    logging::error(!inertia_relief || model->_data->conditions.get(bc::SUPPORT).empty(),
+    logging::error(!inertia_relief || target_conditions.get(bc::SUPPORT).empty(),
        "InertiaRelief: requires no active structural supports. "
        "Clear direct SUPPORT history and remove active support collector definitions.");
-    logging::error(!rebalance_loads || model->_data->conditions.get(bc::SUPPORT).empty(),
+    logging::error(!rebalance_loads || target_conditions.get(bc::SUPPORT).empty(),
         "Rebalancing Loads: requires no active structural supports. "
         "Clear direct SUPPORT history and deselect non-empty support collectors.");
 
@@ -107,9 +107,9 @@ void LinearStatic::run() {
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    // Assemble direct history and collector-activated conditions from the current model
+    // Assemble step initial/target conditions and selected collectors
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(step_period); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1)); },
         "constructing load matrix (node x 6)");
 
     if (inertia_relief) {
@@ -130,7 +130,7 @@ void LinearStatic::run() {
 
     // collector all the constraints that are active in this analysis
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints");
 
     // report if required by the user and turn into equations

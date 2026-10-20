@@ -67,19 +67,16 @@ struct Convection : Condition {
     // into matrix using system_dof_ids. The surface integrals use the reference
     // geometry and consistent finite-element shape functions.
     //
-    // An assigned amplitude scales the film coefficient h at physical time;
-    // ignore_amplitude uses the nominal coefficient. There is currently no
-    // start/target history for convection, so step_progress is unused.
+    // The caller's scale multiplies h and its ambient source consistently.
     // Constraint equations remain unchanged.
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress   = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Assemble only the ambient heat source integral q_h into the scalar RHS.
@@ -87,8 +84,7 @@ struct Convection : Condition {
     void apply_rhs(
         model::ModelData& model_data,
         model::Field&     rhs,
-        Precision         time,
-        bool              ignore_amplitude = false
+        Precision         scale = Precision(1)
     );
 
     // Assemble only K_h into the sparse thermal system triplets. The nodal
@@ -97,17 +93,16 @@ struct Convection : Condition {
         model::ModelData&   model_data,
         const SystemDofIds& system_dof_ids,
         TripletList&        matrix,
-        Precision           time,
-        bool                ignore_amplitude = false
+        Precision           scale = Precision(1)
     );
 
     // Diagnostics
     std::string str() const override;
 
 private:
-    // Evaluate and validate the amplitude-scaled film coefficient used by both
+    // Evaluate and validate the externally scaled film coefficient used by both
     // RHS and operator assembly.
-    Precision effective_film_coefficient(Precision time, bool ignore_amplitude) const;
+    Precision effective_film_coefficient(Precision scale) const;
 };
 
 } // namespace fem::bc

@@ -120,7 +120,7 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
 /**
  * Solves the harmonic response for each configured excitation frequency.
  *
- * Supports and topology constraints are assembled from the current ModelData.
+ * Supports and topology constraints are assembled from the target ConditionState.
  * The constrained stiffness/mass operators and Rayleigh damping define the real
  * block representation of (K - omega^2 M + i omega C) u_hat = f_hat. The model
  * evaluates current direct loads and collector-activated conditions at each frequency,
@@ -156,7 +156,7 @@ void LinearHarmonic::run() {
         "generating active_dof_idx_mat index matrix");
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints");
 
     report_constraint_groups(groups);
@@ -219,7 +219,7 @@ void LinearHarmonic::run() {
             // Abaqus-style amplitudes use frequency as STEP TIME in a frequency
             // domain procedure. Rebuild only the load vector for each frequency;
             // K, M, C and the constraint transformation remain unchanged.
-            model::Field global_load_mat = model->build_load_matrix(frequency);
+            model::Field global_load_mat = build_target_load_matrix(frequency);
             const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
             const DynamicVector fr = transformer->assemble_system_rhs(K, f);
 

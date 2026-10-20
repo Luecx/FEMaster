@@ -4,7 +4,7 @@
  *
  * A concentrated load is already defined in the discrete nodal space and
  * therefore requires no finite-element integration. The implementation replaces
- * omitted `NaN` components by zero, evaluates the optional scalar amplitude and
+ * omitted `NaN` components by zero, applies the caller's multiplier and
  * transforms local force and moment vectors into the global basis at every
  * target node.
  *
@@ -41,7 +41,7 @@ namespace fem::bc {
  * The stored six-component vector is split into translational force and nodal
  * moment triplets. `NaN` entries represent omitted components and are replaced
  * by exact zeros before arithmetic is performed. The optional amplitude is
- * evaluated once because it scales the complete load uniformly.
+ * replaced by a uniform scale provided by the calling analysis.
  *
  * If an orientation is present, its basis is evaluated independently at every
  * nodal position because curvilinear coordinate systems may vary spatially. A
@@ -56,8 +56,6 @@ namespace fem::bc {
  * @param equations Constraint-equation output left unchanged by this structural condition.
  * @param system_dof_ids Active equation numbering reserved for condition matrix terms.
  * @param matrix Sparse condition matrix output left unchanged by this structural condition.
- * @param time Analysis time used for amplitude evaluation.
- * @param ignore_amplitude Apply the nominal load with unit amplitude when true.
  */
 void CLoad::apply(
     model::ModelData&      model_data,
@@ -65,40 +63,17 @@ void CLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress
+    Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
         "CLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
 
-    // Determine the contributions of the start and target values.
-    // An explicit amplitude overrides the linear step interpolation.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
-
-    if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // Assemble the local generalized load vector [Fx, Fy, Fz, Mx, My, Mz].
-    // NaN target components are omitted; undefined start values are zero.
+    // Omitted generalized components contribute no nodal forces or moments.
     Vec6 values = Vec6::Zero();
-
-    // fill in the 6 components if they are not NaN, otherwise they remain zero
     for (Dim i = 0; i < 6; ++i) {
-        if (std::isnan(values_[i])) continue;
-
-        const Precision start = std::isfinite(values_start_[i])
-            ? values_start_[i] : Precision(0);
-
-        values[i] = start_scale * start + end_scale * values_[i];
+        if (std::isfinite(values_[i])) values[i] = scale * values_[i];
     }
 
     // if no components are active, return early

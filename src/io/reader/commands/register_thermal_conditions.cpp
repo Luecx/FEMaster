@@ -10,7 +10,7 @@
  *
  * @see bc::HeatFlux
  * @see bc::Convection
- * @see bc::ConditionManager
+ * @see bc::ConditionState
  *
  * @author Finn Eggers
  * @date 07.10.2026

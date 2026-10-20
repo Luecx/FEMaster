@@ -106,9 +106,9 @@ Precision calculate_relative_force_residual(
         return residual_force / reference_force;
     }
 
-    return residual_force == Precision(0)
-        ? Precision(0)
-        : std::numeric_limits<Precision>::infinity();
+    // Without a mechanical reference load, use the absolute force residual.
+    // An arbitrarily small roundoff residual must not become infinity.
+    return residual_force;
 }
 
 } // namespace
@@ -116,7 +116,7 @@ Precision calculate_relative_force_residual(
 /**
  * Follows nonlinear equilibrium using current model loads and prescriptions.
  *
- * ModelData's active conditions define the initial and target external loads.
+ * The load case owns its initial and target external conditions.
  * Each trial evaluates condition-defined interpolation at its actual load
  * factor; affine prescribed displacements retain their existing constraints.
  * Incremental load control or arc-length control solves the reduced residual
@@ -170,20 +170,6 @@ void NonlinearStatic::run() {
         "NONLINEARSTATIC currently supports only NULLSPACE constraints");
     logging::error(method == solver::DIRECT,
         "NONLINEARSTATIC currently supports only DIRECT solver method");
-    // Arc-length uses a fixed proportional reference load and does not
-    // linearize arbitrary prescribed amplitude histories with respect to lambda.
-    if (control == NonlinearControl::ArcLength) {
-        const bc::ConditionFamily load_families[] = {
-            bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
-            bc::VLOAD, bc::INERTIAL_LOAD
-        };
-        for (const auto family : load_families) {
-            for (const auto& condition : model->_data->conditions.get(family)) {
-                logging::error(condition->amplitude_ == nullptr,
-                    "NONLINEARSTATIC: named load AMPLITUDE is not supported with RIKS arc-length control");
-            }
-        }
-    }
     logging::error(model->_data->positions != nullptr,
         "NonlinearStatic: positions field not initialized");
     logging::error(model->_data->positions_reference != nullptr,
@@ -244,16 +230,23 @@ void NonlinearStatic::run() {
     // Assemble the load derivative for the proportional path controllers.
     // A carried-over force already acts at lambda=0, so the predictor direction
     // is the difference between the target and initial load, not the target.
-    const auto global_load_start = model->build_load_matrix(Precision(0), Precision(0));
-    const auto global_load_total = model->build_load_matrix(step_period, Precision(1));
+    const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0));
+    const auto global_load_total = build_step_load_matrix(step_period, Precision(1));
     auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
 
     const DynamicVector f_total = mattools::reduce_mat_to_vec(
         active_dof_idx_mat, global_load_delta
     );
 
+    // The initial force may include large reaction-only loads. Project it
+    // through the same constraint map as the Newton residual before using it
+    // for relative convergence normalization.
+    const DynamicVector f_initial = mattools::reduce_mat_to_vec(
+        active_dof_idx_mat, global_load_start
+    );
+
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints"
     );
 
@@ -339,6 +332,13 @@ void NonlinearStatic::run() {
 
     DynamicVector reduced_total_load;
     transformer->project_vector(f_total, reduced_total_load);
+
+    const DynamicVector reduced_initial_load = transformer->project_vector(f_initial);
+    // A resumed step may have no load increment. Retain its active starting
+    // force as a reference without letting constrained reactions mask imbalance.
+    const Precision initial_force_scale = reduced_initial_load.size() > 0
+        ? reduced_initial_load.lpNorm<Eigen::Infinity>()
+        : Precision(0);
 
     model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
 
@@ -438,7 +438,7 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -517,7 +517,7 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = model->build_load_matrix(lambda * step_period, lambda);
+        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -574,9 +574,11 @@ void NonlinearStatic::run() {
             // For homogeneous constraints T^T(f - K u_p) = T^T f.
             // Keep the same residual normalization as the tangent predictor
             // without the otherwise unnecessary stiffness assembly.
-            residual_reference_force = std::max(
+            residual_reference_force = std::max({
+                initial_force_scale,
                 std::abs(target_lambda) * reduced_total_load.lpNorm<Eigen::Infinity>(),
-                fixed_temperature_force);
+                fixed_temperature_force
+            });
             return;
         }
 
@@ -609,9 +611,11 @@ void NonlinearStatic::run() {
                 fixed_temperature_force,
                 accepted_residual.lpNorm<Eigen::Infinity>());
         }
-        residual_reference_force = std::max(
+        residual_reference_force = std::max({
+            initial_force_scale,
             std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>(),
-            fixed_temperature_force);
+            fixed_temperature_force
+        });
 
         if (can_extrapolate) {
             const Precision scale =
@@ -675,9 +679,18 @@ void NonlinearStatic::run() {
         const Precision increment_max = increment_displacement.size() > 0
             ? increment_displacement.lpNorm<Eigen::Infinity>()
             : Precision(0);
+        const Precision total_max = u_after.size() > 0
+            ? u_after.lpNorm<Eigen::Infinity>()
+            : Precision(0);
 
-        if (increment_max > Precision(0)) {
-            return correction_max / increment_max;
+        // When a step carries an equilibrated displacement but changes no
+        // load, its displacement increment can be as small as the Newton
+        // correction itself. Normalizing by that increment alone yields a
+        // spurious relative correction of one and prevents convergence.
+        // Include the existing total displacement as a stable scale.
+        const Precision displacement_scale = std::max(increment_max, total_max);
+        if (displacement_scale > Precision(0)) {
+            return correction_max / displacement_scale;
         }
 
         return correction_max == Precision(0)
@@ -741,7 +754,7 @@ void NonlinearStatic::run() {
             &active_dof_idx_mat
         );
 
-        auto increment_external = model->build_load_matrix(lambda * step_period, lambda);
+        auto increment_external = build_step_load_matrix(lambda * step_period, lambda);
 
         auto increment_reaction_full = subtract_field(
             increment_internal,
@@ -913,8 +926,10 @@ void NonlinearStatic::run() {
 
         arc_length_control.update_active_set = update_active_set;
 
-        residual_reference_force =
-            reduced_total_load.lpNorm<Eigen::Infinity>();
+        residual_reference_force = std::max(
+            initial_force_scale,
+            reduced_total_load.lpNorm<Eigen::Infinity>()
+        );
 
         converged = arc_length_control.solve(
             q_total,
@@ -971,7 +986,8 @@ void NonlinearStatic::run() {
         io::writer::write_mtx(stiffness_file + "_A.mtx", final_A);
     }
 
-    auto global_load_final = model->build_load_matrix(load_factor * step_period, load_factor);
+    // Preserve the accepted path time, not merely the nominal step limit.
+    auto global_load_final = build_step_load_matrix(load_factor * step_period, load_factor);
     committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,

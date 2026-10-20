@@ -1,0 +1,85 @@
+/**
+ * @file condition_state.h
+ * @brief Defines step-owned structural and thermal condition sets.
+ *
+ * A ConditionState groups physical condition definitions by input family.
+ * The parser resolves input identifiers and OP=MOD/NEW against these groups;
+ * load cases own independent initial and target states. The finite-element
+ * model owns neither active prescriptions nor step-history membership.
+ *
+ * @see Condition
+ * @see LoadCase
+ */
+
+#pragma once
+
+#include "condition.h"
+
+#include <array>
+#include <cstddef>
+#include <unordered_set>
+#include <utility>
+
+namespace fem::bc {
+
+/**
+ * @brief Independent input-history scope for a physical condition.
+ *
+ * Families retain the distinction between keyword operations without
+ * imposing a physical interpolation rule. Load evaluation distinguishes
+ * structural loads from support and thermal prescriptions separately.
+ */
+enum ConditionFamily : std::size_t {
+    SUPPORT = 0,
+    CLOAD,
+    DLOAD,
+    DSLOAD,
+    PLOAD,
+    VLOAD,
+    INERTIAL_LOAD,
+    TEMPERATURE,
+    HEAT_FLUX,
+    CONVECTION,
+    N_CONDITION_FAMILIES
+};
+
+// Structural Neumann conditions: used for load assembly, load bases and
+// static-amplitude diagnostics. Supports and thermal conditions are separate.
+inline constexpr std::array<ConditionFamily, 6> STRUCTURAL_LOAD_FAMILIES = {
+    CLOAD, DLOAD, DSLOAD, PLOAD, VLOAD, INERTIAL_LOAD
+};
+
+/**
+ * @brief Grouped prescriptions representing one step boundary state.
+ *
+ * A load case holds a frozen initial state and an independently editable
+ * target state. Copying the container duplicates membership, but shares the
+ * physical definitions. The reader replaces pointers instead of mutating them.
+ *
+ * Pointer identity prevents inserting a single definition twice into one
+ * family; distinct overlapping prescriptions remain additive.
+ */
+struct ConditionState {
+    using Conditions = std::unordered_set<Condition::Ptr>;
+
+    std::array<Conditions, N_CONDITION_FAMILIES> conditions;
+
+    // Membership and access grouped by input-history family
+    bool add(ConditionFamily family, Condition::Ptr condition) {
+        return conditions[family].insert(std::move(condition)).second;
+    }
+
+    bool remove(ConditionFamily family, const Condition::Ptr& condition) {
+        return conditions[family].erase(condition) != 0;
+    }
+
+    bool contains(ConditionFamily family, const Condition::Ptr& condition) const {
+        return conditions[family].find(condition) != conditions[family].end();
+    }
+
+    const Conditions& get(ConditionFamily family) const {
+        return conditions[family];
+    }
+};
+
+} // namespace fem::bc

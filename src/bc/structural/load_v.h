@@ -50,12 +50,8 @@ struct VLoad : Condition {
     // Types
     using Ptr = std::shared_ptr<VLoad>;
 
-    // Target and initial body-force density components [bx, by, bz].
-    // NaN in values_ omits a component, while NaN in values_start_ indicates
-    // an unspecified initial value, interpreted as zero during interpolation.
-    // The effective force density is assembled per unit physical volume.
-    Vec3 values_       = {NAN, NAN, NAN};
-    Vec3 values_start_ = {NAN, NAN, NAN};
+    // Nominal generalized components. NaN omits a component.
+    Vec3 values_ = {NAN, NAN, NAN};
 
     // Target structural elements over whose physical volumes the load is integrated
     model::ElementRegion::Ptr region_ = nullptr;
@@ -70,9 +66,8 @@ struct VLoad : Condition {
     // Integrate the prescribed body-force density over every structural element
     // in region_ and accumulate the consistent equivalent forces in the RHS.
     //
-    // Without an amplitude, values_start_ and values_ are interpolated using
-    // step_progress. With an amplitude, the target is scaled by its value at
-    // time instead. ignore_amplitude applies the nominal target directly.
+    // Each step evaluates this nominal force density using its initial or
+    // target amplitude factor, without modifying the physical definition.
     //
     // NaN target components are omitted. An optional local coordinate system
     // is transformed to global coordinates at each integration point.
@@ -80,15 +75,14 @@ struct VLoad : Condition {
     // scaling because this load is already a force per unit volume.
     //
     // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress   = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Diagnostics

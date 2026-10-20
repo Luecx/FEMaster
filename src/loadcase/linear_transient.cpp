@@ -65,7 +65,7 @@ void Transient::run() {
     // (2) Constraint equations
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
             //report_constraint_groups(groups); // enable if you want full print like buckling
             return groups.flatten();
         },
@@ -143,14 +143,14 @@ void Transient::run() {
                            &active_dof_idx_mat,
                            CT_ptr = CT.get(),
                            &K](double time) -> DynamicVector {
-        auto load_matrix = model->build_load_matrix(time);
+        auto load_matrix = build_target_load_matrix(time);
         auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
         return CT_ptr->assemble_system_rhs(K, f_active);
     };
 
     solver::NewmarkForceBasis reduced_force_basis;
     if (device == solver::GPU) {
-        auto load_basis = model->build_load_basis();
+        auto load_basis = model->build_load_basis(target_conditions);
         reduced_force_basis.reserve(load_basis.size());
         for (auto& [amplitude, load_matrix] : load_basis) {
             auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);

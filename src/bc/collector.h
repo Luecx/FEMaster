@@ -8,7 +8,7 @@
  * Collector selection and condition history belong to the reader.
  *
  * @see Condition
- * @see ConditionManager
+ * @see ConditionState
  * @see model::Collection
  */
 
