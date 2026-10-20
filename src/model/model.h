@@ -197,7 +197,6 @@ struct Model {
     // Supports are assembled from the target state only.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
-                            Precision previous_end_time, Precision end_time,
                             Precision time, Precision step_progress,
                             bool evaluate_amplitudes = false);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,

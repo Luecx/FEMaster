@@ -132,8 +132,6 @@ class Parser {
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
 
-    Precision committed_end_time_ = Precision(0);
-
     // Collectors are per-step selections. Their previous contributions remain
     // in the frozen initial state but are omitted from the next target until
     // explicitly selected again.

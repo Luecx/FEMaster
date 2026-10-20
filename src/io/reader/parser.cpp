@@ -99,7 +99,6 @@ void Parser::run(const std::string& input_path,
     for (auto& index : current_conditions_) index.clear();
     selected_conditions_.clear();
     committed_collector_conditions_.clear();
-    committed_end_time_ = Precision(0);
     committed_structural_load_.reset();
     last_committed_static_nonlinear_ = false;
 
@@ -498,6 +497,8 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     if (loadcase->perturbation) {
         logging::error(loadcase->resume && loadcase->type_name() == "LINEARSTATIC",
             "PERTURBATION requires a resumed LINEARSTATIC step");
+        logging::error(committed_structural_load_ != nullptr,
+            "PERTURBATION requires a prior committed structural static state");
     }
 
     // Output requests are configured while the step is parsed, but derived
@@ -510,7 +511,6 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     loadcase->initial_conditions = loadcase->id == 1
         ? bc::ConditionState{} : committed_conditions_;
     loadcase->target_conditions = pending_conditions_;
-    loadcase->previous_end_time = committed_end_time_;
 
     // Collector selections are analysis-local: deselect their previous target
     // contributions, but retain them in the frozen initial state for unloading.
@@ -548,16 +548,6 @@ void Parser::end_loadcase() {
         "Parser: cannot end a load case when none is active");
 
     auto loadcase = std::move(active_loadcase_);
-
-    // Resolve the completed step's local time interval before evaluating
-    // amplitudes. Riks may extend the accepted end time after convergence.
-    if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
-        loadcase->end_time = linear->step_period;
-    } else if (auto* nonlinear = loadcase->as<loadcase::NonlinearStatic>()) {
-        loadcase->end_time = nonlinear->step_period;
-    } else if (auto* transient = loadcase->as<loadcase::Transient>()) {
-        loadcase->end_time = static_cast<Precision>(transient->t_end);
-    }
 
     // Apply only explicitly selected collectors to the step target. Reusable
     // definitions stay unmodified, and the next target omits these selections
@@ -618,7 +608,6 @@ void Parser::end_loadcase() {
     committed_conditions_ = std::move(loadcase->target_conditions);
     pending_conditions_   = committed_conditions_;
     committed_collector_conditions_ = std::move(selected);
-    committed_end_time_ = loadcase->end_time;
 
     for (std::size_t i = 0; i < bc::N_CONDITION_FAMILIES; ++i) {
         auto& inherited = inherited_conditions_[i];
@@ -636,6 +625,11 @@ void Parser::end_loadcase() {
     if (loadcase->committed_structural_load) {
         committed_structural_load_ = std::move(loadcase->committed_structural_load);
         last_committed_static_nonlinear_ = loadcase->type_name() == "NONLINEARSTATIC";
+    } else {
+        // A non-static step does not establish a matching static load baseline.
+        // Never reuse a stale force snapshot in a later perturbation solve.
+        committed_structural_load_.reset();
+        last_committed_static_nonlinear_ = false;
     }
     model_->_data->temperature = std::move(model_->_data->temperature_target);
 }

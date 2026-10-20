@@ -983,8 +983,7 @@ void NonlinearStatic::run() {
     }
 
     // Preserve the accepted path time, not merely the nominal step limit.
-    end_time = load_factor * step_period;
-    auto global_load_final = build_step_load_matrix(end_time, load_factor);
+    auto global_load_final = build_step_load_matrix(load_factor * step_period, load_factor);
     committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,
