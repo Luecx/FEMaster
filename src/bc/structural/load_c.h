@@ -76,8 +76,6 @@ struct CLoad : Condition {
     //
     // Structural loads contribute only to rhs. The equation collection,
     // system DOF indices and matrix remain unchanged.
-    // Construct an independent physical condition for a new step.
-    Condition::Ptr clone() const override { return std::make_shared<CLoad>(*this); }
 
     void apply(
         model::ModelData&      model_data,
@@ -85,12 +83,7 @@ struct CLoad : Condition {
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress    = Precision(1),
-        bool                   initial          = false,
-        Precision              previous_end_time = Precision(0),
-        Precision              end_time          = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Diagnostics

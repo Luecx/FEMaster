@@ -34,7 +34,6 @@
 
 #include "../constraints/types/equation.h"
 #include "../core/printable.h"
-#include "../core/logging.h"
 #include "../core/types_eig.h"
 #include "../core/types_num.h"
 
@@ -85,9 +84,8 @@ namespace fem::bc {
  * conditions decide which of their physical parameters it scales and how the
  * supplied evaluation time is interpreted. The flag ignore_amplitude allows
  * assembly paths such as spatial load-basis construction to bypass this scaling.
- * The base interface itself implements neither amplitude interpolation nor
- * automatic step-history preparation. Concrete loads evaluate their own
- * start/target interpolation using values prepared by the input reader.
+ * Numerical scaling and amplitude evaluation belong to the assembly caller, not
+ * to the physical Condition definition.
  *
  * No active flag, parser-owned lookup table, step-transition state or numerical
  * commit/rollback state is stored in this base class. Such concerns belong to
@@ -133,56 +131,20 @@ struct Condition : Printable {
     // system_dof_ids maps nodal degrees of freedom to global system indices
     // when matrix contributions are assembled.
     //
-    // The temporal evaluation distinguishes two independent quantities:
-    //
-    // - time:          Physical analysis time used to evaluate a prescribed
-    //                  amplitude function, if one is assigned.
-    //
-    // - step_progress: Normalized progress through the current analysis step.
-    //                  A value of 0 represents the beginning of the step,
-    //                  while 1 represents its target state.
-    //
-    // Static conditions use complementary step-progress factors for their
-    // nominal initial/target values, even if a named amplitude is attached.
-    // Dynamic target conditions use A(time) when an amplitude is present.
-    //
-    // ignore_amplitude suppresses only amplitude scaling: the progress ramp
-    // still applies. At target progress one, this gives the nominal load
-    // required for transient spatial-basis construction.
-    //
     // Every derived condition is responsible for evaluating its own physical
     // contribution, including coordinate transformations and integration
     // over the relevant nodes, surfaces or elements.
-    /**
-     * Returns a nominal static ramp, or a dynamic target's amplitude.
-     *
-     * Dynamic solvers assemble only target conditions; inherited conditions
-     * always ramp down linearly. Static solvers set ignore_amplitude.
-     */
-    Precision load_factor(Precision time, Precision step_progress,
-                          bool initial, Precision /*previous_end_time*/,
-                          Precision /*end_time*/, bool ignore_amplitude) const {
-        const Precision ramp = initial
-            ? Precision(1) - step_progress : step_progress;
-        if (ignore_amplitude || initial || !amplitude_) return ramp;
-        return amplitude_->evaluate(time);
-    }
-
-    // Duplicate the physical definition for independently owned step states.
-    virtual Ptr clone() const = 0;
-
+    // Assemble this immutable physical prescription using a scalar contribution
+    // factor chosen by the analysis. Supports and prescribed temperatures do not
+    // scale their Dirichlet values; load conditions scale the complete resultant.
+    // Amplitude sampling and step interpolation belong to the caller.
     virtual void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress    = Precision(1),
-        bool                   initial           = false,
-        Precision              previous_end_time = Precision(0),
-        Precision              end_time          = Precision(1)
+        Precision              scale = Precision(1)
     ) = 0;
 
     // Diagnostics

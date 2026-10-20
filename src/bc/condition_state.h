@@ -48,9 +48,8 @@ enum ConditionFamily : std::size_t {
  *
  * A load case holds a frozen initial state and an independently editable
  * target state. Copying the container shares condition definitions until a
- * replacement is introduced, whereas clone() creates independent physical
- * objects using their polymorphic copy operations. Shared regions and named
- * amplitudes remain reusable immutable definitions.
+ * replacement is introduced, and must not mutate the referenced physical definitions. Shared regions
+ * and named amplitudes remain reusable definitions.
  *
  * Pointer identity prevents inserting a single definition twice into one
  * family; distinct overlapping prescriptions remain additive.
@@ -77,16 +76,7 @@ struct ConditionState {
         return conditions[family];
     }
 
-    // Deep-copy physical condition objects while retaining shared immutable definitions
-    ConditionState clone() const {
-        ConditionState result;
-        for (std::size_t i = 0; i < N_CONDITION_FAMILIES; ++i) {
-            for (const auto& condition : conditions[i]) {
-                result.conditions[i].insert(condition->clone());
-            }
-        }
-        return result;
-    }
+
 };
 
 } // namespace fem::bc
