@@ -34,6 +34,7 @@
 
 #include "../core/logging.h"
 #include "../core/parallel.h"
+#include "../core/memory.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
 
@@ -140,7 +141,8 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
     // Flush the triplet buffer after approximately sixteen million entries to
     // bound peak temporary memory consumption.
-    constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
+    const size_t MEM_AVAIL  = available_memory_bytes() / 4;
+    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet));
 
     // Process all elements in their original storage order.
     for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
@@ -304,9 +306,18 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
     // Reserve a large triplet batch for each worker. Large batches are
     // periodically inserted into the corresponding partial sparse matrix.
-    constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
+    // try to use 25% of available memory at MAX across all threads
+    const size_t MEM_AVAIL  = available_memory_bytes() / 4;
+    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet) * num_threads);
+    const size_t RESERVE    = std::min(BATCH_SIZE, elements.size() / num_threads * 1024);
+
+    // if the system is low on memory, error out. 1024 is very conservative here, this happens when there are
+    // less than 16KB per thread available.
+    logging::error(BATCH_SIZE > 1024,
+        "assemble_matrix_multithreaded: insufficient memory for triplet buffers");
+
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        thread_triplets[thread_id].reserve(BATCH_SIZE);
+        thread_triplets[thread_id].reserve(RESERVE);
     }
 
     // Measure the principal assembly and merge phases independently.
