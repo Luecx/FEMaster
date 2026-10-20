@@ -87,6 +87,62 @@ auto compute_local_matrix_with_optional_forces(
 }
 
 /**
+ * Estimate the approximate amount of triplets that occur in the model, counting duplicates.
+ * This is used to preallocate triplet arrays per thread. Ideally we collect all triplets and then fill it into
+ * the matrices
+ *
+ * @param elements
+ * @return
+ */
+inline uint64_t estimate_triplets(const std::vector<model::ElementPtr>& elements, const SystemDofIds& indices) {
+    // total approximate estimated triplets
+    uint64_t sum = 0;
+    // sparsity of this check, the higher, the more approximate.
+    constexpr int sparsity = 16;
+    for (size_t i = 0; i < elements.size(); i += sparsity) {
+        if (elements[i]) {
+            // take the dofs of the first node and assume all other nodes have the same amount of dofs
+            // there are no elements with no nodes, so this is safe
+            ID id1    = elements[i]->nodes()[0];
+            auto dofs = (indices.row(id1).array() >= 0).count();
+            sum += elements[i]->n_nodes() * elements[i]->n_nodes() * dofs * dofs * sparsity;
+        }
+    }
+
+    return sum;
+}
+
+/**
+ * @brief Flushes accumulated triplets into a sparse matrix.
+ *
+ * Uses Eigen's setFromTriplets() when the matrix is empty, avoiding the
+ * additional sparse-matrix merge performed by insertFromTriplets().
+ * Subsequent batches are accumulated using insertFromTriplets().
+ *
+ * Duplicate entries are summed by Eigen. Empty batches are skipped to
+ * avoid unnecessary matrix operations.
+ *
+ * The triplet buffer is cleared after successful insertion while retaining
+ * its allocated capacity for reuse.
+ *
+ * @param matrix Sparse matrix receiving the accumulated contributions.
+ * @param triplets Triplet buffer to insert and clear.
+ */
+inline void flush_triplets(SparseMatrix& matrix, TripletList& triplets) {
+    if (triplets.empty()) {
+        return;
+    }
+
+    if (matrix.nonZeros() == 0) {
+        matrix.setFromTriplets(triplets.begin(), triplets.end());
+    } else {
+        matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    }
+
+    triplets.clear();
+}
+
+/**
  * @brief Assembles a global sparse matrix using a single execution thread.
  *
  * The routine evaluates the local matrix of every valid element and maps its
@@ -136,13 +192,16 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
     // Collect local contributions as triplets before inserting them into the
     // global sparse matrix.
-    TripletList triplets;
     SparseMatrix global_matrix(global_size, global_size);
 
     // Flush the triplet buffer after approximately sixteen million entries to
     // bound peak temporary memory consumption.
     const size_t MEM_AVAIL  = available_memory_bytes() / 4;
     const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet));
+    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices));
+
+    TripletList triplets{};
+    triplets.reserve(RESERVE);
 
     // Process all elements in their original storage order.
     for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
@@ -156,7 +215,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         // Provide fixed-size cache-line-aligned storage for the local matrix.
         // The callback must not return a matrix exceeding this capacity.
         constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
+        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
 
         // Evaluate the current element matrix into the temporary storage.
         auto local_matrix = compute_local_matrix_with_optional_forces(
@@ -168,9 +227,9 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
         // Determine the element topology and infer the uniform number of local
         // DOFs associated with each node.
-        int num_nodes = element->n_nodes();
+        int num_nodes         = element->n_nodes();
         int local_matrix_size = local_matrix.rows();
-        int dofs_per_node = local_matrix_size / num_nodes;
+        int dofs_per_node     = local_matrix_size / num_nodes;
 
         // Traverse the local matrix in node-block order and map every
         // coefficient to a global row and column.
@@ -204,16 +263,13 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         // Periodically insert completed batches into the global matrix to keep
         // the temporary triplet storage bounded.
         if (triplets.size() > BATCH_SIZE) {
-            global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
-
-            // Reuse the allocated vector capacity for the next batch.
-            triplets.clear();
+            flush_triplets(global_matrix, triplets);
         }
     }
 
     // Insert the final incomplete triplet batch after all elements have been
     // processed.
-    global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    flush_triplets(global_matrix, triplets);
 
     return global_matrix;
 }
@@ -306,10 +362,12 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
     // Reserve a large triplet batch for each worker. Large batches are
     // periodically inserted into the corresponding partial sparse matrix.
-    // try to use 25% of available memory at MAX across all threads
+    // try to use 25% of available memory at MAX across all threads.
+    // the initial reserve size is intended to be the batch size at max but fill in approximately twice
+    // the estimated amount of triplets. This accounts for different thread speed and inaccuracies of the counting
     const size_t MEM_AVAIL  = available_memory_bytes() / 4;
     const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet) * num_threads);
-    const size_t RESERVE    = std::min(BATCH_SIZE, elements.size() / num_threads * 1024);
+    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices) / num_threads * 2);
 
     // if the system is low on memory, error out. 1024 is very conservative here, this happens when there are
     // less than 16KB per thread available.
@@ -400,8 +458,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
             // associated partial sparse matrix to bound temporary triplet
             // memory.
             if (local_triplets.size() > BATCH_SIZE) {
-                thread_matrices[thread_id].insertFromTriplets(local_triplets.begin(), local_triplets.end());
-                local_triplets.clear();
+                flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
             }
         }, min_batch_size);
     // for_index restores the configured counts when it finishes; the following
@@ -442,9 +499,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // which is required by the subsequent k-way merge.
 #pragma omp parallel for num_threads(num_threads) schedule(static, 1)
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        thread_matrices[thread_id].insertFromTriplets(thread_triplets[thread_id].begin(),
-                                                      thread_triplets[thread_id].end());
-        thread_triplets[thread_id].clear();
+        flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
         thread_matrices[thread_id].makeCompressed();
     }
 
