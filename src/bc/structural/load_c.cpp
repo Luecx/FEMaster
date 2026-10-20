@@ -4,7 +4,7 @@
  *
  * A concentrated load is already defined in the discrete nodal space and
  * therefore requires no finite-element integration. The implementation replaces
- * omitted `NaN` components by zero, evaluates the optional scalar amplitude and
+ * omitted `NaN` components by zero, applies the caller's multiplier and
  * transforms local force and moment vectors into the global basis at every
  * target node.
  *
@@ -41,7 +41,7 @@ namespace fem::bc {
  * The stored six-component vector is split into translational force and nodal
  * moment triplets. `NaN` entries represent omitted components and are replaced
  * by exact zeros before arithmetic is performed. The optional amplitude is
- * evaluated once because it scales the complete load uniformly.
+ * replaced by a uniform scale provided by the calling analysis.
  *
  * If an orientation is present, its basis is evaluated independently at every
  * nodal position because curvilinear coordinate systems may vary spatially. A
@@ -56,8 +56,6 @@ namespace fem::bc {
  * @param equations Constraint-equation output left unchanged by this structural condition.
  * @param system_dof_ids Active equation numbering reserved for condition matrix terms.
  * @param matrix Sparse condition matrix output left unchanged by this structural condition.
- * @param time Analysis time used for amplitude evaluation.
- * @param ignore_amplitude Apply the nominal load with unit amplitude when true.
  */
 void CLoad::apply(
     model::ModelData&      model_data,
@@ -71,8 +69,6 @@ void CLoad::apply(
         "CLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
-
-    // The analysis supplies the complete resultant scaling.
 
     // Omitted generalized components contribute no nodal forces or moments.
     Vec6 values = Vec6::Zero();

@@ -8,8 +8,7 @@
  *
  *     q_e = integral_Gamma_e N^T q_bar dGamma.
  *
- * Optional temporal amplitude scaling is evaluated once for the complete
- * condition before its target surfaces are traversed.
+ * The assembly supplies a uniform load multiplier before integration.
  *
  * @see HeatFlux
  * @see model::SurfaceInterface
@@ -36,9 +35,7 @@ namespace fem::bc {
 /**
  * Integrates the prescribed scalar surface heat flux into the thermal RHS.
  *
- * The flux is interpolated from its initial to target value using normalized
- * step progress, unless an assigned amplitude scales the target at physical
- * time. ignore_amplitude uses the nominal target without interpolation.
+ * The calling analysis scales the nominal heat flux before integration.
  *
  * For each selected surface Gamma_e, the consistent nodal heat-flow vector is
  *
@@ -58,9 +55,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global thermal DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target flux when true.
- * @param step_progress Normalized progress from initial to target flux.
  */
 void HeatFlux::apply(
     model::ModelData&      model_data,
@@ -78,8 +72,6 @@ void HeatFlux::apply(
         "HEATFLUX: target field must be a NODE field with exactly one component");
     logging::error(std::isfinite(heat_flux_),
         "HEATFLUX: prescribed heat flux must be finite");
-
-    // Scale the complete nominal resultant using the analysis-supplied scale.
 
     const Precision flux = scale * heat_flux_;
 

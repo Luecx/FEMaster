@@ -9,7 +9,7 @@
  *
  * The surface implementation owns interpolation, quadrature and the physical
  * area Jacobian. `DLoad` provides the traction integrand, including optional
- * amplitude scaling and local-to-global coordinate transformation. Curvilinear
+ * scaling and local-to-global coordinate transformation. Curvilinear
  * coordinate systems are evaluated independently at every integration point.
  *
  * @see DLoad
@@ -33,10 +33,7 @@ namespace fem::bc {
 /**
  * Integrates the effective traction over all selected physical surfaces.
  *
- * The stored target traction is interpolated with the start value using
- * step_progress, unless a named amplitude scales the target at time.
- * ignore_amplitude bypasses both operations and assembles the nominal target.
- * NaN target components are omitted; undefined start components are zero.
+ * The calling analysis supplies the multiplier; omitted NaN components contribute zero.
  *
  * Each surface integrates N^T t over its physical area. For a local traction,
  * the coordinate-system axes are evaluated at each quadrature point before
@@ -47,9 +44,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target traction when true.
- * @param step_progress Normalized progress between start and target tractions.
  */
 void DLoad::apply(
     model::ModelData&      model_data,
@@ -63,8 +57,6 @@ void DLoad::apply(
         "DLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "DLOAD: target surface region is not initialized");
-
-    // The analysis supplies the complete resultant scaling.
 
     // Transform the scaled local traction at each surface quadrature point.
     Vec3 traction = Vec3::Zero();

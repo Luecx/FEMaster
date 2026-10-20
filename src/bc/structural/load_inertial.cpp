@@ -58,11 +58,8 @@ namespace fem::bc {
  * Point masses contribute -m a(x), and their optional diagonal rotary inertia
  * contributes the Euler and gyroscopic moments -J alpha - omega x (J omega).
  *
- * When no amplitude is present, the complete start and target inertia forces
- * and moments are interpolated using step_progress. In particular, omega is
- * not interpolated before evaluating the quadratic centripetal and gyroscopic
- * terms. An explicit amplitude scales only the target contribution at time;
- * ignore_amplitude uses the nominal target without interpolation.
+ * The calling analysis scales the complete inertia resultant. It does not
+ * interpolate angular velocities, which enter some inertia terms quadratically.
  *
  * Compiled point elements are selected through region_. Auxiliary point
  * elements are included separately if consider_point_masses_ is enabled.
@@ -73,9 +70,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target contribution when true.
- * @param step_progress Normalized progress from start to target inertia loads.
  */
 void InertialLoad::apply(
     model::ModelData&      model_data,
@@ -91,8 +85,6 @@ void InertialLoad::apply(
         "INERTIAL: positions field is not initialized");
 
     const auto& positions = *model_data.positions;
-
-    // Scale the complete nominal resultant using the analysis-supplied scale.
 
     if (scale == Precision(0)) return;
 

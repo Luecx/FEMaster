@@ -41,10 +41,7 @@ namespace fem::bc {
  *
  *     t(x) = -p * n(x).
  *
- * Without an amplitude, pressure is interpolated between its initial and
- * target values using step_progress. An explicit amplitude scales the target
- * pressure at physical time; ignore_amplitude applies the nominal target.
- * An undefined initial pressure is treated as zero.
+ * The calling analysis supplies a multiplier for the nominal pressure.
  *
  * The surface integrator evaluates the consistent nodal force contribution
  *
@@ -60,9 +57,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target pressure when true.
- * @param step_progress Normalized progress from initial to target pressure.
  */
 void PLoad::apply(
     model::ModelData&      model_data,
@@ -78,8 +72,6 @@ void PLoad::apply(
         "PLOAD: target surface region is not initialized");
     logging::error(std::isfinite(pressure_),
         "PLOAD: pressure must be finite");
-
-    // The analysis supplies the complete resultant scaling.
 
     const Precision pressure = scale * pressure_;
 

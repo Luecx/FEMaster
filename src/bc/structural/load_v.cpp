@@ -9,7 +9,7 @@
  *
  * The structural element owns interpolation, quadrature and the physical volume
  * Jacobian. This implementation supplies the vector field `b(x)`, including
- * optional amplitude scaling and local-to-global transformation.
+ * caller-provided scaling and local-to-global transformation.
  *
  * The stored vector already has units of force per volume. Consequently the
  * element integration is called with density scaling disabled; multiplying by
@@ -38,10 +38,8 @@ namespace fem::bc {
 /**
  * Integrates the prescribed body-force density over all selected elements.
  *
- * Without an amplitude, the effective force density is interpolated between
- * values_start_ and values_ using step_progress. An explicit amplitude instead
- * scales the target at time; ignore_amplitude uses the nominal target. NaN
- * target components are omitted and undefined start components are zero.
+ * The calling analysis scales the nominal body-force density.
+ * Omitted NaN components contribute zero.
  *
  * Each structural element assembles the consistent contribution
  *
@@ -58,9 +56,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target force density when true.
- * @param step_progress Normalized progress from initial to target load.
  */
 void VLoad::apply(
     model::ModelData&      model_data,
@@ -74,8 +69,6 @@ void VLoad::apply(
         "VLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "VLOAD: target element region is not initialized");
-
-    // The analysis supplies the complete resultant scaling.
 
     // Density-independent body-force components are prescribed in local axes.
     Vec3 body_force = Vec3::Zero();
