@@ -67,9 +67,7 @@ struct Convection : Condition {
     // into matrix using system_dof_ids. The surface integrals use the reference
     // geometry and consistent finite-element shape functions.
     //
-    // An assigned amplitude scales the film coefficient h at physical time;
-    // ignore_amplitude uses the nominal coefficient. There is currently no
-    // start/target history for convection, so step_progress is unused.
+    // The caller's scale multiplies h and its ambient source consistently.
     // Constraint equations remain unchanged.
 
     void apply(
@@ -102,7 +100,7 @@ struct Convection : Condition {
     std::string str() const override;
 
 private:
-    // Evaluate and validate the amplitude-scaled film coefficient used by both
+    // Evaluate and validate the externally scaled film coefficient used by both
     // RHS and operator assembly.
     Precision effective_film_coefficient(Precision scale) const;
 };

@@ -90,8 +90,7 @@ struct Temperature : Condition {
     // shared nodes are deduplicated before equations are appended.
     //
     // This condition prescribes an absolute temperature, not a thermal load.
-    // It does not interpolate temperature histories or evaluate amplitudes:
-    // time, ignore_amplitude and step_progress are unused.
+    // It does not interpolate temperature histories or scale prescribed values.
     //
     // Only equations is modified; rhs, system_dof_ids and matrix are unchanged.
 

@@ -17,8 +17,8 @@
  * In addition to syntax processing, this file owns the input-side condition
  * history. Two generations of original input identifiers may each address
  * several physical Condition pointers after a nodal TRANSFORM split. The reader
- * updates compatible values in place and retires incompatible fragments;
- * ConditionState stores only active pointer membership per family.
+ * replaces matching target pointers without modifying prior definitions;
+ * ConditionState stores active pointer membership per family.
  *
  * @see Parser
  * @see io::dsl::Deck

@@ -2,8 +2,8 @@
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
  *
- * The structural analysis reads loads and support prescriptions directly from
- * ModelData, reduces K_T du = delta f through the chosen constraint map and recovers
+ * The analysis assembles step-owned loads and supports, then reduces
+ * K_T du = delta f through the chosen constraint map and recovers
  * global response fields. Optional inertia relief and load rebalancing use the
  * actual active support state. Condition replacement semantics belong to the DSL;
  * model assembly owns physical load integration and equation construction.
@@ -107,7 +107,7 @@ void LinearStatic::run() {
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    // Assemble direct history and collector-activated conditions from the current model
+    // Assemble step initial/target conditions and selected collectors
     auto global_load_mat = Timer::measure(
         [&]() { return build_step_load_matrix(step_period, Precision(1)); },
         "constructing load matrix (node x 6)");

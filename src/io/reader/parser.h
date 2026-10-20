@@ -88,8 +88,8 @@ struct DocOptions {
  * stored on Condition objects. One CLOAD may create multiple physical pointers
  * when nodes use different TRANSFORM coordinate systems.
  * The parser resolves MOD using the original source and DOF. Inherited and
- * current-step identifiers are kept separately; the manager owns only active
- * physical Condition pointers.
+ * current-step identifiers are kept separately; step-owned ConditionState
+ * containers hold active physical pointers.
  *
  * Named collectors hold reusable definitions independently of direct history.
  * The reader selects them into the current target state and tracks temporary
@@ -176,7 +176,7 @@ public:
     StepState& step_state();
     const StepState& step_state() const;
 
-    // Physical conditions remain model-owned; input identities remain here.
+    // Conditions are step-owned; input identities and pending definitions remain here.
     bc::ConditionState&       conditions();
     const bc::ConditionState& conditions() const;
 
