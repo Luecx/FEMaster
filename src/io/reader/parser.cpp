@@ -570,8 +570,7 @@ void Parser::end_loadcase() {
 
     if (static_analysis) {
         bool ignored_amplitude = false;
-        for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD,
-                                  bc::PLOAD, bc::VLOAD, bc::INERTIAL_LOAD}) {
+        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
             for (const auto* state : {&loadcase->initial_conditions, &loadcase->target_conditions}) {
                 for (const auto& condition : state->get(family)) {
                     ignored_amplitude |= condition->amplitude_ != nullptr;

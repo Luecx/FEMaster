@@ -43,13 +43,18 @@ enum ConditionFamily : std::size_t {
     N_CONDITION_FAMILIES
 };
 
+// Structural Neumann conditions: used for load assembly, load bases and
+// static-amplitude diagnostics. Supports and thermal conditions are separate.
+inline constexpr std::array<ConditionFamily, 6> STRUCTURAL_LOAD_FAMILIES = {
+    CLOAD, DLOAD, DSLOAD, PLOAD, VLOAD, INERTIAL_LOAD
+};
+
 /**
  * @brief Grouped prescriptions representing one step boundary state.
  *
  * A load case holds a frozen initial state and an independently editable
- * target state. Copying the container shares condition definitions until a
- * replacement is introduced, and must not mutate the referenced physical definitions. Shared regions
- * and named amplitudes remain reusable definitions.
+ * target state. Copying the container duplicates membership, but shares the
+ * physical definitions. The reader replaces pointers instead of mutating them.
  *
  * Pointer identity prevents inserting a single definition twice into one
  * family; distinct overlapping prescriptions remain additive.
@@ -75,8 +80,6 @@ struct ConditionState {
     const Conditions& get(ConditionFamily family) const {
         return conditions[family];
     }
-
-
 };
 
 } // namespace fem::bc

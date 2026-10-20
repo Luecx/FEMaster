@@ -332,12 +332,9 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
 
     // Static callers suppress amplitudes and ramp both nominal contributions.
     // Dynamic callers evaluate only the time-dependent target state.
-    const bc::ConditionFamily load_families[] = {
-        bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
-        bc::VLOAD, bc::INERTIAL_LOAD
-    };
+
     const auto assemble = [&](const bc::ConditionState& state, bool is_initial) {
-        for (const auto family : load_families) {
+        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
             for (const auto& condition : state.get(family)) {
                 const Precision scale = is_initial ? Precision(1) - step_progress
                     : (evaluate_amplitudes && condition->amplitude_
@@ -398,15 +395,8 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     };
 
     // Use the same independent structural input families as direct RHS assembly
-    const bc::ConditionFamily load_families[] = {
-        bc::CLOAD,
-        bc::DLOAD,
-        bc::DSLOAD,
-        bc::PLOAD,
-        bc::VLOAD,
-        bc::INERTIAL_LOAD
-    };
-    for (const auto family : load_families) {
+
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
         for (const auto& condition : target.get(family)) {
             add_condition(condition);
         }
