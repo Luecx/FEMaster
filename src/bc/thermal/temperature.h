@@ -94,8 +94,6 @@ struct Temperature : Condition {
     // time, ignore_amplitude and step_progress are unused.
     //
     // Only equations is modified; rhs, system_dof_ids and matrix are unchanged.
-    // Construct an independent physical condition for a new step.
-    Condition::Ptr clone() const override { return std::make_shared<Temperature>(*this); }
 
     void apply(
         model::ModelData&      model_data,
@@ -103,12 +101,7 @@ struct Temperature : Condition {
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress    = Precision(1),
-        bool                   initial          = false,
-        Precision              previous_end_time = Precision(0),
-        Precision              end_time          = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Diagnostics

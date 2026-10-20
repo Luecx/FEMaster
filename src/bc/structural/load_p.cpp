@@ -70,12 +70,7 @@ void PLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress,
-    bool                   initial,
-    Precision              previous_end_time,
-    Precision              end_time
+    Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
         "PLOAD: positions field is not initialized");
@@ -84,11 +79,9 @@ void PLoad::apply(
     logging::error(std::isfinite(pressure_),
         "PLOAD: pressure must be finite");
 
-    // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = load_factor(
-        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
+    // The analysis supplies the complete resultant scaling.
 
-    const Precision pressure = factor * pressure_;
+    const Precision pressure = scale * pressure_;
 
     if (pressure == Precision(0)) return;
 

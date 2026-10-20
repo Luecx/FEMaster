@@ -57,26 +57,19 @@ void DLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress,
-    bool                   initial,
-    Precision              previous_end_time,
-    Precision              end_time
+    Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
         "DLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "DLOAD: target surface region is not initialized");
 
-    // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = load_factor(
-        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
+    // The analysis supplies the complete resultant scaling.
 
     // Transform the scaled local traction at each surface quadrature point.
     Vec3 traction = Vec3::Zero();
     for (Dim i = 0; i < 3; ++i) {
-        if (std::isfinite(values_[i])) traction[i] = factor * values_[i];
+        if (std::isfinite(values_[i])) traction[i] = scale * values_[i];
     }
 
     if (traction.isZero()) return;

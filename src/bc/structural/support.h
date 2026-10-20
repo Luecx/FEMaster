@@ -115,20 +115,14 @@ public:
 
     // Expand the active region and append one scalar constraint equation for
     // every finite prescribed generalized component at every resolved node.
-    // Construct an independent physical condition for a new step.
-    Condition::Ptr clone() const override { return std::make_shared<Support>(*this); }
 
     void apply(model::ModelData&      model_data,
                model::Field&          rhs,
                constraint::Equations& equations,
                const SystemDofIds&    system_dof_ids,
                TripletList&           matrix,
-               Precision              time,
-               bool                   ignore_amplitude = false,
-               Precision              step_progress    = Precision(1),
-               bool                   initial          = false,
-               Precision              previous_end_time = Precision(0),
-               Precision              end_time          = Precision(1)) override;
+        Precision              scale = Precision(1)
+    ) override;
 
     // Diagnostics
     std::string str() const override;

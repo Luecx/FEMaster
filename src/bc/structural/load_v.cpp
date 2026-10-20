@@ -68,26 +68,19 @@ void VLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress,
-    bool                   initial,
-    Precision              previous_end_time,
-    Precision              end_time
+    Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
         "VLOAD: positions field is not initialized");
     logging::error(region_ != nullptr,
         "VLOAD: target element region is not initialized");
 
-    // Step-local interpolation scales the complete nominal contribution.
-    const Precision factor = load_factor(
-        time, step_progress, initial, previous_end_time, end_time, ignore_amplitude);
+    // The analysis supplies the complete resultant scaling.
 
     // Density-independent body-force components are prescribed in local axes.
     Vec3 body_force = Vec3::Zero();
     for (Dim i = 0; i < 3; ++i) {
-        if (std::isfinite(values_[i])) body_force[i] = factor * values_[i];
+        if (std::isfinite(values_[i])) body_force[i] = scale * values_[i];
     }
 
     if (body_force.isZero()) return;
