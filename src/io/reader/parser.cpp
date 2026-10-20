@@ -494,11 +494,14 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     data.temperature_target = temperature_base
         ? std::make_shared<model::Field>(*temperature_base) : nullptr;
 
-    if (loadcase->perturbation) {
-        logging::error(loadcase->resume && loadcase->type_name() == "LINEARSTATIC",
-            "PERTURBATION requires a resumed LINEARSTATIC step");
+    // Only a linear-static tangent perturbation needs the previously committed
+    // structural load baseline. Frequency extraction and eigenvalue buckling
+    // remain valid in a PERTURBATION step without a preceding static analysis.
+    if (loadcase->perturbation && loadcase->as<loadcase::LinearStatic>()) {
+        logging::error(loadcase->resume,
+            "LINEARSTATIC PERTURBATION requires RESUME=YES");
         logging::error(committed_structural_load_ != nullptr,
-            "PERTURBATION requires a prior committed structural static state");
+            "LINEARSTATIC PERTURBATION requires a prior committed structural static state");
     }
 
     // Output requests are configured while the step is parsed, but derived

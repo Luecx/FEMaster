@@ -238,15 +238,12 @@ void NonlinearStatic::run() {
         active_dof_idx_mat, global_load_delta
     );
 
-    // A continuation step may retain a nonzero force while changing no load.
-    // Its load derivative is then zero, but that must not also zero the
-    // reference force used for Newton's relative residual.
+    // The initial force may include large reaction-only loads. Project it
+    // through the same constraint map as the Newton residual before using it
+    // for relative convergence normalization.
     const DynamicVector f_initial = mattools::reduce_mat_to_vec(
         active_dof_idx_mat, global_load_start
     );
-    const Precision initial_force_scale = f_initial.size() > 0
-        ? f_initial.lpNorm<Eigen::Infinity>()
-        : Precision(0);
 
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
@@ -335,6 +332,13 @@ void NonlinearStatic::run() {
 
     DynamicVector reduced_total_load;
     transformer->project_vector(f_total, reduced_total_load);
+
+    const DynamicVector reduced_initial_load = transformer->project_vector(f_initial);
+    // A resumed step may have no load increment. Retain its active starting
+    // force as a reference without letting constrained reactions mask imbalance.
+    const Precision initial_force_scale = reduced_initial_load.size() > 0
+        ? reduced_initial_load.lpNorm<Eigen::Infinity>()
+        : Precision(0);
 
     model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
 

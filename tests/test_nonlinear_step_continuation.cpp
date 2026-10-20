@@ -144,3 +144,24 @@ TEST(NonlinearContinuation, RiksIgnoresInitialAndTargetAmplitudes) {
 *END STEP
 )", Precision(0.071421));
 }
+
+TEST(NonlinearContinuation, ReactionOnlyStartLoadsDoNotRelaxNewtonTolerance) {
+    // The 1e12 force on the fully fixed first node is carried into step two.
+    // It is a reaction load, not a driving force, and must not scale down the
+    // reduced Newton residual for the 200000-N load on the free second node.
+    // For the GL truss: F = A*E*(lambda^3-lambda)/2, L0 = 1000.
+    run_continuation("FIXED_REACTION", R"(*STEP, NAME=PRELOAD, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*CLOAD
+1, 1, 1000000000000.
+2, 1, 1000.
+*END STEP
+*STEP, NAME=STRONG_LOAD_CHANGE, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*CLOAD, OP=MOD
+2, 1, 200000.
+*END STEP
+)", Precision(9.39110609885));
+}

@@ -23,6 +23,8 @@
 #include "../src/bc/structural/load_inertial.h"
 #include "../src/bc/thermal/temperature.h"
 #include "../src/loadcase/linear_static.h"
+#include "../src/loadcase/linear_eigenfreq.h"
+#include "../src/loadcase/linear_buckling.h"
 #include "../src/loadcase/nonlinear_static.h"
 #include "../src/material/orthotropic_elasticity.h"
 #include "../src/material/strain/shell_material_strain.h"
@@ -592,6 +594,27 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
 
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
+}
+
+TEST(Reader_Conditions, EigenvaluePerturbationsNeedNoCommittedStaticLoad) {
+    // Abaqus STEP, PERTURBATION supports both eigenvalue procedures without
+    // a previous structural static solve. The static-only guard must not apply.
+    {
+        io::reader::Parser parser;
+        parser.step_state().step_active  = true;
+        parser.step_state().perturbation = true;
+        ASSERT_NO_THROW(parser.begin_loadcase(std::make_unique<loadcase::LinearEigenfrequency>()));
+        ASSERT_NE(parser.active_loadcase(), nullptr);
+        EXPECT_TRUE(parser.active_loadcase()->perturbation);
+    }
+    {
+        io::reader::Parser parser;
+        parser.step_state().step_active  = true;
+        parser.step_state().perturbation = true;
+        ASSERT_NO_THROW(parser.begin_loadcase(std::make_unique<loadcase::LinearBuckling>()));
+        ASSERT_NE(parser.active_loadcase(), nullptr);
+        EXPECT_TRUE(parser.active_loadcase()->perturbation);
+    }
 }
 
 TEST(Reader_Conditions, PerturbationRequiresCommittedStaticState) {
