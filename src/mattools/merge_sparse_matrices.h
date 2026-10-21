@@ -18,9 +18,10 @@
 
 namespace fem::mattools {
 
-// Sum one to 128 identically sized square CSC matrices with sorted row indices.
+// Sum one or more identically sized square CSC matrices with sorted row indices.
 // Preserve explicitly stored zeros and accumulate equal coordinates in input
 // order. Each output column is processed independently; inputs remain unchanged.
 SparseMatrix merge_sparse_matrices(const std::vector<SparseMatrix>& matrices);
 
 } // namespace fem::mattools
+
