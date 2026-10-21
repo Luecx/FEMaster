@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #ifdef _MSC_VER
@@ -45,26 +46,37 @@ using StorageIndex = SparseMatrix::StorageIndex;
  * single root word. New occupancy propagates upward only when a child word
  * changes from empty to nonempty.
  *
+ * The merge owns one contiguous buffer per level. Each worker views a disjoint
+ * range in every buffer, separated from its neighbors by 64 bytes of padding.
+ * These buffers must remain alive while the worker uses the bitmap.
+ *
  * Traversal from the root yields row indices in ascending order and clears
- * the visited masks. The dense values remain untouched between columns;
- * their contents are valid only for rows occupied in the current column.
+ * the visited masks. The owned dense value array is allocated without
+ * initialization and remains untouched between columns. add() initializes
+ * each row on its first contribution, so only occupied rows may be read.
  * The same structure serves symbolic counting and numerical accumulation.
  */
 struct ColumnBitmap {
-    // Dense row coefficients and hierarchical occupancy masks, leaves first
-    std::vector<Precision>                  values;
-    std::vector<std::vector<std::uint64_t>> levels;
+    // Pad independently written worker ranges to avoid shared cache-line writes
+    static constexpr std::size_t padding_words = 64 / sizeof(std::uint64_t);
 
-    explicit ColumnBitmap(std::size_t rows) : values(rows) {
-        std::size_t words = rows / 64 + (rows % 64 != 0);
+    // Owned dense coefficients and views of the shared level buffers, leaves first
+    std::unique_ptr<Precision[]> values;
+    std::vector<std::uint64_t*>  levels;
 
-        // Build occupancy levels until a single 64-bit root word remains
-        while (words != 0) {
-            levels.emplace_back(words, std::uint64_t(0));
-            if (words == 1) {
-                break;
-            }
-            words = words / 64 + (words % 64 != 0);
+    /**
+     * Allocates uninitialized coefficients and maps one worker's bitmap views.
+     * Each level starts at worker * level_strides[level] in its shared buffer;
+     * the merge retains ownership of those buffers.
+     */
+    ColumnBitmap(std::size_t                              rows,
+                 std::size_t                              worker,
+                 const std::vector<std::size_t>&          level_strides,
+                 std::vector<std::vector<std::uint64_t>>& level_buffers)
+        : values(new Precision[rows]), levels(level_strides.size()) {
+        // Map each level to this worker's exclusive range
+        for (std::size_t level = 0; level < levels.size(); ++level) {
+            levels[level] = level_buffers[level].data() + worker * level_strides[level];
         }
     }
 
@@ -348,12 +360,16 @@ SparseMatrix merge_sparse_bitmap(const std::vector<SparseMatrix>& matrices) {
         values.push_back(matrix.valuePtr());
     }
 
-    // Count bitmap words level by level, ending with the single root word
-    std::size_t bitmap_words = 0;
-    std::size_t level_words  = row_count;
+    // Determine all level sizes once, ending with the single root word.
+    // Padding separates the independently written ranges of adjacent workers.
+    std::vector<std::size_t> level_strides;
+    std::size_t             bitmap_words = 0;
+    std::size_t             level_words  = row_count;
     do {
         level_words = level_words / 64 + (level_words % 64 != 0);
-        bitmap_words += level_words;
+        const std::size_t stride = level_words + ColumnBitmap::padding_words;
+        level_strides.push_back(stride);
+        bitmap_words += stride;
     } while (level_words > 1);
 
     // Calculate dense-value and bitmap storage without overflowing size_t
@@ -375,12 +391,21 @@ SparseMatrix merge_sparse_bitmap(const std::vector<SparseMatrix>& matrices) {
         "Sparse merge: insufficient memory for ", workers, " bitmap workspaces (",
         bytes_per_worker, " bytes per worker, available ", available, " bytes)");
 
-    // Allocate one bitmap per worker and exact per-column symbolic counts
+    // Initialize each level once, with disjoint padded ranges for all workers
+    std::vector<std::vector<std::uint64_t>> level_buffers;
+    level_buffers.reserve(level_strides.size());
+    for (std::size_t stride : level_strides) {
+        level_buffers.emplace_back(stride * static_cast<std::size_t>(workers), std::uint64_t(0));
+    }
+
+    // Keep worker views within the shared level buffers and allocate dense values
     std::vector<ColumnBitmap> bitmaps;
     bitmaps.reserve(static_cast<std::size_t>(workers));
     for (int worker = 0; worker < workers; ++worker) {
-        bitmaps.emplace_back(row_count);
+        bitmaps.emplace_back(row_count, static_cast<std::size_t>(worker), level_strides, level_buffers);
     }
+
+    // Allocate exact per-column symbolic counts
     std::vector<std::size_t> offsets(column_count + 1, 0);
 
     // Symbolic pass: count each distinct stored row once in each output column
