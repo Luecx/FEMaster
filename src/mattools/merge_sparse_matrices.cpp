@@ -19,6 +19,7 @@
 #include "merge_sparse_matrices.h"
 
 #include "../core/logging.h"
+#include "../core/memory.h"
 #include "../core/parallel.h"
 
 #include <algorithm>
@@ -186,7 +187,7 @@ SparseMatrix allocate_output(Eigen::Index rows, std::vector<std::size_t>& offset
     const bool        output_fits   = entries_fit && pointers_fit && entry_bytes <= maximum - pointer_bytes;
     const std::size_t output_bytes  = output_fits  ? entry_bytes + pointer_bytes         : 0;
 
-    const std::size_t available = parallel::available_memory_bytes();
+    const std::size_t available = memory::available_memory_bytes();
     const std::size_t budget    = available - available / 4;
 
     // Reject unsupported CSC sizes and allocations before modifying output
@@ -314,8 +315,8 @@ SparseMatrix merge_sparse_pair(const SparseMatrix& a, const SparseMatrix& b) {
 /**
  * Merges three or more compressed CSC matrices using hierarchical bitmaps.
  *
- * The routine sizes one dense-row accumulator per OpenMP worker and limits
- * parallelism to the available memory budget. During the symbolic pass, each
+ * The routine sizes one dense-row accumulator per OpenMP worker and rejects
+ * insufficient memory without reducing parallelism. During the symbolic pass, each
  * distinct stored row is marked once per column; the bitmap tree is cleared
  * without touching dense values. The numerical pass accumulates coefficients
  * in input order and traverses the tree to emit sorted, unique row indices.
@@ -325,64 +326,54 @@ SparseMatrix merge_sparse_pair(const SparseMatrix& a, const SparseMatrix& b) {
  */
 SparseMatrix merge_sparse_bitmap(const std::vector<SparseMatrix>& matrices) {
     // Prepare global dimensions, index bounds and the requested parallelism
-    const Eigen::Index rows              = matrices.front().rows();
-    const Eigen::Index cols              = matrices.front().cols();
-    const std::size_t  row_count         = static_cast<std::size_t>(rows);
-    const std::size_t  column_count      = static_cast<std::size_t>(cols);
-    const std::size_t  maximum           = std::numeric_limits<std::size_t>::max();
-    const int          requested_workers = parallel::worker_count(cols, global_config.max_threads);
+    const Eigen::Index rows         = matrices.front().rows();
+    const Eigen::Index cols         = matrices.front().cols();
+    const std::size_t  row_count    = static_cast<std::size_t>(rows);
+    const std::size_t  column_count = static_cast<std::size_t>(cols);
+    const std::size_t  maximum      = std::numeric_limits<std::size_t>::max();
+    const int          workers      = parallel::worker_count(cols, global_config.max_threads);
 
     // Capture all input CSC arrays once, rather than retrieving pointers for
     // each input again in every column of the symbolic and numerical passes
     std::vector<const StorageIndex*> outer;
     std::vector<const StorageIndex*> inner;
     std::vector<const Precision*>    values;
-    outer.reserve(matrices.size());
-    inner.reserve(matrices.size());
+    outer .reserve(matrices.size());
+    inner .reserve(matrices.size());
     values.reserve(matrices.size());
 
     for (const SparseMatrix& matrix : matrices) {
-        outer.push_back(matrix.outerIndexPtr());
-        inner.push_back(matrix.innerIndexPtr());
+        outer .push_back(matrix.outerIndexPtr());
+        inner .push_back(matrix.innerIndexPtr());
         values.push_back(matrix.valuePtr());
     }
 
-    // Calculate the storage required by a dense row array and every bitmap
-    // level. A size overflow is recorded and rejected in the validation block.
-    bool        workspace_fits   = row_count <= maximum / sizeof(Precision);
-    std::size_t bytes_per_worker = workspace_fits ? row_count * sizeof(Precision) : 0;
-    std::size_t words            = row_count / 64 + (row_count % 64 != 0);
+    // Count bitmap words level by level, ending with the single root word
+    std::size_t bitmap_words = 0;
+    std::size_t level_words  = row_count;
+    do {
+        level_words = level_words / 64 + (level_words % 64 != 0);
+        bitmap_words += level_words;
+    } while (level_words > 1);
 
-    while (words != 0 && workspace_fits) {
-        if (words > (maximum - bytes_per_worker) / sizeof(std::uint64_t)) {
-            workspace_fits = false;
-            break;
-        }
-        bytes_per_worker += words * sizeof(std::uint64_t);
-        if (words == 1) {
-            break;
-        }
-        words = words / 64 + (words % 64 != 0);
-    }
+    // Calculate dense-value and bitmap storage without overflowing size_t
+    logging::error(row_count <= maximum / sizeof(Precision),
+        "Sparse merge: dense value allocation size overflow");
+    const std::size_t value_bytes = row_count * sizeof(Precision);
 
-    // Select the number of simultaneously allocated worker-local accumulators
-    const std::size_t available = parallel::available_memory_bytes();
-    const std::size_t budget    = available - available / 4;
-    const std::size_t possible  = workspace_fits && bytes_per_worker > 0
-                                ? budget / bytes_per_worker
-                                : 0;
-
-    // Validate all workspace requirements before allocating worker storage
-    logging::error(workspace_fits,
+    logging::error(bitmap_words <= (maximum - value_bytes) / sizeof(std::uint64_t),
         "Sparse merge: bitmap workspace allocation size overflow");
-    logging::error(possible >= 1,
-        "Sparse merge: insufficient memory for one bitmap workspace (need ",
-        bytes_per_worker, " bytes, available ", available, " bytes)");
+    const std::size_t bytes_per_worker = value_bytes + bitmap_words * sizeof(std::uint64_t);
 
-    // Limit parallelism without changing the selected merge algorithm
-    const int workers = static_cast<int>(std::min<std::size_t>(
-        static_cast<std::size_t>(requested_workers), possible
-    ));
+    // Keep a quarter of available memory outside the workspace budget
+    const std::size_t available = memory::available_memory_bytes();
+    const std::size_t budget    = available - available / 4;
+
+    // Check the full worker team without multiplying allocation sizes, which
+    // could overflow. Insufficient memory must not change the worker count.
+    logging::error(bytes_per_worker <= budget / static_cast<std::size_t>(workers),
+        "Sparse merge: insufficient memory for ", workers, " bitmap workspaces (",
+        bytes_per_worker, " bytes per worker, available ", available, " bytes)");
 
     // Allocate one bitmap per worker and exact per-column symbolic counts
     std::vector<ColumnBitmap> bitmaps;

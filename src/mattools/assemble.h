@@ -13,12 +13,11 @@
  *
  * When OpenMP is available, the parallel implementation gives each worker an
  * independent triplet buffer and partial sparse matrix. After local assembly,
- * the sorted compressed columns of all partial matrices are combined by a
- * column-wise loser-tree merge. The first merge pass counts the unique structural
- * entries of every output column. The second pass writes the compressed sparse
- * pattern and simultaneously accumulates all numerical contributions. Empty
- * input columns are excluded from the tournaments, and ties between equal row
- * indices preserve ascending worker order during numerical accumulation.
+ * compressed partial matrices are combined column by column. Two inputs use
+ * a sorted two-pointer merge; three or more use a dense row accumulator with
+ * a hierarchical occupancy bitmap. The first pass counts unique structural
+ * entries. The second writes the compressed sparse pattern and accumulates
+ * numerical contributions in ascending input-worker order.
  *
  * Each output column is owned by exactly one OpenMP iteration during the final
  * merge. Consequently, the compressed matrix can be filled without locks,
@@ -200,7 +199,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
     // Flush the triplet buffer after approximately sixteen million entries to
     // bound peak temporary memory consumption.
-    const size_t MEM_AVAIL  = available_memory_bytes() / 4;
+    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
     const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet));
     const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices));
 
@@ -282,16 +281,17 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 #ifdef _OPENMP
 
 /**
- * @brief Assembles a global sparse matrix using OpenMP and column-wise loser trees.
+ * @brief Assembles a global sparse matrix using OpenMP and column-wise reduction.
  *
  * Element-local matrices are evaluated in parallel. Every worker owns an
  * independent triplet buffer and partial sparse matrix, so no synchronization
  * is required while element contributions are generated.
  *
- * After compression, merge_sparse_matrices() combines the sorted partial
- * columns using a loser tree. It owns structural counting, global CSC allocation
- * and stable numerical accumulation; this routine retains responsibility for
- * element evaluation, triplet buffering and optional nodal-force reduction.
+ * After compression, merge_sparse_matrices() combines the partial columns
+ * using a two-pointer merge or hierarchical bitmap accumulation. It owns
+ * structural counting, global CSC allocation and numerical accumulation in
+ * input-worker order; this routine retains responsibility for element
+ * evaluation, triplet buffering and optional nodal-force reduction.
  *
  * @tparam Lambda Callable type used to compute element-local matrices.
  *
@@ -354,7 +354,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // try to use 25% of available memory at MAX across all threads.
     // the initial reserve size is intended to be the batch size at max but fill in approximately twice
     // the estimated amount of triplets. This accounts for different thread speed and inaccuracies of the counting
-    const size_t MEM_AVAIL  = available_memory_bytes() / 4;
+    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
     const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet) * num_threads);
     const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices) / num_threads * 2);
 
@@ -484,8 +484,8 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     }
 
     // Flush the remaining triplets of every worker and compress each partial
-    // matrix. Compression guarantees sorted row indices inside every column,
-    // which is required by the subsequent k-way merge.
+    // matrix. The subsequent reduction reads the compressed CSC arrays
+    // directly; its two-input merge also requires sorted row indices.
 #pragma omp parallel for num_threads(num_threads) schedule(static, 1)
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
         flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
@@ -504,7 +504,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     auto global_matrix = merge_sparse_matrices(thread_matrices);
 
     timer.stop();
-    logging::info(true, "Time for loser-tree merge : ", timer.elapsed(), " ms");
+    logging::info(true, "Time for sparse merge     : ", timer.elapsed(), " ms");
     logging::info(true, "Pattern nonzeros          : ", global_matrix.nonZeros());
 
     return global_matrix;
@@ -515,7 +515,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
  * @brief Selects the serial or OpenMP sparse-matrix assembly implementation.
  *
  * When OpenMP support is unavailable at compile time, the serial implementation
- * is used unconditionally. With OpenMP enabled, parallel loser-tree assembly
+ * is used unconditionally. With OpenMP enabled, parallel sparse assembly
  * is selected only when more than one worker thread has been configured.
  *
  * The element collection, global DOF mapping, local-matrix callback and optional

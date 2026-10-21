@@ -3,7 +3,8 @@
  * @brief Cross-platform memory query utilities.
  *
  * This header provides a function to estimate the available physical RAM
- * on the system in bytes. It supports Windows, macOS, and Linux platforms.
+ * on the system in bytes through fem::memory. It supports Windows, macOS
+ * and Linux platforms; callers use the estimate to budget temporary storage.
  */
 #pragma once
 
@@ -20,6 +21,7 @@
     #include <string>
 #endif
 
+namespace fem::memory {
 
 /**
  * @brief Returns an estimate of available physical RAM in bytes.
@@ -83,3 +85,5 @@ inline std::uint64_t available_memory_bytes() {
     return 0;
 #endif
 }
+
+} // namespace fem::memory
