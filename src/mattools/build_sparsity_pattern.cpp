@@ -47,6 +47,10 @@ namespace fem { namespace mattools {
  *
  * Active global DOF indices must be unique. Negative indices are inactive,
  * unused global indices produce empty columns, and null elements are ignored.
+ * An empty element collection contributes no entries but preserves the global
+ * dimension defined by indices. This includes the regular-element assembly of
+ * POINTMASS-only models, whose auxiliary elements are assembled separately.
+ * Empty maps and maps without active DOFs produce a zero-dimensional matrix.
  *
  * No element matrices, geometry or material states are evaluated.
  *
@@ -63,20 +67,19 @@ SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elemen
     constexpr std::size_t min_batch_size = 64;
 
     const std::size_t node_count  = static_cast<std::size_t>(indices.rows());
-    const std::size_t maximum_dof = indices.maxCoeff();
-    const std::size_t global_size = maximum_dof + 1;
+    const int         maximum_dof = indices.size() == 0 ? -1 : indices.maxCoeff();
 
     // ---------------------------------------------------------------------
     // 1. Validate input and count node-to-element incidence
     // ---------------------------------------------------------------------
 
-    // Validate the algebraic dimension before allocating sparse storage.
-    logging::error(!elements.empty() && indices.size() > 0,
-        "Sparsity pattern requires at least one element and one active DOF");
-    logging::error(maximum_dof < std::numeric_limits<StorageIndex>::max()
-                && maximum_dof < std::numeric_limits<std::size_t >::max(),
+    // The global DOF map, rather than the element collection, determines the
+    // matrix dimension. Keep the maximum signed until inactive-only maps have
+    // been handled, and never evaluate maxCoeff() on an empty map.
+    logging::error(maximum_dof < std::numeric_limits<StorageIndex>::max(),
         "Sparsity pattern dimension exceeds sparse storage index capacity");
-
+    const std::size_t global_size = maximum_dof < 0
+        ? std::size_t(0) : static_cast<std::size_t>(maximum_dof) + 1;
 
     // Count how often each node occurs in the element connectivity.
     // Invalid identifiers are recorded without accessing invalid offsets.
