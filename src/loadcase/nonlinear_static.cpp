@@ -29,6 +29,7 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/build_sparsity_pattern.h"
 #include "../mattools/mask_field.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
@@ -272,6 +273,13 @@ void NonlinearStatic::run() {
     const Index n_active   = active_dof_idx_mat.maxCoeff() + 1;
     const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
 
+    // Element connectivity and active numbering remain fixed throughout this
+    // step. Reuse their pattern while assembling contact couplings separately.
+    const auto tangent_pattern = Timer::measure(
+        [&]() { return mattools::build_sparsity_pattern(model->_data->elements, active_dof_idx_mat); },
+        "building nonlinear tangent sparsity pattern"
+    );
+
     BooleanMatrix support_mask(
         active_dof_idx_mat.rows(),
         active_dof_idx_mat.cols()
@@ -419,7 +427,10 @@ void NonlinearStatic::run() {
                 displacement_evaluation,
                 step_temperature,
                 displacement_evaluation,
-                step_temperature
+                step_temperature,
+                nullptr,
+                true,
+                &tangent_pattern
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -969,7 +980,10 @@ void NonlinearStatic::run() {
                 displacement,
                 step_temperature,
                 displacement,
-                step_temperature
+                step_temperature,
+                nullptr,
+                true,
+                &tangent_pattern
             );
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
