@@ -13,10 +13,11 @@
  *
  * When OpenMP is available, the parallel implementation gives each worker an
  * independent triplet buffer and partial sparse matrix. After local assembly,
- * the sorted compressed columns of all partial matrices are combined by a
- * column-wise k-way merge. The first merge pass counts the unique structural
- * entries of every output column. The second pass writes the compressed sparse
- * pattern and simultaneously accumulates all numerical contributions.
+ * compressed partial matrices are combined column by column. Two inputs use
+ * a sorted two-pointer merge; three or more use a dense row accumulator with
+ * a hierarchical occupancy bitmap. The first pass counts unique structural
+ * entries. The second writes the compressed sparse pattern and accumulates
+ * numerical contributions in ascending input-worker order.
  *
  * Each output column is owned by exactly one OpenMP iteration during the final
  * merge. Consequently, the compressed matrix can be filled without locks,
@@ -27,18 +28,21 @@
  * counts are restored before returning.
  *
  * @see model::Element
+ * @see merge_sparse_matrices
  *
  * @author Finn Eggers
  * @date 28.08.2024
  */
 
+#include "merge_sparse_matrices.h"
+
 #include "../core/logging.h"
 #include "../core/parallel.h"
+#include "../core/memory.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
 
 #include <algorithm>
-#include <limits>
 #include <type_traits>
 
 #ifdef _OPENMP
@@ -83,6 +87,62 @@ auto compute_local_matrix_with_optional_forces(
         (void) nodal_forces;
         return compute_local_matrix(element, local_matrix_storage);
     }
+}
+
+/**
+ * Estimate the approximate amount of triplets that occur in the model, counting duplicates.
+ * This is used to preallocate triplet arrays per thread. Ideally we collect all triplets and then fill it into
+ * the matrices
+ *
+ * @param elements
+ * @return
+ */
+inline uint64_t estimate_triplets(const std::vector<model::ElementPtr>& elements, const SystemDofIds& indices) {
+    // total approximate estimated triplets
+    uint64_t sum = 0;
+    // sparsity of this check, the higher, the more approximate.
+    constexpr int sparsity = 16;
+    for (size_t i = 0; i < elements.size(); i += sparsity) {
+        if (elements[i]) {
+            // take the dofs of the first node and assume all other nodes have the same amount of dofs
+            // there are no elements with no nodes, so this is safe
+            ID id1    = elements[i]->nodes()[0];
+            auto dofs = (indices.row(id1).array() >= 0).count();
+            sum += elements[i]->n_nodes() * elements[i]->n_nodes() * dofs * dofs * sparsity;
+        }
+    }
+
+    return sum;
+}
+
+/**
+ * @brief Flushes accumulated triplets into a sparse matrix.
+ *
+ * Uses Eigen's setFromTriplets() when the matrix is empty, avoiding the
+ * additional sparse-matrix merge performed by insertFromTriplets().
+ * Subsequent batches are accumulated using insertFromTriplets().
+ *
+ * Duplicate entries are summed by Eigen. Empty batches are skipped to
+ * avoid unnecessary matrix operations.
+ *
+ * The triplet buffer is cleared after successful insertion while retaining
+ * its allocated capacity for reuse.
+ *
+ * @param matrix Sparse matrix receiving the accumulated contributions.
+ * @param triplets Triplet buffer to insert and clear.
+ */
+inline void flush_triplets(SparseMatrix& matrix, TripletList& triplets) {
+    if (triplets.empty()) {
+        return;
+    }
+
+    if (matrix.nonZeros() == 0) {
+        matrix.setFromTriplets(triplets.begin(), triplets.end());
+    } else {
+        matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    }
+
+    triplets.clear();
 }
 
 /**
@@ -135,12 +195,16 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
     // Collect local contributions as triplets before inserting them into the
     // global sparse matrix.
-    TripletList triplets;
     SparseMatrix global_matrix(global_size, global_size);
 
     // Flush the triplet buffer after approximately sixteen million entries to
     // bound peak temporary memory consumption.
-    constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
+    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
+    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet));
+    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices));
+
+    TripletList triplets{};
+    triplets.reserve(RESERVE);
 
     // Process all elements in their original storage order.
     for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
@@ -154,7 +218,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         // Provide fixed-size cache-line-aligned storage for the local matrix.
         // The callback must not return a matrix exceeding this capacity.
         constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
+        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
 
         // Evaluate the current element matrix into the temporary storage.
         auto local_matrix = compute_local_matrix_with_optional_forces(
@@ -166,9 +230,9 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
         // Determine the element topology and infer the uniform number of local
         // DOFs associated with each node.
-        int num_nodes = element->n_nodes();
+        int num_nodes         = element->n_nodes();
         int local_matrix_size = local_matrix.rows();
-        int dofs_per_node = local_matrix_size / num_nodes;
+        int dofs_per_node     = local_matrix_size / num_nodes;
 
         // Traverse the local matrix in node-block order and map every
         // coefficient to a global row and column.
@@ -202,16 +266,13 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         // Periodically insert completed batches into the global matrix to keep
         // the temporary triplet storage bounded.
         if (triplets.size() > BATCH_SIZE) {
-            global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
-
-            // Reuse the allocated vector capacity for the next batch.
-            triplets.clear();
+            flush_triplets(global_matrix, triplets);
         }
     }
 
     // Insert the final incomplete triplet batch after all elements have been
     // processed.
-    global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    flush_triplets(global_matrix, triplets);
 
     return global_matrix;
 }
@@ -220,29 +281,17 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 #ifdef _OPENMP
 
 /**
- * @brief Assembles a global sparse matrix using OpenMP and a column-wise k-way merge.
+ * @brief Assembles a global sparse matrix using OpenMP and column-wise reduction.
  *
  * Element-local matrices are evaluated in parallel. Every worker owns an
  * independent triplet buffer and partial sparse matrix, so no synchronization
  * is required while element contributions are generated.
  *
- * Once the partial matrices have been compressed, each of their columns
- * contains sorted row indices. The final global matrix is built by merging the
- * corresponding sorted columns of all worker matrices:
- *
- * 1. A first k-way merge counts the number of unique rows in each output
- *    column.
- * 2. A prefix sum converts those counts into compressed-column offsets.
- * 3. A second k-way merge writes each unique row once and accumulates all
- *    numerical contributions belonging to that row.
- *
- * The implementation uses fixed-size arrays for the current iterator position
- * and end position of every worker column. The configured thread count is
- * therefore limited to 128.
- *
- * Every output column is processed by one OpenMP iteration, giving the worker
- * exclusive access to its range in the final compressed sparse arrays. The
- * merge consequently requires neither locks nor atomic additions.
+ * After compression, merge_sparse_matrices() combines the partial columns
+ * using a two-pointer merge or hierarchical bitmap accumulation. It owns
+ * structural counting, global CSC allocation and numerical accumulation in
+ * input-worker order; this routine retains responsibility for element
+ * evaluation, triplet buffering and optional nodal-force reduction.
  *
  * @tparam Lambda Callable type used to compute element-local matrices.
  *
@@ -256,6 +305,8 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
  * @param nodal_forces Optional global nodal force field. The parallel
  *                     implementation accumulates into thread-local copies and
  *                     reduces them into this field after the element loop.
+ * @param num_threads Worker count, limited to 128 by the assembly dispatcher.
+ * @param min_batch_size Minimum scheduling chunk size for element evaluation.
  *
  * @return Assembled square sparse matrix over all active global DOFs.
  */
@@ -266,10 +317,6 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                                            model::NodeData* nodal_forces,
                                            int num_threads,
                                            std::size_t min_batch_size) {
-    // Use the storage-index type selected by Eigen for direct access to the
-    // compressed sparse matrix arrays.
-    using StorageIndex = typename SparseMatrix::StorageIndex;
-
     // Keep library-level threading suppressed during local assembly and merge,
     // including paths that throw before the final sparse matrix is returned.
     const parallel::ScopedLinearAlgebraThreads threading;
@@ -304,9 +351,20 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
     // Reserve a large triplet batch for each worker. Large batches are
     // periodically inserted into the corresponding partial sparse matrix.
-    constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
+    // try to use 25% of available memory at MAX across all threads.
+    // the initial reserve size is intended to be the batch size at max but fill in approximately twice
+    // the estimated amount of triplets. This accounts for different thread speed and inaccuracies of the counting
+    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
+    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet) * num_threads);
+    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices) / num_threads * 2);
+
+    // if the system is low on memory, error out. 1024 is very conservative here, this happens when there are
+    // less than 16KB per thread available.
+    logging::error(BATCH_SIZE > 1024,
+        "assemble_matrix_multithreaded: insufficient memory for triplet buffers");
+
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        thread_triplets[thread_id].reserve(BATCH_SIZE);
+        thread_triplets[thread_id].reserve(RESERVE);
     }
 
     // Measure the principal assembly and merge phases independently.
@@ -389,8 +447,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
             // associated partial sparse matrix to bound temporary triplet
             // memory.
             if (local_triplets.size() > BATCH_SIZE) {
-                thread_matrices[thread_id].insertFromTriplets(local_triplets.begin(), local_triplets.end());
-                local_triplets.clear();
+                flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
             }
         }, min_batch_size);
     // for_index restores the configured counts when it finishes; the following
@@ -427,13 +484,11 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     }
 
     // Flush the remaining triplets of every worker and compress each partial
-    // matrix. Compression guarantees sorted row indices inside every column,
-    // which is required by the subsequent k-way merge.
+    // matrix. The subsequent reduction reads the compressed CSC arrays
+    // directly; its two-input merge also requires sorted row indices.
 #pragma omp parallel for num_threads(num_threads) schedule(static, 1)
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        thread_matrices[thread_id].insertFromTriplets(thread_triplets[thread_id].begin(),
-                                                      thread_triplets[thread_id].end());
-        thread_triplets[thread_id].clear();
+        flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
         thread_matrices[thread_id].makeCompressed();
     }
 
@@ -445,154 +500,12 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     logging::info(true, "Time for last insertion   : ", timer.elapsed(), " ms");
     timer.start();
 
-    // Store one entry per output column plus the terminal compressed-column
-    // offset. During the first pass, column_offsets[col + 1] temporarily holds
-    // only the number of unique rows in column col.
-    std::vector<Index> column_offsets(global_size + 1, 0);
-
-    // Count unique structural entries by performing an independent k-way merge
-    // of every final column.
-#pragma omp parallel for num_threads(num_threads) schedule(static, 256)
-    for (int col = 0; col < global_size; ++col) {
-        // Current compressed-array position for each worker's copy of this
-        // column.
-        StorageIndex thread_pos[128];
-
-        // One-past-the-end compressed-array position for each worker column.
-        StorageIndex thread_end[128];
-
-        // Initialize every worker iterator from the partial matrix's compressed
-        // outer-index array.
-        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-            thread_pos[thread_id] = thread_matrices[thread_id].outerIndexPtr()[col];
-            thread_end[thread_id] = thread_matrices[thread_id].outerIndexPtr()[col + 1];
-        }
-
-        Index unique_count = 0;
-
-        // Repeatedly select the smallest unprocessed row among all worker
-        // columns until every iterator reaches its end.
-        while (true) {
-            StorageIndex next_row = std::numeric_limits<StorageIndex>::max();
-
-            // Inspect the current row of every non-empty worker sequence and
-            // determine the globally smallest candidate.
-            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-                if (thread_pos[thread_id] < thread_end[thread_id]) {
-                    next_row = std::min(next_row, thread_matrices[thread_id].innerIndexPtr()[thread_pos[thread_id]]);
-                }
-            }
-
-            // The sentinel remains unchanged only when all worker iterators are
-            // exhausted.
-            if (next_row == std::numeric_limits<StorageIndex>::max()) {
-                break;
-            }
-
-            // The selected row contributes exactly one structural nonzero to
-            // the final output column, regardless of how many workers contain
-            // that row.
-            ++unique_count;
-
-            // Advance every worker iterator over all entries matching the
-            // selected row. A compressed sparse column normally contains each
-            // row once, while the loop also safely handles repeated entries.
-            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-                while (thread_pos[thread_id] < thread_end[thread_id] &&
-                       thread_matrices[thread_id].innerIndexPtr()[thread_pos[thread_id]] == next_row) {
-                    ++thread_pos[thread_id];
-                }
-            }
-        }
-
-        // Store the structural count temporarily in the following offset slot.
-        // Each OpenMP iteration writes to a distinct vector entry.
-        column_offsets[col + 1] = unique_count;
-    }
-
-    // Convert the per-column structural counts into cumulative compressed-column
-    // offsets. After this prefix sum, column_offsets[col] is the beginning of
-    // column col in the final inner-index and value arrays.
-    for (int col = 0; col < global_size; ++col) {
-        column_offsets[col + 1] += column_offsets[col];
-    }
-
-    // The terminal offset equals the exact number of nonzero entries required
-    // by the final sparse pattern.
-    const Index total_nonzeros = column_offsets[global_size];
-
-    // Create the final square matrix and allocate exactly the required amount of
-    // compressed sparse storage.
-    SparseMatrix global_matrix(global_size, global_size);
-    global_matrix.makeCompressed();
-    global_matrix.resizeNonZeros(static_cast<Eigen::Index>(total_nonzeros));
-
-    // Obtain direct pointers to Eigen's compressed-column arrays.
-    auto* outer_indices = global_matrix.outerIndexPtr();
-    auto* inner_indices = global_matrix.innerIndexPtr();
-    auto* values        = global_matrix.valuePtr();
-
-    // Repeat the column-wise k-way merge. This pass writes the unique row
-    // pattern and simultaneously sums all values belonging to each row.
-#pragma omp parallel for num_threads(num_threads) schedule(static, 256)
-    for (int col = 0; col < global_size; ++col) {
-        // Locate the disjoint output range owned by this column.
-        const Index start = column_offsets[col];
-        outer_indices[col] = static_cast<StorageIndex>(start);
-
-        StorageIndex thread_pos[128];
-        StorageIndex thread_end[128];
-
-        // Initialize the current and terminal positions of every worker column.
-        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-            thread_pos[thread_id] = thread_matrices[thread_id].outerIndexPtr()[col];
-            thread_end[thread_id] = thread_matrices[thread_id].outerIndexPtr()[col + 1];
-        }
-
-        // Number of unique rows already written into the current final column.
-        Index local = 0;
-
-        while (true) {
-            StorageIndex next_row = std::numeric_limits<StorageIndex>::max();
-
-            // Find the smallest remaining row across all partial columns.
-            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-                if (thread_pos[thread_id] < thread_end[thread_id]) {
-                    next_row = std::min(next_row, thread_matrices[thread_id].innerIndexPtr()[thread_pos[thread_id]]);
-                }
-            }
-
-            // Stop after all worker sequences have been consumed.
-            if (next_row == std::numeric_limits<StorageIndex>::max()) {
-                break;
-            }
-
-            // Accumulate all numerical contributions associated with the
-            // selected row across every worker matrix.
-            Precision value = Precision(0);
-            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-                while (thread_pos[thread_id] < thread_end[thread_id] &&
-                       thread_matrices[thread_id].innerIndexPtr()[thread_pos[thread_id]] == next_row) {
-                    value += thread_matrices[thread_id].valuePtr()[thread_pos[thread_id]];
-                    ++thread_pos[thread_id];
-                }
-            }
-
-            // Write the unique row and its accumulated coefficient into the next
-            // entry of this column's preallocated output range.
-            const Index offset = start + local++;
-            inner_indices[offset] = next_row;
-            values[offset]        = value;
-        }
-    }
-
-    // Complete the compressed-column outer-index array with the terminal offset
-    // following the final column.
-    outer_indices[global_size] = static_cast<StorageIndex>(total_nonzeros);
+    // Merge compressed partial matrices while preserving input-worker order
+    auto global_matrix = merge_sparse_matrices(thread_matrices);
 
     timer.stop();
-    logging::info(true, "Time for k-way merge      : ", timer.elapsed(), " ms");
-    logging::info(true, "Pattern nonzeros          : ", total_nonzeros);
+    logging::info(true, "Time for sparse merge     : ", timer.elapsed(), " ms");
+    logging::info(true, "Pattern nonzeros          : ", global_matrix.nonZeros());
 
     return global_matrix;
 }
@@ -602,8 +515,8 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
  * @brief Selects the serial or OpenMP sparse-matrix assembly implementation.
  *
  * When OpenMP support is unavailable at compile time, the serial implementation
- * is used unconditionally. With OpenMP enabled, the parallel k-way assembly is
- * selected only when more than one worker thread has been configured.
+ * is used unconditionally. With OpenMP enabled, parallel sparse assembly
+ * is selected only when more than one worker thread has been configured.
  *
  * The element collection, global DOF mapping, local-matrix callback and optional
  * nodal force output are forwarded unchanged to the selected implementation.

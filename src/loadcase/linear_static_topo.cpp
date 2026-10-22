@@ -81,7 +81,7 @@ void LinearStaticTopo::run() {
 
     // Assemble direct history and collector-activated conditions from the current model
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(end_time, Precision(1)); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1)); },
         "constructing load matrix (node x 6)"
     );
 
