@@ -570,6 +570,10 @@ SparseMatrix Model::build_stiffness_matrix(
  * Native POINTMASS elements use the same path: their linear spring law produces
  * the matching nodal force and constant tangent directly.
  *
+ * A supplied pattern is reused for regular elements and must match their
+ * connectivity and active DOF numbering. Point elements and changing contact
+ * couplings are assembled separately without modifying the supplied pattern.
+ *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
  *                     force contributions.
@@ -579,17 +583,19 @@ SparseMatrix Model::build_stiffness_matrix(
  * @param base_temperature Base temperature state used for linearization.
  * @param stiffness_scalar Optional one-component element tangent scale.
  * @param update_state Whether element evaluations may write trial constitutive history.
+ * @param pattern Optional compressed sparsity pattern for regular elements.
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
-    SystemDofIds& indices,
-    NodeData&     nodal_forces,
-    const Field&  target_displacement,
-    const Field*  target_temperature,
-    const Field&  base_displacement,
-    const Field*  base_temperature,
-    const Field*  stiffness_scalar,
-    bool          update_state
+    SystemDofIds&       indices,
+    NodeData&           nodal_forces,
+    const Field&        target_displacement,
+    const Field*        target_temperature,
+    const Field&        base_displacement,
+    const Field*        base_temperature,
+    const Field*        stiffness_scalar,
+    bool                update_state,
+    const SparseMatrix* pattern
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "tangent internal force output must use NODE domain");
@@ -633,7 +639,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         _data->elements,
         indices,
         lambda,
-        &nodal_forces
+        &nodal_forces,
+        pattern
     );
 
     if (!_data->point_elements.empty()) {
