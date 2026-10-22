@@ -182,8 +182,8 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
         thermal_elements.end()
     );
 
-    // The common assembler already parallelizes local conductivity evaluation,
-    // triplet generation and column-wise sparse reduction when OpenMP is enabled.
+    // The common assembler builds the connectivity pattern and accumulates
+    // local conductivity matrices atomically when OpenMP workers are active.
     return mattools::assemble_matrix(
         thermal_elements,
         system_dof_ids,

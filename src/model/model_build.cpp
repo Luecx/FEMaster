@@ -16,8 +16,9 @@
  *
  * Element-local matrix evaluation remains the responsibility of each structural
  * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparse triplet accumulation and parallel reduction. Stress and stress
- * resultants needed for geometric or nonlinear operators remain element-local;
+ * sparsity construction, atomic matrix accumulation and nodal force reduction.
+ * Stress and stress resultants needed for geometric or nonlinear operators
+ * remain element-local;
  * model assembly exchanges only displacement, matrices and nodal forces.
  *
  * @see Model
