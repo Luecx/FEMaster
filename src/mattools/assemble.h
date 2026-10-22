@@ -1,561 +1,432 @@
+
 /**
  * @file assemble.h
- * @brief Implements serial and parallel assembly of sparse finite-element system matrices.
+ * @brief Assembles finite-element matrices into a fixed sparse matrix pattern.
  *
- * The functions in this file assemble a square sparse global matrix from
- * element-local matrix contributions. A caller-provided function computes the
- * local matrix of each element using aligned temporary storage supplied by the
- * assembly routine.
+ * Global matrix assembly separates sparsity pattern construction from numerical
+ * element evaluation. The pattern is either constructed from element connectivity
+ * or supplied by the caller for reuse across multiple assembly operations.
  *
- * The serial implementation accumulates local coefficients in a single triplet
- * buffer and periodically inserts completed batches into the global sparse
- * matrix.
+ * Each element callback computes a local matrix using aligned temporary storage.
+ * Local coefficients are mapped to global DOFs and accumulated directly into
+ * the existing compressed-column structure. No sparse insertion, triplet buffers
+ * or structural merging are required.
  *
- * When OpenMP is available, the parallel implementation gives each worker an
- * independent triplet buffer and partial sparse matrix. After local assembly,
- * compressed partial matrices are combined column by column. Two inputs use
- * a sorted two-pointer merge; three or more use a dense row accumulator with
- * a hierarchical occupancy bitmap. The first pass counts unique structural
- * entries. The second writes the compressed sparse pattern and accumulates
- * numerical contributions in ascending input-worker order.
+ * Parallel workers share the global coefficient array and use atomic additions
+ * for overlapping matrix contributions. Optional nodal forces are accumulated
+ * in worker-local fields and reduced after numerical assembly.
  *
- * Each output column is owned by exactly one OpenMP iteration during the final
- * merge. Consequently, the compressed matrix can be filled without locks,
- * atomic operations or intermediate sparse-matrix additions.
+ * Pattern ownership, element evaluation and numerical accumulation remain
+ * independent. The caller retains responsibility for material-state management
+ * and for ensuring that a supplied pattern matches the current system topology.
  *
- * Eigen and MKL internal threading are disabled while the explicit OpenMP
- * element loop is active to avoid nested parallelism. Their configured thread
- * counts are restored before returning.
- *
+ * @see build_sparsity_pattern
  * @see model::Element
- * @see merge_sparse_matrices
+ * @see parallel::for_index
  *
  * @author Finn Eggers
- * @date 28.08.2024
+ * @date 22.10.2026
  */
 
-#include "merge_sparse_matrices.h"
+#pragma once
+
+#include "build_sparsity_pattern.h"
 
 #include "../core/logging.h"
 #include "../core/parallel.h"
-#include "../core/memory.h"
+#include "../core/timer.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
 
 #include <algorithm>
 #include <type_traits>
-
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
+#include <vector>
 
 namespace fem { namespace mattools {
 
 /**
- * Evaluates an element-local matrix and optionally exposes a nodal force field.
+ * Evaluates an element-local matrix with optional nodal force accumulation.
  *
- * Matrix-only assembly callbacks keep the traditional signature
+ * Matrix-only callbacks use the signature
  *
- *     f(element, storage).
+ *     f(element, storage)
  *
- * Nonlinear tangent assembly may instead use
+ * while callbacks also producing nodal forces use
  *
- *     f(element, storage, nodal_forces),
+ *     f(element, storage, nodal_forces).
  *
- * where `nodal_forces` is either the caller-owned serial field or the
- * thread-local force field belonging to the active OpenMP worker.
+ * Compile-time dispatch selects the appropriate callback signature without
+ * runtime branching. The callback returns a local matrix mapped onto the
+ * supplied aligned storage.
  *
- * @param compute_local_matrix Element-local matrix callback.
- * @param element Current element.
- * @param local_matrix_storage Aligned dense matrix storage.
- * @param nodal_forces Optional nodal force output field.
+ * A force-producing callback requires a valid nodal force field. This
+ * requirement is checked by assemble_matrix before numerical assembly.
+ *
+ * @tparam Lambda Element-local matrix callback type.
+ * @param compute_local_matrix Callback evaluating the element matrix.
+ * @param element Current finite element.
+ * @param local_matrix_storage Aligned storage for the local matrix.
+ * @param nodal_forces Optional nodal force accumulation field.
  * @return Element-local matrix mapped onto the supplied storage.
  */
 template<typename Lambda>
 auto compute_local_matrix_with_optional_forces(
-    Lambda&                 compute_local_matrix,
+    Lambda&                  compute_local_matrix,
     const model::ElementPtr& element,
-    Precision*              local_matrix_storage,
-    model::NodeData*        nodal_forces
+    Precision*               local_matrix_storage,
+    model::NodeData*         nodal_forces
 ) {
     if constexpr (std::is_invocable_v<Lambda&, const model::ElementPtr&, Precision*, model::NodeData&>) {
-        logging::error(nodal_forces != nullptr,
-            "Matrix assembly callback requires a nodal force output field");
-
         return compute_local_matrix(element, local_matrix_storage, *nodal_forces);
     } else {
-        (void) nodal_forces;
         return compute_local_matrix(element, local_matrix_storage);
     }
 }
 
 /**
- * Estimate the approximate amount of triplets that occur in the model, counting duplicates.
- * This is used to preallocate triplet arrays per thread. Ideally we collect all triplets and then fill it into
- * the matrices
+ * Assembles a global sparse matrix using a fixed compressed-column pattern.
  *
- * @param elements
- * @return
- */
-inline uint64_t estimate_triplets(const std::vector<model::ElementPtr>& elements, const SystemDofIds& indices) {
-    // total approximate estimated triplets
-    uint64_t sum = 0;
-    // sparsity of this check, the higher, the more approximate.
-    constexpr int sparsity = 16;
-    for (size_t i = 0; i < elements.size(); i += sparsity) {
-        if (elements[i]) {
-            // take the dofs of the first node and assume all other nodes have the same amount of dofs
-            // there are no elements with no nodes, so this is safe
-            ID id1    = elements[i]->nodes()[0];
-            auto dofs = (indices.row(id1).array() >= 0).count();
-            sum += elements[i]->n_nodes() * elements[i]->n_nodes() * dofs * dofs * sparsity;
-        }
-    }
-
-    return sum;
-}
-
-/**
- * @brief Flushes accumulated triplets into a sparse matrix.
+ * The sparsity pattern is either constructed from element connectivity or
+ * copied from an existing matrix supplied by the caller. In both cases,
+ * numerical coefficients are initialized to zero before assembly.
  *
- * Uses Eigen's setFromTriplets() when the matrix is empty, avoiding the
- * additional sparse-matrix merge performed by insertFromTriplets().
- * Subsequent batches are accumulated using insertFromTriplets().
+ * Every non-null element is evaluated exactly once. The local matrix is
+ * assembled into the global system according to
  *
- * Duplicate entries are summed by Eigen. Empty batches are skipped to
- * avoid unnecessary matrix operations.
+ *     K(I_i, I_j) += K_e(i, j),
  *
- * The triplet buffer is cleared after successful insertion while retaining
- * its allocated capacity for reuse.
+ * where I_i and I_j are the global indices of the local element DOFs.
  *
- * @param matrix Sparse matrix receiving the accumulated contributions.
- * @param triplets Triplet buffer to insert and clear.
- */
-inline void flush_triplets(SparseMatrix& matrix, TripletList& triplets) {
-    if (triplets.empty()) {
-        return;
-    }
-
-    if (matrix.nonZeros() == 0) {
-        matrix.setFromTriplets(triplets.begin(), triplets.end());
-    } else {
-        matrix.insertFromTriplets(triplets.begin(), triplets.end());
-    }
-
-    triplets.clear();
-}
-
-/**
- * @brief Assembles a global sparse matrix using a single execution thread.
+ * Local matrices follow node-major ordering. Each element contributes the
+ * first d DOFs of every node, with
  *
- * The routine evaluates the local matrix of every valid element and maps its
- * local rows and columns to active global system DOFs. Matrix entries involving
- * inactive DOFs are omitted.
+ *     d = local_matrix.rows() / element.n_nodes().
  *
- * Local coefficients are collected as sparse triplets. When the triplet buffer
- * exceeds a fixed batch size, the buffered entries are inserted into the global
- * sparse matrix and the buffer is reused. This limits the amount of temporary
- * uncompressed storage required for large models.
+ * Negative global DOF indices are inactive and contribute nothing.
  *
- * The local-matrix callback receives the current element and aligned temporary
- * storage owned by this function. It must return an Eigen-compatible matrix
- * view whose dimensions correspond to the element's active local DOFs. If
- * `nodal_forces` is supplied, the callback may additionally receive that field
- * as a third argument and accumulate element force contributions into it.
+ * Each global coefficient is located by binary search within its sorted CSC
+ * column. Parallel element contributions use atomic additions, while serial
+ * execution updates coefficients without synchronization.
  *
- * @tparam Lambda Callable type used to compute element-local matrices.
+ * A supplied pattern must be compressed and compatible with the element
+ * connectivity and global DOF mapping. Compatibility is a caller precondition
+ * and is not validated in advance. Missing coefficient positions encountered
+ * during assembly are nevertheless reported as errors.
  *
- * @param elements Element collection contributing to the global matrix.
- * @param indices Mapping from node identifiers and local DOFs to active global
- *                system indices. Negative indices identify inactive DOFs.
- * @param compute_local_matrix Callable that computes and returns the local
- *                             matrix of one element.
- * @param nodal_forces Optional nodal force field accumulated by callbacks that
- *                     accept a third argument.
+ * Optional nodal forces are reset before assembly. Parallel callbacks receive
+ * worker-local fields, which are reduced into the caller-owned output field
+ * after all elements have been evaluated.
  *
- * @return Assembled square sparse matrix over all active global DOFs.
- */
-template<typename Lambda>
-SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>& elements,
-                                            const SystemDofIds& indices,
-                                            Lambda&& compute_local_matrix,
-                                            model::NodeData* nodal_forces = nullptr) {
-    // The serial path must also restore linear-algebra threading on return or throw.
-    const parallel::ScopedLinearAlgebraThreads threading;
-
-    // The highest active global DOF index determines the dimension of the
-    // square assembled matrix. Active indices are assumed to be contiguous and
-    // zero-based.
-    int global_size = indices.maxCoeff() + 1;
-
-    // Prepare the optional nodal output field before element force accumulation.
-    if (nodal_forces) {
-        nodal_forces->set_zero();
-    }
-
-    // Collect local contributions as triplets before inserting them into the
-    // global sparse matrix.
-    SparseMatrix global_matrix(global_size, global_size);
-
-    // Flush the triplet buffer after approximately sixteen million entries to
-    // bound peak temporary memory consumption.
-    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
-    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet));
-    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices));
-
-    TripletList triplets{};
-    triplets.reserve(RESERVE);
-
-    // Process all elements in their original storage order.
-    for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
-        const auto& element = elements[elem_idx];
-
-        // Empty element pointers do not contribute to the assembled matrix.
-        if (!element) {
-            continue;
-        }
-
-        // Provide fixed-size cache-line-aligned storage for the local matrix.
-        // The callback must not return a matrix exceeding this capacity.
-        constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
-
-        // Evaluate the current element matrix into the temporary storage.
-        auto local_matrix = compute_local_matrix_with_optional_forces(
-            compute_local_matrix,
-            element,
-            local_matrix_storage,
-            nodal_forces
-        );
-
-        // Determine the element topology and infer the uniform number of local
-        // DOFs associated with each node.
-        int num_nodes         = element->n_nodes();
-        int local_matrix_size = local_matrix.rows();
-        int dofs_per_node     = local_matrix_size / num_nodes;
-
-        // Traverse the local matrix in node-block order and map every
-        // coefficient to a global row and column.
-        for (int i = 0; i < num_nodes; ++i) {
-            for (int j = 0; j < num_nodes; ++j) {
-                for (int idof = 0; idof < dofs_per_node; ++idof) {
-                    for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
-                        // Resolve the active global DOF indices belonging to the
-                        // current local row and column.
-                        int global_row = indices(element->nodes()[i], idof);
-                        int global_col = indices(element->nodes()[j], jdof);
-
-                        // Negative mappings identify DOFs excluded from the
-                        // current algebraic system.
-                        if(global_row < 0 || global_col < 0) {
-                            continue;
-                        }
-
-                        // Read the coefficient at the corresponding local
-                        // node-and-DOF position.
-                        Precision value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
-
-                        // Store the contribution as a sparse triplet. Eigen
-                        // combines duplicate global entries during insertion.
-                        triplets.emplace_back(global_row, global_col, value);
-                    }
-                }
-            }
-        }
-
-        // Periodically insert completed batches into the global matrix to keep
-        // the temporary triplet storage bounded.
-        if (triplets.size() > BATCH_SIZE) {
-            flush_triplets(global_matrix, triplets);
-        }
-    }
-
-    // Insert the final incomplete triplet batch after all elements have been
-    // processed.
-    flush_triplets(global_matrix, triplets);
-
-    return global_matrix;
-}
-
-
-#ifdef _OPENMP
-
-/**
- * @brief Assembles a global sparse matrix using OpenMP and column-wise reduction.
+ * Callbacks must not write beyond the supplied capacity of 128 local DOFs.
+ * Material-state changes made by callbacks remain the caller's responsibility.
  *
- * Element-local matrices are evaluated in parallel. Every worker owns an
- * independent triplet buffer and partial sparse matrix, so no synchronization
- * is required while element contributions are generated.
- *
- * After compression, merge_sparse_matrices() combines the partial columns
- * using a two-pointer merge or hierarchical bitmap accumulation. It owns
- * structural counting, global CSC allocation and numerical accumulation in
- * input-worker order; this routine retains responsibility for element
- * evaluation, triplet buffering and optional nodal-force reduction.
- *
- * @tparam Lambda Callable type used to compute element-local matrices.
- *
- * @param elements Element collection contributing to the global matrix.
- * @param indices Mapping from node identifiers and local DOFs to active global
- *                system indices. Negative indices identify inactive DOFs.
- * @param compute_local_matrix Callable that computes and returns the local
- *                             matrix of one element. When `nodal_forces` is not
- *                             null, it may accept a thread-local nodal force
- *                             field as a third argument.
- * @param nodal_forces Optional global nodal force field. The parallel
- *                     implementation accumulates into thread-local copies and
- *                     reduces them into this field after the element loop.
- * @param num_threads Worker count, limited to 128 by the assembly dispatcher.
- * @param min_batch_size Minimum scheduling chunk size for element evaluation.
- *
- * @return Assembled square sparse matrix over all active global DOFs.
- */
-template<typename Lambda>
-SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>& elements,
-                                           const SystemDofIds& indices,
-                                           Lambda&& compute_local_matrix,
-                                           model::NodeData* nodal_forces,
-                                           int num_threads,
-                                           std::size_t min_batch_size) {
-    // Keep library-level threading suppressed during local assembly and merge,
-    // including paths that throw before the final sparse matrix is returned.
-    const parallel::ScopedLinearAlgebraThreads threading;
-
-    // Read the requested OpenMP worker count and determine the dimension of the
-    // active global system.
-    const int global_size = indices.maxCoeff() + 1;
-
-    // Give every worker an independent sparse matrix and triplet buffer. This
-    // eliminates shared writes during local element assembly.
-    std::vector<SparseMatrix> thread_matrices(num_threads, SparseMatrix(global_size, global_size));
-    std::vector<TripletList>  thread_triplets(num_threads);
-
-    // Optional element force output is accumulated into one nodal field per
-    // worker. This avoids shared writes at nodes connected to elements processed
-    // by different threads.
-    std::vector<model::NodeData> thread_nodal_forces;
-    if (nodal_forces) {
-        nodal_forces->set_zero();
-        thread_nodal_forces.reserve(static_cast<std::size_t>(num_threads));
-
-        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-            thread_nodal_forces.emplace_back(
-                nodal_forces->name,
-                nodal_forces->domain,
-                nodal_forces->rows,
-                nodal_forces->components
-            );
-            thread_nodal_forces.back().set_zero();
-        }
-    }
-
-    // Reserve a large triplet batch for each worker. Large batches are
-    // periodically inserted into the corresponding partial sparse matrix.
-    // try to use 25% of available memory at MAX across all threads.
-    // the initial reserve size is intended to be the batch size at max but fill in approximately twice
-    // the estimated amount of triplets. This accounts for different thread speed and inaccuracies of the counting
-    const size_t MEM_AVAIL  = memory::available_memory_bytes() / 4;
-    const size_t BATCH_SIZE = MEM_AVAIL / (sizeof(Triplet) * num_threads);
-    const size_t RESERVE    = std::min(BATCH_SIZE, estimate_triplets(elements, indices) / num_threads * 2);
-
-    // if the system is low on memory, error out. 1024 is very conservative here, this happens when there are
-    // less than 16KB per thread available.
-    logging::error(BATCH_SIZE > 1024,
-        "assemble_matrix_multithreaded: insufficient memory for triplet buffers");
-
-    for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        thread_triplets[thread_id].reserve(RESERVE);
-    }
-
-    // Measure the principal assembly and merge phases independently.
-    Timer timer;
-    timer.start();
-
-    // Assemble independent elements into their worker-local buffers. The helper
-    // captures worker exceptions and rethrows them on the calling thread.
-    parallel::for_index(elements.size(), num_threads,
-        [&](std::size_t elem_idx, int thread_id) {
-            const auto& element = elements[elem_idx];
-            if (!element) {
-                return;
-            }
-
-            // Select the triplet buffer belonging exclusively to the current
-            // OpenMP worker.
-            auto& local_triplets = thread_triplets[thread_id];
-
-            // Provide aligned fixed-size storage for the local matrix and the
-            // element's mapped global DOF identifiers.
-            constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-            alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE];
-            alignas(64) int       global_dofs[MAX_LOCAL_MATRIX_SIZE];
-
-            // Evaluate the current element matrix into the worker-local
-            // temporary storage.
-            model::NodeData* local_nodal_forces = nodal_forces
-                ? &thread_nodal_forces[static_cast<std::size_t>(thread_id)]
-                : nullptr;
-
-            auto local_matrix = compute_local_matrix_with_optional_forces(
-                compute_local_matrix,
-                element,
-                local_matrix_storage,
-                local_nodal_forces
-            );
-
-            // Infer the complete local algebraic dimension and the uniform
-            // number of DOFs associated with each node.
-            int num_nodes         = element->n_nodes();
-            int local_matrix_size = local_matrix.rows();
-            int dofs_per_node     = local_matrix_size / num_nodes;
-            int local_dof_count   = num_nodes * dofs_per_node;
-
-            // Resolve every local-to-global DOF mapping once per element.
-            // Reusing this compact array avoids repeated map lookups during the
-            // quadratic local-matrix traversal.
-            for (int node = 0; node < num_nodes; ++node) {
-                const ID node_id = element->nodes()[node];
-
-                for (int dof = 0; dof < dofs_per_node; ++dof) {
-                    global_dofs[node * dofs_per_node + dof] = indices(node_id, dof);
-                }
-            }
-
-            // Emit all active local matrix entries into the current worker's
-            // triplet batch.
-            for (int local_row = 0; local_row < local_dof_count; ++local_row) {
-                const int global_row = global_dofs[local_row];
-
-                // Skip the complete local row when its associated DOF is
-                // inactive.
-                if (global_row < 0) {
-                    continue;
-                }
-
-                for (int local_col = 0; local_col < local_dof_count; ++local_col) {
-                    const int global_col = global_dofs[local_col];
-
-                    // Assemble coefficients only when both local indices map to
-                    // active global DOFs.
-                    if (global_col >= 0) {
-                        local_triplets.emplace_back(global_row, global_col, local_matrix(local_row, local_col));
-                    }
-                }
-            }
-
-            // Periodically insert large worker-local batches into the
-            // associated partial sparse matrix to bound temporary triplet
-            // memory.
-            if (local_triplets.size() > BATCH_SIZE) {
-                flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
-            }
-        }, min_batch_size);
-    // for_index restores the configured counts when it finishes; the following
-    // reduction and sparse merge are also explicitly parallel.
-    threading.limit();
-
-    timer.stop();
-
-    logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
-    timer.start();
-
-    // Reduce the optional thread-local force fields back into the caller-owned
-    // field while the partial sparse matrices are still independent.
-    if (nodal_forces) {
-        const Index value_count = nodal_forces->rows * nodal_forces->components;
-        Precision*  target      = nodal_forces->data();
-
-        #pragma omp parallel for num_threads(num_threads) schedule(static, 1024)
-        for (Index value = 0; value < value_count; ++value) {
-            Precision sum = Precision(0);
-
-            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-                sum += thread_nodal_forces[static_cast<std::size_t>(thread_id)].data()[value];
-            }
-
-            target[value] = sum;
-        }
-
-        std::vector<model::NodeData>{}.swap(thread_nodal_forces);
-
-        timer.stop();
-        logging::info(true, "Time for force reduction  : ", timer.elapsed(), " ms");
-        timer.start();
-    }
-
-    // Flush the remaining triplets of every worker and compress each partial
-    // matrix. The subsequent reduction reads the compressed CSC arrays
-    // directly; its two-input merge also requires sorted row indices.
-#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
-    for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
-        flush_triplets(thread_matrices[thread_id], thread_triplets[thread_id]);
-        thread_matrices[thread_id].makeCompressed();
-    }
-
-    // Release the outer collection and all reserved triplet capacities after
-    // the partial matrices have absorbed their final batches.
-    std::vector<TripletList>{}.swap(thread_triplets);
-
-    timer.stop();
-    logging::info(true, "Time for last insertion   : ", timer.elapsed(), " ms");
-    timer.start();
-
-    // Merge compressed partial matrices while preserving input-worker order
-    auto global_matrix = merge_sparse_matrices(thread_matrices);
-
-    timer.stop();
-    logging::info(true, "Time for sparse merge     : ", timer.elapsed(), " ms");
-    logging::info(true, "Pattern nonzeros          : ", global_matrix.nonZeros());
-
-    return global_matrix;
-}
-#endif
-
-/**
- * @brief Selects the serial or OpenMP sparse-matrix assembly implementation.
- *
- * When OpenMP support is unavailable at compile time, the serial implementation
- * is used unconditionally. With OpenMP enabled, parallel sparse assembly
- * is selected only when more than one worker thread has been configured.
- *
- * The element collection, global DOF mapping, local-matrix callback and optional
- * nodal force output are forwarded unchanged to the selected implementation.
- *
- * @tparam Lambda Callable type used to compute element-local matrices.
- *
- * @param elements Element collection contributing to the global matrix.
- * @param indices Mapping from node identifiers and local DOFs to active global
- *                system indices.
- * @param compute_local_matrix Callable that computes and returns one local
- *                             element matrix.
- * @param nodal_forces Optional global nodal force field for callbacks that
- *                     produce internal force contributions.
- *
- * @return Assembled square sparse matrix over all active global DOFs.
+ * @tparam Lambda Element-matrix callback, optionally accepting nodal forces.
+ * @param elements Elements supplying connectivity and callback inputs.
+ * @param indices Node/DOF to global index map.
+ * @param compute_local_matrix Callback evaluating local element matrices.
+ * @param nodal_forces Optional caller-owned nodal force output field.
+ * @param pattern Optional existing CSC pattern, left unchanged.
+ * @return Assembled global matrix with owned compressed sparse storage.
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                              const SystemDofIds& indices,
                              Lambda&& compute_local_matrix,
-                             model::NodeData* nodal_forces = nullptr) {
-#ifndef _OPENMP
-    // OpenMP support is unavailable, so assembly must remain serial.
-    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
-#else
-    // Avoid worker-local sparse matrices for small element batches and systems
-    constexpr std::size_t min_batch_size = 64;
-    const int num_threads = parallel::worker_count(
-        elements.size(), std::min(128, static_cast<int>(global_config.max_threads)), min_batch_size
-    );
+                             model::NodeData* nodal_forces = nullptr,
+                             const SparseMatrix* pattern = nullptr) {
+    const parallel::ScopedLinearAlgebraThreads threading;
 
-    if (num_threads > 1 && indices.maxCoeff() + 1 > 128) {
-        return assemble_matrix_multithreaded(
-            elements, indices, compute_local_matrix, nodal_forces, num_threads, min_batch_size
-        );
+    constexpr std::size_t min_batch_size = 64;
+    constexpr int         capacity       = 128;
+
+    // Select the number of workers according to the number of elements.
+    // Small models remain serial to avoid unnecessary threading overhead.
+    // The same worker count is used for element assembly and force reduction.
+    const int num_threads = parallel::worker_count(
+        elements.size(), static_cast<int>(global_config.max_threads), min_batch_size);
+
+    // ---------------------------------------------------------------------
+    // 1. Validate callback requirements
+    // ---------------------------------------------------------------------
+
+    // A callback accepting a nodal force field requires a valid output pointer.
+    // This is a compile-time property of the callback, so it only needs to be
+    // checked once rather than for every element during numerical assembly.
+    constexpr bool requires_forces =
+        std::is_invocable_v<Lambda&, const model::ElementPtr&, Precision*, model::NodeData&>;
+
+    logging::error(!requires_forces || nodal_forces != nullptr,
+        "Matrix assembly callback requires a nodal force output field");
+    logging::error(pattern == nullptr || pattern->isCompressed(),
+        "Matrix assembly callback requires a compressed sparsity pattern");
+
+    // ---------------------------------------------------------------------
+    // 2. Prepare the global sparse matrix
+    // ---------------------------------------------------------------------
+
+    Timer timer;
+    timer.start();
+
+    // Construct the sparsity pattern from connectivity unless the caller
+    // already provides one. An existing pattern is copied because the
+    // returned matrix must own its coefficients independently.
+    //
+    // Reusing a pattern avoids the topological neighborhood construction,
+    // sorting and structural deduplication performed by build_sparsity_pattern.
+    //
+    // No connectivity validation is repeated here. A supplied pattern is
+    // assumed to match the current element topology and global DOF numbering.
+    SparseMatrix global_matrix = pattern
+        ? *pattern
+        : build_sparsity_pattern(elements, indices);
+
+    // A copied matrix may contain coefficients from an earlier assembly.
+    // Reset its numerical values while retaining the complete CSC structure.
+    // Newly constructed patterns already contain zero-valued coefficients.
+    if (pattern) {
+        std::fill_n(global_matrix.valuePtr(), global_matrix.nonZeros(), Precision(0));
     }
 
-    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
+    threading.limit();
+    timer.stop();
+
+    logging::info(true, "Time for pattern setup     : ", timer.elapsed(), " ms");
+    logging::info(true, "Pattern nonzeros           : ", global_matrix.nonZeros());
+
+    // ---------------------------------------------------------------------
+    // 3. Prepare optional nodal force accumulation
+    // ---------------------------------------------------------------------
+
+    // Matrix coefficients support atomic updates, but the existing nodal
+    // force field interface does not. Parallel callbacks therefore cannot
+    // safely accumulate into the same force field.
+    //
+    // With one worker, the callback writes directly to nodal_forces.
+    // With multiple workers, each worker receives a private field having
+    // the same dimensions and domain as the caller-owned output.
+    std::vector<model::NodeData> thread_nodal_forces;
+
+    if (nodal_forces) {
+        nodal_forces->set_zero();
+
+        if (num_threads > 1) {
+            thread_nodal_forces.reserve(num_threads);
+
+            for (int worker = 0; worker < num_threads; ++worker) {
+                thread_nodal_forces.emplace_back(
+                    nodal_forces->name,
+                    nodal_forces->domain,
+                    nodal_forces->rows,
+                    nodal_forces->components);
+
+                thread_nodal_forces.back().set_zero();
+            }
+        }
+    }
+
+    // Obtain direct access to Eigen's compressed-column storage:
+    //
+    //   outer[j] ... outer[j + 1]   : stored entries of column j
+    //   inner[k]                    : global row index of entry k
+    //   values[k]                   : numerical coefficient of entry k
+    //
+    // The column pointers and row indices remain immutable throughout
+    // numerical assembly. Only the numerical coefficient array is modified.
+    //
+    // Since each column stores sorted row indices, binary search can locate
+    // any admissible matrix coefficient without inserting new entries.
+    const auto* outer = global_matrix.outerIndexPtr();
+    const auto* inner = global_matrix.innerIndexPtr();
+    Precision*  values = global_matrix.valuePtr();
+
+    // ---------------------------------------------------------------------
+    // 4. Evaluate element matrices and assemble global coefficients
+    // ---------------------------------------------------------------------
+
+    timer.start();
+
+    // Elements are evaluated independently. Each worker computes one local
+    // element matrix at a time and scatters its coefficients into the shared
+    // global CSC storage.
+    //
+    // The sparsity pattern remains fixed. Different workers may update the
+    // same coefficient, but never modify the structure of the sparse matrix.
+    parallel::for_index(elements.size(), num_threads, [&](std::size_t e, int worker) {
+        const auto& element = elements[e];
+
+        if (!element) {
+            return;
+        }
+
+        // Provide aligned temporary storage for the element matrix.
+        // The callback may return a matrix view of any supported dimension
+        // up to capacity, but must never write beyond this storage.
+        //
+        // global_dofs maps each local matrix row or column to its global
+        // algebraic index. Negative indices identify inactive DOFs.
+        alignas(64) Precision storage[capacity * capacity];
+        int global_dofs[capacity];
+
+        // Select the appropriate nodal force destination.
+        //
+        // Serial assembly writes directly into the caller's output field.
+        // Parallel assembly uses the field belonging to the current worker,
+        // avoiding races between element callbacks that share mesh nodes.
+        model::NodeData* local_nodal_forces = thread_nodal_forces.empty()
+            ? nodal_forces
+            : &thread_nodal_forces[worker];
+
+        // Evaluate the local matrix exactly once. The callback may also
+        // update material state and accumulate local nodal forces.
+        //
+        // Neither the sparsity pattern nor the numerical assembly algorithm
+        // depends on the element formulation used by this callback.
+        auto local = compute_local_matrix_with_optional_forces(
+            compute_local_matrix, element, storage, local_nodal_forces);
+
+        const int nodes = element->n_nodes();
+        const int size  = static_cast<int>(local.rows());
+
+        // Validate the node-major local matrix layout before constructing
+        // the local-to-global index mapping.
+        //
+        // The matrix must be square, fit the supplied storage and contain
+        // an equal number of local DOFs for every element node.
+        // A zero-dimensional matrix is valid and contributes no coefficients.
+        logging::error(nodes > 0 && size >= 0 && size <= capacity
+                    && local.cols() == size && size % nodes == 0,
+            "Matrix assembly requires a square node-major local matrix of at most 128 DOFs");
+
+        const int dofs_per_node = size / nodes;
+
+        logging::error(dofs_per_node <= indices.cols(),
+            "Matrix assembly local DOF layout exceeds the global mapping");
+
+        // Construct the local-to-global mapping in node-major order:
+        //
+        //   local node 0: DOF 0, DOF 1, ..., DOF d-1
+        //   local node 1: DOF 0, DOF 1, ..., DOF d-1
+        //   ...
+        //
+        // Grouping the mapping by node avoids repeated division and modulo
+        // operations when retrieving the global index of each local DOF.
+        int k = 0;
+
+        for (int node = 0; node < nodes; ++node) {
+            const ID node_id = element->nodes()[node];
+
+            for (int dof = 0; dof < dofs_per_node; ++dof) {
+                global_dofs[k++] = indices(node_id, dof);
+            }
+        }
+
+        // Traverse the local matrix column by column. This follows Eigen's
+        // column-major storage convention and reuses the same global CSC
+        // column range for all entries belonging to one local column.
+        //
+        // Only active global DOFs contribute to the assembled system.
+        for (int j = 0; j < size; ++j) {
+            const int col = global_dofs[j];
+
+            if (col < 0) {
+                continue;
+            }
+
+            // Resolve the contiguous CSC range belonging to this column.
+            // Row indices in this range are sorted in ascending order.
+            const auto* begin = inner + outer[col];
+            const auto* end   = inner + outer[col + 1];
+
+            for (int i = 0; i < size; ++i) {
+                const int row = global_dofs[i];
+
+                if (row < 0) {
+                    continue;
+                }
+
+                // Find the coefficient K(row, col) within the fixed column.
+                //
+                // The conservative connectivity-derived pattern guarantees
+                // that every admissible element coupling already exists.
+                // A supplied pattern must satisfy the same requirement.
+                //
+                // Retain this runtime check even when an existing pattern is
+                // trusted. It detects missing entries before an invalid
+                // coefficient offset can be used for numerical accumulation.
+                const auto* position = std::lower_bound(begin, end, row);
+
+                logging::error(position != end && *position == row,
+                    "Matrix assembly pattern is missing coupling (", row, ", ", col, ")");
+
+                // The position in the global row-index array is also the
+                // position of the corresponding numerical coefficient.
+                // Both arrays have identical ordering and entry counts.
+                const Index     offset = position - inner;
+                const Precision value  = local(i, j);
+
+                // Multiple elements may contribute to the same global
+                // coefficient. Parallel assembly therefore requires atomic
+                // addition to prevent lost updates.
+                //
+                // With a single worker, synchronization is unnecessary.
+                // Both execution paths use the same local-to-global mapping
+                // and accumulate into the same fixed CSC structure.
+                if (num_threads > 1) {
+#ifdef _OPENMP
+                    #pragma omp atomic update
 #endif
+                    values[offset] += value;
+                } else {
+                    values[offset] += value;
+                }
+            }
+        }
+    }, min_batch_size);
+
+    threading.limit();
+    timer.stop();
+
+    logging::info(true, "Time for matrix assembly   : ", timer.elapsed(), " ms");
+
+    // ---------------------------------------------------------------------
+    // 5. Reduce optional worker-local nodal forces
+    // ---------------------------------------------------------------------
+
+    // Numerical matrix assembly is complete at this point.
+    //
+    // If worker-local force fields were created, their contributions must
+    // now be summed into the caller-owned nodal force field:
+    //
+    //   f_global[i] = sum_worker f_worker[i]
+    //
+    // The reduction is parallelized over output entries rather than workers.
+    // Each output entry is therefore written by exactly one worker and does
+    // not require atomic operations or additional synchronization.
+    //
+    // Serial assembly skips this phase because callbacks already accumulated
+    // directly into nodal_forces.
+    if (!thread_nodal_forces.empty()) {
+        timer.start();
+
+        const Index count = static_cast<Index>(nodal_forces->rows) * nodal_forces->components;
+        Precision*  output = nodal_forces->data();
+
+        parallel::for_index(count, num_threads, [&](Index i, int) {
+            Precision sum = Precision(0);
+
+            for (int worker = 0; worker < num_threads; ++worker) {
+                sum += thread_nodal_forces[worker].data()[i];
+            }
+
+            output[i] = sum;
+        });
+
+        timer.stop();
+
+        logging::info(true, "Time for force reduction   : ", timer.elapsed(), " ms");
+    }
+
+    return global_matrix;
 }
 
 } } // namespace fem::mattools
