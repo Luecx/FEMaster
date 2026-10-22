@@ -190,7 +190,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     threading.limit();
     timer.stop();
 
-    logging::info(true, "Time for pattern setup    : ", timer.elapsed(), " ms");
+    logging::info(true, "Time for pattern setup     : ", timer.elapsed(), " ms");
     logging::info(true, "Pattern nonzeros           : ", global_matrix.nonZeros());
 
     // ---------------------------------------------------------------------

@@ -55,7 +55,7 @@ namespace fem { namespace mattools {
  * @return Compressed square sparse matrix with zero-valued coefficients.
  */
 SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elements,
-                                   const SystemDofIds& indices) {
+                                    const SystemDofIds& indices) {
     using StorageIndex = SparseMatrix::StorageIndex;
 
     const parallel::ScopedLinearAlgebraThreads threading{};
