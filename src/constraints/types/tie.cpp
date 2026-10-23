@@ -18,7 +18,11 @@
 #include "tie.h"
 
 #include "../../model/model_data.h"
+#include "../../model/geometry/line/line_interface.h"
+#include "../../model/geometry/surface/surface_interface.h"
 #include "bvh.h"
+
+#include <Eigen/Cholesky>
 
 #include <algorithm>
 #include <array>

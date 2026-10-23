@@ -10,6 +10,8 @@
 #pragma once
 
 #include "equation.h"
+#include "../../core/types_cls.h"
+#include "../../core/types_eig.h"
 #include "../../data/region.h"
 
 namespace fem {

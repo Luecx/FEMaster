@@ -14,13 +14,16 @@
 #pragma once
 
 #include "../core/castable.h"
-#include "../constraints/constraint_groups.h"
-#include "../model/model.h"
-#include "../io/writer/writers.h"
+#include "../core/types_cls.h"
+#include "../core/types_num.h"
 #include "../io/writer/output_request_handler.h"
 
 #include <memory>
 #include <string>
+
+namespace fem::constraint {
+struct ConstraintGroups;
+}
 
 namespace fem {
 namespace loadcase {

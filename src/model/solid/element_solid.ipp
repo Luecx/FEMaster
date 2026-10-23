@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "../../core/assert.h"
+
 #include "../../cos/rectangular_system.h"
 #include "../../section/section_solid.h"
 

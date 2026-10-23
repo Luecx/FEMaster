@@ -18,6 +18,8 @@
 #include "register_functions.h"
 #include "../../dsl/registry.h"
 
+#include <Eigen/Geometry>
+
 #include <array>
 #include <limits>
 #include <memory>

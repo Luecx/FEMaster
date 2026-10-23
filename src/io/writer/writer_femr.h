@@ -1,6 +1,22 @@
+/**
+ * @file writer_femr.h
+ * @brief Declares FEMaster's binary result writer and frame storage interface.
+ *
+ * The FEMR writer serializes model geometry and named result fields using
+ * indexed binary blocks. Frame metadata identifies analysis steps and their
+ * physical or modal values; Field retains ownership of numerical storage and
+ * ModelData supplies topology and entity identifiers.
+ *
+ * Binary encoding and compression are implemented in writer_femr.cpp. This
+ * interface needs field and scalar definitions without solver or GPU utilities.
+ *
+ * @see ModelData
+ * @see Field
+ */
+
 #pragma once
 
-#include "../../core/core.h"
+#include "../../core/types_num.h"
 #include "../../data/field.h"
 #include "writer_step_type.h"
 

@@ -32,7 +32,6 @@
 #include <limits>
 #include <vector>
 
-#include "../../core/core.h"
 #include "../../core/types_eig.h"
 #include "../../core/types_cls.h"
 

@@ -15,11 +15,14 @@
 
 #include "linear_transient.h"
 
+#include "../io/writer/writers.h"
+
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../model/model.h"
 #include "../io/writer/write_mtx.h"
 
 #include <algorithm>

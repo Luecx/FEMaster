@@ -3,7 +3,8 @@
  * @brief Declares the CUDA resource manager and associated helpers.
  *
  * Encapsulates handle creation and destruction for the cuSOLVER, cuBLAS,
- * cuSPARSE, and cuRAND libraries.
+ * cuSPARSE libraries. Numerical matrix types belong to the solver and device
+ * storage wrappers rather than the resource manager.
  *
  * @see src/cuda/cuda.cu
  * @see src/cuda/assert_cuda.h
@@ -15,13 +16,10 @@
 
 #ifdef SUPPORT_GPU
 
-#include "../core/types_cls.h"
-#include "../core/types_num.h"
-#include "../core/types_eig.h"
+#include <cstddef>
 
 #include <cublas_v2.h>
-#include <cuComplex.h>
-#include <curand.h>
+#include <cuda_runtime_api.h>
 #include <cusolverDn.h>
 #include <cusolverSp.h>
 #include <cusparse_v2.h>

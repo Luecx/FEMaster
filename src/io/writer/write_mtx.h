@@ -1,11 +1,21 @@
-// debug_io.h
+/**
+ * @file write_mtx.h
+ * @brief Writes dense and sparse Eigen matrices in Matrix Market format.
+ *
+ * The writer converts dense inputs to sparse storage and emits one-based
+ * coordinate entries after an optional relative cutoff. Numerical assembly
+ * and sparse factorization remain responsibilities of the model and solver;
+ * this diagnostic output utility requires only Eigen's sparse storage module.
+ */
+
 #pragma once
 #include <fstream>
 #include <iomanip>
 #include <limits>
 #include <string>
+#include <stdexcept>
 #include <type_traits>
-#include <Eigen/Sparse>
+#include <Eigen/SparseCore>
 
 namespace fem {
 namespace io {

@@ -26,6 +26,7 @@
 #include "../../core/config.h"
 #include "../../core/logging.h"
 #include "../../model/model_data.h"
+#include "../../model/geometry/surface/surface_interface.h"
 
 #include <algorithm>
 #include <atomic>

@@ -3,7 +3,8 @@
  * @brief Convenience umbrella header for frequently used core utilities.
  *
  * Pulls in assertion helpers, logging, timers, and Eigen type definitions to
- * simplify translation units that rely on the core subsystem.
+ * simplify translation units that rely on the core subsystem. GPU resource
+ * management remains in the CUDA subsystem and is included by its callers.
  *
  * @see src/core/assert.h
  * @see src/core/logging.h
@@ -19,8 +20,3 @@
 #include "timer.h"
 #include "types_num.h"
 #include "types_eig.h"
-
-#ifdef SUPPORT_GPU
-#include "../cuda/assert_cuda.h"
-#include "../cuda/cuda.h"
-#endif

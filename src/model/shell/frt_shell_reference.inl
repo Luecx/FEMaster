@@ -21,6 +21,9 @@
 #include "../../core/logging.h"
 #include "../../math/vec_util.h"
 
+#include <Eigen/Geometry>
+#include <Eigen/LU>
+
 #include <cmath>
 
 namespace fem::model {

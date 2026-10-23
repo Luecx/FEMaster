@@ -20,12 +20,14 @@
 #include "../../material/strain/volume_strain.h"
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"
+#include "../../math/quadrature.h"
 #include "../element/element_structural.h"
 #include "../element/element_thermal.h"
-#include "../geometry/surface/surface.h"
 
 #include <array>
 #include <functional>
+
+#include <Eigen/LU>
 
 namespace fem::model {
 

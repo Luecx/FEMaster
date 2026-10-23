@@ -9,10 +9,12 @@
 
 #ifdef SUPPORT_GPU
 
-#include "cuda.h"
+#include "assert_cuda.h"
+
+#include <cuda_runtime_api.h>
 
 #include <cstdio>
-#include <iostream>
+#include <cstdlib>
 #include <string>
 
 namespace fem {
