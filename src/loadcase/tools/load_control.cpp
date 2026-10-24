@@ -88,35 +88,10 @@ bool LoadControl::solve(
     const Predictor&         predictor,
     const EvaluateResidual&  evaluate_residual
 ) {
-    logging::error(maximum_increments > 0,
-        "LoadControl requires maximum_increments > 0");
     logging::error(maximum_iterations > 0,
         "LoadControl requires maximum_iterations > 0");
     logging::error(tolerance > Precision(0),
         "LoadControl requires tolerance > 0");
-    logging::error(initial_increment > Precision(0),
-        "LoadControl requires initial_increment > 0");
-    logging::error(minimum_increment > Precision(0),
-        "LoadControl requires minimum_increment > 0");
-    logging::error(maximum_increment >= minimum_increment,
-        "LoadControl requires maximum_increment >= minimum_increment");
-    logging::error(initial_increment >= minimum_increment &&
-                   initial_increment <= maximum_increment,
-        "LoadControl requires initial_increment between minimum_increment and maximum_increment");
-    logging::error(growth_factor > Precision(0),
-        "LoadControl requires growth_factor > 0");
-    logging::error(cutback_factor > Precision(0) && cutback_factor < Precision(1),
-        "LoadControl requires cutback_factor between 0 and 1");
-    logging::error(severe_cutback_factor > Precision(0) &&
-                   severe_cutback_factor <= cutback_factor,
-        "LoadControl requires severe_cutback_factor between 0 and cutback_factor");
-    logging::error(fast_iterations > 0,
-        "LoadControl requires fast_iterations > 0");
-    logging::error(slow_iterations >= fast_iterations,
-        "LoadControl requires slow_iterations >= fast_iterations");
-    logging::error(maximum_cutbacks > 0,
-        "LoadControl requires maximum_cutbacks > 0");
-
     logging::error(static_cast<bool>(evaluate),
         "LoadControl requires an evaluate callback");
     logging::error(static_cast<bool>(linear_solve),
@@ -127,8 +102,6 @@ bool LoadControl::solve(
         "LoadControl requires a correction norm callback");
 
     reset_state_();
-
-    Index     cutback_count   = 0;
     Precision lambda_roundoff = Precision(0);
 
     // Newton's residual tolerance is not a permissible error in the final load
@@ -136,9 +109,9 @@ bool LoadControl::solve(
     // amplitude at a different value from A(T_step)=1; the next analysis would
     // then inherit the full nominal load and introduce an artificial jump.
     // Always converge an actual equilibrium at lambda=1 before reporting success.
-    while (lambda < Precision(1) && accepted_increments_ < maximum_increments) {
+    while (lambda < Precision(1) && increment_manager.accepted_increments() < increment_manager.can_attempt()) {
         const Precision remaining = Precision(1) - lambda;
-        const Precision step      = std::min(increment_, remaining);
+        const Precision step      = std::min(increment_manager.increment(), remaining);
 
         // If the proposed endpoint is already within the Newton tolerance,
         // solve at exactly lambda=1 instead of accepting a near-end frame.
@@ -148,8 +121,8 @@ bool LoadControl::solve(
         // rounding does not prevent the last solve without permitting a
         // genuinely larger load increment. Never snap during cutback retries.
         const Precision endpoint_roundoff = Precision(4) * std::numeric_limits<Precision>::epsilon();
-        const bool snap_to_end = cutback_count == 0
-                              && remaining - maximum_increment <= endpoint_roundoff
+        const bool snap_to_end = increment_manager.cutback_count() == 0
+                              && remaining - increment_manager.maximum_increment <= endpoint_roundoff
                               && remaining - step <= tolerance;
 
         // Compensate for rounding in successive additions of the load factor.
@@ -171,7 +144,7 @@ bool LoadControl::solve(
         // Subtracting lambda from target_lambda can lose precision and reject
         // valid fixed increments (e.g. 0.1) due to floating-point roundoff.
         // Only an actual final step to lambda=1 may be below the minimum.
-        if (step < minimum_increment
+        if (step < increment_manager.minimum_increment
             && target_lambda != Precision(1)) {
             failure_reason_ = "MINIMUM_INCREMENT";
             return false;
@@ -232,7 +205,7 @@ bool LoadControl::solve(
                         Time      solve_ms) {
                         if (on_iteration) {
                             on_iteration(
-                                accepted_increments_ + 1,
+                                increment_manager.accepted_increments() + 1,
                                 iteration,
                                 target_lambda,
                                 current_residual_norm,
@@ -296,13 +269,6 @@ bool LoadControl::solve(
                 newton_.last_step_length()
             );
 
-            if (!adaptive) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "FIXED_INCREMENT_FAILED"
-                    : "FIXED_INCREMENT_FAILED: " + attempt_error_message;
-                return false;
-            }
-
             const std::string failure(attempt_failure_reason);
             const bool severe_failure =
                 failure == "DIVERGENCE" ||
@@ -310,34 +276,24 @@ bool LoadControl::solve(
                 failure == "LINE_SEARCH_STAGNATION" ||
                 failure == "ANALYSIS_ERROR";
 
-            // Reduce the increment actually attempted. Endpoint snapping may
-            // have enlarged it beyond increment_, so reducing increment_
-            // directly could repeat the same failed lambda=1 solve.
-            increment_ = attempted_increment * (severe_failure
-                ? severe_cutback_factor : cutback_factor);
-            ++cutback_count;
+            // The manager applies a stronger cutback for serious Newton
+            // failures, checks fixed-increment policy and retry limits, and
+            // retains diagnostics without consuming an accepted increment.
+            if (!increment_manager.reject(
+                    attempted_increment,
+                    severe_failure,
+                    attempt_error_message
+                )) {
+                return false;
+            }
 
             logging::info(
                 true,
                 "Increment rejected at lambda = ",
                 target_lambda,
                 "; reducing increment to ",
-                increment_
+                increment_manager.increment()
             );
-
-            if (increment_ < minimum_increment) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "MINIMUM_INCREMENT"
-                    : "MINIMUM_INCREMENT: " + attempt_error_message;
-                return false;
-            }
-
-            if (cutback_count > maximum_cutbacks) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "MAXIMUM_CUTBACKS"
-                    : "MAXIMUM_CUTBACKS: " + attempt_error_message;
-                return false;
-            }
 
             continue;
         }
@@ -354,34 +310,33 @@ bool LoadControl::solve(
             commit_increment_trial();
         }
 
-        ++accepted_increments_;
-        cutback_count = 0;
+        // Record this converged increment and adapt the next nominal step.
+        // Rejected trials do not advance the accepted-increment counter.
+        increment_manager.accept(newton_.iterations());
 
         if (on_increment) {
             on_increment(
-                accepted_increments_,
+                increment_manager.accepted_increments(),
                 q,
                 lambda
             );
         }
 
-        adapt_increment_();
-
         logging::info(
             true,
             "Accepted increment ",
-            accepted_increments_,
+            increment_manager.accepted_increments(),
             ": lambda = ",
             lambda,
             ", Newton iterations = ",
             newton_.iterations(),
             ", next increment = ",
-            increment_
+            increment_manager.increment()
         );
     }
 
     if (lambda < Precision(1)) {
-        failure_reason_ = "MAXIMUM_INCREMENTS";
+        increment_manager.fail("MAXIMUM_INCREMENTS");
         return false;
     }
 
@@ -389,13 +344,11 @@ bool LoadControl::solve(
 }
 
 const char* LoadControl::failure_reason() const {
-    return failure_reason_.c_str();
+    return increment_manager.failure_reason();
 }
 
 void LoadControl::reset_state_() {
-    accepted_increments_ = 0;
-    increment_           = initial_increment;
-    failure_reason_      = "NONE";
+    increment_manager.reset();
 }
 
 void LoadControl::configure_newton_() {
@@ -408,25 +361,6 @@ void LoadControl::configure_newton_() {
     newton_.begin_line_search_trial    = begin_line_search_trial;
     newton_.commit_line_search_trial   = commit_line_search_trial;
     newton_.rollback_line_search_trial = rollback_line_search_trial;
-}
-
-void LoadControl::adapt_increment_() {
-    if (!adaptive) {
-        increment_ = initial_increment;
-        return;
-    }
-
-    if (newton_.iterations() <= fast_iterations) {
-        increment_ *= growth_factor;
-    } else if (newton_.iterations() >= slow_iterations) {
-        increment_ *= cutback_factor;
-    }
-
-    increment_ = std::clamp(
-        increment_,
-        minimum_increment,
-        maximum_increment
-    );
 }
 
 } // namespace tools
