@@ -304,8 +304,10 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  *
  * Active structural conditions are traversed by family. The parser has already
  * resolved input history and selected named collectors for this analysis.
- * Static procedures ramp nominal initial and target forces; dynamic procedures
- * optionally evaluate the target's named amplitudes.
+ * Conditions shared by both states contribute their nominal force exactly
+ * once. Removed conditions decay linearly, while added conditions follow their
+ * named step-time amplitude (or a linear ramp when none is assigned). Dynamic
+ * callers provide an empty initial state and evaluate target amplitudes at time.
  *
  * Current structural loads write only the six-component RHS. Empty equation,
  * numbering and triplet outputs satisfy the common Condition::apply interface;
@@ -316,13 +318,11 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * @param step_progress Normalized progress for a static load transition.
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
- * @param evaluate_amplitudes Whether to evaluate named amplitudes for dynamic targets.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
-                               Precision time, Precision step_progress,
-                               bool evaluate_amplitudes) {
+                               Precision time, Precision step_progress) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -331,22 +331,39 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
-    // Static callers suppress amplitudes and ramp both nominal contributions.
-    // Dynamic callers evaluate only the time-dependent target state.
+    // Partition each family by pointer identity without creating new load
+    // objects. A shared pointer represents the same physical definition in
+    // both states, so its initial ramp-down and target ramp-up cancel:
+    //
+    //     (1 - lambda) * f + lambda * f = f.
+    //
+    // Assemble this intersection only once at its constant nominal magnitude.
+    // The parser ensures newly activated static amplitudes start at zero and
+    // finish at one so the next step can inherit the nominal load unchanged.
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        // Initial-only definitions are removed linearly. Definitions also
+        // present in the target remain constant, regardless of any amplitude
+        // attached to their original physical definition.
+        for (const auto& condition : initial.get(family)) {
+            const bool      continued = target.contains(family, condition);
+            const Precision scale     = continued
+                ? Precision(1) : Precision(1) - step_progress;
 
-    const auto assemble = [&](const bc::ConditionState& state, bool is_initial) {
-        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
-            for (const auto& condition : state.get(family)) {
-                const Precision scale = is_initial ? Precision(1) - step_progress
-                    : (evaluate_amplitudes && condition->amplitude_
-                        ? condition->amplitude_->evaluate(time) : step_progress);
-                condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
-            }
+            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
-    };
 
-    assemble(initial, true);
-    assemble(target, false);
+        // Target-only definitions are newly activated. Their own amplitude
+        // supplies the step-time multiplier; without one, use the standard
+        // linear ramp. The intersection has already been assembled above.
+        for (const auto& condition : target.get(family)) {
+            if (initial.contains(family, condition)) continue;
+
+            const Precision scale = condition->amplitude_
+                ? condition->amplitude_->evaluate(time) : step_progress;
+
+            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
+        }
+    }
 
     // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
