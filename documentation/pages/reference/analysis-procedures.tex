@@ -190,7 +190,7 @@ The two closing keywords apply to different analysis scopes.
 
 \cmd{STEP} begins an Abaqus-style analysis step. Multiple steps can appear in one deck and are executed consecutively in input order when their respective \cmd{END STEP} is reached. Each step contains exactly one procedure keyword: \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, or \cmd{STEADY STATE DYNAMICS}. The keyword selects the analysis class and the active procedure controls.
 
-\key{NAME} assigns an optional step name. \key{NLGEOM} activates the geometrically nonlinear static procedure when present without a value or set to \val{YES}; \val{NO} and \val{OFF} use linear geometry. \key{INC} sets the positive maximum number of nonlinear increments (default 100). \key{PERTURBATION} selects a linear perturbation step. Static procedures always interpolate nominal loads linearly from the inherited state to the target state, including \cmd{STATIC, RIKS}; any named \cmd{AMPLITUDE} on those loads is ignored. Transient and steady-state dynamic procedures evaluate named amplitudes as time- or frequency-dependent load multipliers.
+\key{NAME} assigns an optional step name. \key{NLGEOM} activates the geometrically nonlinear static procedure when present without a value or set to \val{YES}; \val{NO} and \val{OFF} use linear geometry. \key{INC} sets the positive maximum number of nonlinear increments (default 100). \key{PERTURBATION} selects a linear perturbation step. Static procedures retain unchanged load definitions at their nominal value, ramp removed loads down linearly, and apply added loads using \(A(t)\) from a named \cmd{AMPLITUDE} or a linear ramp by default. Static amplitudes use Step time and must satisfy \(A(0)=0\) and \(A(T_{\mathrm{step}})=1\). New amplitude-driven loads are not supported with \cmd{STATIC, RIKS}. Transient and steady-state dynamic procedures evaluate named amplitudes as time- or frequency-dependent load multipliers.
 
 Abaqus-style \cmd{BOUNDARY}, single-DOF \cmd{CLOAD}, labeled \cmd{DLOAD} and \cmd{DSLOAD} rows update persistent condition histories. Subsequent steps inherit their target values until matching entries are changed with \key{OP=MOD} or the family is reset with \key{OP=NEW}. Unnamed native six-component \cmd{CLOAD} vectors and native \cmd{SUPPORT} vectors instead apply to the active analysis. Explicit \cmd{LOADS} and \cmd{SUPPORTS} selections activate named collectors for the current analysis only. The \cmd{SOLVER} extension may be placed after the procedure card. \cmd{END STEP} executes the current analysis and closes its scope.
 
@@ -291,9 +291,11 @@ K_T\Delta u=-r.
 Without \key{RIKS}, \(\lambda\) is advanced by load control. In a nonlinear
 structural step, any prescribed target temperature acts fully in every
 increment and Newton iteration; unlike the mechanical loads, it is not
-ramped with \(\lambda\). Named load amplitudes are ignored in static steps; their
-nominal forces use the same proportional transition under load control and Riks.
-Temperature changes are not supported with
+ramped with \(\lambda\). Newly activated loads follow their named Step-time
+amplitude, if present, or the linear load factor otherwise. A load carried
+unchanged from the preceding step remains constant; a removed load decreases
+linearly. Riks requires proportional new loading and therefore disallows named
+amplitudes on newly activated loads. Temperature changes are not supported with
 \key{RIKS} in this implementation. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
 
 \key{DIRECT} requests fixed nonlinear load increments rather than adaptive stepping where supported.

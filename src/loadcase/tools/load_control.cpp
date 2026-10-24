@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <limits>
 #include <string>
 
 namespace fem {
@@ -59,8 +60,8 @@ constexpr Index maximum_active_set_updates = 8;
  *
  * @param q Reduced nonlinear unknown vector. On success it contains the final
  *          accepted state. On failure it is restored to the last accepted state.
- * @param lambda Load factor. On success it reaches one within tolerance. On
- *               failure it is restored to the last accepted value.
+ * @param lambda Load factor. On success the final equilibrium is solved at
+ *               exactly one; on failure the last accepted factor is retained.
  * @param evaluate Residual and tangent assembly at a supplied `q` and load
  *                 factor.
  * @param linear_solve Linearized Newton solve returning the correction added to
@@ -127,20 +128,57 @@ bool LoadControl::solve(
 
     reset_state_();
 
-    Index cutback_count = 0;
+    Index     cutback_count   = 0;
+    Precision lambda_roundoff = Precision(0);
 
-    while (lambda < Precision(1) - tolerance &&
-           accepted_increments_ < maximum_increments) {
-        increment_ = std::min(increment_, Precision(1) - lambda);
+    // Newton's residual tolerance is not a permissible error in the final load
+    // factor. A step accepted slightly below lambda=1 could leave a nonlinear
+    // amplitude at a different value from A(T_step)=1; the next analysis would
+    // then inherit the full nominal load and introduce an artificial jump.
+    // Always converge an actual equilibrium at lambda=1 before reporting success.
+    while (lambda < Precision(1) && accepted_increments_ < maximum_increments) {
+        const Precision remaining = Precision(1) - lambda;
+        const Precision step      = std::min(increment_, remaining);
 
-        if (increment_ < minimum_increment) {
+        // If the proposed endpoint is already within the Newton tolerance,
+        // solve at exactly lambda=1 instead of accepting a near-end frame.
+        // Repeated additions can leave lambda slightly below its exact value
+        // (e.g. 0.8999999999999999 after nine steps of 0.1). Allow only a few
+        // machine epsilons when checking the final maximum increment, so this
+        // rounding does not prevent the last solve without permitting a
+        // genuinely larger load increment. Never snap during cutback retries.
+        const Precision endpoint_roundoff = Precision(4) * std::numeric_limits<Precision>::epsilon();
+        const bool snap_to_end = cutback_count == 0
+                              && remaining - maximum_increment <= endpoint_roundoff
+                              && remaining - step <= tolerance;
+
+        // Compensate for rounding in successive additions of the load factor.
+        // Without this correction, many otherwise valid fixed increments can
+        // accumulate enough error to miss lambda=1 and exhaust MAX_INCREMENTS.
+        // The compensation belongs to accepted increments only: failed trials
+        // and cutback retries must start from exactly the same accepted state.
+        const Precision corrected_step = step - lambda_roundoff;
+        const Precision proposed_lambda = lambda + corrected_step;
+        const Precision target_lambda = snap_to_end
+            ? Precision(1) : std::min(proposed_lambda, Precision(1));
+
+        // A snap can enlarge the proposed increment. Ordinary cutbacks must
+        // retain the original step to avoid cancellation in target-lambda
+        // subtraction; snapped cutbacks use the full attempted remainder.
+        const Precision attempted_increment = snap_to_end ? remaining : step;
+
+        // Compare the proposed step directly with the configured minimum.
+        // Subtracting lambda from target_lambda can lose precision and reject
+        // valid fixed increments (e.g. 0.1) due to floating-point roundoff.
+        // Only an actual final step to lambda=1 may be below the minimum.
+        if (step < minimum_increment
+            && target_lambda != Precision(1)) {
             failure_reason_ = "MINIMUM_INCREMENT";
             return false;
         }
 
         const DynamicVector q_accepted      = q;
         const Precision     lambda_accepted = lambda;
-        const Precision     target_lambda   = lambda + increment_;
 
         bool        converged              = false;
         const char* attempt_failure_reason = "NONE";
@@ -272,9 +310,11 @@ bool LoadControl::solve(
                 failure == "LINE_SEARCH_STAGNATION" ||
                 failure == "ANALYSIS_ERROR";
 
-            increment_ *= severe_failure
-                ? severe_cutback_factor
-                : cutback_factor;
+            // Reduce the increment actually attempted. Endpoint snapping may
+            // have enlarged it beyond increment_, so reducing increment_
+            // directly could repeat the same failed lambda=1 solve.
+            increment_ = attempted_increment * (severe_failure
+                ? severe_cutback_factor : cutback_factor);
             ++cutback_count;
 
             logging::info(
@@ -302,6 +342,12 @@ bool LoadControl::solve(
             continue;
         }
 
+        // Kahan compensation stores the rounding error in the accepted
+        // addition. Do not update it on failed trials, and clear it once the
+        // exact endpoint has been reached.
+        lambda_roundoff = target_lambda == Precision(1)
+            ? Precision(0)
+            : (target_lambda - lambda_accepted) - corrected_step;
         lambda = target_lambda;
 
         if (commit_increment_trial) {
@@ -334,7 +380,7 @@ bool LoadControl::solve(
         );
     }
 
-    if (lambda < Precision(1) - tolerance) {
+    if (lambda < Precision(1)) {
         failure_reason_ = "MAXIMUM_INCREMENTS";
         return false;
     }

@@ -193,12 +193,12 @@ struct Model {
     SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
     constraint::Equations collect_thermal_constraints(const bc::ConditionState& target);
 
-    // Structural loading interpolates the initial and target condition states.
-    // Supports are assembled from the target state only.
+    // Structural loads shared by both states remain constant; removed loads
+    // ramp down and newly activated loads follow their amplitude or a linear
+    // ramp. Supports are assembled from the target state only.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
-                            Precision time, Precision step_progress,
-                            bool evaluate_amplitudes = false);
+                            Precision time, Precision step_progress);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
