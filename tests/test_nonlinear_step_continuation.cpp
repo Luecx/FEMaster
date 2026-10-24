@@ -4,13 +4,16 @@
  */
 
 #include "../src/io/reader/parser.h"
+#include "../src/loadcase/tools/load_control.h"
 #include "../src/model/model.h"
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 
 using namespace fem;
@@ -194,6 +197,66 @@ TEST(NonlinearContinuation, EndpointSnapRespectsMaximumIncrement) {
 2, 1, 1000.
 *END STEP
 )", Precision(0), true);
+}
+
+TEST(NonlinearContinuation, FixedTenthsReachExactEndpoint) {
+    // Ten fixed increments of 0.1 can accumulate lambda=0.8999999999999999
+    // after the ninth increment. The last target must still snap to exactly
+    // one despite the rounded remainder marginally exceeding MAX_INCREMENT.
+    run_continuation("FIXED_TENTHS", R"(*STEP, NAME=ENDPOINT, NLGEOM=YES, INC=10
+*STATIC, DIRECT
+0.1, 1., 0.1, 0.1
+*CLOAD
+2, 1, 1000.
+*END STEP
+)", Precision(0.047616));
+}
+
+TEST(LoadControl, CutbackUsesUnroundedProposedIncrement) {
+    loadcase::tools::LoadControl control;
+    control.maximum_increments       = 12;
+    control.initial_increment        = Precision(0.2);
+    control.minimum_increment        = Precision(0.1);
+    control.maximum_increment        = Precision(0.2);
+    control.growth_factor            = Precision(1);
+    control.cutback_factor           = Precision(0.5);
+    control.severe_cutback_factor    = Precision(0.5);
+
+    DynamicVector q = DynamicVector::Zero(1);
+    Precision     lambda = Precision(0);
+    bool          rejected_once = false;
+
+    // Force one retry near lambda=0.8 after three accepted increments.
+    // For an unsnapped attempt, the cutback must use the proposed 0.2
+    // rather than 0.8 - 0.6000000000000001, which would round 0.1
+    // slightly below MINIMUM_INCREMENT and incorrectly abort.
+    const bool converged = control.solve(
+        q, lambda,
+        [&](const DynamicVector& state, Precision target, DynamicVector& residual, SparseMatrix& tangent) {
+            if (!rejected_once && std::abs(target - Precision(0.8)) < Precision(1e-5)) {
+                rejected_once = true;
+                throw std::runtime_error("Deliberate cutback regression");
+            }
+
+            residual = DynamicVector::Constant(1, target - state(0));
+            tangent.resize(1, 1);
+            tangent.setIdentity();
+        },
+        [](const SparseMatrix&, const DynamicVector& residual) -> DynamicVector {
+            return residual;
+        },
+        [](const DynamicVector& residual, Precision) -> Precision {
+            return residual.norm();
+        },
+        [](const DynamicVector&, const DynamicVector& correction) -> Precision {
+            return correction.norm();
+        }
+    );
+
+    EXPECT_TRUE(rejected_once);
+    EXPECT_TRUE(converged);
+    EXPECT_EQ(lambda, Precision(1));
+    EXPECT_NEAR(q(0), Precision(1), Precision(1e-5));
 }
 
 TEST(NonlinearContinuation, RejectsIncompleteStaticAmplitudeRamp) {
