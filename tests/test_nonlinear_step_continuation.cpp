@@ -1,6 +1,6 @@
 /**
  * @file test_nonlinear_step_continuation.cpp
- * @brief Regression tests for nonlinear step continuation and amplitude-independent statics.
+ * @brief Regression tests for nonlinear continuation and static load amplitudes.
  */
 
 #include "../src/io/reader/parser.h"
@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,7 +22,8 @@ namespace {
 // Newton evaluation of the continuation step with a zero load derivative.
 void run_continuation(const std::string& label,
                       const std::string& steps,
-                      Precision          expected_displacement) {
+                      Precision          expected_displacement,
+                      bool               expect_failure = false) {
     const std::string base = "tests/TMP_NONLINEAR_CONTINUATION_" + label;
     const std::string input_path = base + ".inp";
 
@@ -56,6 +58,14 @@ void run_continuation(const std::string& label,
     }
 
     io::reader::Parser parser;
+
+    // Invalid load histories must fail before any nonlinear solve. The same
+    // helper exercises both successful continuation and rejected step input.
+    if (expect_failure) {
+        EXPECT_THROW(parser.run(input_path, base + ".res"), std::exception);
+        return;
+    }
+
     ASSERT_NO_THROW(parser.run(input_path, base + ".res"));
 
     const auto& data = *parser.model()._data;
@@ -127,9 +137,9 @@ U, CF
 )", Precision(0.071421));
 }
 
-TEST(NonlinearContinuation, RiksIgnoresInitialAndTargetAmplitudes) {
+TEST(NonlinearContinuation, RiksRejectsNewStaticAmplitude) {
     run_continuation("RIKS_AMPLITUDE", R"(*AMPLITUDE, NAME=PULSE
-0., 2., 1., 0.
+0., 0., 1., 1.
 *STEP, NAME=PRELOAD, NLGEOM=YES, INC=40
 *STATIC
 0.25, 1., 1.e-5, 0.25
@@ -142,7 +152,7 @@ TEST(NonlinearContinuation, RiksIgnoresInitialAndTargetAmplitudes) {
 *CLOAD, OP=MOD, AMPLITUDE=PULSE
 2, 1, 1500.
 *END STEP
-)", Precision(0.071421));
+)", Precision(0), true);
 }
 
 TEST(NonlinearContinuation, ReactionOnlyStartLoadsDoNotRelaxNewtonTolerance) {
