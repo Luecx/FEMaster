@@ -562,8 +562,11 @@ void Parser::end_loadcase() {
         }
     }
 
-    // Static solvers ramp nominal load values; named amplitudes are reserved for
-    // transient and harmonic analyses. Warn once per step, not per Newton trial.
+    // Static amplitudes describe the path of newly activated loads only.
+    // The two-state intersection keeps unchanged loads constant; removed loads
+    // decay from their nominal value. Require a zero-to-one history for added
+    // loads so that their final physical magnitude can be carried into the
+    // following step without storing a separate per-condition end factor.
     const std::string analysis_type = loadcase->type_name();
     const bool static_analysis =
         analysis_type == "LINEARSTATIC" ||
@@ -572,16 +575,37 @@ void Parser::end_loadcase() {
         analysis_type == "LINEARBUCKLING";
 
     if (static_analysis) {
-        bool ignored_amplitude = false;
+        const auto* linear    = loadcase->as<loadcase::LinearStatic>();
+        const auto* nonlinear = loadcase->as<loadcase::NonlinearStatic>();
+
+        const Precision step_period = nonlinear ? nonlinear->step_period
+                                    : linear    ? linear->step_period : Precision(1);
+        const bool arc_length = nonlinear && nonlinear->control == loadcase::NonlinearControl::ArcLength;
+        const Precision tolerance = Precision(1e-10);
+
         for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
-            for (const auto* state : {&loadcase->initial_conditions, &loadcase->target_conditions}) {
-                for (const auto& condition : state->get(family)) {
-                    ignored_amplitude |= condition->amplitude_ != nullptr;
-                }
+            for (const auto& condition : loadcase->target_conditions.get(family)) {
+                // Only target-only definitions need a new amplitude evaluation.
+                // Shared pointers identify continued loads without modifying
+                // the reusable definitions or their collector ownership.
+                if (loadcase->initial_conditions.contains(family, condition)
+                    || !condition->amplitude_) continue;
+
+                // Riks assumes a proportional load vector with a constant
+                // derivative with respect to the arc-length load parameter.
+                logging::error(!arc_length,
+                    "NONLINEARSTATIC RIKS does not support newly activated load AMPLITUDE");
+
+                const Precision start = condition->amplitude_->evaluate(Precision(0));
+                const Precision end   = condition->amplitude_->evaluate(step_period);
+
+                logging::error(std::isfinite(start) && std::isfinite(end)
+                            && std::abs(start) <= tolerance
+                            && std::abs(end - Precision(1)) <= tolerance,
+                    "Static load AMPLITUDE ", condition->amplitude_->name,
+                    " must satisfy A(0)=0 and A(STEP PERIOD)=1");
             }
         }
-        logging::warning(!ignored_amplitude,
-            "Static analysis ignores load AMPLITUDE; using linear step ramps");
     }
 
     // Restore the reference configuration for independent analyses and validate
