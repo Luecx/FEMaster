@@ -150,9 +150,9 @@ bool LoadControl::solve(
             ? Precision(1) : lambda + step;
         const Precision attempted_increment = target_lambda - lambda;
 
-        // The very last remainder is allowed below the configured minimum,
-        // since rejecting it would prevent reaching the exact endpoint. Do
-        // not relax the minimum for ordinary steps or cutback retries.
+        // The last remainder may be smaller than minimum_increment only if
+        // this attempt actually reaches lambda=1. Ordinary intermediate
+        // increments still honor the configured minimum, including cutbacks.
         if (attempted_increment < minimum_increment
             && target_lambda != Precision(1)) {
             failure_reason_ = "MINIMUM_INCREMENT";
