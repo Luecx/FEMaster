@@ -120,13 +120,13 @@ TEST(Reader_Parser, RejectsStepAmplitudeModes) {
     std::filesystem::remove(path);
 }
 
-TEST(Reader_Parser, LinearStaticIgnoresNamedAmplitudeAtStepEnd) {
+TEST(Reader_Parser, LinearStaticUsesNamedAmplitudeAtStepTime) {
     const std::string path = "tests/TMP_LINEAR_STATIC_AMPLITUDE.INP";
     {
         std::ofstream out(path);
         ASSERT_TRUE(out.is_open());
         out << "*AMPLITUDE, NAME=CURVE\n";
-        out << "0.0, 2.0, 2.5, 0.0\n";
+        out << "0.0, 0.0, 1.25, 0.25, 2.5, 1.0\n";
         out << "*STEP\n*STATIC\n0.25, 2.5\n*END STEP\n";
     }
 
@@ -163,12 +163,16 @@ TEST(Reader_Parser, LinearStaticIgnoresNamedAmplitudeAtStepEnd) {
         const auto at_start = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
             Precision(0), Precision(0));
+        const auto at_middle = parser.model().build_load_matrix(
+            active->initial_conditions, active->target_conditions,
+            linear->step_period / Precision(2), Precision(0.5));
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
             linear->step_period, Precision(1));
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
+        EXPECT_DOUBLE_EQ(at_middle(node_id, 2), Precision(-250));
         EXPECT_DOUBLE_EQ(at_end(node_id, 2), Precision(-1000));
     }
 
