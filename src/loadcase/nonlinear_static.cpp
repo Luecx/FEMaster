@@ -880,18 +880,22 @@ void NonlinearStatic::run() {
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
 
-        load_control.maximum_increments = configured_max_increments;
         load_control.maximum_iterations = configured_max_iterations;
         load_control.tolerance          = tolerance;
-        load_control.initial_increment  = initial_increment;
-        load_control.minimum_increment  = minimum_increment;
-        load_control.maximum_increment  = maximum_increment;
-        load_control.growth_factor      = growth_factor;
-        load_control.cutback_factor     = cutback_factor;
-        load_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        load_control.slow_iterations    = configured_slow_iterations;
-        load_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
-        load_control.adaptive           = adaptive_increments;
+
+        // Share increment limits, adaptive growth and retry diagnostics with
+        // arc-length control while leaving load-factor targets in LoadControl.
+        auto& increments = load_control.increment_manager;
+        increments.maximum_increments = configured_max_increments;
+        increments.initial_increment  = initial_increment;
+        increments.minimum_increment  = minimum_increment;
+        increments.maximum_increment  = maximum_increment;
+        increments.growth_factor      = growth_factor;
+        increments.cutback_factor     = cutback_factor;
+        increments.fast_iterations    = static_cast<Index>(fast_iterations);
+        increments.slow_iterations    = configured_slow_iterations;
+        increments.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
+        increments.adaptive           = adaptive_increments;
 
         load_control.begin_increment_trial    = begin_increment_trial;
         load_control.commit_increment_trial   = commit_increment_trial;
@@ -920,19 +924,24 @@ void NonlinearStatic::run() {
     } else {
         tools::ArcLengthControl arc_length_control;
 
-        arc_length_control.maximum_increments = configured_max_increments;
         arc_length_control.maximum_iterations = configured_max_iterations;
         arc_length_control.tolerance          = tolerance;
-        arc_length_control.initial_increment  = initial_increment;
-        arc_length_control.minimum_increment  = minimum_increment;
-        arc_length_control.maximum_increment  = maximum_increment;
         arc_length_control.psi                = arc_length_psi;
-        arc_length_control.growth_factor      = growth_factor;
-        arc_length_control.cutback_factor     = cutback_factor;
-        arc_length_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        arc_length_control.slow_iterations    = configured_slow_iterations;
-        arc_length_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
-        arc_length_control.adaptive           = adaptive_increments;
+
+        // Arc-length increments represent path radii rather than load-factor
+        // changes. The shared manager controls only their magnitude and retries.
+        auto& increments = arc_length_control.increment_manager;
+        increments.maximum_increments    = configured_max_increments;
+        increments.initial_increment     = initial_increment;
+        increments.minimum_increment     = minimum_increment;
+        increments.maximum_increment     = maximum_increment;
+        increments.growth_factor         = growth_factor;
+        increments.cutback_factor        = cutback_factor;
+        increments.severe_cutback_factor = cutback_factor;
+        increments.fast_iterations       = static_cast<Index>(fast_iterations);
+        increments.slow_iterations       = configured_slow_iterations;
+        increments.maximum_cutbacks      = static_cast<Index>(maximum_cutbacks);
+        increments.adaptive              = adaptive_increments;
 
         arc_length_control.begin_increment_trial    = begin_increment_trial;
         arc_length_control.commit_increment_trial   = commit_increment_trial;
