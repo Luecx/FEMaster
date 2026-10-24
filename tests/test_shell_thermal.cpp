@@ -313,6 +313,104 @@ TEST(ShellThermal, S4Integrated) {
     );
 }
 
+/**
+ * Verifies the unchanged-temperature stress-recovery fast path.
+ *
+ * Sharing the temperature field must produce the same stress/strain and face
+ * stresses as independent fields containing identical nodal temperatures.
+ * Null temperature fields are equivalent to explicitly prescribing the
+ * material's stress-free temperature. A real temperature jump must still
+ * use the full thermomechanical recovery.
+ */
+TEST(ShellThermal, StressRecoveryUnchangedTemperature) {
+    using namespace fem;
+
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_element<model::FRTShellS4>(0, 0, 1, 2, 3);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::IsotropicElasticity>(1000.0, 0.25);
+    material->set_thermal_expansion(0.01);
+    material->set_thermal_zero_temperature(20.0);
+    model.add_material(material);
+
+    const auto region = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(std::make_shared<IntegratedShellSection>(
+        material, region, 0.2, nullptr
+    ));
+    model.compile();
+    model.step_begin();
+
+    // Exercise nonzero displacement and a nonuniform initial temperature.
+    model::Field displacement{"DISPLACEMENT", model::FieldDomain::NODE, 4, 6};
+    model::Field base_temperature{"BASE_TEMP", model::FieldDomain::NODE, 4, 1};
+    model::Field copied_temperature{"COPIED_TEMP", model::FieldDomain::NODE, 4, 1};
+    model::Field reference_temperature{"REF_TEMP", model::FieldDomain::NODE, 4, 1};
+    model::Field hotter_temperature{"HOTTER_TEMP", model::FieldDomain::NODE, 4, 1};
+
+    displacement.set_zero();
+    for (Index node = 0; node < 4; ++node) {
+        displacement(node, 0) = Precision(0.002) * node;
+        displacement(node, 1) = Precision(-0.001) * node;
+        displacement(node, 5) = Precision(0.0003) * node;
+
+        base_temperature(node, 0)      = Precision(35) + node;
+        copied_temperature(node, 0)    = base_temperature(node, 0);
+        reference_temperature(node, 0) = Precision(20);
+        hotter_temperature(node, 0)    = base_temperature(node, 0) + Precision(4);
+    }
+
+    // Independent temperature fields with equal values must agree with the
+    // single-field fast path, including the two through-thickness faces.
+    const auto [same_stress, same_strain] = model.compute_stress_nodal(
+        displacement, &base_temperature, nullptr, &base_temperature);
+    const auto [copy_stress, copy_strain] = model.compute_stress_nodal(
+        displacement, &copied_temperature, nullptr, &base_temperature);
+
+    const auto [same_top, same_bot] = model.compute_stress_top_bot(
+        displacement, &base_temperature, nullptr, &base_temperature);
+    const auto [copy_top, copy_bot] = model.compute_stress_top_bot(
+        displacement, &copied_temperature, nullptr, &base_temperature);
+
+    const auto check_equal = [](const model::Field& lhs, const model::Field& rhs) {
+        ASSERT_EQ(lhs.rows, rhs.rows);
+        ASSERT_EQ(lhs.components, rhs.components);
+        for (Index node = 0; node < lhs.rows; ++node) {
+            for (Index component = 0; component < lhs.components; ++component) {
+                EXPECT_NEAR(lhs(node, component), rhs(node, component), Precision(1e-8))
+                    << "node=" << node << ", component=" << component;
+            }
+        }
+    };
+
+    check_equal(same_stress, copy_stress);
+    check_equal(same_strain, copy_strain);
+    check_equal(same_top, copy_top);
+    check_equal(same_bot, copy_bot);
+
+    // Null fields represent the same thermal strain as a field uniformly at
+    // the material stress-free temperature and must recover the same result.
+    const auto [null_stress, null_strain] = model.compute_stress_nodal(
+        displacement, nullptr, nullptr, nullptr);
+    const auto [ref_stress, ref_strain] = model.compute_stress_nodal(
+        displacement, &reference_temperature, nullptr, &reference_temperature);
+    check_equal(null_stress, ref_stress);
+    check_equal(null_strain, ref_strain);
+
+    // A real target-temperature change must remain observable rather than
+    // falling through the unchanged-temperature shortcut.
+    const auto [hot_stress, hot_strain] = model.compute_stress_nodal(
+        displacement, &hotter_temperature, nullptr, &base_temperature);
+    EXPECT_GT(std::abs(hot_stress(0, 0) - same_stress(0, 0)), Precision(1));
+    (void) hot_strain;
+
+    model.step_end();
+}
+
 TEST(ShellThermal, S6Integrated) {
     check_uniform_thermal_load<fem::model::FRTShellS6, 6>(
         {fem::Vec3(0, 0, 0), fem::Vec3(1, 0, 0), fem::Vec3(0, 1, 0),
