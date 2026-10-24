@@ -128,7 +128,7 @@ bool LoadControl::solve(
 
     reset_state_();
 
-    Index     cutback_count  = 0;
+    Index     cutback_count   = 0;
     Precision lambda_roundoff = Precision(0);
 
     // Newton's residual tolerance is not a permissible error in the final load
