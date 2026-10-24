@@ -214,11 +214,11 @@ TEST(NonlinearContinuation, FixedTenthsReachExactEndpoint) {
 
 TEST(LoadControl, EightyFixedIncrementsReachExactEndpoint) {
     loadcase::tools::LoadControl control;
-    control.maximum_increments = 80;
-    control.initial_increment  = Precision(0.0125);
-    control.minimum_increment  = Precision(0.0125);
-    control.maximum_increment  = Precision(0.0125);
-    control.adaptive           = false;
+    control.increment_manager.maximum_increments = 80;
+    control.increment_manager.initial_increment  = Precision(0.0125);
+    control.increment_manager.minimum_increment  = Precision(0.0125);
+    control.increment_manager.maximum_increment  = Precision(0.0125);
+    control.increment_manager.adaptive           = false;
 
     DynamicVector q = DynamicVector::Zero(1);
     Precision     lambda = Precision(0);
@@ -258,13 +258,13 @@ TEST(LoadControl, EightyFixedIncrementsReachExactEndpoint) {
 
 TEST(LoadControl, CutbackUsesUnroundedProposedIncrement) {
     loadcase::tools::LoadControl control;
-    control.maximum_increments       = 12;
-    control.initial_increment        = Precision(0.2);
-    control.minimum_increment        = Precision(0.1);
-    control.maximum_increment        = Precision(0.2);
-    control.growth_factor            = Precision(1);
-    control.cutback_factor           = Precision(0.5);
-    control.severe_cutback_factor    = Precision(0.5);
+    control.increment_manager.maximum_increments       = 12;
+    control.increment_manager.initial_increment        = Precision(0.2);
+    control.increment_manager.minimum_increment        = Precision(0.1);
+    control.increment_manager.maximum_increment        = Precision(0.2);
+    control.increment_manager.growth_factor            = Precision(1);
+    control.increment_manager.cutback_factor           = Precision(0.5);
+    control.increment_manager.severe_cutback_factor    = Precision(0.5);
 
     DynamicVector q = DynamicVector::Zero(1);
     Precision     lambda = Precision(0);

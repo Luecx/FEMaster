@@ -7,24 +7,25 @@
  * This allows the nonlinear solver to follow equilibrium paths whose load
  * factor is not monotonic, such as snap-through or post-buckling responses.
  *
- * The class owns only the scalar path constraint, increment radius management,
- * cutback/growth decisions, active-set restarts and callback wiring. Residual
- * assembly, tangent assembly, constraint projection, sparse solves, convergence
- * measures and result writing remain responsibilities of the owning load case.
+ * The controller owns the augmented path constraint, load-factor correction,
+ * predictor direction, final-path adjustment and active-set restarts.
+ * NonlinearIncrementManager owns common increment limits, growth and cutbacks.
+ * Residual assembly, sparse solves and output remain with the load case.
  *
  * Increment trial callbacks protect stateful nonlinear subsystems across failed
  * path increments and cutbacks.
  *
  * @see ArcLengthControl
+ * @see NonlinearIncrementManager
  * @see NewtonSolver
  */
 
 #pragma once
 
 #include "newton_solver.h"
+#include "nonlinear_increment_manager.h"
 
 #include <functional>
-#include <string>
 
 namespace fem {
 namespace loadcase {
@@ -124,8 +125,44 @@ public:
     )>;
 
 public:
+    // Shared nonlinear increment scheduling, bounds and convergence adaptation
+    NonlinearIncrementManager increment_manager;
+
+    // Newton settings and arc-length weighting
+    Index     maximum_iterations = 20;
+    Precision tolerance          = Precision(1e-8);
+    Precision psi                = Precision(1.0);
+
+    // Complete attempted-increment transaction owned by the load case
+    TrialCallback begin_increment_trial;
+    TrialCallback commit_increment_trial;
+    TrialCallback rollback_increment_trial;
+
+    // Optional active-set consistency update after Newton convergence
+    ActiveSetCallback update_active_set;
+
+private:
+    // Newton iteration machinery and last accepted equilibrium path state
+    NewtonSolver newton_;
+
+    DynamicVector q_accepted_;
+    Precision     lambda_accepted_ = Precision(0);
+
+    DynamicVector previous_delta_q_;
+    Precision     previous_delta_lambda_ = Precision(1);
+
+    // Arc-length geometry and final-path correction remain strategy-specific
+    Precision load_scale2_  = Precision(0);
+    Precision radius_scale_ = Precision(0);
+    Precision arc_radius_   = Precision(0);
+
+    bool adjusting_final_step_ = false;
+
+public:
+    // Construction
     ArcLengthControl() = default;
 
+    // Follow the nonlinear path using the augmented arc-length constraint
     bool solve(
         DynamicVector&           q,
         Precision&               lambda,
@@ -141,65 +178,12 @@ public:
 
     const char* failure_reason() const;
 
-public:
-    // Nonlinear increment and Newton limits
-    Index maximum_increments = 100;
-    Index maximum_iterations = 20;
-
-    // Arc-length increment range, residual tolerance and load-factor weighting
-    Precision tolerance         = Precision(1e-8);
-    Precision initial_increment = Precision(0.1);
-    Precision minimum_increment = Precision(1e-4);
-    Precision maximum_increment = Precision(1.0);
-    Precision psi               = Precision(1.0);
-
-    // Adaptive increment controls
-    Precision growth_factor     = Precision(1.5);
-    Precision cutback_factor    = Precision(0.5);
-
-    Index fast_iterations       = 6;
-    Index slow_iterations       = 10;
-    Index maximum_cutbacks      = 20;
-
-    bool adaptive               = true;
-
-    // Complete attempted-increment transaction
-    TrialCallback begin_increment_trial;
-    TrialCallback commit_increment_trial;
-    TrialCallback rollback_increment_trial;
-
-    // Optional discontinuous-state update after Newton convergence
-    ActiveSetCallback update_active_set;
-
 private:
+    // Newton and spherical arc-constraint operations
     void reset_state_();
     void configure_newton_();
-    void adapt_increment_();
 
-    Precision arc_constraint_norm_(
-        const DynamicVector& q,
-        Precision            lambda
-    ) const;
-
-private:
-    NewtonSolver newton_;
-
-    Index     accepted_increments_ = 0;
-    Precision increment_           = Precision(0);
-
-    DynamicVector q_accepted_;
-    Precision     lambda_accepted_ = Precision(0);
-
-    DynamicVector previous_delta_q_;
-    Precision     previous_delta_lambda_ = Precision(1);
-
-    Precision load_scale2_  = Precision(0);
-    Precision radius_scale_ = Precision(0);
-    Precision arc_radius_   = Precision(0);
-
-    bool adjusting_final_step_ = false;
-
-    std::string failure_reason_ = "NONE";
+    Precision arc_constraint_norm_(const DynamicVector& q, Precision lambda) const;
 };
 
 } // namespace tools
