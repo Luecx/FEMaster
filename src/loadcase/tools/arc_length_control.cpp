@@ -461,6 +461,10 @@ const char* ArcLengthControl::failure_reason() const {
 }
 
 void ArcLengthControl::reset_state_() {
+    // Arc-length control uses the same cutback factor for all Newton failures.
+    // Align the unused severe factor so direct controller configurations with
+    // cutback_factor below its default remain valid during manager reset.
+    increment_manager.severe_cutback_factor = increment_manager.cutback_factor;
     increment_manager.reset();
     q_accepted_.resize(0);
     lambda_accepted_            = Precision(0);
