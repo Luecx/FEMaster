@@ -157,6 +157,45 @@ TEST(NonlinearContinuation, NewlyAmplitudedLoadRemainsConstantInNextStep) {
 )", Precision(0.047616));
 }
 
+TEST(NonlinearContinuation, AmplitudeEndpointIsSolvedWithinLastIncrement) {
+    // The old tolerance-based termination accepted lambda=0.9995 with
+    // zero load and skipped the full force at lambda=1. With INC=1 the
+    // pending step must be snapped to the endpoint before Newton starts.
+    run_continuation("AMPLITUDE_EXACT_END", R"(*AMPLITUDE, NAME=CURVE
+0., 0., 0.9995, 0., 1., 1.
+*STEP, NAME=ENDPOINT, NLGEOM=YES, INC=1
+*STATIC, DIRECT
+0.9995, 1., 1.e-5, 1.
+*CLOAD, AMPLITUDE=CURVE
+2, 1, 1000.
+*END STEP
+)", Precision(0.047616));
+}
+
+TEST(NonlinearContinuation, AllowsFinalRemainderBelowMinimumIncrement) {
+    // A final remainder smaller than MINIMUM_INCREMENT is valid when it
+    // solves the exact endpoint, rather than an intermediate load factor.
+    run_continuation("SMALL_FINAL_INCREMENT", R"(*STEP, NAME=ENDPOINT, NLGEOM=YES, INC=2
+*STATIC, DIRECT
+0.6, 1., 0.41, 0.6
+*CLOAD
+2, 1, 1000.
+*END STEP
+)", Precision(0.047616));
+}
+
+TEST(NonlinearContinuation, EndpointSnapRespectsMaximumIncrement) {
+    // Reaching lambda=1 would exceed the configured maximum step, so a
+    // single permitted increment must fail rather than silently overshoot.
+    run_continuation("LIMITED_ENDPOINT", R"(*STEP, NAME=ENDPOINT, NLGEOM=YES, INC=1
+*STATIC, DIRECT
+0.9995, 1., 1.e-5, 0.9995
+*CLOAD
+2, 1, 1000.
+*END STEP
+)", Precision(0), true);
+}
+
 TEST(NonlinearContinuation, RejectsIncompleteStaticAmplitudeRamp) {
     // Without a full end multiplier, nominal pointer continuation would
     // silently change the physical force between consecutive steps.
