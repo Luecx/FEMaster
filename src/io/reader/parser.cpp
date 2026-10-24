@@ -578,10 +578,14 @@ void Parser::end_loadcase() {
         const auto* linear    = loadcase->as<loadcase::LinearStatic>();
         const auto* nonlinear = loadcase->as<loadcase::NonlinearStatic>();
 
-        const Precision step_period = nonlinear ? nonlinear->step_period
-                                    : linear    ? linear->step_period : Precision(1);
-        const bool arc_length = nonlinear && nonlinear->control == loadcase::NonlinearControl::ArcLength;
-        const Precision tolerance = Precision(1e-10);
+        // Linear and nonlinear static procedures supply their own physical
+        // period; the buckling preload uses the unit step-time convention.
+        Precision step_period = Precision(1);
+        if (linear)    step_period = linear->step_period;
+        if (nonlinear) step_period = nonlinear->step_period;
+
+        const bool      arc_length = nonlinear && nonlinear->control == loadcase::NonlinearControl::ArcLength;
+        const Precision tolerance  = Precision(1e-10);
 
         for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
             for (const auto& condition : loadcase->target_conditions.get(family)) {
