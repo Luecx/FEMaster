@@ -137,6 +137,40 @@ U, CF
 )", Precision(0.071421));
 }
 
+
+TEST(NonlinearContinuation, NewlyAmplitudedLoadRemainsConstantInNextStep) {
+    // A nonlinear load-control step follows the intermediate amplitude values.
+    // Its completed load is then inherited without evaluating the amplitude
+    // again during the next step.
+    run_continuation("AMPLITUDE_CONTINUED", R"(*AMPLITUDE, NAME=CURVE
+0., 0., 0.5, 0.25, 1., 1.
+*STEP, NAME=PRELOAD, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*CLOAD, AMPLITUDE=CURVE
+2, 1, 1000.
+*END STEP
+*STEP, NAME=UNCHANGED, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*END STEP
+)", Precision(0.047616));
+}
+
+TEST(NonlinearContinuation, RejectsIncompleteStaticAmplitudeRamp) {
+    // Without a full end multiplier, nominal pointer continuation would
+    // silently change the physical force between consecutive steps.
+    run_continuation("AMPLITUDE_ENDPOINT", R"(*AMPLITUDE, NAME=CURVE
+0., 0., 1., 0.5
+*STEP, NAME=PRELOAD, NLGEOM=YES, INC=40
+*STATIC
+0.25, 1., 1.e-5, 0.25
+*CLOAD, AMPLITUDE=CURVE
+2, 1, 1000.
+*END STEP
+)", Precision(0), true);
+}
+
 TEST(NonlinearContinuation, RiksRejectsNewStaticAmplitude) {
     run_continuation("RIKS_AMPLITUDE", R"(*AMPLITUDE, NAME=PULSE
 0., 0., 1., 1.
