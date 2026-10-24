@@ -235,19 +235,18 @@ void FRTShell<N>::physical_stress_strain_at(
     const Vec8 generalized_strain      = generalized_strain_at(data, displacement_increment, r, s);
     const Vec8 generalized_increment   = generalized_strain - generalized_total_base;
 
-    // Build the mechanical generalized strains at the base and target
-    // temperatures while keeping the same base geometry q0.
-    Vec8 generalized_base   = generalized_total_base;
-    Vec8 generalized_target = generalized_total_base;
+    // A shared temperature field (including two null pointers) has no thermal
+    // increment. The target and base stress anchors then cancel exactly, so
+    // only the displacement-perturbed base stress needs to be recovered.
+    const bool same_temperature = target_temperature == data.temperature;
 
     const ReferencePoint* cached    = cached_reference_point(r, s);
     const ReferencePoint  temporary = cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
     const ReferencePoint& point     = cached ? *cached : temporary;
 
+    Vec8 generalized_base = generalized_total_base;
     generalized_base -= thermal_generalized_strain(
         point, thermal_strain_at(data.temperature, r, s));
-    generalized_target -= thermal_generalized_strain(
-        point, thermal_strain_at(target_temperature, r, s));
 
     const Precision h = this->get_section()->thickness_;
     const Precision z = Precision(0.5) * h * zeta;
@@ -294,8 +293,32 @@ void FRTShell<N>::physical_stress_strain_at(
     const ShellGeneralizedStrain zero_increment(Vec8::Zero());
     const Mat3 zero_deformation_increment = Mat3::Zero();
 
-    // Temperature is evaluated exactly at q0, while the displacement increment
-    // is the derivative of the response at the base state (q0,T0).
+    // Recover the response to the displacement increment at the base
+    // temperature. It contributes to both the unchanged-temperature and the
+    // general thermomechanical continuation.
+    const VolumeStressCauchy base_perturbed = this->get_section()->recover_stress(
+        reference_position(r, s),
+        reference_basis,
+        ShellGeneralizedStrain(generalized_base),
+        ShellGeneralizedStrain(generalized_increment),
+        old_state,
+        this->_model_data->material_state_old->components,
+        z,
+        deformation_gradient_base,
+        deformation_gradient_increment
+    );
+
+    if (same_temperature) {
+        stress_out = topology_stiffness_scale() * base_perturbed.voigt();
+        return;
+    }
+
+    // Only a temperature change requires two additional stress evaluations:
+    // sigma(u,T) = sigma(u0,T) + sigma_linearized(u,T0) - sigma(u0,T0).
+    Vec8 generalized_target = generalized_total_base;
+    generalized_target -= thermal_generalized_strain(
+        point, thermal_strain_at(target_temperature, r, s));
+
     const VolumeStressCauchy target_stress = this->get_section()->recover_stress(
         reference_position(r, s),
         reference_basis,
@@ -318,18 +341,6 @@ void FRTShell<N>::physical_stress_strain_at(
         z,
         deformation_gradient_base,
         zero_deformation_increment
-    );
-
-    const VolumeStressCauchy base_perturbed = this->get_section()->recover_stress(
-        reference_position(r, s),
-        reference_basis,
-        ShellGeneralizedStrain(generalized_base),
-        ShellGeneralizedStrain(generalized_increment),
-        old_state,
-        this->_model_data->material_state_old->components,
-        z,
-        deformation_gradient_base,
-        deformation_gradient_increment
     );
 
     stress_out = topology_stiffness_scale()
