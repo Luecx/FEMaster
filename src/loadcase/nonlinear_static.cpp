@@ -931,17 +931,17 @@ void NonlinearStatic::run() {
         // Arc-length increments represent path radii rather than load-factor
         // changes. The shared manager controls only their magnitude and retries.
         auto& increments = arc_length_control.increment_manager;
-        increments.maximum_increments   = configured_max_increments;
-        increments.initial_increment    = initial_increment;
-        increments.minimum_increment    = minimum_increment;
-        increments.maximum_increment    = maximum_increment;
-        increments.growth_factor        = growth_factor;
-        increments.cutback_factor       = cutback_factor;
+        increments.maximum_increments    = configured_max_increments;
+        increments.initial_increment     = initial_increment;
+        increments.minimum_increment     = minimum_increment;
+        increments.maximum_increment     = maximum_increment;
+        increments.growth_factor         = growth_factor;
+        increments.cutback_factor        = cutback_factor;
         increments.severe_cutback_factor = cutback_factor;
-        increments.fast_iterations      = static_cast<Index>(fast_iterations);
-        increments.slow_iterations      = configured_slow_iterations;
-        increments.maximum_cutbacks     = static_cast<Index>(maximum_cutbacks);
-        increments.adaptive             = adaptive_increments;
+        increments.fast_iterations       = static_cast<Index>(fast_iterations);
+        increments.slow_iterations       = configured_slow_iterations;
+        increments.maximum_cutbacks      = static_cast<Index>(maximum_cutbacks);
+        increments.adaptive              = adaptive_increments;
 
         arc_length_control.begin_increment_trial    = begin_increment_trial;
         arc_length_control.commit_increment_trial   = commit_increment_trial;
