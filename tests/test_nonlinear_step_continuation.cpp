@@ -212,6 +212,50 @@ TEST(NonlinearContinuation, FixedTenthsReachExactEndpoint) {
 )", Precision(0.047616));
 }
 
+TEST(LoadControl, EightyFixedIncrementsReachExactEndpoint) {
+    loadcase::tools::LoadControl control;
+    control.maximum_increments = 80;
+    control.initial_increment  = Precision(0.0125);
+    control.minimum_increment  = Precision(0.0125);
+    control.maximum_increment  = Precision(0.0125);
+    control.adaptive           = false;
+
+    DynamicVector q = DynamicVector::Zero(1);
+    Precision     lambda = Precision(0);
+    Index         accepted_increments = 0;
+
+    // Ordinary floating-point summation of eighty increments of 0.0125
+    // can leave lambda slightly below one when the increment limit is hit.
+    // Compensated accumulation must preserve all eighty increments and
+    // converge to the exact endpoint rather than reporting MAXIMUM_INCREMENTS.
+    const bool converged = control.solve(
+        q, lambda,
+        [](const DynamicVector& state, Precision target, DynamicVector& residual, SparseMatrix& tangent) {
+            residual = DynamicVector::Constant(1, target - state(0));
+            tangent.resize(1, 1);
+            tangent.setIdentity();
+        },
+        [](const SparseMatrix&, const DynamicVector& residual) -> DynamicVector {
+            return residual;
+        },
+        [](const DynamicVector& residual, Precision) -> Precision {
+            return residual.norm();
+        },
+        [](const DynamicVector&, const DynamicVector&) -> Precision {
+            return Precision(0);
+        },
+        {},
+        [&](Index, const DynamicVector&, Precision) {
+            ++accepted_increments;
+        }
+    );
+
+    EXPECT_TRUE(converged);
+    EXPECT_EQ(accepted_increments, Index(80));
+    EXPECT_EQ(lambda, Precision(1));
+    EXPECT_NEAR(q(0), Precision(1), Precision(1e-5));
+}
+
 TEST(LoadControl, CutbackUsesUnroundedProposedIncrement) {
     loadcase::tools::LoadControl control;
     control.maximum_increments       = 12;
