@@ -59,8 +59,8 @@ constexpr Index maximum_active_set_updates = 8;
  *
  * @param q Reduced nonlinear unknown vector. On success it contains the final
  *          accepted state. On failure it is restored to the last accepted state.
- * @param lambda Load factor. On success it reaches one within tolerance. On
- *               failure it is restored to the last accepted value.
+ * @param lambda Load factor. On success the final equilibrium is solved at
+ *               exactly one; on failure the last accepted factor is retained.
  * @param evaluate Residual and tangent assembly at a supplied `q` and load
  *                 factor.
  * @param linear_solve Linearized Newton solve returning the correction added to
@@ -129,18 +129,38 @@ bool LoadControl::solve(
 
     Index cutback_count = 0;
 
-    while (lambda < Precision(1) - tolerance &&
-           accepted_increments_ < maximum_increments) {
-        increment_ = std::min(increment_, Precision(1) - lambda);
+    // Newton's residual tolerance is not a permissible error in the final load
+    // factor. A step accepted slightly below lambda=1 could leave a nonlinear
+    // amplitude at a different value from A(T_step)=1; the next analysis would
+    // then inherit the full nominal load and introduce an artificial jump.
+    // Always converge an actual equilibrium at lambda=1 before reporting success.
+    while (lambda < Precision(1) && accepted_increments_ < maximum_increments) {
+        const Precision remaining = Precision(1) - lambda;
+        const Precision step      = std::min(increment_, remaining);
 
-        if (increment_ < minimum_increment) {
+        // If the proposed endpoint is already within the Newton tolerance,
+        // solve at exactly lambda=1 instead of accepting a near-end frame.
+        // Respect the maximum increment, and do not snap during cutback
+        // retries: a failed endpoint attempt must be able to reduce its step.
+        const bool snap_to_end = cutback_count == 0
+                              && remaining <= maximum_increment
+                              && remaining - step <= tolerance;
+
+        const Precision target_lambda = snap_to_end
+            ? Precision(1) : lambda + step;
+        const Precision attempted_increment = target_lambda - lambda;
+
+        // The very last remainder is allowed below the configured minimum,
+        // since rejecting it would prevent reaching the exact endpoint. Do
+        // not relax the minimum for ordinary steps or cutback retries.
+        if (attempted_increment < minimum_increment
+            && target_lambda != Precision(1)) {
             failure_reason_ = "MINIMUM_INCREMENT";
             return false;
         }
 
         const DynamicVector q_accepted      = q;
         const Precision     lambda_accepted = lambda;
-        const Precision     target_lambda   = lambda + increment_;
 
         bool        converged              = false;
         const char* attempt_failure_reason = "NONE";
@@ -272,9 +292,11 @@ bool LoadControl::solve(
                 failure == "LINE_SEARCH_STAGNATION" ||
                 failure == "ANALYSIS_ERROR";
 
-            increment_ *= severe_failure
-                ? severe_cutback_factor
-                : cutback_factor;
+            // Reduce the increment actually attempted. Endpoint snapping may
+            // have enlarged it beyond increment_, so reducing increment_
+            // directly could repeat the same failed lambda=1 solve.
+            increment_ = attempted_increment * (severe_failure
+                ? severe_cutback_factor : cutback_factor);
             ++cutback_count;
 
             logging::info(
@@ -334,7 +356,7 @@ bool LoadControl::solve(
         );
     }
 
-    if (lambda < Precision(1) - tolerance) {
+    if (lambda < Precision(1)) {
         failure_reason_ = "MAXIMUM_INCREMENTS";
         return false;
     }
