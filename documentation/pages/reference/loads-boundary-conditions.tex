@@ -16,7 +16,7 @@ Throughout this section, remember that a numerical zero is a real physical value
 
 \keywordpage{AMPLITUDE}
 
-\cmd{AMPLITUDE} defines a reusable scalar function that can scale a load as the analysis variable changes. In a transient analysis this variable is physical time. Both input readers accept up to four \((t,a)\) pairs per data line. \key{TYPE} selects \val{LINEAR}, \val{STEP}, or \val{NEAREST} interpolation; the default is \val{LINEAR}.
+\cmd{AMPLITUDE} defines a reusable scalar function that can scale a load as the analysis variable changes. In a transient analysis this variable is physical time; in static analyses it is Step time from \(0\) to \(T_{\mathrm{step}}\). Static amplitudes apply only to newly activated loads and require \(A(0)=0\) and \(A(T_{\mathrm{step}})=1\); unchanged loads retain their nominal force, and Riks does not support newly amplitude-driven loads. Both input readers accept up to four \((t,a)\) pairs per data line. \key{TYPE} selects \val{LINEAR}, \val{STEP}, or \val{NEAREST} interpolation; the default is \val{LINEAR}.
 
 For linear interpolation, a value between two samples \((t_i,a_i)\) and \((t_{i+1},a_{i+1})\) is obtained from
 \[
