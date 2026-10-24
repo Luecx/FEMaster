@@ -228,9 +228,12 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    // Assemble the load derivative for the proportional path controllers.
-    // A carried-over force already acts at lambda=0, so the predictor direction
-    // is the difference between the target and initial load, not the target.
+    // Form an endpoint secant for the load-factor predictor. A carried-over
+    // force already acts at lambda=0, so the direction is the difference
+    // between final and initial loading. For a nonlinear amplitude this is
+    // not the instantaneous derivative: load control still evaluates the
+    // actual external force at each Newton trial, while Riks disallows
+    // newly amplitude-driven loads to retain a proportional load direction.
     const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0));
     const auto global_load_total = build_step_load_matrix(step_period, Precision(1));
     auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
