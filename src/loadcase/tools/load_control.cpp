@@ -109,7 +109,7 @@ bool LoadControl::solve(
     // amplitude at a different value from A(T_step)=1; the next analysis would
     // then inherit the full nominal load and introduce an artificial jump.
     // Always converge an actual equilibrium at lambda=1 before reporting success.
-    while (lambda < Precision(1) && increment_manager.accepted_increments() < increment_manager.can_attempt()) {
+    while (lambda < Precision(1) && increment_manager.can_attempt()) {
         const Precision remaining = Precision(1) - lambda;
         const Precision step      = std::min(increment_manager.increment(), remaining);
 
