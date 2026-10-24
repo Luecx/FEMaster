@@ -128,7 +128,8 @@ bool LoadControl::solve(
 
     reset_state_();
 
-    Index cutback_count = 0;
+    Index     cutback_count  = 0;
+    Precision lambda_roundoff = Precision(0);
 
     // Newton's residual tolerance is not a permissible error in the final load
     // factor. A step accepted slightly below lambda=1 could leave a nonlinear
@@ -151,12 +152,19 @@ bool LoadControl::solve(
                               && remaining - maximum_increment <= endpoint_roundoff
                               && remaining - step <= tolerance;
 
+        // Compensate for rounding in successive additions of the load factor.
+        // Without this correction, many otherwise valid fixed increments can
+        // accumulate enough error to miss lambda=1 and exhaust MAX_INCREMENTS.
+        // The compensation belongs to accepted increments only: failed trials
+        // and cutback retries must start from exactly the same accepted state.
+        const Precision corrected_step = step - lambda_roundoff;
+        const Precision proposed_lambda = lambda + corrected_step;
         const Precision target_lambda = snap_to_end
-            ? Precision(1) : lambda + step;
+            ? Precision(1) : std::min(proposed_lambda, Precision(1));
 
-        // The proposed step has not suffered cancellation in target-lambda
-        // subtraction. Use it for ordinary cutbacks; only a snapped endpoint
-        // actually attempts the full remaining load-factor interval.
+        // A snap can enlarge the proposed increment. Ordinary cutbacks must
+        // retain the original step to avoid cancellation in target-lambda
+        // subtraction; snapped cutbacks use the full attempted remainder.
         const Precision attempted_increment = snap_to_end ? remaining : step;
 
         // Compare the proposed step directly with the configured minimum.
@@ -334,6 +342,12 @@ bool LoadControl::solve(
             continue;
         }
 
+        // Kahan compensation stores the rounding error in the accepted
+        // addition. Do not update it on failed trials, and clear it once the
+        // exact endpoint has been reached.
+        lambda_roundoff = target_lambda == Precision(1)
+            ? Precision(0)
+            : (target_lambda - lambda_accepted) - corrected_step;
         lambda = target_lambda;
 
         if (commit_increment_trial) {
