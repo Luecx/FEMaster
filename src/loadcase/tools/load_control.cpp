@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <limits>
 #include <string>
 
 namespace fem {
@@ -140,15 +141,23 @@ bool LoadControl::solve(
 
         // If the proposed endpoint is already within the Newton tolerance,
         // solve at exactly lambda=1 instead of accepting a near-end frame.
-        // Respect the maximum increment, and do not snap during cutback
-        // retries: a failed endpoint attempt must be able to reduce its step.
+        // Repeated additions can leave lambda slightly below its exact value
+        // (e.g. 0.8999999999999999 after nine steps of 0.1). Allow only a few
+        // machine epsilons when checking the final maximum increment, so this
+        // rounding does not prevent the last solve without permitting a
+        // genuinely larger load increment. Never snap during cutback retries.
+        const Precision endpoint_roundoff = Precision(4) * std::numeric_limits<Precision>::epsilon();
         const bool snap_to_end = cutback_count == 0
-                              && remaining <= maximum_increment
+                              && remaining - maximum_increment <= endpoint_roundoff
                               && remaining - step <= tolerance;
 
         const Precision target_lambda = snap_to_end
             ? Precision(1) : lambda + step;
-        const Precision attempted_increment = target_lambda - lambda;
+
+        // The proposed step has not suffered cancellation in target-lambda
+        // subtraction. Use it for ordinary cutbacks; only a snapped endpoint
+        // actually attempts the full remaining load-factor interval.
+        const Precision attempted_increment = snap_to_end ? remaining : step;
 
         // Compare the proposed step directly with the configured minimum.
         // Subtracting lambda from target_lambda can lose precision and reject
