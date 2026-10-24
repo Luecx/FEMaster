@@ -146,7 +146,7 @@ bool LoadControl::solve(
         // Only an actual final step to lambda=1 may be below the minimum.
         if (step < increment_manager.minimum_increment
             && target_lambda != Precision(1)) {
-            failure_reason_ = "MINIMUM_INCREMENT";
+            increment_manager.fail("MINIMUM_INCREMENT");
             return false;
         }
 
@@ -356,7 +356,7 @@ void LoadControl::configure_newton_() {
     newton_.residual_tolerance      = tolerance;
     newton_.correction_tolerance    = Precision(1e-2);
     newton_.check_finite            = true;
-    newton_.early_failure_detection = adaptive;
+    newton_.early_failure_detection = increment_manager.adaptive;
 
     newton_.begin_line_search_trial    = begin_line_search_trial;
     newton_.commit_line_search_trial   = commit_line_search_trial;
