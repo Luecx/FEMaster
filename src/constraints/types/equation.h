@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include "../../core/types_cls.h"
-#include "../../core/types_eig.h"
 #include "../../core/types_num.h"
 
 #include <cstdint>

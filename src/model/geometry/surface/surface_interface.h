@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include "../../../core/core.h"
 #include "../../../core/types_eig.h"
 #include "../../../data/field.h"
 #include "../../../math/quadrature.h"

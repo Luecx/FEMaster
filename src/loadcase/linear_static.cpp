@@ -15,6 +15,8 @@
 
 #include "linear_static.h"
 
+#include "../io/writer/writers.h"
+
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/rbm.h"
 #include "../core/logging.h"

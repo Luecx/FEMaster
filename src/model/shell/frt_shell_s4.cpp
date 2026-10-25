@@ -14,6 +14,7 @@
  */
 
 #include "frt_shell_s4.h"
+#include "../geometry/surface/surface4.h"
 
 namespace fem::model {
 

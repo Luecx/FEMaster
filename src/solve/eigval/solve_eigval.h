@@ -29,7 +29,7 @@
 
 #pragma once
 
-#include "../../core/core.h"     // Precision, DynamicVector/Matrix, SparseMatrix
+#include "../../core/types_eig.h"     // Precision, DynamicVector/Matrix, SparseMatrix
 #include "../solve_device.h"           // SolverDevice
 
 #include <vector>

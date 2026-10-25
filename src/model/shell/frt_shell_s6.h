@@ -18,7 +18,6 @@
 #pragma once
 
 #include "frt_shell.h"
-#include "../geometry/surface/surface6.h"
 
 namespace fem::model {
 

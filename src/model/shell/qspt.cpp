@@ -15,6 +15,8 @@
 
 #include "qspt.h"
 
+#include <Eigen/Geometry>
+
 namespace fem::model {
 namespace {
 constexpr Precision kGeomTol = Precision(1e-12);

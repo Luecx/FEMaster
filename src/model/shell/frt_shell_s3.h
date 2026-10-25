@@ -20,7 +20,6 @@
 #pragma once
 
 #include "frt_shell.h"
-#include "../geometry/surface/surface3.h"
 
 namespace fem::model {
 

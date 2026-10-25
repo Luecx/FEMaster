@@ -45,9 +45,11 @@
 #include "../../core/logging.h"
 #include "../../math/quadrature.h"
 #include "../../model/geometry/surface/surface_polygon.h"
+#include "../../model/geometry/surface/surface_interface.h"
 #include "../../model/model_data.h"
 
 #include <Eigen/Cholesky>
+#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <array>

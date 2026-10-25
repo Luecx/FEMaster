@@ -33,6 +33,7 @@
 #include "build_sparsity_pattern.h"
 
 #include "../core/logging.h"
+#include "../core/timer.h"
 #include "../core/parallel.h"
 #include "../core/timer.h"
 #include "../data/field.h"
