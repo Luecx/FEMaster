@@ -88,33 +88,12 @@ bool ArcLengthControl::solve(
     const IterationCallback& on_iteration,
     const IncrementCallback& on_increment
 ) {
-    logging::error(maximum_increments > 0,
-        "ArcLengthControl requires maximum_increments > 0");
     logging::error(maximum_iterations > 0,
         "ArcLengthControl requires maximum_iterations > 0");
     logging::error(tolerance > Precision(0),
         "ArcLengthControl requires tolerance > 0");
-    logging::error(initial_increment > Precision(0),
-        "ArcLengthControl requires initial_increment > 0");
-    logging::error(minimum_increment > Precision(0),
-        "ArcLengthControl requires minimum_increment > 0");
-    logging::error(maximum_increment >= minimum_increment,
-        "ArcLengthControl requires maximum_increment >= minimum_increment");
-    logging::error(initial_increment >= minimum_increment &&
-                   initial_increment <= maximum_increment,
-        "ArcLengthControl requires initial_increment between minimum_increment and maximum_increment");
     logging::error(psi >= Precision(0),
         "ArcLengthControl requires psi >= 0");
-    logging::error(growth_factor > Precision(0),
-        "ArcLengthControl requires growth_factor > 0");
-    logging::error(cutback_factor > Precision(0) && cutback_factor < Precision(1),
-        "ArcLengthControl requires cutback_factor between 0 and 1");
-    logging::error(fast_iterations > 0,
-        "ArcLengthControl requires fast_iterations > 0");
-    logging::error(slow_iterations >= fast_iterations,
-        "ArcLengthControl requires slow_iterations >= fast_iterations");
-    logging::error(maximum_cutbacks > 0,
-        "ArcLengthControl requires maximum_cutbacks > 0");
 
     logging::error(static_cast<bool>(evaluate),
         "ArcLengthControl requires an evaluate callback");
@@ -131,15 +110,13 @@ bool ArcLengthControl::solve(
 
     previous_delta_q_ = DynamicVector::Zero(q.size());
 
-    Index cutback_count = 0;
-
     while (lambda < Precision(1) - tolerance &&
-           accepted_increments_ < maximum_increments) {
+           increment_manager.can_attempt()) {
         q_accepted_      = q;
         lambda_accepted_ = lambda;
 
-        if (increment_ < minimum_increment) {
-            failure_reason_ = "MINIMUM_INCREMENT";
+        if (increment_manager.increment() < increment_manager.minimum_increment) {
+            increment_manager.fail("MINIMUM_INCREMENT");
             return false;
         }
 
@@ -195,7 +172,7 @@ bool ArcLengthControl::solve(
 
             Precision path_sign = Precision(1);
 
-            if (accepted_increments_ > 0) {
+            if (increment_manager.accepted_increments() > 0) {
                 const Precision direction =
                     previous_delta_q_.dot(dq_load)
                   + psi2 * load_scale2_ * previous_delta_lambda_;
@@ -203,7 +180,7 @@ bool ArcLengthControl::solve(
                 path_sign = direction >= Precision(0) ? Precision(1) : Precision(-1);
             }
 
-            arc_radius_ = increment_ * radius_scale_;
+            arc_radius_ = increment_manager.increment() * radius_scale_;
 
             Precision predictor_delta_lambda =
                 path_sign * arc_radius_ / predictor_norm;
@@ -214,7 +191,7 @@ bool ArcLengthControl::solve(
                 !adjusting_final_step_ &&
                 predictor_delta_lambda >= remaining_delta_lambda) {
                 arc_radius_            = remaining_delta_lambda * predictor_norm;
-                increment_             = arc_radius_ / radius_scale_;
+                increment_manager.set_increment(arc_radius_ / radius_scale_);
                 predictor_delta_lambda = remaining_delta_lambda;
                 adjusting_final_step_  = true;
             }
@@ -314,7 +291,7 @@ bool ArcLengthControl::solve(
 
                         if (on_iteration) {
                             on_iteration(
-                                accepted_increments_ + 1,
+                                increment_manager.accepted_increments() + 1,
                                 iteration,
                                 lambda,
                                 current_equilibrium_norm,
@@ -371,15 +348,16 @@ bool ArcLengthControl::solve(
                 rollback_increment_trial();
             }
 
-            if (!adaptive) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "FIXED_INCREMENT_FAILED"
-                    : "FIXED_INCREMENT_FAILED: " + attempt_error_message;
+            // Reduce the current path radius without consuming a successful
+            // increment. The manager validates fixed/adaptive policy and
+            // stores the cause if the requested cutback cannot be scheduled.
+            if (!increment_manager.reject(
+                    increment_manager.increment(),
+                    false,
+                    attempt_error_message
+                )) {
                 return false;
             }
-
-            increment_ *= cutback_factor;
-            ++cutback_count;
 
             logging::info(true,
                 "Increment rejected at lambda = ",
@@ -387,22 +365,8 @@ bool ArcLengthControl::solve(
                 "; reason = ",
                 attempt_failure_reason,
                 "; reducing increment to ",
-                increment_
+                increment_manager.increment()
             );
-
-            if (increment_ < minimum_increment) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "MINIMUM_INCREMENT"
-                    : "MINIMUM_INCREMENT: " + attempt_error_message;
-                return false;
-            }
-
-            if (cutback_count > maximum_cutbacks) {
-                failure_reason_ = attempt_error_message.empty()
-                    ? "MAXIMUM_CUTBACKS"
-                    : "MAXIMUM_CUTBACKS: " + attempt_error_message;
-                return false;
-            }
 
             continue;
         }
@@ -418,7 +382,7 @@ bool ArcLengthControl::solve(
             if (achieved_delta_lambda <= Precision(0)) {
                 q               = q_accepted_;
                 lambda          = lambda_accepted_;
-                failure_reason_ = "INVALID_FINAL_DIRECTION";
+                increment_manager.fail("INVALID_FINAL_DIRECTION");
 
                 if (rollback_increment_trial) {
                     rollback_increment_trial();
@@ -427,9 +391,9 @@ bool ArcLengthControl::solve(
                 return false;
             }
 
-            const Precision previous_increment = increment_;
+            const Precision previous_increment = increment_manager.increment();
             arc_radius_ *= remaining_delta_lambda / achieved_delta_lambda;
-            increment_   = arc_radius_ / radius_scale_;
+            const Precision adjusted_increment = arc_radius_ / radius_scale_;
 
             q      = q_accepted_;
             lambda = lambda_accepted_;
@@ -438,7 +402,15 @@ bool ArcLengthControl::solve(
                 rollback_increment_trial();
             }
 
-            ++cutback_count;
+            // This is a geometric adjustment after Newton convergence, not
+            // a Newton failure. It still consumes a retry allowance and
+            // restores the accepted model state before another path attempt.
+            if (!increment_manager.retry_with(
+                    adjusted_increment,
+                    "MAXIMUM_FINAL_ADJUSTMENTS"
+                )) {
+                return false;
+            }
 
             logging::info(true,
                 "Arc-length step reached lambda = ",
@@ -446,18 +418,8 @@ bool ArcLengthControl::solve(
                 " instead of 1; adjusting increment from ",
                 previous_increment,
                 " to ",
-                increment_
+                increment_manager.increment()
             );
-
-            if (increment_ < minimum_increment) {
-                failure_reason_ = "MINIMUM_INCREMENT";
-                return false;
-            }
-
-            if (cutback_count > maximum_cutbacks) {
-                failure_reason_ = "MAXIMUM_FINAL_ADJUSTMENTS";
-                return false;
-            }
 
             continue;
         }
@@ -470,25 +432,24 @@ bool ArcLengthControl::solve(
             commit_increment_trial();
         }
 
-        ++accepted_increments_;
-        cutback_count = 0;
+        // Store the accepted increment count and adapt only after committing
+        // the converged nonlinear trial state.
+        increment_manager.accept(newton_.iterations());
 
         if (on_increment) {
-            on_increment(accepted_increments_, q, lambda);
+            on_increment(increment_manager.accepted_increments(), q, lambda);
         }
 
-        adapt_increment_();
-
         logging::info(true,
-            "Accepted increment "   , accepted_increments_,
+            "Accepted increment "   , increment_manager.accepted_increments(),
             ": lambda = "           , lambda,
             ", Newton iterations = ", newton_.iterations(),
-            ", next increment = "  , increment_
+            ", next increment = "  , increment_manager.increment()
         );
     }
 
     if (lambda < Precision(1) - tolerance) {
-        failure_reason_ = "MAXIMUM_INCREMENTS";
+        increment_manager.fail("MAXIMUM_INCREMENTS");
         return false;
     }
 
@@ -496,12 +457,15 @@ bool ArcLengthControl::solve(
 }
 
 const char* ArcLengthControl::failure_reason() const {
-    return failure_reason_.c_str();
+    return increment_manager.failure_reason();
 }
 
 void ArcLengthControl::reset_state_() {
-    accepted_increments_        = 0;
-    increment_                  = initial_increment;
+    // Arc-length control uses the same cutback factor for all Newton failures.
+    // Align the unused severe factor so direct controller configurations with
+    // cutback_factor below its default remain valid during manager reset.
+    increment_manager.severe_cutback_factor = increment_manager.cutback_factor;
+    increment_manager.reset();
     q_accepted_.resize(0);
     lambda_accepted_            = Precision(0);
     previous_delta_q_.resize(0);
@@ -510,7 +474,6 @@ void ArcLengthControl::reset_state_() {
     radius_scale_               = Precision(0);
     arc_radius_                 = Precision(0);
     adjusting_final_step_       = false;
-    failure_reason_             = "NONE";
 }
 
 void ArcLengthControl::configure_newton_() {
@@ -526,25 +489,6 @@ void ArcLengthControl::configure_newton_() {
     // point away from the augmented arc-length linearization, so globalization
     // is left to the adaptive arc-length increment control.
     newton_.line_search_enabled = false;
-}
-
-void ArcLengthControl::adapt_increment_() {
-    if (!adaptive) {
-        increment_ = initial_increment;
-        return;
-    }
-
-    if (newton_.iterations() <= fast_iterations) {
-        increment_ *= growth_factor;
-    } else if (newton_.iterations() >= slow_iterations) {
-        increment_ *= cutback_factor;
-    }
-
-    increment_ = std::clamp(
-        increment_,
-        minimum_increment,
-        maximum_increment
-    );
 }
 
 Precision ArcLengthControl::arc_constraint_norm_(

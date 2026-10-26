@@ -19,7 +19,7 @@ namespace fem { namespace model {
  * @brief Thirteen-node quadratic pyramid continuum element.
  *
  * Rational interpolation maps the natural pyramid, including its collapsed
- * apex. Boundary surface extraction is currently unavailable.
+ * apex. Boundary faces use outward-oriented quadratic surface interpolation.
  * The element stores global node identifiers in interpolation order and
  * inherits geometry transformations, constitutive state handling, thermal
  * operators and mechanical evaluation from SolidElement. Concrete methods

@@ -16,8 +16,9 @@
  *
  * Element-local matrix evaluation remains the responsibility of each structural
  * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparse triplet accumulation and parallel reduction. Stress and stress
- * resultants needed for geometric or nonlinear operators remain element-local;
+ * sparsity construction, atomic matrix accumulation and nodal force reduction.
+ * Stress and stress resultants needed for geometric or nonlinear operators
+ * remain element-local;
  * model assembly exchanges only displacement, matrices and nodal forces.
  *
  * @see Model
@@ -296,13 +297,6 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         }
     }
 
-    for (const auto& section : _data->pretension_sections) {
-        logging::error(section && section->control_node >= 0,
-            "PRETENSION SECTION: control node not prepared");
-        logging::error(!mask.row(section->control_node).any(),
-            "PRETENSION SECTION: control node must not have structural connectivity");
-        mask(section->control_node, 0) = true;
-    }
     return mattools::numerate_dofs(mask);
 }
 
@@ -311,7 +305,10 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  *
  * Active structural conditions are traversed by family. The parser has already
  * resolved input history and selected named collectors for this analysis.
- * Each condition contributes its transformed, amplitude-scaled force or moment.
+ * Conditions shared by both states contribute their nominal force exactly
+ * once. Removed conditions decay linearly, while added conditions follow their
+ * named step-time amplitude (or a linear ramp when none is assigned). Dynamic
+ * callers provide an empty initial state and evaluate target amplitudes at time.
  *
  * Current structural loads write only the six-component RHS. Empty equation,
  * numbering and triplet outputs satisfy the common Condition::apply interface;
@@ -319,9 +316,14 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * generalized master-node loads only after all contributions have been summed.
  *
  * @param time Evaluation time supplied to load amplitudes.
+ * @param step_progress Normalized progress for a static load transition.
+ * @param initial Frozen initial condition state.
+ * @param target Prescribed target condition state.
  * @return Six-component global nodal load field for the current model state.
  */
-Field Model::build_load_matrix(Precision time, Precision step_progress) {
+Field Model::build_load_matrix(const bc::ConditionState& initial,
+                               const bc::ConditionState& target,
+                               Precision time, Precision step_progress) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
@@ -330,20 +332,37 @@ Field Model::build_load_matrix(Precision time, Precision step_progress) {
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
-    // Input-history families identify structural loads without physical RTTI.
-    // DLOAD and DSLOAD may each contain several concrete load implementations.
-    const bc::ConditionFamily load_families[] = {
-        bc::CLOAD,
-        bc::DLOAD,
-        bc::DSLOAD,
-        bc::PLOAD,
-        bc::VLOAD,
-        bc::INERTIAL_LOAD
-    };
-    for (const auto family : load_families) {
-        for (const auto& condition : _data->conditions.get(family)) {
-            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix,
-                             time, false, step_progress);
+    // Partition each family by pointer identity without creating new load
+    // objects. A shared pointer represents the same physical definition in
+    // both states, so its initial ramp-down and target ramp-up cancel:
+    //
+    //     (1 - lambda) * f + lambda * f = f.
+    //
+    // Assemble this intersection only once at its constant nominal magnitude.
+    // The parser ensures newly activated static amplitudes start at zero and
+    // finish at one so the next step can inherit the nominal load unchanged.
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        // Initial-only definitions are removed linearly. Definitions also
+        // present in the target remain constant, regardless of any amplitude
+        // attached to their original physical definition.
+        for (const auto& condition : initial.get(family)) {
+            const bool      continued = target.contains(family, condition);
+            const Precision scale     = continued
+                ? Precision(1) : Precision(1) - step_progress;
+
+            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
+        }
+
+        // Target-only definitions are newly activated. Their own amplitude
+        // supplies the step-time multiplier; without one, use the standard
+        // linear ramp. The intersection has already been assembled above.
+        for (const auto& condition : target.get(family)) {
+            if (initial.contains(family, condition)) continue;
+
+            const Precision scale = condition->amplitude_
+                ? condition->amplitude_->evaluate(time) : step_progress;
+
+            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
     }
 
@@ -380,7 +399,7 @@ Field Model::build_load_matrix(Precision time, Precision step_progress) {
  *
  * @return Amplitude pointers paired with unscaled global nodal load fields.
  */
-std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
+std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const bc::ConditionState& target) {
     // Prepare the numerical spatial bases and outputs unused by structural loads
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
     constraint::Equations equations{};
@@ -400,20 +419,13 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
         }
 
         // Retain nominal magnitudes; the transient solver evaluates time scaling
-        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix, Precision(0), true);
+        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix);
     };
 
     // Use the same independent structural input families as direct RHS assembly
-    const bc::ConditionFamily load_families[] = {
-        bc::CLOAD,
-        bc::DLOAD,
-        bc::DSLOAD,
-        bc::PLOAD,
-        bc::VLOAD,
-        bc::INERTIAL_LOAD
-    };
-    for (const auto family : load_families) {
-        for (const auto& condition : _data->conditions.get(family)) {
+
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        for (const auto& condition : target.get(family)) {
             add_condition(condition);
         }
     }
@@ -431,7 +443,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
 /**
  * Generates and categorizes the current model's linear constraint equations.
  *
- * Current SUPPORT conditions contribute prescribed displacements and rotations.
+ * Target SUPPORT conditions contribute prescribed displacements and rotations.
  * Inactive reusable collector definitions do not impose constraints. Each prescription is
  * expanded through the common Condition::apply interface and annotated with its
  * origin for rank diagnostics and constraint reporting.
@@ -443,7 +455,8 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis() {
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
  * @return Constraint equations grouped and annotated by their origin.
  */
-constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids) {
+constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
+                                                           const bc::ConditionState& target) {
     // Prepare grouped equations and temporary data required by support prescriptions
     constraint::ConstraintGroups groups{};
     Field                       rhs{};
@@ -481,7 +494,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     // the generated equations are returned for grouping.
     auto get_supports = [&](const bc::Condition::Ptr& condition) {
         constraint::Equations equations{};
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix, Precision(0), true);
+        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
         return equations;
     };
 
@@ -489,7 +502,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     // Each constraint family receives its own source indexing and output group.
     using Source = constraint::EquationSourceKind;
 
-    collect(_data->conditions.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
+    collect(target.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
     collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
     collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
     collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
@@ -597,6 +610,10 @@ SparseMatrix Model::build_stiffness_matrix(
  * Native POINTMASS elements use the same path: their linear spring law produces
  * the matching nodal force and constant tangent directly.
  *
+ * A supplied pattern is reused for regular elements and must match their
+ * connectivity and active DOF numbering. Point elements and changing contact
+ * couplings are assembled separately without modifying the supplied pattern.
+ *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
  *                     force contributions.
@@ -605,16 +622,20 @@ SparseMatrix Model::build_stiffness_matrix(
  * @param base_displacement Base displacement state used for linearization.
  * @param base_temperature Base temperature state used for linearization.
  * @param stiffness_scalar Optional one-component element tangent scale.
+ * @param update_state Whether element evaluations may write trial constitutive history.
+ * @param pattern Optional compressed sparsity pattern for regular elements.
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
-    SystemDofIds& indices,
-    NodeData&     nodal_forces,
-    const Field&  target_displacement,
-    const Field*  target_temperature,
-    const Field&  base_displacement,
-    const Field*  base_temperature,
-    const Field*  stiffness_scalar
+    SystemDofIds&       indices,
+    NodeData&           nodal_forces,
+    const Field&        target_displacement,
+    const Field*        target_temperature,
+    const Field&        base_displacement,
+    const Field*        base_temperature,
+    const Field*        stiffness_scalar,
+    bool                update_state,
+    const SparseMatrix* pattern
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "tangent internal force output must use NODE domain");
@@ -640,7 +661,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             target_temperature,
             &base_displacement,
             base_temperature,
-            true
+            update_state
         );
 
         if (stiffness_scalar) {
@@ -658,7 +679,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         _data->elements,
         indices,
         lambda,
-        &nodal_forces
+        &nodal_forces,
+        pattern
     );
 
     if (!_data->point_elements.empty()) {
@@ -670,7 +692,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
                     storage, nullptr, &local_nodal_forces,
                     &target_displacement, target_temperature,
                     &base_displacement, base_temperature,
-                    true);
+                    update_state);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;

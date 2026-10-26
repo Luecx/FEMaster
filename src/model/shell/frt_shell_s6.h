@@ -31,7 +31,7 @@ namespace fem::model {
  */
 struct FRTShellS6 : FRTShell<6> {
 
-    // Cubic triangular area quadrature used by all shell integrations.
+    // Quartic triangular area quadrature used by all shell integrations.
     math::quadrature::Quadrature integration_scheme_;
 
     // Construct the MITC6-b shell from one element identifier and six nodal
@@ -53,7 +53,7 @@ struct FRTShellS6 : FRTShell<6> {
     // Return one oriented quadratic triangular surface representation.
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
 
-    // Return the cubic triangular area quadrature used by this element.
+    // Return the quartic triangular area quadrature used by this element.
     const math::quadrature::Quadrature& integration_scheme() const override;
 
     // Return all numerical integration-point coordinates in `(r,s,t)` format.

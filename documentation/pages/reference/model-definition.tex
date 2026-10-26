@@ -1,11 +1,14 @@
-\chapter{Model Definition}
-\label{chap:model-definition}
+A FEMaster model can be defined directly through nodes and elements
+or organized into reusable Parts and placed Instances. The optional
+Part/Assembly hierarchy supports multiple placements of the same
+component with independent local numbering; simple models can omit
+the hierarchy. Node and element IDs are non-negative user labels,
+including \val{0}, and need not be consecutive.
 
-Model definition describes the geometry and topology on which the analysis is built. A simple FEMaster model may be completely flat: nodes and elements can be defined directly without an explicit Part, Assembly, or Instance. The optional structured Part/Assembly form represents reused components, several placements of the same Part, separate local ID spaces, and imported Abaqus-style assemblies.
-
-From the user's point of view, the two forms describe the same kind of finite-element model. In a flat model there is one direct topology. In a structured model, each Part owns its local nodes, elements, sets, surfaces, and section assignments, while Instances place those Parts into the final assembly. Parts therefore describe \emph{what a component is}; Instances describe \emph{where that component is}.
-
-Node and element IDs are user labels. They are non-negative integers, may start at \textbf{0}, and may be sparse. Separate Parts may reuse the same numerical IDs because their topologies are independent. When an assembly-level definition needs to distinguish entities belonging to different Instances, the Instance name provides the required qualification.
+Named node sets, element sets, and surfaces provide reusable selections
+for Section assignments, loads, supports, and constraints. The
+following keywords define the mesh, its organization, and its
+associated regions.
 
 \keywordpage{PART}
 
@@ -23,19 +26,11 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 \key{NAME} & required & Unique Part name. The name is referenced by \cmd{INSTANCE}. \\
 \end{keywordparameters}
 
+In this example, the truss connectivity refers to the node IDs local to the part. A later INSTANCE can reuse that topology at another placement.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*PART, NAME=ROD
-*NODE, NSET=PNODES
-0,   0., 0., 0.
-1, 100., 0., 0.
-*ELEMENT, TYPE=T3, ELSET=BAR
-0, 0, 1
-*END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *PART, NAME=ROD
 *NODE, NSET=PNODES
 0,   0., 0., 0.
@@ -43,8 +38,8 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 0, 0, 1
 *END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
 
 \keywordpage{END PART}
 
@@ -56,20 +51,15 @@ Part-level sets, surfaces, and Section assignments follow the Part when it is in
 *END PART
 \end{syntax}
 
+The closing keyword terminates the reusable part definition; model-level or assembly-level declarations follow outside its scope.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *PART, NAME=PLATE
 ...
 *END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
-*PART, NAME=PLATE
-...
-*END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{ASSEMBLY}
 
@@ -85,24 +75,17 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 \key{NAME} & optional & Assembly name; default \val{ASSEMBLY}. \\
 \end{keywordparameters}
 
+The assembly refers to a previously defined part and places one reusable instance of it into the model.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *ASSEMBLY, NAME=ASSEMBLY
 *INSTANCE, NAME=ROD_A, PART=ROD
 0., 0., 0.
 *END INSTANCE
 *END ASSEMBLY
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ASSEMBLY, NAME=ASSEMBLY
-*INSTANCE, NAME=ROD_A, PART=ROD
-0., 0., 0.
-*END INSTANCE
-*END ASSEMBLY
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{END ASSEMBLY}
 
@@ -114,20 +97,18 @@ The Assembly organizes the placed model but is not required by the solver. A fla
 *END ASSEMBLY
 \end{syntax}
 
+The assembly is closed after its instances and assembly-level sets have been defined.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ASSEMBLY
-...
-*END ASSEMBLY
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *ASSEMBLY, NAME=ASSEMBLY
-...
+*INSTANCE, NAME=LEFT, PART=ROD
+0., 0., 0.
+*END INSTANCE
 *END ASSEMBLY
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
 
 \keywordpage{INSTANCE}
 
@@ -157,41 +138,30 @@ The Part-local node and element labels remain associated with every Instance. As
 \val{x1,y1,z1,x2,y2,z2,angle} & Optional rotation axis through two points and rotation angle in degrees. \\
 \end{keyworddata}
 
+The two data lines below first translate the part and then rotate the placed instance. The part itself retains its original local node coordinates.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *INSTANCE, NAME=RIGHT, PART=BRACKET
 100., 0., 0.
 0., 0., 0., 0., 0., 1., 90.
 *END INSTANCE
-\end{femasterdeck}
-\begin{abaqusdeck}
-*INSTANCE, NAME=RIGHT, PART=BRACKET
-100., 0., 0.
-0., 0., 0., 0., 0., 1., 90.
-*END INSTANCE
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{END INSTANCE}
 
 \cmd{END INSTANCE} closes the current Instance definition.
 
+The keyword closes the instance placement scope. Subsequent assembly-level selections can refer to the placed instance by name.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *INSTANCE, NAME=A, PART=BLOCK
 20., 0., 0.
 *END INSTANCE
-\end{femasterdeck}
-\begin{abaqusdeck}
-*INSTANCE, NAME=A, PART=BLOCK
-20., 0., 0.
-*END INSTANCE
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{NODE}
 
@@ -214,78 +184,51 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 \val{x, y, z} & Cartesian reference coordinates. \\
 \end{keyworddata}
 
+These three records create independent user node IDs, even though the coordinates are regularly spaced. Node IDs need not be consecutive.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *NODE, NSET=EDGE
 0,  0., 0., 0.
 10, 25., 0., 0.
 20, 50., 0., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-*NODE, NSET=EDGE
-0,  0., 0., 0.
-10, 25., 0., 0.
-20, 50., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{ELEMENT}
 
-\cmd{ELEMENT} defines element connectivity. Every data record begins with a user element ID followed by the node IDs in the formulation-specific connectivity order. \key{TYPE} selects the finite-element formulation. \key{ELSET} optionally adds all elements in the block to an element set and defaults to \val{EALL} in native FEMaster input.
+\cmd{ELEMENT} defines element topology and connectivity. Each data
+record starts with an element ID followed by the node IDs in
+formulation-specific order. The \key{TYPE} parameter selects the
+formulation, while \key{ELSET} optionally assigns the elements to a
+named set. Element IDs are non-negative user labels, may start at
+\val{0}, and need not be consecutive.
 
-Element IDs are non-negative user labels and may also begin at \textbf{0}. They may be sparse. Connectivity is written using node IDs from the same topology scope as the element. The connectivity order determines local edges and faces, shell normal direction, solid face labels, element orientation, and the mapping from the reference element to the physical geometry.
+Connectivity order matters: it defines local edges and faces,
+element orientation, shell normals, and the mapping between the
+reference element and its physical geometry. The connected nodes
+must belong to the same topology scope as the element.
 
-The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
-
-The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster accepts the short shell labels \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, and \val{MITC8} as aliases of the corresponding current finite-rotation FRT shell implementations; these labels no longer select separate legacy linear shells. The FRT names and \val{QSPT} are also accepted directly. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} labels are shared by both input dialects.
-
-\val{TYPE=MASS}, \val{TYPE=ROTARYI}, and \val{TYPE=SPRING1} define one-node point elements. Each preserves its own element ID, one-node connectivity, ELSET membership, and Part/Instance expansion. Internally the three labels use the same point-element topology; the associated property keyword supplies the mechanical contribution. \cmd{MASS} assigns translational mass, \cmd{ROTARY INERTIA} assigns diagonal rotary inertia, and \cmd{SPRING} assigns one constant linear point-to-ground stiffness. The formulations and property syntax are documented in Chapter~\ref{chap:elements} and Chapter~\ref{chap:sections}.
-
-An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness. Likewise, regular point elements remain mechanically inactive until the corresponding point property is assigned; Chapter~\ref{chap:sections} documents these assignments.
+\begin{syntax}
+*ELEMENT, TYPE=<element-type>, ELSET=<set>
+<element-id>, <node-1>, <node-2>, ...
+\end{syntax}
 
 \begin{keywordparameters}
-\key{TYPE} & required & Element formulation/type identifier. \\
-\key{ELSET} & optional & Element set receiving all elements in the block; native default \val{EALL}. \\
+\key{TYPE} & required & Element type or formulation identifier listed below. \\
+\key{ELSET} & optional & Element set receiving the block; the general set \val{EALL} is used by default. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{id} & Non-negative user element ID; \val{0} is valid. \\
-\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \val{MASS}, \val{ROTARYI}, and \val{SPRING1} use exactly one node. \\
+\val{id} & Non-negative element ID; \val{0} is valid. \\
+\val{n1, n2, ...} & Node connectivity in formulation-specific order. \\
 \end{keyworddata}
 
-\exampleheading
+Element connectivity defines topology and kinematics, but additional
+physical properties are assigned by the applicable Section or
+concentrated-property keywords; see Section~\ref{sec:sections}.
+The following element reference lists the supported types and their
+aliases, followed by the individual numerical formulations, connectivity,
+applications, and limitations.
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ELEMENT, TYPE=T3, ELSET=BARS
-0, 0, 10
-1, 10, 20
-
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
-100, 20
-*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
-101, 20
-*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
-102, 20
-
-*ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
-10, 100, 110, 120, 130
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELEMENT, TYPE=T3D2, ELSET=BARS
-0, 0, 10
-1, 10, 20
-
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
-100, 20
-*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
-101, 20
-*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
-102, 20
-
-*ELEMENT, TYPE=S4, ELSET=PANEL
-10, 100, 110, 120, 130
-\end{abaqusdeck}
-\end{dialectexamples}
+\input{pages/reference/elements}

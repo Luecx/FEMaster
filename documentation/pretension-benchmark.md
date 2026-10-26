@@ -14,18 +14,19 @@ cmake --build build/pretension-bench --config Release --target FEMaster_pretensi
 
 The executables are in `bin` for single-config generators or `bin/Release` for
 Visual Studio. The preparation benchmark builds fresh structured C3D8 bars,
-three elements long, with n by n elements across and one planar merged cut.
+three elements long, with n by n elements across and two coincident,
+topologically separate planar cut faces.
 It times only `prepare_pretension_sections()`: compilation, material assignment,
 stiffness assembly, equilibrium solving and result writing are excluded.
 Preparation diagnostic logging is included.
 
 Sizes are n=4,8,16,32,64. Repeat 0 is warmup; repeats 1-5 are measured samples.
 Report the median and range for each size and preserve the raw output with the
-exact source revision and build settings. The generated control node is included
-in final node counts.
+exact source revision and build settings. No nodes are generated during
+preparation.
 
-The matching executable measures an isolated copy of the deterministic matching
-kernel. It excludes topology work and is a diagnostic lower-level measurement,
+The matching executable measures an isolated copy of the unique coordinate
+matching kernel. It excludes face-topology checks and is a lower-level measurement,
 not an end-to-end preparation benchmark.
 
 ## Equilibrium and result comparison

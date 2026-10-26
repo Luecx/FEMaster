@@ -22,13 +22,17 @@ with csv_path.open('w') as f:
                 if not timer: raise ValueError(result.stdout[-12000:])
                 text=output.with_suffix('.res').read_text()
                 fields={}
-                for name in ['DISPLACEMENT','PTFORC']:
+                for name in ['PTGAP','PTFORC']:
                     rows=text.split('FIELD, NAME='+name+',')[1].split('END FIELD')[0].splitlines()[1:]
-                    fields[name]=float(rows[-1].split()[1])
-                q=fields['DISPLACEMENT'];force=fields['PTFORC']
+                    fields[name]={int(parts[0]): [float(value) for value in parts[1:]]
+                                  for row in rows if (parts := row.split())}
+                first_b=1+5*(n+1)**2
+                side_b=range(first_b, first_b+(n+1)**2)
+                q=fields['PTGAP'][first_b][0]
+                force=sum(fields['PTFORC'][node][2] for node in side_b)
                 assert abs(q-1000*3/210000)<1e-6,(n,q)
                 assert abs(force-1000)<1e-2,(n,force)
-                writer.writerow([rev,n,repeat,timer[1],5*(n+1)**2+1,3*n*n,q,force]);f.flush()
+                writer.writerow([rev,n,repeat,timer[1],5*(n+1)**2,3*n*n,q,force]);f.flush()
                 print(rev,n,repeat,timer[1],flush=True)
 
 # Compare every exported field row, including semantic IDs, on identical meshes.

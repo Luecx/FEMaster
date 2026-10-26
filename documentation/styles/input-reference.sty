@@ -9,24 +9,29 @@
 \definecolor{FMSoftOrange}{HTML}{FFF4E8}
 \definecolor{FMSoftGreen}{HTML}{EEF7EF}
 
-% Every documented input keyword starts on a fresh page. The page break is
-% intentional: the manual is both a continuous tutorial and a printable keyword
-% reference in which a single command can be opened or printed independently.
+% Keyword entries belong to the thematic sections of the reference chapter.
+% Each entry starts on a fresh page so it can also be printed independently.
 \newcommand{\keywordpage}[1]{%
   \clearpage
-  \section{\cmd{#1}}
+  \subsection{\cmd{#1}}
   \markright{\cmd{#1}}
 }
 
 \newcommand{\keywordpageshort}[1]{%
-  \section{\cmd{#1}}
+  \subsection{\cmd{#1}}
   \markright{\cmd{#1}}
 }
 
+% Model and analysis topics group their entries one level below a subsection.
+\newcommand{\keywordnestedpage}[1]{%
+  \clearpage
+  \subsubsection{\cmd{#1}}
+  \markright{\cmd{#1}}
+}
 
 \newcommand{\keywordsubpage}[2]{%
   \clearpage
-  \section{#1: \cmd{#2}}
+  \subsection{#1: \cmd{#2}}
   \markright{\cmd{#2}}
 }
 
@@ -146,7 +151,7 @@
 % \end{tabularx} while collecting the body. Plain tabular columns avoid that
 % body-scanning restriction and are sufficient for these short reference tables.
 \newenvironment{keywordparameters}{%
-  \subsection*{Parameters}
+  \paragraph*{Parameters}
   \begin{tabular}{@{}p{0.20\linewidth}p{0.15\linewidth}p{0.59\linewidth}@{}}
   \toprule
   \textbf{Parameter} & \textbf{Status} & \textbf{Meaning} \\
@@ -157,7 +162,7 @@
 }
 
 \newenvironment{keyworddata}{%
-  \subsection*{Data lines}
+  \paragraph*{Data lines}
   \begin{tabular}{@{}p{0.27\linewidth}p{0.67\linewidth}@{}}
   \toprule
   \textbf{Entry} & \textbf{Meaning} \\
@@ -167,5 +172,5 @@
   \end{tabular}
 }
 
-\newcommand{\syntaxheading}{\subsection*{Syntax and semantics}}
-\newcommand{\exampleheading}{\subsection*{FEMaster and Abaqus example}}
+\newcommand{\syntaxheading}{\paragraph*{Syntax and semantics}}
+\newcommand{\exampleheading}{\paragraph*{FEMaster and Abaqus example}}

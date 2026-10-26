@@ -506,11 +506,7 @@ void ResWriter::write_pretension_sections(const model::ModelData& model_data) {
     file_path << std::setprecision(6);
     for (const auto& section : model_data.pretension_sections) {
         if (!section) continue;
-        const auto& [instance, local_id] = model_data.node_mapping.at(section->control_node);
-        const std::string control_id = instance->instance_id == 0
-            ? std::to_string(local_id) : instance->name + "." + std::to_string(local_id);
         file_path << "  " << section->name << '\n'
-                  << "    control   : " << control_id << " (DOF 1)\n"
                   << "    surface A : " << section->interface_surface_set_a << '\n'
                   << "    surface B : " << section->interface_surface_set_b << '\n'
                   << "    axis      : " << section->axis_direction(0) << ", "

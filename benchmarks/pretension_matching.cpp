@@ -1,4 +1,4 @@
-// Isolated matching kernel from model_pretension.cpp; excludes all topology work.
+// Isolated unique reference-coordinate matching kernel from model_pretension.cpp.
 #include "core/types_eig.h"
 #include <chrono>
 #include <iostream>
@@ -6,30 +6,33 @@
 #include <set>
 #include <map>
 #include <vector>
-#include <limits>
 using namespace fem;
 int main() {
     std::cout << "n,repeat,matching_ms,pairs\n";
     for (int n : {4,8,16,32,64}) for (int repeat=0; repeat<6; ++repeat) {
         std::vector<Vec3> positions;
-        std::set<ID> nodes;
+        std::set<ID> nodes_a, nodes_b;
         for (int y=0; y<=n; ++y) for (int x=0; x<=n; ++x) {
-            nodes.insert(static_cast<ID>(positions.size()));
+            nodes_a.insert(static_cast<ID>(positions.size()));
+            positions.emplace_back(Precision(x)/n, Precision(y)/n, 1);
+        }
+        for (int y=0; y<=n; ++y) for (int x=0; x<=n; ++x) {
+            nodes_b.insert(static_cast<ID>(positions.size()));
             positions.emplace_back(Precision(x)/n, Precision(y)/n, 1);
         }
         const auto start = std::chrono::steady_clock::now();
         std::map<ID,ID> pairs;
-        auto unused = nodes;
-        for (const ID a : nodes) {
+        std::set<ID> used_b;
+        for (const ID a : nodes_a) {
             const Vec3 point = positions[a];
-            ID best = -1;
-            Precision distance_best = std::numeric_limits<Precision>::max();
-            for (const ID b : unused) {
-                const Precision distance = (point-positions[b]).norm();
-                if (distance < distance_best) { distance_best=distance; best=b; }
+            ID match = -1;
+            for (const ID b : nodes_b) {
+                if ((point-positions[b]).norm() > Precision(1e-8)) continue;
+                if (match >= 0) return 1;
+                match = b;
             }
-            pairs.emplace(a,best);
-            unused.erase(best);
+            if (match < 0 || !used_b.insert(match).second) return 1;
+            pairs.emplace(a,match);
         }
         const double ms = std::chrono::duration<double,std::milli>(
             std::chrono::steady_clock::now()-start).count();

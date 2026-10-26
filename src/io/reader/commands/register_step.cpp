@@ -54,7 +54,7 @@ namespace fem::io::reader::commands {
  *
  * STEP stores the current procedure controls. Exactly one supported procedure
  * card must appear before direct structural conditions. Direct definitions mutate
- * ModelData::conditions; LOADS and SUPPORTS activate reusable collector entries
+ * LoadCase::target_conditions; LOADS and SUPPORTS activate reusable collector entries
  * in that same manager.
  *
  * END STEP executes the active analysis immediately. Omitted direct condition
@@ -78,6 +78,8 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                 .key("NLGEOM").optional().allowed({"", "YES", "NO", "OFF"})
                     .doc("Enable geometric nonlinearity when present without a value or set to YES")
                 .key("INC").optional("100").doc("Maximum number of increments")
+                .key("RESUME").optional("YES").allowed({"YES", "NO"})
+                    .doc("Continue the preceding converged state; YES by default")
                 .flag("PERTURBATION").doc("Linear perturbation procedure")
         );
 
@@ -99,10 +101,11 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             state.max_increments = max_increments;
             state.nlgeom         = keys.has("NLGEOM") && keys.get<bool>("NLGEOM");
             state.perturbation   = keys.has("PERTURBATION");
+            state.resume         = keys.get<bool>("RESUME");
             state.step_period    = Precision(1);
 
             // The procedure card creates the concrete analysis and clears only
-            // previous collector-derived ConditionManager activations. Direct
+            // previous collector-derived activations. Direct
             // condition history remains persistent until explicitly modified.
         });
 

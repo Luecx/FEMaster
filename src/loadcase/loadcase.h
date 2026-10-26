@@ -2,9 +2,9 @@
  * @file loadcase.h
  * @brief Declares the base class for load-case execution.
  *
- * Load cases contain analysis settings and execute the associated solution
- * procedure. Loads, supports and their active named groups belong to ModelData;
- * run() assembles exactly the model state present when the analysis executes.
+ * Load cases contain analysis settings and execute a solution procedure.
+ * Each load case owns frozen initial and editable target condition states;
+ * the compiled FE model supplies geometry and material data for assembly.
  *
  * @see src/loadcase/loadcase.cpp
  * @author Finn Eggers
@@ -39,9 +39,8 @@ namespace loadcase {
  * command can observe it. Derived classes provide the canonical input-deck type
  * name and implement the actual analysis in @ref run.
  *
- * Conditions and collector-activated conditions belong exclusively to ModelData. Derived
- * analyses assemble that current state during run(), without storing collector
- * lists, direct-condition copies or input-history transitions.
+ * The reader resolves direct and collector input into the step target state.
+ * Solvers evaluate initial and target contributions without mutating definitions.
  *
  * Castable provides mutable and const runtime access to concrete implementations.
  *
@@ -57,11 +56,23 @@ struct LoadCase : public Castable {
     io::writer::ResultWriters* writer = nullptr;
     model::Model*              model  = nullptr;
 
+    // Step-owned input conditions. The initial state is frozen while the parser
+    // edits only the target state; no active conditions live in ModelData.
+    bc::ConditionState initial_conditions;
+    bc::ConditionState target_conditions;
+
     // Per-step output requests, provided basis fields and lazy recovered fields
     io::writer::OutputRequestHandler output;
 
-    // Diagnostic settings
+    // State continuation and diagnostic settings
+    bool resume             = false;
+    bool perturbation       = false;
     bool report_constraints = false;
+
+    // Final applied structural load, filled only by committed static analyses.
+    // The parser carries it across resumed steps without inspecting mutable loads.
+    model::Field::Ptr committed_structural_load = nullptr;
+
 
     // Construction and destruction
     virtual ~LoadCase() = default;
@@ -69,6 +80,14 @@ struct LoadCase : public Castable {
     // Concrete analysis identity and execution
     virtual std::string type_name() const = 0;
     virtual void run() = 0;
+
+    // Prepare persistent state and store a converged static configuration
+    void prepare_state() const;
+    void commit_state(const model::Field& displacement) const;
+
+    // Evaluate a transition or the nominal active target at analysis time
+    model::Field build_step_load_matrix  (Precision time, Precision progress) const;
+    model::Field build_target_load_matrix(Precision time) const;
 
     // Assigned load-case identifier
     ID get_id() const { return id; }

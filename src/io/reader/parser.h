@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "../../bc/condition_manager.h"
+#include "../../bc/condition_state.h"
 #include "../../core/types_num.h"
 #include "../../loadcase/loadcase.h"
 #include "../dsl/deck.h"
@@ -82,20 +82,18 @@ struct DocOptions {
  * crosses from sparse Part/Instance topology to dense assembly storage. No
  * command activation state is stored in the DSL registry.
  *
- * Input-condition history is resolved here, not in ConditionManager. Each
+ * Input-condition history is resolved here, not in ConditionState. Each
  * history family has two identifier maps tracking inherited and current names
  * to one or more physical Condition pointers. Input identifiers are never
  * stored on Condition objects. One CLOAD may create multiple physical pointers
  * when nodes use different TRANSFORM coordinate systems.
  * The parser resolves MOD using the original source and DOF. Inherited and
- * current-step identifiers are kept separately; the manager owns only active
- * physical Condition pointers.
+ * current-step identifiers are kept separately; step-owned ConditionState
+ * containers hold active physical pointers.
  *
- * Named collector definitions are independent of direct input history.
- * Selecting a named collector records the shared physical definitions for
- * the current analysis. When that analysis executes, only pointers that were
- * not already active are inserted temporarily and removed afterward.
- * This preserves direct conditions that happen to share a collector pointer.
+ * Named collectors hold reusable definitions independently of direct history.
+ * The reader selects them into the current target state and tracks temporary
+ * activation for automatic removal from the following target state.
  */
 /**
  * Step syntax is a scope; its procedure constructs the actual load case.
@@ -106,6 +104,7 @@ struct StepState {
     int         max_increments = 100;
     bool        nlgeom         = false;
     bool        perturbation   = false;
+    bool        resume         = true;
     Precision   step_period    = Precision(1);
 };
 
@@ -122,15 +121,29 @@ class Parser {
     int                     next_loadcase_id_ = 1;
     StepState               step_state_;
 
-    // Reader-owned input identity, separate from active physical conditions.
-    // One identifier may resolve to multiple TRANSFORM fragments.
+    // Only the final successful target is carried between steps. The working
+    // identifier generations belong to the currently parsed step; perturbation
+    // edits are discarded rather than restored to shared physical objects.
     using IdentifierMap = std::unordered_map<std::string, std::vector<bc::Condition::Ptr>>;
+
+    bc::ConditionState committed_conditions_;
+    bc::ConditionState pending_conditions_;
+    std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> committed_identifiers_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> inherited_conditions_;
     std::array<IdentifierMap, bc::N_CONDITION_FAMILIES> current_conditions_;
 
-    // Shared collector definitions requested by the current analysis. These
-    // are inserted into the manager only while that analysis is running.
+    // Collectors are per-step selections. Their previous contributions remain
+    // in the frozen initial state but are omitted from the next target until
+    // explicitly selected again.
     std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> selected_conditions_;
+    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> committed_collector_conditions_;
+
+    // Actual final external loading of the last committed structural static
+    // state. Unlike mutable input definitions, this also retains prior
+    // collector activations and the final nonlinear load factor.
+    model::Field::Ptr committed_structural_load_;
+    bool last_committed_static_nonlinear_ = false;
+
 
 public:
     // we allow *TRANSFORM to be parsed but we don't really transform the DOFs. Instead,
@@ -139,14 +152,6 @@ public:
     // that have been transformed so that, once we encounter a node, we can create a separate
     // load with the correct transformation applied. This maps node ID -> coordinate system name.
     std::unordered_map<ID, std::string> node_transforms;
-
-    struct PretensionAction {
-        std::string section;
-        std::string action;
-        std::string control;
-        Precision   value = 0;
-    };
-    std::vector<PretensionAction> queued_pretension_actions_;
 
 public:
     // Construction
@@ -168,17 +173,13 @@ public:
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
-    void queue_pretension_action(const std::string& section,
-                                 const std::string& action,
-                                 const std::string& control,
-                                 Precision value);
 
     StepState& step_state();
     const StepState& step_state() const;
 
-    // Physical conditions remain model-owned; input identities remain here.
-    bc::ConditionManager&       conditions();
-    const bc::ConditionManager& conditions() const;
+    // Conditions are step-owned; input identities and pending definitions remain here.
+    bc::ConditionState&       conditions();
+    const bc::ConditionState& conditions() const;
 
     // MOD replaces one complete logical source/DOF group. Compatible physical
     // fragments retain their start values; changed bases keep both histories.

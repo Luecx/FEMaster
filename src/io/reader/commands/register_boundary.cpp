@@ -128,24 +128,12 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                     auto target_region = model.resolve_node_region(target);
                     std::string identifier =
                         (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
-                    if (target_region->size() == 1)
-                        for (const auto& section : model._data->pretension_sections)
-                            if (section->control_node == *target_region->begin())
-                                identifier = "PRETENSION_NODE:" + std::to_string(section->control_node);
                     std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
 
                     const auto add_node = [&](ID node_id) {
                         Vec6 node_values = values;
-                        if (*fixed) {
-                            logging::error(first_dof == 1 && last_dof == 1 && magnitude == Precision(0),
-                                "BOUNDARY,FIXED: only pretension DOF 1 without a magnitude is supported");
-                            pretension::PretensionSection::Ptr section;
-                            for (const auto& candidate : model._data->pretension_sections)
-                                if (candidate->control_node == node_id) section = candidate;
-                            logging::error(section && section->nodal_control && section->has_solved_gap,
-                                "BOUNDARY,FIXED: requires an Abaqus control node with a successfully solved prior step");
-                            node_values[0] = section->last_solved_gap;
-                        }
+                        logging::error(!*fixed,
+                            "BOUNDARY,FIXED is unsupported; specify the constrained DOFs explicitly");
                         cos::CoordinateSystem::Ptr orientation = nullptr;
                         const auto transform = parser.node_transforms.find(node_id);
                         if (transform != parser.node_transforms.end()) {

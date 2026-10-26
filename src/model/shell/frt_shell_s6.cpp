@@ -28,7 +28,7 @@ namespace fem::model {
 FRTShellS6::FRTShellS6(ID id, const std::array<ID, 6>& nodes)
     : FRTShell<6>       (id, nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_TRI,
-                          math::quadrature::Order::ORDER_CUBIC) {}
+                          math::quadrature::Order::ORDER_QUARTIC) {}
 
 /**
  * Returns the public element type identifier.
@@ -61,7 +61,7 @@ std::shared_ptr<SurfaceInterface> FRTShellS6::surface(int surface_id) {
 /**
  * Returns the numerical area quadrature used by the element.
  *
- * @return Cubic triangular quadrature rule.
+ * @return Quartic triangular quadrature rule.
  */
 const math::quadrature::Quadrature& FRTShellS6::integration_scheme() const {
     return integration_scheme_;

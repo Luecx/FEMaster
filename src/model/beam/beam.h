@@ -186,6 +186,12 @@ struct BeamElement : StructuralElement {
         bool            scale_by_density,
         const TenField& field
     ) override;
+
+protected:
+    // Linear beam operators accept either an implicit reference state or an
+    // explicit base field with exactly zero translations and rotations at this
+    // element's nodes. Nonzero bases require a finite-rotation formulation.
+    void validate_reference_base_displacement(const Field* base_displacement) const;
 };
 
 } // namespace model

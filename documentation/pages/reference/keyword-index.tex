@@ -1,0 +1,193 @@
+\section{Keyword Index}
+\label{sec:keyword-index}
+
+This section indexes the keywords accepted by the unified FEMaster
+input language. The compatibility column distinguishes supported
+Abaqus-compatible syntax from FEMaster extensions and legacy aliases;
+it does not imply that every option offered by another solver is
+implemented. Detailed keyword pages explain supported alternatives.
+
+Command names are displayed in the conventional spaced form used in the manual, for example \cmd{END PART}, \cmd{SOLID SECTION}, and \cmd{STEADY STATE DYNAMICS}. \cmd{INERTIALOAD} is shown with the exact native spelling currently accepted by FEMaster.
+
+\small
+\begin{longtable}{@{}p{0.27\linewidth}p{0.19\linewidth}p{0.46\linewidth}@{}}
+\caption{Input keywords and their canonical documentation locations.}\label{tab:keyword-index}\\
+\toprule
+\textbf{Keyword} & \textbf{Compatibility} & \textbf{Canonical topic} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Keyword} & \textbf{Compatibility} & \textbf{Canonical topic} \\
+\midrule
+\endhead
+
+\cmd{HEADING} & Abaqus-compatible & Input Structure \\
+\cmd{MODEL} & FEMaster extension & Input Structure; optional native root marker \\
+\cmd{PART} & Abaqus-compatible & Model Definition \\
+\cmd{END PART} & Abaqus-compatible & Model Definition \\
+\cmd{ASSEMBLY} & Abaqus-compatible & Model Definition \\
+\cmd{END ASSEMBLY} & Abaqus-compatible & Model Definition \\
+\cmd{INSTANCE} & Abaqus-compatible & Model Definition \\
+\cmd{END INSTANCE} & Abaqus-compatible & Model Definition \\
+\cmd{NODE} & Abaqus-compatible & Model Definition \\
+\cmd{ELEMENT} & Compatible + extensions & Model Definition; \cmd{ELEMENT} formulations \\
+
+\midrule
+\cmd{NSET} & Abaqus-compatible & Model Definition \\
+\cmd{ELSET} & Abaqus-compatible & Model Definition \\
+\cmd{SURFACE} & Abaqus-compatible & Model Definition \\
+\cmd{SFSET} & FEMaster extension & Model Definition \\
+\cmd{PRETENSIONSECTION} & FEMaster extension & Bolt Pretension \\
+
+\midrule
+\cmd{MATERIAL} & Abaqus-compatible & Materials \\
+\cmd{ELASTIC} & Abaqus-compatible & Materials \\
+\cmd{PLASTIC} & Abaqus-compatible & Materials; isotropic J2 plasticity \\
+\cmd{HYPERELASTIC} & Abaqus-compatible & Materials \\
+\cmd{DENSITY} & Abaqus-compatible & Materials \\
+\cmd{EXPANSION} & Abaqus-compatible & Materials \\
+\cmd{THERMALEXPANSION} & Legacy alias & Materials; legacy alias of \cmd{EXPANSION} \\
+
+\midrule
+\cmd{PROFILE} & FEMaster extension & Sections and Element Properties \\
+\cmd{SOLID SECTION} & Abaqus-compatible & Sections and Element Properties \\
+\cmd{SHELL SECTION} & Abaqus-compatible & Sections and Element Properties \\
+\cmd{BEAM SECTION} & FEMaster extension & Sections and Element Properties \\
+\cmd{BEAM GENERAL SECTION} & Abaqus-compatible & Sections and Element Properties \\
+\cmd{TRUSS SECTION} & FEMaster extension & Sections and Element Properties \\
+\cmd{POINTMASS} & FEMaster extension & Sections and Element Properties; NSET-based concentrated properties \\
+\cmd{MASS} & Abaqus-compatible & Sections and Element Properties; \val{MASS} point elements \\
+\cmd{ROTARY INERTIA} & Abaqus-compatible & Sections and Element Properties; \val{ROTARYI} point elements \\
+\cmd{SPRING} & Abaqus-compatible & Sections and Element Properties; linear \val{SPRING1} point elements \\
+
+\midrule
+\cmd{ORIENTATION} & Abaqus-compatible & Coordinate Systems and Orientations \\
+\cmd{TRANSFORM} & Abaqus-compatible & Coordinate Systems and Orientations \\
+
+\midrule
+\cmd{FIELD} & FEMaster extension & Fields \\
+\cmd{NORMAL} & FEMaster extension & Fields \\
+\cmd{INITIALCONDITION} & FEMaster extension & Fields; initial nodal temperature and velocity \\
+\cmd{INITIALCONDITIONS} & Alias & Fields; same syntax as \cmd{INITIALCONDITION} \\
+
+\midrule
+\cmd{AMPLITUDE} & Abaqus-compatible & Loads and Boundary Conditions \\
+\cmd{SUPPORT} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{BOUNDARY} & Abaqus-compatible & Loads and Boundary Conditions \\
+\cmd{PRETENSION} & FEMaster extension & Bolt Pretension \\
+\cmd{CLOAD} & Compatible + extensions & Loads and Boundary Conditions \\
+\cmd{DLOAD} & Compatible + extensions & Loads and Boundary Conditions; Abaqus labels and FEMaster vector form \\
+\cmd{PLOAD} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{DSLOAD} & Abaqus-compatible & Loads and Boundary Conditions \\
+\cmd{VLOAD} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{INERTIALOAD} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{TEMPERATURE} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{HEATFLUX} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{CONVECTION} & FEMaster extension & Loads and Boundary Conditions \\
+
+\midrule
+\cmd{COUPLING} & Compatible + extensions & Constraints and Contact \\
+\cmd{KINEMATIC} & Abaqus-compatible & Constraints and Contact; child of scoped \cmd{COUPLING} \\
+\cmd{DISTRIBUTING} & Abaqus-compatible & Constraints and Contact; child of scoped \cmd{COUPLING} \\
+\cmd{EQUATION} & Abaqus-compatible & Constraints and Contact \\
+\cmd{MPC} & FEMaster extension & Constraints and Contact; two-node kinematics \\
+\cmd{TIE} & FEMaster extension & Constraints and Contact \\
+\cmd{RIGID BODY} & CalculiX-compatible & Constraints and Contact \\
+\cmd{CONNECTOR} & FEMaster extension & Constraints and Contact \\
+\cmd{RBM} & FEMaster extension & Constraints and Contact \\
+\cmd{CONTACT} & FEMaster extension & Constraints and Contact \\
+
+\midrule
+\cmd{LOADCASE} & FEMaster extension & Analysis Procedures \\
+\cmd{SUPPORTS} & FEMaster extension & Analysis Procedures \\
+\cmd{LOADS} & FEMaster extension & Analysis Procedures \\
+\cmd{END} & FEMaster extension & Analysis Procedures \\
+\cmd{STEP} & Abaqus-compatible & Analysis Procedures \\
+\cmd{STATIC} & Abaqus-compatible & Analysis Procedures \\
+\cmd{FREQUENCY} & Abaqus-compatible & Analysis Procedures \\
+\cmd{BUCKLE} & Abaqus-compatible & Analysis Procedures \\
+\cmd{DYNAMIC} & Abaqus-compatible & Analysis Procedures \\
+\cmd{STEADY STATE DYNAMICS} & Abaqus-compatible & Analysis Procedures \\
+\cmd{END STEP} & Abaqus-compatible & Analysis Procedures \\
+
+\midrule
+\cmd{SOLVER} & FEMaster extension & Solver and Numerical Controls; in Abaqus \cmd{STEP} after the procedure \\
+\cmd{CONSTRAINTMETHOD} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{NONLINEAR} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{TIME} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{NEWMARK} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{DAMPING} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{FREQUENCIES} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{NUMEIGENVALUES} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{SIGMA} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{WRITEEVERY} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{INITIALVELOCITY} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{INERTIARELIEF} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{REBALANCELOADS} & FEMaster extension & Solver and Numerical Controls \\
+
+\midrule
+\cmd{OVERVIEW} & FEMaster extension & Output and Diagnostics \\
+\cmd{REQUESTSTIFFNESS} & FEMaster extension & Output and Diagnostics \\
+\cmd{REQUESTSTGEOM} & FEMaster extension & Output and Diagnostics \\
+\cmd{CONSTRAINTSUMMARY} & FEMaster extension & Output and Diagnostics \\
+\cmd{OUTPUT} & Abaqus-compatible & Output; \key{FIELD} container accepted, selection is made by child node/element output cards \\
+\cmd{NODE OUTPUT} & Abaqus-compatible & Output; selects nodal result Fields for the active step \\
+\cmd{ELEMENT OUTPUT} & Abaqus-compatible & Output; selects element-derived result Fields for the active step \\
+\cmd{NODE FILE} & CalculiX-compatible & Output; CalculiX-style alias selecting nodal result Fields \\
+\cmd{EL FILE} & CalculiX-compatible & Output; CalculiX-style alias selecting element-derived result Fields \\
+\cmd{EL OUTPUT} & CalculiX-compatible & Output; element-derived frame Fields \\
+\cmd{NODE PRINT} & Accepted, ignored & Output; accepted and ignored \\
+\cmd{EL PRINT} & Accepted, ignored & Output; accepted and ignored \\
+
+\midrule
+\cmd{TOPODENSITY} & FEMaster extension & Topology-weighted Linear Statics \\
+\cmd{TOPOORIENT} & FEMaster extension & Topology-weighted Linear Statics \\
+\cmd{TOPOEXPONENT} & FEMaster extension & Topology-weighted Linear Statics \\
+
+\bottomrule
+\end{longtable}
+\normalsize
+
+\subsection{Supported element formulations}
+
+The complete list of supported element names, Abaqus-compatible
+aliases, node connectivity, numerical formulations, and limitations
+is provided directly under \cmd{ELEMENT} in
+Section~\ref{sec:model-definition}. The element-type table and
+individual descriptions are maintained there as the canonical reference.
+
+\subsection{Coverage notes}
+
+Abaqus-compatible and CalculiX-compatible describe supported
+input spellings and data subsets, not full behavioral equivalence to
+those solvers. For example, \cmd{DLOAD} accepts body accelerations,
+force-density components, element-face pressure labels, and a
+FEMaster-specific vector surface-traction form. The detailed
+keyword page specifies the valid data layouts.
+
+\cmd{COUPLING}, \cmd{KINEMATIC}, and \cmd{DISTRIBUTING}
+support Abaqus-compatible scoped coupling definitions with
+inclusive degree-of-freedom ranges. An additional FEMaster
+direct form uses \key{TYPE=KINEMATIC} or \key{TYPE=STRUCTURAL}
+and six selector values. Other Abaqus-specific coupling options
+are outside the supported subset.
+
+\cmd{EQUATION} and concentrated-element properties have
+Abaqus-compatible input forms. The supported point-element
+subset consists of isotropic \val{MASS}, diagonal \val{ROTARYI},
+and constant linear point-to-ground \val{SPRING1}. Off-diagonal
+rotary inertia, oriented point properties, \val{SPRING2}/\val{SPRINGA},
+nonlinear springs, and frequency- or field-dependent spring data
+are outside the supported subset. The FEMaster extension
+\cmd{POINTMASS} combines diagonal properties directly on an NSET.
+
+The optional native \cmd{MODEL} marker is documented as input-file framing rather than as a separate level in the model-definition hierarchy.
+
+The \cmd{PLASTIC} material card is available with Abaqus-compatible syntax, with the same tabulated yield-stress/equivalent-plastic-strain rows. \cmd{SOLVER} is a FEMaster extension accepted inside
+\cmd{STEP} after the active procedure has been declared.
+Other numerical-control keywords have the scopes and restrictions
+documented on their individual reference pages.
+
+Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
+
+The index, detailed thematic documentation, and applicable complete examples together describe the supported input keywords and element formulations. This keeps the manual aligned with the syntax users can actually run.

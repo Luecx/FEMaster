@@ -2,8 +2,8 @@
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
  *
- * The structural analysis reads loads and support prescriptions directly from
- * ModelData, reduces K u = f through the chosen constraint map and recovers
+ * The analysis assembles step-owned loads and supports, then reduces
+ * K_T du = delta f through the chosen constraint map and recovers
  * global response fields. Optional inertia relief and load rebalancing use the
  * actual active support state. Condition replacement semantics belong to the DSL;
  * model assembly owns physical load integration and equation construction.
@@ -30,6 +30,7 @@
 #include "tools/rebalance_loads.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <limits>
 #include <tuple>
@@ -49,11 +50,15 @@ using constraint::ConstraintTransformer;
  * state; balancing changes only the assembled force field, and the temporary
  * inertia-relief RBM is removed after constraint collection.
  *
- * The affine constraint map reduces K u = f to the configured sparse backend.
+ * Ordinary linear statics solves total equilibrium about the reference
+ * state. Perturbations alone linearize about a committed, prestressed base.
+ *
+ * The constraint map solves total linear equilibrium for general steps and
+ * tangent increments for perturbations with the same configured backend.
  * Expanded global displacements drive stress/strain and reaction recovery, then
  * requested result fields are written and analysis-local element caches released.
- * Model condition definitions and collector-derived activations are read, never copied into
- * the analysis or modified by this procedure.
+ * The analysis evaluates its step-owned initial and target conditions without
+ * mutating the physical definitions.
  */
 void LinearStatic::run() {
     logging::info(true, "");
@@ -67,131 +72,166 @@ void LinearStatic::run() {
     logging::error(!has_pretension || constraint_method != ConstraintTransformer::Method::Lagrange,
         "PRETENSION: LAGRANGE is unsupported because its multiplier path does not "
         "check constraint rank or consistency. Use NULLSPACE or ELIMINATION.");
+    logging::error(!has_pretension || !perturbation,
+        "PRETENSION: perturbation steps are not supported");
 
-    logging::error(!has_pretension || (!inertia_relief && !rebalance_loads),
-        "PRETENSION: inertia relief and load rebalancing do not support scalar control-node loads");
+    // Ordinary linear statics never continues a deformed tangent: the
+    // reference configuration is its geometry throughout assembly.
+    // Perturbations retain the prestressed configuration unmodified.
+    if (!perturbation) {
+        *model->_data->positions = *model->_data->positions_reference;
+    }
 
-    // Prepare section assignments and analysis-local element state
+    // error checks if we are in a perturbation analysis
+    logging::error(!perturbation || model->_data->contacts.empty(),
+        "LINEARSTATIC PERTURBATION: contact tangent is not supported");
+    logging::error(!perturbation || (!inertia_relief && !rebalance_loads),
+        "LINEARSTATIC PERTURBATION: inertia relief and rebalancing are not supported");
+    logging::error(!perturbation || method == solver::DIRECT,
+        "LINEARSTATIC PERTURBATION: a DIRECT solver is required for general tangents");
+    logging::error(constraint_method != Method::Lagrange || method != solver::INDIRECT,
+        "LAGRANGE constraints require a DIRECT solver");
+    logging::error(!inertia_relief || (model->_data->elem_sets.has("EALL") && model->_data->elem_sets.get("EALL") != nullptr),
+        "InertiaRelief: EALL element set is not available");
+    logging::error(!inertia_relief || target_conditions.get(bc::SUPPORT).empty(),
+       "InertiaRelief: requires no active structural supports. "
+       "Clear direct SUPPORT history and remove active support collector definitions.");
+    logging::error(!rebalance_loads || target_conditions.get(bc::SUPPORT).empty(),
+        "Rebalancing Loads: requires no active structural supports. "
+        "Clear direct SUPPORT history and deselect non-empty support collectors.");
+
     model->assign_sections();
     model->step_begin();
+
+    // Structural temperatures are prescribed fields, not thermal constraints.
+    // The solver evaluates thermal forces at the step's target temperature.
+    model::Field* target_temperature = model->_data->temperature_target
+        ? model->_data->temperature_target.get()
+        : model->_data->temperature.get();
 
     // Enumerate the current structural system in global generalized coordinates
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    // Assemble direct history and collector-activated conditions from the current model
+    // Assemble step initial/target conditions and selected collectors
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(step_period); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1)); },
         "constructing load matrix (node x 6)");
 
-    // Free-body load balancing requires the complete active support state to be empty
-    const bool supports_active =
-        !model->_data->conditions.get(bc::SUPPORT).empty();
-
     if (inertia_relief) {
-        logging::error(!supports_active,
-            "InertiaRelief: requires no active structural supports. "
-            "Clear direct SUPPORT history and remove active support collector definitions.");
-
+        // Inertia relief adds one temporary RBM directly to the same
+        // collection used by parser-created constraints. It is removed
+        // again immediately after constraint collection below.
         Timer::measure(
-            [&]() {
-                fem::apply_inertia_relief(
-                    *model->_data,
-                    global_load_mat,
-                    inertia_relief_consider_point_masses
-                );
-
-                logging::error(model->_data->elem_sets.has("EALL")
-                            && model->_data->elem_sets.get("EALL") != nullptr,
-                    "InertiaRelief: EALL element set is not available");
-
-                // Inertia relief adds one temporary RBM directly to the same
-                // collection used by parser-created constraints. It is removed
-                // again immediately after constraint collection below.
+            [&]() {fem::apply_inertia_relief(*model->_data, global_load_mat, inertia_relief_consider_point_masses);
                 model->_data->rbms.emplace_back(model->_data->elem_sets.get("EALL"));
-            },
-            "InertiaRelief: adjusting external load matrix and adding RBM");
+            },"InertiaRelief: adjusting external load matrix and adding RBM");
     }
 
     if (rebalance_loads) {
-        logging::error(!supports_active,
-            "Rebalancing Loads: requires no active structural supports. "
-            "Clear direct SUPPORT history and deselect non-empty support collectors.");
-
         Timer::measure(
             [&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
             "rebalancing of loads");
     }
 
+    // collector all the constraints that are active in this analysis
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat); },
+        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
         "building constraints");
 
+    // report if required by the user and turn into equations
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
+    // The total displacement is solved from the reference in ordinary statics.
+    // Only perturbations use the committed configuration as tangent base.
+    model::Field base_displacement = model->_data->create_field_(
+        "LINEARIZATION_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
+    base_displacement.set_zero();
+
+    if (perturbation) {
+        const auto& current   = *model->_data->positions;
+        const auto& reference = *model->_data->positions_reference;
+        for (Index node = 0; node < base_displacement.rows; ++node) {
+            for (Index dof = 0; dof < 3; ++dof) {
+                base_displacement(node, dof) = current(node, dof) - reference(node, dof);
+            }
+            for (Index dof = 3; dof < 6; ++dof) {
+                base_displacement(node, dof) = current(node, dof);
+            }
+        }
+
+        // Incremental boundary condition: C du = d - C u0.
+        const Precision tolerance = constraint::NullSpaceOptions{}.feasibility_tolerance;
+        for (auto& equation : equations) {
+            Precision scale = std::abs(equation.rhs);
+            for (const auto& entry : equation.entries) {
+                const Precision term =
+                    entry.coeff * base_displacement(entry.node_id, entry.dof);
+                equation.rhs -= term;
+                scale += std::abs(term);
+            }
+            if (std::abs(equation.rhs) <= tolerance * scale) equation.rhs = Precision(0);
+        }
+    }
+
+    model::Field reference_internal = model->_data->create_field_(
+        "REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
+    reference_internal.set_zero();
+
+    // Tangent at (0,Tref) for ordinary statics or (u0,T0) for perturbation.
+    // The internal-force anchor uses the target temperature.
+    const model::Field* base_temperature = perturbation
+        ? model->_data->temperature.get()
+        : model->_data->temperature_reference.get();
+
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-        "constructing stiffness matrix K");
-
-    // Evaluate the force anchor f_int(u0,T) at zero displacement and the
-    // requested temperature. The stiffness above remains K(u0,T0) with the
-    // stress-free base temperature T0.
-    model::Field reference_displacement = model->_data->create_field_("REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
-    reference_displacement.set_zero();
-
-    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
-
-    Timer::measure(
         [&]() {
-            model->build_internal_force(
-                reference_internal,
-                reference_displacement,
-                model->_data->temperature.get(),
-                nullptr,
-                nullptr,
-                false,
-                nullptr);
+            return model->build_tangent_stiffness_matrix(
+                active_dof_idx_mat, reference_internal, base_displacement,
+                target_temperature, base_displacement, base_temperature,
+                nullptr, false);
         },
-        "constructing reference internal force"
-    );
+        "constructing tangent stiffness and reference internal force");
 
     auto f_external = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing external load matrix -> active vector"
-    );
+        "reducing external load matrix -> active vector");
 
     auto f_reference = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
-        "reducing reference internal force -> active vector"
-    );
+        "reducing reference internal force -> active vector");
 
-    // Linear equilibrium about u0 = 0:
-    //
-    //     K u = f_ext - f_int(0, T).
-    auto f = f_external - f_reference;
+    // General linear statics: K0 u = F - fint(0,Ttarget).
+    // Perturbation: K(u0,T0) du = dF - [fint(u0,Ttarget)-fint(u0,T0)].
+    DynamicVector f = f_external - f_reference;
+    DynamicVector f_base_internal = f_reference;
+    if (perturbation) {
+        DynamicVector f_start = DynamicVector::Zero(f_external.size());
+        if (step_start_load) {
+            f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, *step_start_load);
+        }
 
-    if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
-        logging::error(false,
-            "Invalid solver/constraint combination\n"
-            "Constraint | Backend   | DIRECT       | INDIRECT\n"
-            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
-            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
-            "NULLSPACE  | GPU       | Yes          | Yes\n"
-            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
-            "LAGRANGE   | CPU MKL   | Yes          | No\n"
-            "LAGRANGE   | CPU Eigen | Limited      | No\n"
-            "LAGRANGE   | GPU       | No           | No\n"
-            "LAGRANGE   | GPU cuDSS | Yes          | No\n"
-            "ELIMINATION| CPU MKL   | Yes          | Yes\n"
-            "ELIMINATION| CPU Eigen | Yes          | Yes\n"
-            "ELIMINATION| GPU       | Yes          | Yes\n"
-            "ELIMINATION| GPU cuDSS | Yes          | Yes");
+        model::Field base_internal = model->_data->create_field_(
+            "BASE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
+        base_internal.set_zero();
+        model->build_internal_force(
+            base_internal, base_displacement, base_temperature,
+            &base_displacement, base_temperature, false, nullptr);
+        f_base_internal =
+            mattools::reduce_mat_to_vec(active_dof_idx_mat, base_internal);
+        f = (f_external - f_start) - (f_reference - f_base_internal);
     }
 
+    // Convert external forces to increments for perturbation output
+    if (perturbation && step_start_load) {
+        global_load_mat -= *step_start_load;
+    }
+
+    // Only perturbations may inherit a prestressed/indefinite tangent.
     const auto direct_matrix_type =
-        constraint_method == ConstraintTransformer::Method::Lagrange
+        perturbation || constraint_method == ConstraintTransformer::Method::Lagrange
             ? solver::DirectSolverMatrixType::General
             : solver::DirectSolverMatrixType::SPD;
 
@@ -214,27 +254,19 @@ void LinearStatic::run() {
 
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", transformer->report().equations);
-    logging::info(true, "n (cols of C)     : ", transformer->report().dofs);
-    if (transformer->rank_known()) {
-        logging::info(true, "rank(C)           : ", transformer->rank());
-    } else {
-        logging::info(true, "rank(C)           : not computed");
-    }
-    logging::info(true, "method            : ", transformer->method_name());
-    logging::info(true, "solver unknowns   : ", transformer->unknowns());
-    logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
-    logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
-    if (!transformer->feasible()) {
-        logging::info(true, "residual ||C u - d|| : ", transformer->report().residual_norm);
-    }
+    logging::info(true, "m (rows of C)        : ", transformer->report().equations);
+    logging::info(true, "n (cols of C)        : ", transformer->report().dofs);
+    logging::info(true, "rank(C)              : ", transformer->rank_known () ? std::to_string(transformer->rank()) : "not computed");
+    logging::info(true, "method               : ", transformer->method_name());
+    logging::info(true, "solver unknowns      : ", transformer->unknowns   ());
+    logging::info(true, "homogeneous          : ", transformer->homogeneous() ? "true" : "false");
+    logging::info(true, "feasible             : ", transformer->feasible   () ? "true" : "false");
+    logging::info(true, "residual ||C u - d|| : ", transformer->feasible   () ? "within tolerance" : std::to_string(transformer->report().residual_norm));
     logging::down();
 
-    if (inertia_relief) {
-        logging::error(!model->_data->rbms.empty(),
-            "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
+    // Remove the temporary inertia-relief RBM after constraint collection
+    if (inertia_relief)
         model->_data->rbms.pop_back();
-    }
 
     auto A = Timer::measure(
         [&]() { return transformer->assemble_system_matrix(K); },
@@ -258,21 +290,23 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
-    // Internal nodal force is a primary equilibrium quantity of the solved
-    // system. Keep it available even though it is not part of the historical
-    // default output set so an explicit request can report it without another
-    // model recovery pass.
+    // The solver's affine internal forces are the only force outputs.
+    // Perturbations emit their increment, not the prestressed base force.
     auto internal_active = Timer::measure(
-        [&]() { return f_reference + K * u; },
-        "computing physical internal nodal forces f_int(0,T) + K u");
+        [&]() {
+            return perturbation
+                ? DynamicVector(f_reference - f_base_internal + K * u)
+                : DynamicVector(f_reference + K * u);
+        },
+        "computing affine internal nodal forces");
 
     auto r_support = Timer::measure(
         [&]() { return transformer->support_reactions(K, f, q); },
-        "computing support reactions via multipliers (C_supp^T lambda)");
+        "computing support reactions");
 
     auto global_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
-        "expanding displacement vector to matrix form");
+        "expanding solved displacement to nodal field");
 
     auto global_react_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
@@ -282,28 +316,15 @@ void LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, internal_active); },
         "expanding internal nodal forces to matrix form");
 
+    // export stiffness files in .mtx format
     if (!stiffness_file.empty()) {
-        io::writer::write_mtx(stiffness_file + "_K.mtx", K);
-        io::writer::write_mtx(stiffness_file + "_A.mtx", A);
+        io::writer::write_mtx      (stiffness_file + "_K.mtx", K);
+        io::writer::write_mtx      (stiffness_file + "_A.mtx", A);
         io::writer::write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
-    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
-    support_mask.setConstant(false);
-    for (const auto& eq : groups.supports) {
-        for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 && e.node_id < support_mask.rows()
-             && e.dof < support_mask.cols()
-             && active_dof_idx_mat(e.node_id, e.dof) != -1) {
-                support_mask(e.node_id, e.dof) = true;
-            }
-        }
-    }
-
     auto reaction_masked = mattools::mask_field(
-        global_react_mat,
-        support_mask,
-        "REACTION_FORCES"
+        global_react_mat, groups.support_mask(active_dof_idx_mat), "REACTION_FORCES"
     );
 
     model::Field pretension_force, pretension_gap, pretension_total;
@@ -316,25 +337,25 @@ void LinearStatic::run() {
         pretension_total.set_zero();
         pretension_gap = model->build_pretension_gap_matrix(global_disp_mat);
     }
-    // The interface force includes constraint reactions after LOCK. Subtract
-    // other external loads so PTFORC remains the force transmitted by the cut.
+    // Recover the force transmitted on B by adding the applied FORCE load
+    // back to the residual of external and internal nodal forces.
     for (const auto& section : model->_data->pretension_sections) {
         section->total_force = 0;
+        Vec3 applied = Vec3::Zero();
+        if (section->state == pretension::State::Force)
+            applied = section->axis_direction * (section->prescribed_value /
+                static_cast<Precision>(section->interface_pairs.size()));
         for (const auto& pair : section->interface_pairs) {
-            for (const ID node : {pair.side_a, pair.side_b}) {
-                for (Dim component = 0; component < 3; ++component) {
-                    pretension_force(node, component) +=
-                        global_internal_mat(node, component) - global_load_mat(node, component);
-                }
+            for (Dim component = 0; component < 3; ++component) {
+                const Precision transmitted = global_internal_mat(pair.side_b, component)
+                    - global_load_mat(pair.side_b, component) + applied(component);
+                pretension_force(pair.side_b, component) = transmitted;
+                pretension_force(pair.side_a, component) = -transmitted;
+                section->total_force += transmitted * section->axis_direction(component);
             }
         }
         for (const auto& pair : section->interface_pairs)
-            for (Dim component = 0; component < 3; ++component)
-                section->total_force += pretension_force(pair.side_b, component) * section->axis_direction(component);
-        pretension_force(section->control_node, 0) = section->total_force;
-        pretension_total(section->control_node, 0) = section->total_force;
-        reaction_masked(section->control_node, 0) = section->total_force - global_load_mat(section->control_node, 0);
-        pretension_gap(section->control_node, 0) = global_disp_mat(section->control_node, 0);
+            pretension_total(pair.side_b, 0) = section->total_force;
     }
 
     Timer::measure(
@@ -343,17 +364,19 @@ void LinearStatic::run() {
 
             writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
-            // The static step exposes only quantities obtained directly from
-            // the solved equilibrium state. Stress, strain, shell resultants,
-            // section forces and shear flow are recovered lazily by the output
-            // handler if the active request set actually needs them.
+            // Recover results consistently with the linearization used for K.
+            if (perturbation) {
+                output.set_perturbation_base(&base_displacement);
+            } else {
+                output.set_linearization_base(&base_displacement, base_temperature);
+            }
             output.begin_frame();
-            output.provide(OutputField::DISPLACEMENT,        global_disp_mat);
-            output.provide(OutputField::EXTERNAL_FORCES,     global_load_mat);
-            output.provide(OutputField::INTERNAL_FORCES,     global_internal_mat);
-            output.provide(OutputField::REACTION_FORCES,     reaction_masked);
-            if (model->_data->temperature) {
-                output.provide(OutputField::TEMPERATURE, *model->_data->temperature);
+            output.provide(OutputField::DISPLACEMENT   , global_disp_mat);
+            output.provide(OutputField::EXTERNAL_FORCES, global_load_mat);
+            output.provide(OutputField::INTERNAL_FORCES, global_internal_mat);
+            output.provide(OutputField::REACTION_FORCES, reaction_masked);
+            if (target_temperature) {
+                output.provide(OutputField::TEMPERATURE,*target_temperature);
             }
 
             output.provide(OutputField::PTFORC, pretension_force);
@@ -364,7 +387,12 @@ void LinearStatic::run() {
         "resolving and writing requested result fields");
 
     transformer->post_check_static(K, f, q);
-    model->capture_pretension_gaps(global_disp_mat);
+    // Commit the total displacement only for ordinary linear statics.
+    if (!perturbation) {
+        commit_state(global_disp_mat);
+        committed_structural_load = std::make_shared<model::Field>(global_load_mat);
+        model->capture_pretension_gaps(global_disp_mat);
+    }
     model->step_end();
 }
 

@@ -41,10 +41,7 @@ namespace fem::bc {
  *
  *     t(x) = -p * n(x).
  *
- * Without an amplitude, pressure is interpolated between its initial and
- * target values using step_progress. An explicit amplitude scales the target
- * pressure at physical time; ignore_amplitude applies the nominal target.
- * An undefined initial pressure is treated as zero.
+ * The calling analysis supplies a multiplier for the nominal pressure.
  *
  * The surface integrator evaluates the consistent nodal force contribution
  *
@@ -60,9 +57,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target pressure when true.
- * @param step_progress Normalized progress from initial to target pressure.
  */
 void PLoad::apply(
     model::ModelData&      model_data,
@@ -70,9 +64,7 @@ void PLoad::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress
+    Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
         "PLOAD: positions field is not initialized");
@@ -81,24 +73,7 @@ void PLoad::apply(
     logging::error(std::isfinite(pressure_),
         "PLOAD: pressure must be finite");
 
-    // Determine the start and target pressure weights. Without an amplitude,
-    // p(lambda) = (1 - lambda) * p_start + lambda * p_end.
-    // An explicit amplitude replaces this interpolation with p = A(time) * p_end.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
-
-    if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // An undefined initial pressure represents a zero starting load.
-    const Precision start = std::isfinite(pressure_start_)
-        ? pressure_start_ : Precision(0);
-    const Precision pressure = start_scale * start + end_scale * pressure_;
+    const Precision pressure = scale * pressure_;
 
     if (pressure == Precision(0)) return;
 

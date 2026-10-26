@@ -6,25 +6,27 @@
  * the scalar load factor. Within every accepted load increment, a generic Newton
  * solver reduces the residual at the fixed target load factor.
  *
- * The class owns only increment scheduling, cutback/growth decisions, active-set
- * restarts and callback wiring. Finite-element assembly, constraint projection,
- * sparse solves, convergence norms, result writing and stateful nonlinear
- * subsystem management are supplied by the calling load case.
+ * The controller owns load-factor targets, endpoint handling, Newton callback
+ * wiring and active-set restarts. NonlinearIncrementManager owns shared
+ * scheduling and cutback policy. Finite-element assembly, constraint projection,
+ * sparse solves and stateful nonlinear subsystem management remain in the load
+ * case.
  *
  * Trial callbacks are intentionally generic. They are used by contact today and
  * can also protect later history-dependent material states, damage variables or
  * other nonlinear state that must be committed only after an accepted step.
  *
  * @see LoadControl
+ * @see NonlinearIncrementManager
  * @see NewtonSolver
  */
 
 #pragma once
 
 #include "newton_solver.h"
+#include "nonlinear_increment_manager.h"
 
 #include <functional>
-#include <string>
 
 namespace fem {
 namespace loadcase {
@@ -138,8 +140,35 @@ public:
     )>;
 
 public:
+    // Shared nonlinear increment scheduling, bounds and convergence adaptation
+    NonlinearIncrementManager increment_manager;
+
+    // Newton convergence settings independent of increment scheduling
+    Index     maximum_iterations = 20;
+    Precision tolerance          = Precision(1e-8);
+
+    // Complete attempted-increment transaction owned by the load case
+    TrialCallback begin_increment_trial;
+    TrialCallback commit_increment_trial;
+    TrialCallback rollback_increment_trial;
+
+    // Nested Newton line-search transactions
+    TrialCallback begin_line_search_trial;
+    TrialCallback commit_line_search_trial;
+    TrialCallback rollback_line_search_trial;
+
+    // Optional active-set consistency update after Newton convergence
+    ActiveSetCallback update_active_set;
+
+private:
+    // Problem-independent Newton iteration machinery
+    NewtonSolver newton_;
+
+public:
+    // Construction
     LoadControl() = default;
 
+    // Advance load factor to one using Newton solves and shared scheduling
     bool solve(
         DynamicVector&           q,
         Precision&               lambda,
@@ -155,53 +184,10 @@ public:
 
     const char* failure_reason() const;
 
-public:
-    // Nonlinear increment and Newton limits
-    Index maximum_increments = 100;
-    Index maximum_iterations = 20;
-
-    // Load-factor increment range and residual tolerance
-    Precision tolerance         = Precision(1e-8);
-    Precision initial_increment = Precision(0.1);
-    Precision minimum_increment = Precision(1e-4);
-    Precision maximum_increment = Precision(1.0);
-
-    // Adaptive increment controls
-    Precision growth_factor          = Precision(1.5);
-    Precision cutback_factor         = Precision(0.5);
-    Precision severe_cutback_factor  = Precision(0.25);
-
-    Index fast_iterations       = 6;
-    Index slow_iterations       = 10;
-    Index maximum_cutbacks      = 20;
-
-    bool adaptive               = true;
-
-    // Complete attempted-increment transaction
-    TrialCallback begin_increment_trial;
-    TrialCallback commit_increment_trial;
-    TrialCallback rollback_increment_trial;
-
-    // Temporary line-search transaction nested inside the current increment
-    TrialCallback begin_line_search_trial;
-    TrialCallback commit_line_search_trial;
-    TrialCallback rollback_line_search_trial;
-
-    // Optional discontinuous-state update after Newton convergence
-    ActiveSetCallback update_active_set;
-
 private:
+    // Prepare and configure Newton independently of increment adaptation
     void reset_state_();
     void configure_newton_();
-    void adapt_increment_();
-
-private:
-    NewtonSolver newton_;
-
-    Index     accepted_increments_ = 0;
-    Precision increment_           = Precision(0);
-
-    std::string failure_reason_    = "NONE";
 };
 
 } // namespace tools

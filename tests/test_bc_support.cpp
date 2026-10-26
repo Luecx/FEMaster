@@ -42,7 +42,7 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     SystemDofIds           system_dof_ids{};
     TripletList            matrix{};
 
-    s_id.apply(*mdl._data, rhs, eqs_id, system_dof_ids, matrix, Precision(0), true);
+    s_id.apply(*mdl._data, rhs, eqs_id, system_dof_ids, matrix);
     ASSERT_EQ(eqs_id.size(), 1u);
     ASSERT_EQ(eqs_id[0].entries.size(), 1u);
     EXPECT_EQ(eqs_id[0].entries[0].node_id, 0);
@@ -53,7 +53,7 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     cos::RectangularSystem rot("R", Vec3(0,1,0), Vec3(-1,0,0));
     bc::Support s_rot(nset, Vec6(0, NAN, NAN, NAN, NAN, NAN), std::make_shared<cos::RectangularSystem>(rot));
     constraint::Equations eqs_rot{};
-    s_rot.apply(*mdl._data, rhs, eqs_rot, system_dof_ids, matrix, Precision(0), true);
+    s_rot.apply(*mdl._data, rhs, eqs_rot, system_dof_ids, matrix);
     // Should produce one equation with 3 entries (projection of local x onto global xyz)
     ASSERT_EQ(eqs_rot.size(), 1u);
     ASSERT_EQ(eqs_rot[0].entries.size(), 3u);

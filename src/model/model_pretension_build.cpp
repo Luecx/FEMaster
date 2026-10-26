@@ -7,10 +7,15 @@ Field Model::build_pretension_force_matrix() {
                 _data->field_rows(FieldDomain::NODE), 3};
     force.set_zero();
     for (const auto& section : _data->pretension_sections) {
-        if (!section || section->nodal_control || section->state != pretension::State::Loading ||
-            section->control != pretension::Control::Force ||
+        if (!section || section->state != pretension::State::Force ||
             section->interface_pairs.empty()) continue;
-        force(section->control_node, 0) = section->prescribed_value;
+        const Vec3 nodal_force = section->prescribed_value /
+            static_cast<Precision>(section->interface_pairs.size()) * section->axis_direction;
+        for (const auto& pair : section->interface_pairs)
+            for (Dim component = 0; component < 3; ++component) {
+                force(pair.side_a, component) -= nodal_force(component);
+                force(pair.side_b, component) += nodal_force(component);
+            }
     }
     return force;
 }
@@ -42,7 +47,9 @@ void Model::capture_pretension_gaps(const Field& displacement) {
     for (const auto& section : _data->pretension_sections) {
         if (!section || section->state == pretension::State::Open ||
             section->interface_pairs.empty()) continue;
-        section->last_solved_gap = displacement(section->control_node, 0);
+        const auto& pair = section->interface_pairs.front();
+        section->last_solved_gap = section->axis_direction.dot(
+            displacement.row_vec3(pair.side_b) - displacement.row_vec3(pair.side_a));
         section->has_solved_gap = true;
         logging::info(true, "PRETENSION '", section->name,
             "': solved mean gap = ", section->last_solved_gap);

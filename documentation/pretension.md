@@ -1,74 +1,43 @@
 # Bolt pretension
 
-The complete keyword reference is in the User Manual chapter **Bolt Pretension**
-(`documentation/pages/11-pretension.tex`).
-
-Pretension supports linear-static analysis of planar, matching solid-element
-faces. A merged mesh is separated along existing element boundaries; elements
-are not cut through their interiors. Keep supports away from the cut.
-
-## Native input
-
-Define a cut that completely separates two solid regions:
+Bolt pretension is supported in linear static loadcases. Define two coincident,
+planar solid faces with separate node IDs. The preprocessor must split the mesh;
+FEMaster does not change topology. Every node on one face must have exactly one
+node on the other face at the same reference coordinates.
 
 ```text
-*SURFACE, SFSET=CUT_FACE
+*SURFACE, SFSET=CUT_A
+1, 1, 2
+*SURFACE, SFSET=CUT_B
 2, 2, 1
-*PRETENSIONSECTION, NAME=PT1, SURFACE_A=CUT_FACE
+*PRETENSIONSECTION, NAME=PT1, SURFACE_A=CUT_A, SURFACE_B=CUT_B
 ```
 
-The surface row is `surface-id, element-id, local-face-id`. For two already
-separated, coincident faces, add `SURFACE_B=CUT_B` and use `SURFACE_A=CUT_A`.
-Native sections generate an isolated scalar control node automatically.
-
-Inside the first linear-static loadcase, apply the total section force:
+The axis follows the area-weighted normal of SURFACE_A. Both tangential
+components of relative displacement are fixed for each pair. In FORCE mode,
+all pairs share one free axial relative displacement. The specified total
+force is distributed equally across the pairs, with opposite forces on the
+two faces. No control node or additional degree of freedom is created.
 
 ```text
-*PRETENSION, SECTION=PT1, ACTION=LOAD, CONTROL=FORCE, VALUE=10000
-*CONSTRAINTMETHOD, TYPE=ELIMINATION
+*LOADCASE, TYPE=LINEARSTATIC, NAME=PRELOAD
+*PRETENSION, SECTION=PT1, MODE=FORCE, VALUE=1000
+*END
+*LOADCASE, TYPE=LINEARSTATIC, NAME=HOLD
+*PRETENSION, SECTION=PT1, MODE=HOLD
+*END
 ```
 
-Alternatively prescribe the axial adjustment with
-`CONTROL=DISPLACEMENT, VALUE=0.001`. In the next loadcase use:
+HOLD requires a successfully completed preceding static step. It fixes the
+axial gap reached in that step; subsequent external loads may change the
+transmitted force. A section with no FORCE or HOLD action starts with zero gap.
+Use NULLSPACE or ELIMINATION constraint handling. LAGRANGE, nonlinear and
+perturbation steps with pretension are not supported.
 
-```text
-*PRETENSION, SECTION=PT1, ACTION=LOCK
-```
+PTGAP gives the axial relative displacement on both nodes of each pair.
+PTFORC gives equal and opposite transmitted force vectors on the two faces.
+The signed section force is the sum of PTFORC on side B projected onto the
+section axis. TF repeats that total at the side B nodes for convenient
+inspection. Supports on cut nodes prevent unambiguous force recovery.
 
-LOCK holds the solved adjustment, not the section force. Later external loads
-can change the transmitted force while the adjustment remains fixed. Native
-supports and named external load collectors must be selected in the applicable
-loadcases. A CLOAD on a node set is a force per node; PRETENSION VALUE is the
-entire section force. Native SUPPORT rows contain displacement components,
-not Abaqus DOF ranges.
-
-The axis follows the first SURFACE_A face normal. The relative displacement is
-`q = (u_B - u_A) dot axis`; positive force is work-conjugate to positive q.
-Transverse relative displacements remain tied. Use NULLSPACE or ELIMINATION;
-LAGRANGE is rejected when a pretension section is present.
-
-## Abaqus-compatible input
-
-Declare an isolated control node explicitly and reference the cut surface:
-
-```text
-*PRE-TENSION SECTION, SURFACE=CUT, NODE=900001, FOLLOWER=NO
-```
-
-In the first linear-static STEP, `*CLOAD` with `900001, 1, 10000` applies the
-force; `*BOUNDARY` with `900001, 1, 1, 0.001` prescribes the adjustment.
-In a later step, `*BOUNDARY, FIXED` with `900001, 1, 1` holds the preceding
-successful adjustment. A carried CLOAD remains present with FIXED. Native
-PRETENSION actions and Abaqus control conditions cannot be mixed on one section.
-The manual documents history replacement, scopes, normal overrides and limits.
-
-## Results and examples
-
-PTGAP measures the axial gap; PTFORC contains interface forces and the signed
-section resultant in control-node component 1; TF stores the total resultant
-at the control node. Results are available in RES, FRD and FEMR.
-
-- [Native force / LOCK / external-load example](../examples/09_constraints/095_bolt_pretension.inp)
-- [Abaqus-compatible companion](../examples/09_constraints/096_bolt_pretension_abaqus.inp)
-- [Validation scope and commands](pretension-validation.md)
-- [Reproducible preparation and solver benchmarks](pretension-benchmark.md)
+See [the complete example](../examples/09_constraints/095_bolt_pretension.inp).

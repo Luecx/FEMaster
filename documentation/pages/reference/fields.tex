@@ -1,5 +1,5 @@
-\chapter{Fields}
-\label{chap:fields}
+\subsection{Fields}
+\label{sec:fields}
 
 Fields store spatially varying data that belong to the finite-element model. They are more general than sets: a set only answers whether an entity belongs to a region, whereas a Field stores one or more numerical values at every addressed location. Typical uses are topology variables, prescribed shell directors, initial conditions, and other data that vary from node to node, element to element, or within an element.
 
@@ -7,7 +7,7 @@ A Field has a \emph{domain} and a fixed number of components. The domain determi
 
 User node and element identifiers are independent of these local indices. They are non-negative deck labels, may start at \textbf{0}, and do not have to be contiguous. For example, node IDs \val{0}, \val{10}, and \val{1000} are perfectly valid if they are unique in their scope. By contrast, the local node indices of a four-node element are \val{0}, \val{1}, \val{2}, and \val{3} because they refer to positions in that element's connectivity.
 
-\keywordpage{FIELD}
+\keywordnestedpage{FIELD}
 
 \cmd{FIELD} creates and optionally populates a named Field. It is a native FEMaster command; the supported Abaqus input format currently has no generic equivalent. The command is accepted at model level and in the native \cmd{LOADCASE} contexts documented by the consuming feature.
 
@@ -47,10 +47,11 @@ Integration-point Field & \val{element, local_ip, v1, v2, ...}; \val{local_ip} i
 Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both local indices are zero based. \\
 \end{keyworddata}
 
+The first field stores one scalar value per element; the second stores a three-component vector for each element node. A consuming keyword selects the named field, for example TOPODENSITY or NORMAL.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
 0, 0.8
@@ -61,13 +62,64 @@ Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both loca
  COLS=3, FILL=NAN
 10, 0, 0., 0., 1.
 10, 1, 0., 0., 1.
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently has no generic Field keyword. Abaqus model data are imported only where a dedicated supported keyword provides the corresponding information.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
-\keywordpage{NORMAL}
+\keywordnestedpage{INITIALCONDITION}
+
+\cmd{INITIALCONDITION} assigns model-level initial nodal temperatures or
+generalized velocities. The spelling \cmd{INITIALCONDITIONS} is equivalent.
+Both commands are processed after the geometry and named Fields are compiled.
+
+For temperatures, FEMaster preserves an independent reference snapshot so that
+\key{RESUME=NO} restores the original nodal field even after later structural
+steps changed their temperature targets. Material stress-free temperature
+(\key{ZERO} on \cmd{THERMALEXPANSION}) is a separate material property.
+
+\key{TYPE=TEMPERATURE} supplies one scalar per node; \key{TYPE=VELOCITY}
+supplies six components in the order \((v_x,v_y,v_z,\omega_x,\omega_y,\omega_z)\).
+With \key{FIELD}, an existing \val{NODE} Field with one or six components,
+respectively, becomes the initial state; no data lines follow the command.
+Without \key{FIELD}, the command allocates a zero-initialized nodal Field,
+and each row addresses one compiled node by ID or \val{INSTANCE.ID}.
+Omitted or empty component values retain their current values, so later
+rows may selectively update the same node. A transient analysis uses the
+model's initial velocity state by default; a loadcase-local
+\cmd{INITIALVELOCITY, FIELD=...} selects the specified nodal Field for
+that transient analysis instead.
+
+\begin{keywordparameters}
+\key{TYPE} & required & \val{TEMPERATURE} or \val{VELOCITY}. \\
+\key{FIELD} & optional & Name of an existing \val{NODE} Field with 1 or 6 components, matching \key{TYPE}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+Temperature & \val{node, temperature} for inline data. \\
+Velocity & \val{node, vx, vy, vz, wx, wy, wz} for inline data. \\
+Named Field & No data rows; the named Field supplies the values. \\
+\end{keyworddata}
+
+The model below uses an existing temperature Field as the initial thermal
+state. A material's \cmd{EXPANSION} coefficient and reference temperature
+\key{ZERO} determine the associated free thermal strain.
+
+\exampleheading
+\begin{inputdeck}
+*FIELD, NAME=START_TEMP, TYPE=NODE,
+ COLS=1, FILL=ZERO
+1, 20.
+2, 60.
+*INITIALCONDITION, TYPE=TEMPERATURE,
+ FIELD=START_TEMP
+\end{inputdeck}
+
+\paragraph*{Initial nodal velocity}
+In a transient model, the second node begins with a downward velocity.
+\begin{inputdeck}
+*INITIALCONDITIONS, TYPE=VELOCITY
+1, 0., 0., 0., 0., 0., 0.
+2, 0., 0., -2., 0., 0., 0.
+\end{inputdeck}
+
+\keywordnestedpage{NORMAL}
 
 \cmd{NORMAL} selects an existing three-component \val{ELEMENT_NODAL} Field as the source of shell element-nodal normals or directors. The referenced Field must already exist, must use \val{TYPE=ELEMENT_NODAL}, and must contain exactly three components.
 
@@ -81,10 +133,11 @@ The local node index is the zero-based position inside the element connectivity 
 \key{FIELD} & required & Name of an existing three-component \val{ELEMENT_NODAL} Field. \\
 \end{keywordparameters}
 
+The example defines a three-component normal at each element-local node of shell element 10, then assigns the field to the shell-normal workflow. The FIELD declaration must precede NORMAL.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *FIELD, NAME=SHELL_NORMALS,
  TYPE=ELEMENT_NODAL, COLS=3, FILL=NAN
 10, 0, 0., 0., 1.
@@ -93,8 +146,4 @@ The local node index is the zero-based position inside the element connectivity 
 10, 3, 0., 0., 1.
 
 *NORMAL, FIELD=SHELL_NORMALS
-\end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader does not expose FEMaster's generic Field-based \cmd{NORMAL} selector. Direct prescription of element-nodal directors therefore requires native FEMaster input; Abaqus input is limited to the explicitly supported orientation syntax of the relevant model definition.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}

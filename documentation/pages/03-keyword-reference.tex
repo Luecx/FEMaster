@@ -1,0 +1,45 @@
+\chapter{Keyword Reference}
+\label{chap:keyword-reference}
+
+This chapter documents the unified FEMaster input language:
+supported Abaqus-compatible definitions, CalculiX-compatible aliases,
+and FEMaster-specific extensions can be used together. Keywords are
+organized by modelling role. Section~\ref{sec:keyword-index}
+provides a compact index.
+
+\paragraph*{Reading the keyword pages}
+
+Each keyword has one canonical entry, beginning with its modelling
+purpose and supported parameters or data lines. An example of that
+keyword follows. Where a genuinely useful alternative exists, it is
+shown directly below the primary example. Abaqus compatibility and
+FEMaster extensions are identified without presenting separate input
+languages. The \cmd{ELEMENT} reference additionally documents the
+individual numerical formulations and their accepted type aliases.
+
+\input{pages/reference/input-structure}
+
+\section{Model Definition}
+\label{sec:model-definition}
+\input{pages/reference/model-definition}
+\input{pages/reference/regions}
+
+\section{Model Properties}
+\label{sec:model-properties}
+\input{pages/reference/materials}
+\input{pages/reference/sections}
+\input{pages/reference/point-element-properties}
+\input{pages/reference/coordinate-systems}
+\input{pages/reference/fields}
+
+\input{pages/reference/loads-boundary-conditions}
+\input{pages/reference/constraints}
+
+\section{Steps and Loadcases}
+\label{sec:steps-loadcases}
+\input{pages/reference/analysis-procedures}
+\input{pages/reference/numerical-controls}
+\input{pages/reference/topology}
+
+\input{pages/reference/output-results}
+\input{pages/reference/keyword-index}

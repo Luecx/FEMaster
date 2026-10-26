@@ -1,6 +1,15 @@
 /**
  * @file b33.h
  * @brief Defines the two-node three-dimensional Euler-Bernoulli beam element.
+ *
+ * The beam subsystem uses B33 for linear elastic stiffness, consistent mass,
+ * initial-stress geometric stiffness and element-nodal stress/strain recovery.
+ * Common section frames and reference-state validation belong to BeamElement.
+ * Linear operators accept an omitted base or an explicit zero-valued base;
+ * a finite-rotation nonlinear equilibrium formulation remains unsupported.
+ *
+ * @see B33
+ * @see BeamElement
  */
 
 #pragma once
@@ -169,8 +178,9 @@ struct B33 : BeamElement<2> {
         Index offset = static_cast<Index>(this->elem_nodal_offset);
 
         (void) base_temperature;
-        logging::error(base_displacement == nullptr,
-            "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
+        // Linear recovery accepts both representations of the reference state,
+        // matching the tangent and section-force evaluation of the same beam.
+        validate_reference_base_displacement(base_displacement);
         logging::error(strain != nullptr || stress != nullptr,
             "B33: compute_stress_strain requires at least one output field");
         logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)

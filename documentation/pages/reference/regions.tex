@@ -1,14 +1,3 @@
-\chapter{Regions and Selections}
-\label{chap:regions}
-
-Regions give names to reusable parts of the mesh. They are used throughout a FEMaster model: Sections are assigned to element sets, supports and concentrated loads target nodes or node sets, pressure and traction loads act on surfaces, and constraints such as couplings, ties, and contact refer to named regions.
-
-Region names can express modelling concepts rather than only lists of IDs. Names such as \val{ROOT}, \val{PRESSURE_FACE}, \val{DESIGN_DOMAIN}, or \val{CONTACT_SLAVE} expose the intent of later commands without repeating numerical identifiers throughout the deck.
-
-Regions can be defined inside a Part or at Assembly level. A Part-level region belongs to that Part and is available for every Instance of the Part. An Assembly-level region refers to the placed model and represents a selection on one particular Instance or a combination of entities from several Instances. The optional \key{INSTANCE} parameter identifies the Instance whose local IDs are being referenced.
-
-User node, element, and explicit surface IDs are non-negative labels and may start at \val{0}. Generated ranges therefore may also begin at zero.
-
 \keywordpage{NSET}
 
 \cmd{NSET} creates or extends a named node set. The same basic syntax is accepted by native FEMaster and by the supported Abaqus input format. \key{NSET} gives the set name; \key{NAME} is accepted as an alternative spelling. Data may contain explicit node references or generated arithmetic ranges.
@@ -36,39 +25,26 @@ Explicit form & One or more node IDs or supported named/qualified node reference
 Generated form & \val{start, end, increment}; the increment defaults to \val{1} and must be nonzero. \\
 \end{keyworddata}
 
+Node sets are reusable selections for supports, loads, or output. The first definition selects endpoints explicitly; the second generates a sequence of node IDs.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*PART, NAME=BEAM
-*NODE
-0, 0., 0., 0.
-1, 1., 0., 0.
-2, 2., 0., 0.
-3, 3., 0., 0.
+\begin{inputdeck}
 *NSET, NSET=ENDS
 0, 3
+
 *NSET, NSET=ALLN, GENERATE
 0, 3, 1
-*END PART
-\end{femasterdeck}
-\begin{abaqusdeck}
-*PART, NAME=BEAM
-*NODE
-0, 0., 0., 0.
-1, 1., 0., 0.
-2, 2., 0., 0.
-3, 3., 0., 0.
-*NSET, NSET=ENDS
-0, 3
-*NSET, NSET=ALLN, GENERATE
-0, 3, 1
-*END PART
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+\paragraph*{Instance-qualified node set}
+\begin{inputdeck}
+*NSET, NSET=ROOT, INSTANCE=LEFT
+1, 2, 3
+\end{inputdeck}
 
 \clearpage
-\subsection*{Assembly-level Instance selection}
+\paragraph*{Assembly-level Instance selection}
 
 A typical Assembly selection looks like
 \begin{syntax}
@@ -111,24 +87,17 @@ Explicit form & One or more element IDs or supported named/qualified element ref
 Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
 
+Generated element sets save long ID lists when the numbering follows a regular stride. The referenced element IDs must already exist within the relevant topology scope.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *ELSET, ELSET=DESIGN_DOMAIN, GENERATE
 0, 99, 1
 
 *ELSET, ELSET=EVEN_ELEMENTS, GENERATE
 0, 98, 2
-\end{femasterdeck}
-\begin{abaqusdeck}
-*ELSET, ELSET=DESIGN_DOMAIN, GENERATE
-0, 99, 1
-
-*ELSET, ELSET=EVEN_ELEMENTS, GENERATE
-0, 98, 2
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{SURFACE}
 
@@ -156,21 +125,23 @@ Target form & \val{element-or-elset, side}. \\
 Explicit native form & \val{surface_id, element_id, side}. \\
 \end{keyworddata}
 
+This definition selects face S2 from each element in SOLIDS. Face numbering depends on the element formulation; consult the element schematics when selecting the loaded side.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
+*SURFACE, NAME=TOP, TYPE=ELEMENT
+SOLIDS, S2
+\end{inputdeck}
+
+\paragraph*{Direct surface references}
+\begin{inputdeck}
 *SURFACE, NAME=TOP
 SOLIDS, S2
 
 *SURFACE, NAME=ONE_FACE
 0, 42, S1
-\end{femasterdeck}
-\begin{abaqusdeck}
-*SURFACE, NAME=TOP, TYPE=ELEMENT
-SOLIDS, S2
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{SFSET}
 
@@ -180,7 +151,10 @@ SOLIDS, S2
 
 The destination name is supplied by \key{SFSET} or \key{NAME}; the native default is \val{SFALL}. Explicit surface references can be listed directly. With \key{GENERATE}, arithmetic ranges of surface IDs can be produced using the same inclusive start/end/increment convention as node and element sets. \key{INSTANCE} can be used for Assembly-level selection where applicable.
 
-The supported Abaqus input format does not have a separate \cmd{SFSET} keyword. A named Abaqus \cmd{SURFACE} already serves as the reusable surface region, so the right-hand example expresses the same modelling intent directly through one combined surface definition.
+\cmd{SFSET} is a FEMaster extension. A regular \cmd{SURFACE}
+definition can instead select the same physical faces directly,
+as shown in the alternative below. The two forms do not require
+separate input modes.
 
 \begin{keywordparameters}
 \key{SFSET} / \key{NAME} & optional & Destination surface-region name; native default \val{SFALL}. \\
@@ -193,10 +167,11 @@ Explicit form & Existing surface IDs or supported named surface references. \\
 Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
 
+The first definitions create surface entities; SFSET then groups their identifiers into one reusable region. A regular SURFACE can describe the same geometric selection directly.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *SURFACE, NAME=PATCH_A
 0, 20, S1
 1, 21, S1
@@ -205,11 +180,12 @@ Generated form & \val{start, end, increment}; inclusive end, nonzero increment. 
 
 *SFSET, NAME=CONTACT_FACE
 0, 1, 2
-\end{femasterdeck}
-\begin{abaqusdeck}
+\end{inputdeck}
+
+\paragraph*{Equivalent element surface selection}
+\begin{inputdeck}
 *SURFACE, NAME=CONTACT_FACE, TYPE=ELEMENT
 20, S1
 21, S1
 22, S1
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}

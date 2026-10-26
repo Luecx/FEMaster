@@ -1,198 +1,56 @@
 \chapter{Bolt Pretension}
 \label{chap:pretension}
 
-Pretension introduces an axial adjustment across a planar cut through a solid
-mesh. The supported sequence is a linear-static preload, locking the solved
-adjustment, and applying subsequent service loads. This formulation does not
-include nonlinear bolt/contact behaviour or follower pretension.
-
-\section{Cut and scalar control}
-
-The cut must consist of existing element faces and completely separate two
-solid regions. Initially shared interface nodes are duplicated and one side is
-rewired before user fields and constraints are constructed. Element interiors
-are not cut. Already separated faces must have equal node counts and matching
-coordinates. Overlapping sections are unsupported.
-The element must provide a nondegenerate boundary face; C3D13 boundary
-extraction is currently unavailable.
-
-Each section has an isolated control node with only DOF 1 active. For every
-paired interface node,
-\[
-  (\boldsymbol{u}_B-\boldsymbol{u}_A)\cdot\boldsymbol{n}=q.
-\]
-The two transverse relative displacements remain zero. The control displacement
-is the scalar adjustment \(q\), not a physical translation of a mesh point.
-Its coordinates do not affect the equations; no artificial stiffness or mass
-is added. Positive scalar force is work-conjugate to positive \(q\).
-
-Native input obtains \(\boldsymbol{n}\) from the first \val{SURFACE\_A} face.
-Abaqus-compatible input uses the area-weighted average outward surface normal
-unless an explicit global normal is supplied. Face orientations must be
-consistent. Positive force acts along this normal on the underlying, rewired
-B side and oppositely on side A.
-
-Use \val{NULLSPACE} or \val{ELIMINATION} explicitly. \val{LAGRANGE} is rejected
-whenever a pretension section exists, including an unloaded section: its current
-multiplier regularization does not enforce the adjustment exactly or establish
-constraint consistency. Contradictory supports, equations and prescribed or
-locked adjustments are rejected by the supported exact methods. General
-constraint feasibility does not establish structural stability.
+Pretension in linear statics requires two coincident, planar solid faces with
+separate node IDs. The preprocessor must split the mesh. FEMaster does not
+modify topology. Reference-coordinate matching must be bijective: missing or
+ambiguous matches are rejected.
 
 \keywordpage{PRETENSIONSECTION}
 
-The native section card references one merged cut or two separated faces.
 \begin{keywordparameters}
 \key{NAME} & required & Unique section name. \\
-\key{SURFACE\_A} & required & First element-face set. \\
-\key{SURFACE\_B} & optional & Coincident matching second set; defaults to the first set. \\
-\key{NODE} & optional & Existing isolated node or singleton NSET; omitted to generate a control node. \\
+\key{SURFACE\_A} & required & First solid face set. \\
+\key{SURFACE\_B} & required & Coincident, topologically separate second set. \\
 \end{keywordparameters}
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*SURFACE, SFSET=CUT_FACE
-2, 2, 1
-*PRETENSIONSECTION, NAME=PT1, SURFACE_A=CUT_FACE
-\end{femasterdeck}
-\begin{noabaqus}
-Use \cmd{PRE-TENSION SECTION} with an explicit existing control node.
-\end{noabaqus}
-\end{dialectexamples}
-
-The native surface row is surface ID, element ID and local face number.
-An exterior face or an incomplete separating cut is rejected. For separated
-faces, specify \val{SURFACE\_A=CUT\_A, SURFACE\_B=CUT\_B}.
+The section axis is the area-weighted normal of \val{SURFACE\_A}. For every
+paired node, both tangential relative displacements vanish. All pairs share
+one axial relative displacement in \val{FORCE} mode; this uses only physical
+nodal degrees of freedom.
 
 \keywordpage{PRETENSION}
 
-This native loadcase command selects the section control.
 \begin{keywordparameters}
 \key{SECTION} & required & Previously defined section. \\
-\key{ACTION} & required & \val{LOAD} or \val{LOCK}. \\
-\key{CONTROL} & for LOAD & \val{FORCE} or \val{DISPLACEMENT}. \\
-\key{VALUE} & for LOAD & Total signed section force or relative axial adjustment. \\
+\key{MODE} & required & \val{FORCE} or \val{HOLD}. \\
+\key{VALUE} & for FORCE & Total signed force on side B. \\
 \end{keywordparameters}
 
-Force control applies the entire section force once to the scalar DOF; it is
-not a force per interface node. Displacement control prescribes \(q\).
-An uncontrolled native section remains tied at zero gap.
+The force is distributed equally across node pairs and applied in opposite
+directions on the two faces. HOLD fixes the common axial gap from the preceding
+successfully completed step, while subsequent loads may change the force.
+Before its first action, a section has zero gap. No control node or additional
+degree of freedom is created.
 
-LOCK requires a successful preceding adjustment and holds that solved value.
-It persists into later loadcases; repeating LOCK is harmless. Service loading
-changes the transmitted force while the held adjustment remains fixed.
-
-The following sequence assumes a named support collector \val{BC} and external
-load collector \val{SERVICE} have already been defined. Select native supports
-and external collectors in the applicable loadcases.
 \begin{femasterdeck}
+*PRETENSIONSECTION, NAME=PT1, SURFACE_A=CUT_A, SURFACE_B=CUT_B
 *LOADCASE, TYPE=LINEARSTATIC, NAME=PRELOAD
-*SUPPORTS
-BC
-*PRETENSION, SECTION=PT1, ACTION=LOAD, CONTROL=FORCE, VALUE=10000
-*CONSTRAINTMETHOD, TYPE=ELIMINATION
-*END
-*LOADCASE, TYPE=LINEARSTATIC, NAME=HOLD
-*SUPPORTS
-BC
-*PRETENSION, SECTION=PT1, ACTION=LOCK
-*CONSTRAINTMETHOD, TYPE=ELIMINATION
+*PRETENSION, SECTION=PT1, MODE=FORCE, VALUE=1000
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
 *END
 *LOADCASE, TYPE=LINEARSTATIC, NAME=SERVICE
-*SUPPORTS
-BC
-*PRETENSION, SECTION=PT1, ACTION=LOCK
-*LOADS
-SERVICE
-*CONSTRAINTMETHOD, TYPE=ELIMINATION
+*PRETENSION, SECTION=PT1, MODE=HOLD
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
 *END
 \end{femasterdeck}
 
-Replace the first LOAD control with
-\val{CONTROL=DISPLACEMENT, VALUE=0.001} to prescribe the adjustment.
-A native CLOAD on a node set applies its force to each node. Native SUPPORT
-rows specify component values, not Abaqus first/last DOF ranges.
+LAGRANGE, nonlinear and perturbation steps are unsupported for pretension.
 
-\keywordpage{PRE-TENSION SECTION}
+\section{Results}
 
-The Abaqus-compatible section card is supported at root and Assembly scope.
-\begin{keywordparameters}
-\key{SURFACE} & required & Merged planar element-face set. \\
-\key{NODE} & required & Existing isolated control node or singleton NSET. \\
-\key{FOLLOWER} & optional & Only \val{NO} is supported. \\
-\end{keywordparameters}
-
-One optional data row supplies three finite, nonzero global normal components.
-Otherwise the consistent average surface normal determines the axis. A section
-inside PART or INSTANCE is unsupported. Root/Assembly cards may reference
-compiled Instance surfaces and nodes such as \val{BOLT.CUT} and
-\val{BOLT.900001}; assembly singleton aliases are also accepted.
-
-The control node must be declared explicitly. Its DOFs 2--6, structural-element
-attachment, shared use by sections and local transformations are rejected.
-\begin{abaqusdeck}
-*NODE
-900001, 0, 0, 0
-*PRE-TENSION SECTION, SURFACE=CUT, NODE=900001, FOLLOWER=NO
-*STEP, NAME=PRELOAD
-*STATIC
-1, 1
-*CLOAD
-900001, 1, 10000
-*END STEP
-*STEP, NAME=HOLD
-*STATIC
-1, 1
-*BOUNDARY, FIXED
-900001, 1, 1
-*END STEP
-\end{abaqusdeck}
-
-For adjustment control, replace CLOAD with BOUNDARY and
-\val{900001, 1, 1, 0.001}. FIXED snapshots the previous successful U1 and accepts
-no magnitude or amplitude. This FIXED support is limited to the pretension
-control DOF; general structural FIXED is unsupported.
-
-\subsection{History and limits}
-
-CLOAD and BOUNDARY have independent history. FIXED does not remove a carried
-force. At the control node the scalar reaction is total section force minus
-applied scalar load. \val{OP=MOD} replaces the addressed source/DOF;
-\val{CLOAD, OP=NEW} clears concentrated loads without removing FIXED;
-\val{BOUNDARY, OP=NEW} clears boundaries, including FIXED. Restate physical
-supports that must remain after clearing boundaries. Node references and
-singleton aliases of the same control node share one history target.
-
-Before its first control definition, an Abaqus-compatible section remains tied
-at zero gap. This differs from Abaqus's initially free control DOF. Removing
-control after its first use releases the adjustment; it does not reinstate
-the initial tie. Relative STEP TIME amplitudes are evaluated at linear step
-end; TOTAL TIME and nonlinear evolution are unsupported.
-
-Native PRETENSION actions and Abaqus node conditions cannot be mixed on the
-same section. Beam/truss ELEMENT pretension, FOLLOWER=YES, nonlinear procedures,
-inertia relief and scalar-load rebalancing are unsupported.
-
-\section{Results and examples}
-
-\val{PTGAP} reports the axial gap on both interface nodes and on the control
-node. \val{PTFORC} reports interface-force vectors; sum one face and project
-onto the section axis to obtain its signed resultant. Component 1 at the
-control node stores that resultant. \val{TF} stores total signed section force
-at control nodes and zero elsewhere. There, \(TF=RF_1+F_\mathrm{applied}\).
-RF alone is not the total section force when a scalar load is carried.
-
-Keep supports away from the cut: support and interface reactions cannot be
-separated by this nodal force recovery. Generated nodes receive unique result
-identifiers. Existing user sets retain their membership; the global all-nodes
-region gains the new nodes, and owned boundary faces follow rewired elements.
-All pretension fields are available in RES, FRD and FEMR. To select them:
-\begin{femasterdeck}
-*NODE FILE
-U, RF, TF, PTFORC, PTGAP
-\end{femasterdeck}
-
-Complete examples are \texttt{095\_bolt\_pretension.inp} and
-\texttt{096\_bolt\_pretension\_abaqus.inp} in
-\texttt{examples/09\_constraints}. Analytical tests and verification commands
-are documented in \texttt{documentation/pretension-validation.md}.
+\val{PTGAP} gives the axial relative displacement on both nodes of each pair.
+\val{PTFORC} gives opposite transmitted force vectors on the two faces.
+The signed section force is the sum of \val{PTFORC} on side B projected onto
+the section axis. \val{TF} repeats that total on side B nodes. Supports at
+the cut prevent unambiguous force recovery.

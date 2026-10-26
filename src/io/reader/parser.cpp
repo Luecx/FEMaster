@@ -17,8 +17,8 @@
  * In addition to syntax processing, this file owns the input-side condition
  * history. Two generations of original input identifiers may each address
  * several physical Condition pointers after a nodal TRANSFORM split. The reader
- * updates compatible values in place and retires incompatible fragments;
- * ConditionManager stores only active pointer membership per family.
+ * replaces matching target pointers without modifying prior definitions;
+ * ConditionState stores active pointer membership per family.
  *
  * @see Parser
  * @see io::dsl::Deck
@@ -42,6 +42,7 @@
 #include "../../bc/thermal/convection.h"
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
+#include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_transient.h"
 #include "../../loadcase/nonlinear_static.h"
 #include "../../model/model.h"
@@ -52,143 +53,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <utility>
 
 namespace fem::io::reader {
-namespace {
-
-/**
- * @brief Prepares the start/target history of a physical load in the DSL.
- *
- * Existing loads are carried into the next step with start=target. New
- * definitions enter with start=0 and the prescribed target. MOD or OP=NEW
- * retires an inherited definition by setting only its target to zero; for an
- * explicit amplitude the start is its effective value at the step start.
- * Its original start value must be retained because it is still needed
- * during the current step. This is especially important when a definition
- * was introduced and replaced again within the same input step.
- *
- * Unspecified NaN vector components retain their omission mask. Supports and
- * prescribed temperatures are not additive loads and intentionally do not
- * follow this procedure; releasing a constrained DOF requires separate
- * treatment of the corresponding constraint equation.
- *
- * @param condition Physical definition whose numeric history is prepared.
- * @param newly_defined Whether the current step introduces the definition.
- * @param retired Whether the definition is being ramped out of the step.
- */
-void prepare_load_history(bc::Condition& condition, bool newly_defined, bool retired,
-                          Precision start_time = Precision(0)) {
-    const Precision amplitude_at_start = retired && condition.amplitude_
-        ? condition.amplitude_->evaluate(start_time) : Precision(1);
-    const bool nonlinear_inertia = dynamic_cast<bc::InertialLoad*>(&condition) != nullptr;
-
-    const auto prepare_value = [&](Precision& target, Precision& start) {
-        if (std::isnan(target)) return;
-
-        if (retired) {
-            if (condition.amplitude_ && !nonlinear_inertia) start = amplitude_at_start * target;
-            else if (std::isnan(start)) start = target;
-            target = Precision(0);
-        } else {
-            start = newly_defined ? Precision(0) : target;
-        }
-    };
-
-    const auto prepare_vector = [&](auto& target, auto& start) {
-        for (Eigen::Index i = 0; i < target.size(); ++i) {
-            prepare_value(target[i], start[i]);
-        }
-    };
-
-    if (auto* load = dynamic_cast<bc::CLoad*>(&condition)) {
-        prepare_vector(load->values_, load->values_start_);
-    } else if (auto* load = dynamic_cast<bc::DLoad*>(&condition)) {
-        prepare_vector(load->values_, load->values_start_);
-    } else if (auto* load = dynamic_cast<bc::VLoad*>(&condition)) {
-        prepare_vector(load->values_, load->values_start_);
-    } else if (auto* load = dynamic_cast<bc::PLoad*>(&condition)) {
-        prepare_value(load->pressure_, load->pressure_start_);
-    } else if (auto* load = dynamic_cast<bc::InertialLoad*>(&condition)) {
-        if (retired && condition.amplitude_) load->start_scale_ = amplitude_at_start;
-        if (!retired) load->start_scale_ = Precision(1);
-        prepare_vector(load->center_acc_, load->center_acc_start_);
-        prepare_vector(load->omega_,      load->omega_start_);
-        prepare_vector(load->alpha_,      load->alpha_start_);
-    } else if (auto* load = dynamic_cast<bc::HeatFlux*>(&condition)) {
-        prepare_value(load->heat_flux_, load->heat_flux_start_);
-    } else {
-        return;
-    }
-
-    // A retired definition must decay from its previous effective value
-    // even if the original condition used a named amplitude. New definitions
-    // can independently install a different amplitude on their own object.
-    if (retired) condition.amplitude_.reset();
-}
-
-// Evaluate explicitly prescribed amplitude history at the start of this step.
-Precision step_start_time(const loadcase::LoadCase* active) {
-    const auto* transient = dynamic_cast<const loadcase::Transient*>(active);
-    return transient ? static_cast<Precision>(transient->t_start) : Precision(0);
-}
-
-bool supports_load_transition(bc::ConditionFamily family) {
-    return family == bc::CLOAD || family == bc::DLOAD || family == bc::DSLOAD
-        || family == bc::PLOAD || family == bc::VLOAD
-        || family == bc::INERTIAL_LOAD || family == bc::HEAT_FLUX;
-}
-
-/**
- * A same-step load introduced at zero may be discarded if MOD supersedes it.
- * A carried-over load retains a nonzero step-start contribution and must ramp
- * down even when its target or orientation changes.
- */
-bool has_nonzero_load_start(const bc::Condition& condition) {
-    const auto nonzero = [](const auto& values) {
-        for (Eigen::Index i = 0; i < values.size(); ++i) {
-            if (std::isfinite(values[i]) && values[i] != Precision(0)) return true;
-        }
-        return false;
-    };
-    if (const auto* a = dynamic_cast<const bc::CLoad*>(&condition)) return nonzero(a->values_start_);
-    if (const auto* a = dynamic_cast<const bc::DLoad*>(&condition)) return nonzero(a->values_start_);
-    if (const auto* a = dynamic_cast<const bc::VLoad*>(&condition)) return nonzero(a->values_start_);
-    if (const auto* a = dynamic_cast<const bc::PLoad*>(&condition)) {
-        return std::isfinite(a->pressure_start_) && a->pressure_start_ != Precision(0);
-    }
-    if (const auto* a = dynamic_cast<const bc::InertialLoad*>(&condition)) {
-        return nonzero(a->center_acc_start_) || nonzero(a->omega_start_) || nonzero(a->alpha_start_);
-    }
-    if (const auto* a = dynamic_cast<const bc::HeatFlux*>(&condition)) {
-        return std::isfinite(a->heat_flux_start_) && a->heat_flux_start_ != Precision(0);
-    }
-    return false;
-}
-
-bool has_zero_load_target(const bc::Condition& condition) {
-    const auto zero_vector = [](const auto& values) {
-        for (Eigen::Index i = 0; i < values.size(); ++i) {
-            if (std::isfinite(values[i]) && values[i] != Precision(0)) return false;
-        }
-        return true;
-    };
-
-    if (const auto* load = dynamic_cast<const bc::CLoad*>(&condition)) return zero_vector(load->values_);
-    if (const auto* load = dynamic_cast<const bc::DLoad*>(&condition)) return zero_vector(load->values_);
-    if (const auto* load = dynamic_cast<const bc::VLoad*>(&condition)) return zero_vector(load->values_);
-    if (const auto* load = dynamic_cast<const bc::PLoad*>(&condition)) return load->pressure_ == Precision(0);
-    if (const auto* load = dynamic_cast<const bc::InertialLoad*>(&condition)) {
-        return load->center_acc_.isZero() && load->omega_.isZero() && load->alpha_.isZero();
-    }
-    if (const auto* load = dynamic_cast<const bc::HeatFlux*>(&condition)) return load->heat_flux_ == Precision(0);
-    return false;
-}
-
-} // namespace
-
 
 /**
  * Constructs an idle parser and prepares the unified command documentation grammar.
@@ -219,13 +89,18 @@ void Parser::run(const std::string& input_path,
     // Reset all mutable state so each run represents an independent deck.
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
-    queued_pretension_actions_.clear();
     next_loadcase_id_ = 1;
     step_state_ = StepState{};
     node_transforms.clear();
+    committed_conditions_ = bc::ConditionState{};
+    pending_conditions_   = bc::ConditionState{};
+    for (auto& index : committed_identifiers_) index.clear();
     for (auto& index : inherited_conditions_) index.clear();
     for (auto& index : current_conditions_) index.clear();
     selected_conditions_.clear();
+    committed_collector_conditions_.clear();
+    committed_structural_load_.reset();
+    last_committed_static_nonlinear_ = false;
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -366,9 +241,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     }
 
     root.execute_children("PRETENSIONSECTION");
-    root.execute_children("PRE-TENSIONSECTION");
-    for (const auto* assembly : root.children("ASSEMBLY"))
-        assembly->execute_children("PRE-TENSIONSECTION");
     model_->prepare_pretension_sections();
 
     root.execute_children("FIELD");
@@ -383,6 +255,13 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // until a later analysis procedure explicitly evolves them.
     root.execute_children("INITIALCONDITION");
     root.execute_children("INITIALCONDITIONS");
+
+    // Snapshot the parsed initial temperature independently of named FIELD
+    // storage: RESUME=NO must recover it even after subsequent step commits.
+    if (model_->_data->temperature) {
+        model_->_data->temperature_reference =
+            std::make_shared<model::Field>(*model_->_data->temperature);
+    }
 
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
     root.execute_children("TIE");
@@ -405,9 +284,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("TRANSFORM");
     }
-    for (const auto& section : model_->_data->pretension_sections)
-        logging::error(!node_transforms.count(section->control_node),
-            "PRETENSION SECTION: local TRANSFORM at control node is unsupported");
 
     // ---------------------------------------------------------------------
     // Root-level topology-dependent constraints
@@ -603,26 +479,60 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     loadcase->id     = next_loadcase_id_++;
     loadcase->writer = &writer_;
     loadcase->model  = model_.get();
+    if (step_state_.step_active) {
+        loadcase->resume       = step_state_.resume;
+        loadcase->perturbation = step_state_.perturbation;
+    }
+
+    // A regular linear solve always uses the reference tangent. Do not
+    // silently follow a nonlinear state with a total linear solve while
+    // claiming continuation; use a tangent perturbation or RESUME=NO.
+    if (auto* linear = loadcase->as<loadcase::LinearStatic>()) {
+        logging::error(!loadcase->resume || loadcase->perturbation ||
+                       !last_committed_static_nonlinear_,
+            "LINEARSTATIC after NONLINEARSTATIC with RESUME=YES is not supported; "
+            "use PERTURBATION or start an independent step with RESUME=NO");
+        linear->step_start_load = loadcase->perturbation && loadcase->resume
+            ? committed_structural_load_ : nullptr;
+    }
+
+    // Prepare an independent temperature target BEFORE step-local keywords
+    // execute. A fresh step starts from the original reference on RESUME=NO.
+    auto& data = *model_->_data;
+    const auto& temperature_base = loadcase->resume
+        ? data.temperature : data.temperature_reference;
+    data.temperature_target = temperature_base
+        ? std::make_shared<model::Field>(*temperature_base) : nullptr;
+
+    // Only a linear-static tangent perturbation needs the previously committed
+    // structural load baseline. Frequency extraction and eigenvalue buckling
+    // remain valid in a PERTURBATION step without a preceding static analysis.
+    if (loadcase->perturbation && loadcase->as<loadcase::LinearStatic>()) {
+        logging::error(loadcase->resume,
+            "LINEARSTATIC PERTURBATION requires RESUME=YES");
+        logging::error(committed_structural_load_ != nullptr,
+            "LINEARSTATIC PERTURBATION requires a prior committed structural static state");
+    }
 
     // Output requests are configured while the step is parsed, but derived
     // fields are recovered later during run(). Bind the model before exposing
     // the active load case to any child output command.
     loadcase->output.bind(model_.get());
 
-    // At entry all existing input definitions are inherited. Current-step
-    // modifications move their references into current_conditions_.
-    for (auto& index : current_conditions_) index.clear();
+    // Freeze the last accepted prescriptions independently of any root-level
+    // edits made between analyses. The first step starts from zero loading.
+    loadcase->initial_conditions = loadcase->id == 1
+        ? bc::ConditionState{} : committed_conditions_;
+    loadcase->target_conditions = pending_conditions_;
 
-    // For the first analysis, load definitions enter from zero. Later
-    // analyses inherit the previous target as their new starting load.
-    // All updates and removals within the step preserve this starting level.
-    const bool first_step = loadcase->id == 1;
-    for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
-                              bc::VLOAD, bc::INERTIAL_LOAD, bc::HEAT_FLUX}) {
-        for (const auto& condition : conditions().get(family)) {
-            prepare_load_history(*condition, first_step, false);
-        }
+    // Collector selections are analysis-local: deselect their previous target
+    // contributions, but retain them in the frozen initial state for unloading.
+    for (const auto& [family, condition] : committed_collector_conditions_) {
+        loadcase->target_conditions.remove(family, condition);
     }
+
+    inherited_conditions_ = committed_identifiers_;
+    for (auto& index : current_conditions_) index.clear();
 
     // Named collector selection remains local to this analysis.
     selected_conditions_.clear();
@@ -632,7 +542,7 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
 /**
  * @brief Runs one analysis with direct and temporarily selected conditions.
  *
- * Direct input definitions already reside in ModelData's ConditionManager.
+ * Direct input definitions already reside in ModelData's ConditionState.
  * Reusable named collector definitions are inserted into the corresponding
  * family only for the duration of this run. The insertion Boolean identifies
  * pointers that were not already active, so cleanup never removes an existing
@@ -654,61 +564,94 @@ void Parser::end_loadcase() {
     logging::error(model_->_data->pretension_sections.empty() ||
         loadcase->type_name() == "LINEARSTATIC",
         "PRETENSION currently supports LINEARSTATIC load cases only");
-    for (const auto& action : queued_pretension_actions_) {
-        if (action.action == "LOCK") {
-            model_->lock_pretension_section(action.section);
-        } else {
-            const auto control = action.control == "FORCE"
-                ? pretension::Control::Force
-                : pretension::Control::Displacement;
-            model_->set_pretension_load(action.section, control, action.value);
-        }
-    }
-    queued_pretension_actions_.clear();
 
-    // Insert only missing collector pointers and remember precisely those
-    // references. Previously active direct conditions must survive cleanup.
-    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> temporary_conditions;
+    // Apply only explicitly selected collectors to the step target. Reusable
+    // definitions stay unmodified, and the next target omits these selections
+    // unless the following analysis selects them again.
+    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> selected;
     for (const auto& [family, condition] : selected_conditions_) {
-        if (conditions().add(family, condition)) {
-            temporary_conditions.emplace_back(family, condition);
+        if (loadcase->target_conditions.add(family, condition)) {
+            selected.emplace_back(family, condition);
         }
     }
 
-    // Model assembly reads the active family sets during this numerical solve.
-    loadcase->run();
+    // Static amplitudes describe the path of newly activated loads only.
+    // The two-state intersection keeps unchanged loads constant; removed loads
+    // decay from their nominal value. Require a zero-to-one history for added
+    // loads so that their final physical magnitude can be carried into the
+    // following step without storing a separate per-condition end factor.
+    const std::string analysis_type = loadcase->type_name();
+    const bool static_analysis =
+        analysis_type == "LINEARSTATIC" ||
+        analysis_type == "NONLINEARSTATIC" ||
+        analysis_type == "LINEARSTATICTOPO" ||
+        analysis_type == "LINEARBUCKLING";
 
-    // Restore direct history by removing only this analysis's insertions.
-    for (const auto& [family, condition] : temporary_conditions) {
-        conditions().remove(family, condition);
-    }
-    selected_conditions_.clear();
+    if (static_analysis) {
+        const auto* linear    = loadcase->as<loadcase::LinearStatic>();
+        const auto* nonlinear = loadcase->as<loadcase::NonlinearStatic>();
 
-    // Physically retired loads have a zero target. Their references remained
-    // active through the entire step, so remove them only after the solve
-    // returns successfully. Nonzero targets form the carried-over history.
-    for (const auto family : {bc::CLOAD, bc::DLOAD, bc::DSLOAD, bc::PLOAD,
-                              bc::VLOAD, bc::INERTIAL_LOAD, bc::HEAT_FLUX}) {
-        std::vector<bc::Condition::Ptr> retired;
-        for (const auto& condition : conditions().get(family)) {
-            if (has_zero_load_target(*condition)) retired.push_back(condition);
-        }
-        for (const auto& condition : retired) conditions().remove(family, condition);
+        // Linear and nonlinear static procedures supply their own physical
+        // period; the buckling preload uses the unit step-time convention.
+        Precision step_period = Precision(1);
+        if (linear)    step_period = linear->step_period;
+        if (nonlinear) step_period = nonlinear->step_period;
 
-        // Remove retired pointers from both logical generations.
-        for (auto* index : {&inherited_conditions_[family], &current_conditions_[family]}) {
-            for (auto it = index->begin(); it != index->end();) {
-                auto& entries = it->second;
-                entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const auto& condition) {
-                    return !conditions().contains(family, condition);
-                }), entries.end());
-                if (entries.empty()) it = index->erase(it);
-                else ++it;
+        const bool      arc_length = nonlinear && nonlinear->control == loadcase::NonlinearControl::ArcLength;
+        const Precision tolerance  = Precision(1e-10);
+
+        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+            for (const auto& condition : loadcase->target_conditions.get(family)) {
+                // Only target-only definitions need a new amplitude evaluation.
+                // Shared pointers identify continued loads without modifying
+                // the reusable definitions or their collector ownership.
+                if (loadcase->initial_conditions.contains(family, condition)
+                    || !condition->amplitude_) continue;
+
+                // Riks assumes a proportional load vector with a constant
+                // derivative with respect to the arc-length load parameter.
+                logging::error(!arc_length,
+                    "NONLINEARSTATIC RIKS does not support newly activated load AMPLITUDE");
+
+                const Precision start = condition->amplitude_->evaluate(Precision(0));
+                const Precision end   = condition->amplitude_->evaluate(step_period);
+
+                logging::error(std::isfinite(start) && std::isfinite(end)
+                            && std::abs(start) <= tolerance
+                            && std::abs(end - Precision(1)) <= tolerance,
+                    "Static load AMPLITUDE ", condition->amplitude_->name,
+                    " must satisfy A(0)=0 and A(STEP PERIOD)=1");
             }
         }
     }
 
-    // Commit the modified definitions only after the solve completed.
+    // Restore the reference configuration for independent analyses and validate
+    // the prescribed nodal temperature before solving.
+    loadcase->prepare_state();
+    if (model_->_data->temperature_target) {
+        const auto& temperature = *model_->_data->temperature_target;
+        for (Index node = 0; node < temperature.rows; ++node) {
+            logging::error(std::isfinite(temperature(node, 0)),
+                "TEMPERATURE: no finite temperature specified for node ", node);
+        }
+    }
+
+    loadcase->run();
+
+    // Perturbations are trial evaluations only. The committed input identities,
+    // state and load baseline remain untouched without any restore operations.
+    if (loadcase->perturbation) {
+        selected_conditions_.clear();
+        model_->_data->temperature_target.reset();
+        return;
+    }
+
+    // Commit only the successful target. A shallow pending copy permits further
+    // root-level edits without modifying the just-converged initial state.
+    committed_conditions_ = std::move(loadcase->target_conditions);
+    pending_conditions_   = committed_conditions_;
+    committed_collector_conditions_ = std::move(selected);
+
     for (std::size_t i = 0; i < bc::N_CONDITION_FAMILIES; ++i) {
         auto& inherited = inherited_conditions_[i];
         auto& current   = current_conditions_[i];
@@ -718,13 +661,20 @@ void Parser::end_loadcase() {
         }
         current.clear();
     }
-}
+    committed_identifiers_ = std::move(inherited_conditions_);
+    selected_conditions_.clear();
 
-void Parser::queue_pretension_action(const std::string& section,
-                                     const std::string& action,
-                                     const std::string& control,
-                                     Precision value) {
-    queued_pretension_actions_.push_back({section, action, control, value});
+    // Commit the mechanical force baseline only for converged static states.
+    if (loadcase->committed_structural_load) {
+        committed_structural_load_ = std::move(loadcase->committed_structural_load);
+        last_committed_static_nonlinear_ = loadcase->type_name() == "NONLINEARSTATIC";
+    } else {
+        // A non-static step does not establish a matching static load baseline.
+        // Never reuse a stale force snapshot in a later perturbation solve.
+        committed_structural_load_.reset();
+        last_committed_static_nonlinear_ = false;
+    }
+    model_->_data->temperature = std::move(model_->_data->temperature_target);
 }
 
 /**
@@ -746,21 +696,21 @@ const StepState& Parser::step_state() const {
  * Forwards access to model-owned active condition storage. Identifier lookup
  * and replacement semantics are maintained independently by the input reader.
  */
-bc::ConditionManager& Parser::conditions() {
-    return model_->_data->conditions;
+bc::ConditionState& Parser::conditions() {
+    return active_loadcase_ ? active_loadcase_->target_conditions : pending_conditions_;
 }
 
 /**
  * Forwards read-only access to the current ModelData condition history.
  */
-const bc::ConditionManager& Parser::conditions() const {
-    return model_->_data->conditions;
+const bc::ConditionState& Parser::conditions() const {
+    return active_loadcase_ ? active_loadcase_->target_conditions : pending_conditions_;
 }
 
 /**
  * @brief Inserts one physical condition and indexes its original input target.
  *
- * The ConditionManager contains the pointer in one independent family. A
+ * The ConditionState contains the pointer in one independent family. A
  * newly inserted pointer with a non-empty input identifier is additionally
  * stored in the reader index. Several physical pointers may have the same
  * identifier because one input definition can be split across TRANSFORM bases.
@@ -774,18 +724,13 @@ const bc::ConditionManager& Parser::conditions() const {
  */
 void Parser::add_condition(bc::ConditionFamily family, bc::Condition::Ptr condition,
                            const std::string& identifier) {
-    // Validate before inserting and indexing a physical definition.
     logging::error(condition != nullptr,
         "Cannot register a null condition");
 
-    // A load first defined inside an analysis ramps from zero unless a named
-    // amplitude explicitly prescribes its temporal history. Definitions made
-    // outside a step keep their legacy nominal target semantics.
-    if (active_loadcase_) prepare_load_history(*condition, true, false);
-
-    // Even unnamed definitions need a logical entry for OP=NEW.
+    // The initial state is immutable. Only the target state and the current
+    // input-generation index receive new physical definitions.
     if (conditions().add(family, condition)) {
-        auto& index = active_loadcase_ ? current_conditions_ : inherited_conditions_;
+        auto& index = active_loadcase_ ? current_conditions_ : committed_identifiers_;
         index[family][identifier].push_back(std::move(condition));
     }
 }
@@ -884,56 +829,6 @@ static bool same_condition_target(const bc::Condition& current, const bc::Condit
     return same_target(current, replacement);
 }
 
-// Update a compatible existing definition without changing its start values.
-// Supports and incompatible orientations deliberately fall back to replacement.
-static bool update_load_target(bc::Condition& current, const bc::Condition& incoming) {
-    if (current.amplitude_ != incoming.amplitude_) return false;
-    const auto same_region = [](const auto& a, const auto& b) {
-        return a && b && (a == b || a->data() == b->data());
-    };
-    if (auto* a = dynamic_cast<bc::CLoad*>(&current)) {
-        const auto* b = dynamic_cast<const bc::CLoad*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_) || a->orientation_ != b->orientation_) return false;
-        a->values_ = b->values_;
-        return true;
-    }
-    if (auto* a = dynamic_cast<bc::DLoad*>(&current)) {
-        const auto* b = dynamic_cast<const bc::DLoad*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_) || a->orientation_ != b->orientation_) return false;
-        a->values_ = b->values_;
-        return true;
-    }
-    if (auto* a = dynamic_cast<bc::VLoad*>(&current)) {
-        const auto* b = dynamic_cast<const bc::VLoad*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_) || a->orientation_ != b->orientation_) return false;
-        a->values_ = b->values_;
-        return true;
-    }
-    if (auto* a = dynamic_cast<bc::PLoad*>(&current)) {
-        const auto* b = dynamic_cast<const bc::PLoad*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_)) return false;
-        a->pressure_ = b->pressure_;
-        return true;
-    }
-    if (auto* a = dynamic_cast<bc::InertialLoad*>(&current)) {
-        const auto* b = dynamic_cast<const bc::InertialLoad*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_)
-               || a->consider_point_masses_ != b->consider_point_masses_
-               || !a->center_.isApprox(b->center_)) return false;
-        a->center_acc_ = b->center_acc_;
-        a->omega_      = b->omega_;
-        a->alpha_      = b->alpha_;
-        return true;
-    }
-    if (auto* a = dynamic_cast<bc::HeatFlux*>(&current)) {
-        const auto* b = dynamic_cast<const bc::HeatFlux*>(&incoming);
-        if (!b || !same_region(a->region_, b->region_)) return false;
-        a->heat_flux_ = b->heat_flux_;
-        return true;
-    }
-    return false;
-}
-
 /**
  * Handles one input row's complete set of physical fragments atomically.
  * An earlier fragment cannot accidentally replace a later fragment of the
@@ -942,71 +837,52 @@ static bool update_load_target(bc::Condition& current, const bc::Condition& inco
 void Parser::modify_conditions(bc::ConditionFamily family, const std::string& identifier,
                                std::vector<bc::Condition::Ptr> replacements) {
     for (const auto& condition : replacements) {
-        logging::error(condition != nullptr, "Cannot modify a null condition");
+        logging::error(condition != nullptr,
+            "Cannot modify a null condition");
     }
     if (replacements.empty()) return;
 
-    std::vector<bc::Condition::Ptr> previous;
-    for (auto* index : {&inherited_conditions_[family], &current_conditions_[family]}) {
-        const auto found = index->find(identifier);
-        if (found == index->end()) continue;
+    // Resolve logical identity in the target generation only. Removing an old
+    // definition cannot affect the frozen initial state and its ramp-down.
+    const auto remove_matches = [&](IdentifierMap& index) {
+        const auto found = index.find(identifier);
+        if (found == index.end()) return;
 
         auto& entries = found->second;
-        entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const auto& existing) {
+        entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const auto& old) {
             const bool matched = std::any_of(replacements.begin(), replacements.end(), [&](const auto& incoming) {
-                return same_condition_target(*existing, *incoming, identifier);
+                return same_condition_target(*old, *incoming, identifier);
             });
-            if (matched) previous.push_back(existing);
+            if (matched) conditions().remove(family, old);
             return matched;
         }), entries.end());
-        if (entries.empty()) index->erase(found);
+        if (entries.empty()) index.erase(found);
+    };
+
+    if (active_loadcase_) {
+        remove_matches(inherited_conditions_[family]);
+        remove_matches(current_conditions_[family]);
+    } else {
+        remove_matches(committed_identifiers_[family]);
     }
 
     for (auto& incoming : replacements) {
-        const auto found = std::find_if(previous.begin(), previous.end(), [&](const auto& existing) {
-            return same_condition_target(*existing, *incoming, identifier)
-                && update_load_target(*existing, *incoming);
-        });
-        if (found == previous.end()) {
-            add_condition(family, std::move(incoming), identifier);
-            continue;
-        }
-        auto& index = active_loadcase_ ? current_conditions_ : inherited_conditions_;
-        index[family][identifier].push_back(*found);
-        previous.erase(found);
-    }
-
-    for (const auto& existing : previous) {
-        if (!active_loadcase_ || !supports_load_transition(family)) {
-            conditions().remove(family, existing);
-            continue;
-        }
-
-        // The previous condition may use an explicit amplitude whose
-        // effective start value differs from its nominal value. Evaluate
-        // retirement before deciding whether the old fragment is disposable.
-        prepare_load_history(*existing, false, true, step_start_time(active_loadcase_.get()));
-        if (!has_nonzero_load_start(*existing)) {
-            conditions().remove(family, existing);
-        }
+        add_condition(family, std::move(incoming), identifier);
     }
 }
 
 /**
- * Retires only the source definitions inherited at step entry.
- * Current-step MOD and new definitions remain valid. Physical additive loads
- * ramp to zero; constraints are removed immediately. Root-level NEW clears
- * all previously registered direct definitions of this family.
+ * Clears only the inherited target prescriptions from the specified family.
+ *
+ * Entries introduced later in this step remain active. Old physical loads
+ * persist independently in the frozen initial state and decay automatically.
  */
 void Parser::clear_conditions(bc::ConditionFamily family) {
-    auto& inherited = inherited_conditions_[family];
-    for (auto& [identifier, entries] : inherited) {
+    auto& inherited = active_loadcase_
+        ? inherited_conditions_[family] : committed_identifiers_[family];
+    for (const auto& [identifier, entries] : inherited) {
         for (const auto& condition : entries) {
-            if (active_loadcase_ && supports_load_transition(family)) {
-                prepare_load_history(*condition, false, true, step_start_time(active_loadcase_.get()));
-            } else {
-                conditions().remove(family, condition);
-            }
+            conditions().remove(family, condition);
         }
     }
     inherited.clear();
@@ -1050,7 +926,7 @@ void Parser::select_collector_condition(bc::ConditionFamily family, bc::Conditio
  * Selects the explicit named target for a reusable structural load definition.
  *
  * Only a non-empty user-supplied name activates collector storage. Direct
- * analysis conditions bypass this operation and update ModelData::conditions.
+ * analysis conditions bypass this operation and update LoadCase::target_conditions.
  * Activation for a solve belongs to LOADS and is independent of this insertion
  * target; defining a named collector does not automatically apply its entries.
  *

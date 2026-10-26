@@ -1,0 +1,49 @@
+\chapter{FEMaster Architecture}
+\label{chap:architecture}
+
+This chapter explains the finite-element objects used by FEMaster and how they form a model and its analyses. The exact input syntax is documented in Chapter~\ref{chap:keyword-reference}.
+
+\section{The finite-element model}
+
+A structural finite-element model consists of several layers of information that work together.
+
+\textbf{Nodes} define the reference geometry and carry the mechanical degrees of freedom. \textbf{Elements} connect those nodes and define the interpolation and kinematic assumptions used over lines, surfaces, or volumes. The element formulation determines which deformation modes can be represented and how strains, curvatures, internal forces, mass, and other element quantities are evaluated.
+
+\textbf{Node sets, element sets, and surfaces} give reusable names to parts of the mesh. They are used to assign Sections, supports, loads, couplings, ties, contact pairs, and other model features without repeatedly listing individual IDs.
+
+\textbf{Materials} define constitutive behaviour and density. \textbf{Sections} connect element regions to their physical properties. A solid Section assigns a material; a shell Section additionally defines thickness or generalized shell stiffness; a truss Section defines area; and a beam Section combines a material with a profile and local cross-section direction.
+
+\textbf{Coordinate systems and orientations} define local directions for anisotropic material behaviour, beam and shell properties, loads, supports, nodal transformations, and other directional quantities.
+
+\textbf{Fields} store quantities that vary spatially over nodes, elements, element-local nodes, integration points, or material points. They are used when a model feature requires more information than can be expressed by one scalar keyword parameter, for example topology variables or prescribed shell directors.
+
+\textbf{Loads and boundary conditions} define the external forcing and prescribed motion. \textbf{Constraints} introduce relations between different degrees of freedom, such as couplings, ties, idealized connectors, rigid-body-mode suppression, and unilateral contact.
+
+Finally, an \textbf{analysis procedure} determines which equilibrium or eigenvalue problem is solved. Numerical controls select the solution strategy, constraint treatment, time or load stepping, convergence criteria, damping, and related settings.
+
+\section{Model organization}
+
+Model definition describes the geometry and topology on which the analysis is built. A simple FEMaster model may be completely flat: nodes and elements can be defined directly without an explicit Part, Assembly, or Instance. The optional structured Part/Assembly form represents reused components, several placements of the same Part, separate local ID spaces, and imported Abaqus-style assemblies.
+
+From the user's point of view, the two forms describe the same kind of finite-element model. In a flat model there is one direct topology. In a structured model, each Part owns its local nodes, elements, sets, surfaces, and section assignments, while Instances place those Parts into the final assembly. Parts therefore describe \emph{what a component is}; Instances describe \emph{where that component is}.
+
+\section{Models and analyses}
+
+Mesh topology, regions, materials, Sections, orientations, and model Fields define the physical model. Native load and support collectors provide reusable loading and support definitions. A \cmd{LOADCASE} selects the collectors and analysis procedure to use with that model; its numerical controls determine how the resulting problem is solved.
+
+Supported Abaqus input expresses an analysis through \cmd{STEP} and its procedure, load, and boundary-condition keywords. The native and Abaqus forms are documented together in Section~\ref{sec:steps-loadcases}.
+
+\section{Typical workflow}
+
+A practical FEMaster model is usually built in the following order:
+\begin{enumerate}
+  \item define the geometry and mesh using nodes, elements, and optionally Parts and Instances;
+  \item create named regions and surfaces that will be used by later definitions;
+  \item define materials, profiles, Sections, and coordinate systems;
+  \item define Fields or other spatial model data where needed;
+  \item apply loads, supports, and kinematic constraints;
+  \item define the analysis procedure and its numerical controls;
+  \item resulting displacement, force, stress, strain, mode-shape, buckling, transient, or harmonic Fields complete the analysis output.
+\end{enumerate}
+
+The same order exposes dependencies during diagnosis: geometry and element connectivity precede region definitions, material and Section assignments, coordinate directions, supports and constraints, and finally the numerical analysis settings.

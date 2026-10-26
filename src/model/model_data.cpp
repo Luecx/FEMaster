@@ -31,35 +31,6 @@
 
 namespace fem::model {
 
-ID ModelData::append_nodes(const std::vector<Vec3>& new_positions) {
-    logging::error(compiled && positions != nullptr && positions_reference != nullptr,
-        "ModelData: pretension nodes require compiled position fields");
-    const ID first = static_cast<ID>(positions->rows);
-    const auto default_instance = instances.get(Model::DEFAULT_INSTANCE_NAME);
-    logging::error(default_instance != nullptr,
-        "ModelData: default instance missing for generated pretension node");
-    Index local_id = first;
-    for (const auto& [instance, existing_local] : node_mapping)
-        if (instance == default_instance) local_id = std::max(local_id, existing_local + Index(1));
-    logging::error(local_id < Index(100000000) &&
-        new_positions.size() <= static_cast<std::size_t>(Index(100000000) - local_id),
-        "ModelData: generated pretension node exceeds result-id range");
-    const Index new_rows = positions->rows + static_cast<Index>(new_positions.size());
-    positions->resize_rows(new_rows);
-    positions_reference->resize_rows(new_rows);
-    node_mapping.reserve(static_cast<std::size_t>(new_rows));
-    for (std::size_t i = 0; i < new_positions.size(); ++i) {
-        const ID node = first + static_cast<ID>(i);
-        for (Dim component = 0; component < 3; ++component) {
-            (*positions)(node, component) = new_positions[i](component);
-            (*positions_reference)(node, component) = new_positions[i](component);
-        }
-        node_sets.all()->add(node);
-        node_mapping.emplace_back(default_instance, local_id++);
-    }
-    return first;
-}
-
 /**
  * Determines the number of rows required by one model field domain.
  *
@@ -122,9 +93,8 @@ Index ModelData::field_rows(FieldDomain domain) const {
  * row per connected node, integration-point ranges contain `num_ip()` rows and
  * material-point ranges contain `num_ip() * num_mp_per_ip()` rows.
  *
- * When the model contains material points, a zeroed single-component state field
- * is installed as the solver-facing default. Nonlinear state management may
- * replace it with a wider constitutive history field before material evaluation.
+ * Material-state fields are allocated lazily by Model::step_begin(), once
+ * section assignments determine the necessary constitutive state width.
  * Enumeration is a one-time operation because changing offsets would invalidate
  * all dependent fields and element references.
  */
@@ -175,17 +145,8 @@ void ModelData::initialize_element_enumeration() {
     (*element_ip_offsets)(element_count)    = static_cast<Precision>(ip_offset);
     (*element_mp_offsets)(element_count)    = static_cast<Precision>(mp_offset);
 
-    // Provide separate zeroed input and output state rows for every enumerated
-    // material point. Constitutive evaluations may never overwrite their input.
-    if (mp_offset > 0) {
-        material_state_old = std::make_shared<Field>(
-            "MATERIAL_STATE_OLD", FieldDomain::ELEMENT_MP, mp_offset, 1);
-        material_state_new = std::make_shared<Field>(
-            "MATERIAL_STATE_NEW", FieldDomain::ELEMENT_MP, mp_offset, 1);
-
-        material_state_old->set_zero();
-        material_state_new->set_zero();
-    }
+    // Material history is initialized after sections are assigned, immediately
+    // before the first element evaluation in Model::step_begin().
 }
 
 bool ModelData::has_field(const std::string& name) const {

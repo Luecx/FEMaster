@@ -9,9 +9,8 @@
  * Surface-to-surface contact owns its augmented-Lagrange multiplier history and
  * nested trial stack internally. This manager only coordinates begin, commit and
  * rollback operations with the nonlinear path controller. Contact geometry is
- * not part of that history and is reconstructed from current nodal positions on
- * every assembly. Penalty adaptation is initialized once per nonlinear analysis
- * and then persists across accepted load increments.
+ * reconstructed from current nodal positions on every assembly. Adapted
+ * contact penalties persist across resumed steps and reset on independent ones.
  *
  * @see NonlinearStateManager
  * @see constraint::Contact
@@ -36,32 +35,20 @@ namespace tools {
 /**
  * Creates the nonlinear state coordinator for one load-case execution.
  *
- * Contact penalty adaptation is reset once here, which returns each contact to
- * its user-provided starting penalty while deliberately allowing later
- * adaptations to persist across load increments and cutbacks within this
- * analysis.
- *
- * If assigned materials require history variables, the two enumerated
- * `ELEMENT_MP` fields are resized to the required state width and initialized.
- * Models without constitutive history retain their default input/output rows.
+ * Material history is allocated by Model::step_begin() before element caches
+ * are built. This manager coordinates trial and committed state transitions,
+ * without resetting history when a new nonlinear analysis starts.
  *
  * @param model Model whose material and contact state is coordinated.
  */
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model) {
-    // Penalty continuation belongs to the complete nonlinear analysis, not to
-    // individual increments. Reset it exactly once when the manager is created.
-    for (const auto& contact : model_._data->contacts) {
-        contact.reset_penalty_adaptation();
-    }
-
     material_state_size_ = model_.maximum_material_state_size();
     if (material_state_size_ == 0) {
         return;
     }
 
-    // Reuse the two fields created during material-point enumeration so only
-    // the committed input and trial output buffers exist.
+    // Reuse the two fields initialized before element step caches are built.
     logging::error(model_._data->material_state_old != nullptr,
         "Nonlinear material input state is not initialized");
     logging::error(model_._data->material_state_new != nullptr,
@@ -69,13 +56,6 @@ NonlinearStateManager::NonlinearStateManager(model::Model& model)
     logging::error(model_._data->material_state_old != model_._data->material_state_new,
         "Nonlinear material input and output states must use separate storage");
 
-    const Index material_points = model_._data->field_rows(model::FieldDomain::ELEMENT_MP);
-    *model_._data->material_state_old = model::Field(
-        "MATERIAL_STATE_OLD", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
-    *model_._data->material_state_new = model::Field(
-        "MATERIAL_STATE_NEW", model::FieldDomain::ELEMENT_MP, material_points, material_state_size_);
-
-    model_.initialize_material_state(*model_._data->material_state_old);
     reset_material_state();
 }
 

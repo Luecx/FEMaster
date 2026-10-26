@@ -47,12 +47,8 @@ struct PLoad : Condition {
     // Types
     using Ptr = std::shared_ptr<PLoad>;
 
-    // Target and initial pressure magnitudes per unit surface area.
-    // Positive pressure acts opposite to the surface normal (t = -p n).
-    // NaN in pressure_start_ indicates an unspecified initial pressure,
-    // which is treated as zero during a step transition.
-    Precision pressure_       = NAN;
-    Precision pressure_start_ = NAN;
+    // Nominal pressure per unit surface area, positive against the normal
+    Precision pressure_ = NAN;
 
     // Target finite-element surfaces over which the pressure is integrated
     model::SurfaceRegion::Ptr region_ = nullptr;
@@ -64,24 +60,22 @@ struct PLoad : Condition {
     // Integrate the pressure traction over every surface in region_ and
     // accumulate the consistent equivalent nodal forces in the global RHS.
     //
-    // Without an amplitude, the pressure is interpolated from pressure_start_
-    // to pressure_ using step_progress. An assigned amplitude scales the
-    // target pressure at time instead; ignore_amplitude uses the nominal target.
+    // The initial and target step states contribute independent weighted
+    // pressure tractions, preserving each definition and its geometry.
     //
     // The traction at each integration point is t(x) = -p * n(x), where n(x)
     // is the unit normal evaluated from the supplied nodal geometry. The
     // surface integrator handles interpolation and the physical area measure.
     //
     // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+
     void apply(
         model::ModelData&      model_data,
         model::Field&          rhs,
         constraint::Equations& equations,
         const SystemDofIds&    system_dof_ids,
         TripletList&           matrix,
-        Precision              time,
-        bool                   ignore_amplitude = false,
-        Precision              step_progress   = Precision(1)
+        Precision              scale = Precision(1)
     ) override;
 
     // Diagnostics

@@ -8,8 +8,7 @@
  *
  *     q_e = integral_Gamma_e N^T q_bar dGamma.
  *
- * Optional temporal amplitude scaling is evaluated once for the complete
- * condition before its target surfaces are traversed.
+ * The assembly supplies a uniform load multiplier before integration.
  *
  * @see HeatFlux
  * @see model::SurfaceInterface
@@ -36,9 +35,7 @@ namespace fem::bc {
 /**
  * Integrates the prescribed scalar surface heat flux into the thermal RHS.
  *
- * The flux is interpolated from its initial to target value using normalized
- * step progress, unless an assigned amplitude scales the target at physical
- * time. ignore_amplitude uses the nominal target without interpolation.
+ * The calling analysis scales the nominal heat flux before integration.
  *
  * For each selected surface Gamma_e, the consistent nodal heat-flow vector is
  *
@@ -58,9 +55,6 @@ namespace fem::bc {
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Global thermal DOF numbering left unchanged.
  * @param matrix Sparse matrix triplets left unchanged.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Assemble the nominal target flux when true.
- * @param step_progress Normalized progress from initial to target flux.
  */
 void HeatFlux::apply(
     model::ModelData&      model_data,
@@ -68,9 +62,7 @@ void HeatFlux::apply(
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision              step_progress
+    Precision              scale
 ) {
     logging::error(region_ != nullptr,
         "HEATFLUX: target surface region is not set");
@@ -81,23 +73,7 @@ void HeatFlux::apply(
     logging::error(std::isfinite(heat_flux_),
         "HEATFLUX: prescribed heat flux must be finite");
 
-    // Without an amplitude, q(lambda) = (1-lambda)*q_start + lambda*q_end.
-    // An assigned amplitude instead evaluates q(time) = A(time)*q_end.
-    Precision start_scale = Precision(1) - step_progress;
-    Precision end_scale   = step_progress;
-
-    if (ignore_amplitude) {
-        start_scale = Precision(0);
-        end_scale   = Precision(1);
-    } else if (amplitude_) {
-        start_scale = Precision(0);
-        end_scale   = amplitude_->evaluate(time);
-    }
-
-    // An unspecified initial flux represents a zero starting contribution.
-    const Precision start = std::isfinite(heat_flux_start_)
-        ? heat_flux_start_ : Precision(0);
-    const Precision flux = start_scale * start + end_scale * heat_flux_;
+    const Precision flux = scale * heat_flux_;
 
     logging::error(std::isfinite(flux),
         "HEATFLUX: effective heat flux must be finite");

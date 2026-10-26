@@ -120,13 +120,11 @@ Support::Support(SurfaceRegionPtr          surface_region,
  * @param time Analysis time unused by the current support formulation.
  * @param ignore_amplitude Amplitude bypass flag unused by the current support formulation.
  */
-void Support::apply(model::ModelData&      model_data,
+void Support::apply(model::ModelData& model_data,
                     model::Field&,
                     constraint::Equations& equations,
                     const SystemDofIds&,
                     TripletList&,
-                    Precision,
-                    bool,
                     Precision) {
     // Validate the semantic target before traversing compiled topology
     const int active_regions = static_cast<int>(node_region_    != nullptr)
@@ -209,20 +207,6 @@ void Support::apply_to_node(model::ModelData& model_data, constraint::Equations&
         "SUPPORT: positions field is not initialized");
     logging::error(node_id >= 0 && static_cast<Index>(node_id) < model_data.positions->rows,
         "SUPPORT: node ", node_id, " is outside the compiled node domain");
-
-    for (const auto& section : model_data.pretension_sections) {
-        if (section->control_node != node_id) continue;
-        logging::error(section->nodal_control,
-            "BOUNDARY: use native PRETENSION actions for a native section");
-        logging::error(!coordinate_system_, "BOUNDARY: control node cannot have a local orientation");
-        for (Dim dof = 1; dof < 6; ++dof)
-            logging::error(std::isnan(values_[dof]), "BOUNDARY: pretension control node has only DOF 1");
-        logging::error(std::isfinite(values_[0]), "BOUNDARY: control-node adjustment must be finite");
-        if (section->state == pretension::State::Open) {
-            section->state = pretension::State::Loading;
-            section->control = pretension::Control::Force;
-        }
-    }
 
     // Evaluate the coordinate system at the global nodal position. The position
     // field may store generalized rows, but only the first three components are

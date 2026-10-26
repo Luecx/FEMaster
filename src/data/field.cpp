@@ -4,8 +4,9 @@
  *
  * The model-data implementation allocates row-major scalar vectors, converts
  * checked row/component indices into storage offsets and exposes non-owning data
- * access. Field operations preserve metadata and update values in place after
- * checking the domain and dimensions where a second field participates.
+ * access. Field arithmetic checks domain and dimensions when combining fields.
+ * Compound operators modify their left operand, while binary operators return
+ * independent results retaining the metadata of the left operand.
  *
  * Finite-value diagnostics and zero-divisor checks report numerical failures
  * through logging. Units, tensor component ordering, coordinate bases and dense
@@ -31,66 +32,132 @@
 namespace fem {
 namespace model {
 
-// ------------------------------------------------------------
-// FieldMatrix
-// ------------------------------------------------------------
+// FieldMatrix storage and indexing
 
 /**
- * @brief Allocates zero-initialized row-major matrix storage.
+ * @brief Allocates zero-initialized contiguous matrix storage.
  *
- * Convert the unsigned dimensions to storage-size values and allocate rows * cols
- * Precision entries. Zero dimensions are permitted. The product must be
- * representable in std::size_t and fit available memory; overflow is not checked.
+ * The matrix owns `rows * cols` Precision values in row-major order. Zero-sized
+ * dimensions are allowed; size multiplication is not checked for overflow.
  *
- * @param rows Number of stored rows.
- * @param cols Number of scalar columns in each row.
+ * @param rows Number of rows in the matrix.
+ * @param cols Number of components stored per row.
  */
 FieldMatrix::FieldMatrix(Index rows, Index cols)
     : rows_(rows),
       cols_(cols) {
-    // Convert dimension metadata to vector sizes before allocating zero-initialized values.
+    // Convert dimensions to the vector storage type before multiplication.
     const auto row_count = static_cast<std::size_t>(rows);
     const auto col_count = static_cast<std::size_t>(cols);
 
     data_.resize(row_count * col_count);
 }
 
+/**
+ * @brief Returns the number of matrix rows.
+ *
+ * The returned dimension is stored independently of the scalar vector.
+ *
+ * @return The configured row count.
+ */
 Index FieldMatrix::rows() const {
     return rows_;
 }
 
+/**
+ * @brief Returns the number of matrix columns.
+ *
+ * Columns represent consecutive scalar entries within each row.
+ *
+ * @return The configured column count.
+ */
 Index FieldMatrix::cols() const {
     return cols_;
 }
 
+/**
+ * @brief Returns the number of allocated scalar values.
+ *
+ * This is the actual storage size, not a recomputed dimension product.
+ *
+ * @return The number of stored Precision values.
+ */
 std::size_t FieldMatrix::size() const {
     return data_.size();
 }
 
+/**
+ * @brief Returns mutable access to a checked matrix entry.
+ *
+ * The row and column are mapped to contiguous row-major storage after bounds
+ * validation in `offset()`.
+ *
+ * @param row Zero-based row index.
+ * @param col Zero-based column index.
+ * @return Reference to the selected scalar.
+ */
 Precision& FieldMatrix::operator()(Index row, Index col) {
     return data_[offset(row, col)];
 }
 
+/**
+ * @brief Reads a checked matrix entry.
+ *
+ * Uses the same bounds-checked row-major mapping as mutable access.
+ *
+ * @param row Zero-based row index.
+ * @param col Zero-based column index.
+ * @return Copy of the selected scalar.
+ */
 Precision FieldMatrix::operator()(Index row, Index col) const {
     return data_[offset(row, col)];
 }
 
+/**
+ * @brief Exposes the mutable contiguous row-major storage.
+ *
+ * The pointer is non-owning and may be invalidated by storage replacement.
+ *
+ * @return Pointer to the first scalar, or the empty vector data pointer.
+ */
 Precision* FieldMatrix::data() {
     return data_.data();
 }
 
+/**
+ * @brief Exposes the read-only contiguous row-major storage.
+ *
+ * No copy is made; the pointer is valid only while the storage remains alive.
+ *
+ * @return Const pointer to the scalar data.
+ */
 const Precision* FieldMatrix::data() const {
     return data_.data();
 }
 
+/**
+ * @brief Sets every stored scalar to zero.
+ *
+ * Dimensions and storage capacity remain unchanged.
+ */
 void FieldMatrix::set_zero() {
     std::fill(data_.begin(), data_.end(), Precision(0));
 }
 
+/**
+ * @brief Sets every stored scalar to one.
+ *
+ * Dimensions and storage capacity remain unchanged.
+ */
 void FieldMatrix::set_ones() {
     std::fill(data_.begin(), data_.end(), Precision(1));
 }
 
+/**
+ * @brief Marks all matrix entries as unavailable.
+ *
+ * Uses the quiet NaN representation of Precision without changing the shape.
+ */
 void FieldMatrix::fill_nan() {
     const Precision nan = std::numeric_limits<Precision>::quiet_NaN();
 
@@ -98,16 +165,15 @@ void FieldMatrix::fill_nan() {
 }
 
 /**
- * @brief Tests whether dense storage contains at least one finite scalar.
+ * @brief Tests whether at least one stored scalar is finite.
  *
- * Scan values until std::isfinite succeeds, converting Precision to double for
- * the predicate. Empty or entirely NaN/infinite storage returns false. Values and
- * dimensions remain unchanged; this query does not require all entries to be valid.
+ * The scan stops at the first finite value. An empty matrix or one consisting
+ * only of NaN and infinity returns false.
  *
- * @return True if at least one stored entry is finite.
+ * @return True if any scalar satisfies `std::isfinite`.
  */
 bool FieldMatrix::has_any_finite() const {
-    // Stop at the first usable scalar; empty and all-nonfinite matrices have none.
+    // An early success avoids scanning the remaining storage.
     for (const Precision value : data_) {
         if (std::isfinite(static_cast<double>(value))) {
             return true;
@@ -118,19 +184,17 @@ bool FieldMatrix::has_any_finite() const {
 }
 
 /**
- * @brief Checks matrix bounds and computes the row-major storage offset.
+ * @brief Checks indices and computes the row-major storage offset.
  *
- * Require row < rows_ and col < cols_ before evaluating row * cols_ + col.
- * Indices are unsigned, so negative input is not a valid caller convention.
- * Storage dimensions must have a representable product. The check reads metadata
- * and does not change matrix storage.
+ * The flat offset is `row * cols + col`. Both indices must be within the
+ * configured matrix dimensions before storage is accessed.
  *
  * @param row Zero-based row index.
- * @param col Zero-based scalar column index.
- * @return Flat index into the owned row-major value vector.
+ * @param col Zero-based column index.
+ * @return Position of the selected scalar in the contiguous vector.
  */
 std::size_t FieldMatrix::offset(Index row, Index col) const {
-    // Check both component bounds before converting the matrix index into a flat offset.
+    // Reject invalid coordinates before computing the flattened index.
     logging::error(row < rows_ && col < cols_,
         "FieldMatrix: index (", row, ", ", col, ") is outside ", rows_, "x", cols_);
 
@@ -139,22 +203,18 @@ std::size_t FieldMatrix::offset(Index row, Index col) const {
            static_cast<std::size_t>(col);
 }
 
-// ------------------------------------------------------------
-// Field
-// ------------------------------------------------------------
+// Field metadata, access and arithmetic
 
 /**
- * @brief Constructs named domain metadata and zero-initialized dense values.
+ * @brief Constructs a named, zero-initialized field in a model domain.
  *
- * Initialize public metadata and allocate FieldMatrix(rows, components), then
- * check that both dimensions are positive. Allocation precedes these checks;
- * callers must supply a representable storage-size product. No row remapping,
- * physical unit assignment or basis transformation is performed.
+ * The field owns a dense matrix of the requested shape. Both dimensions must
+ * be positive. Values are not converted between units or coordinate bases.
  *
- * @param field_name Mutable identifier used in field diagnostics.
- * @param field_domain Model entity layout associated with each row.
- * @param row_count Positive number of rows in the compiled domain layout.
- * @param component_count Positive number of scalar components per row.
+ * @param field_name Name used to identify the field.
+ * @param field_domain Domain associated with its rows.
+ * @param row_count Number of field rows.
+ * @param component_count Number of scalar components per row.
  */
 Field::Field(std::string field_name,
              FieldDomain field_domain,
@@ -165,42 +225,78 @@ Field::Field(std::string field_name,
       rows      (row_count),
       components(component_count),
       values    (rows, components) {
-    // Validate positive public dimensions after the owned values have been initialized.
+    // Sized fields require a nonempty rectangular layout.
     logging::error(rows > 0,
         "Field '", name, "': rows must be positive");
     logging::error(components > 0,
         "Field '", name, "': components must be positive");
 }
 
+/**
+ * @brief Creates an independent zero-filled field with the same layout.
+ *
+ * Copies the domain, row count and component count but uses the requested name.
+ * The source field and its values are not modified.
+ *
+ * @param field_name Name assigned to the new field.
+ * @return New field with zero-initialized storage.
+ */
 Field Field::zeros_like(std::string field_name) const {
     return Field(std::move(field_name), domain, rows, components);
 }
 
+/**
+ * @brief Creates an independent NaN-filled field with the same layout.
+ *
+ * Preserves the source domain and dimensions. Nonfinite entries can be used
+ * to mark values that are not provided for a result field.
+ *
+ * @param field_name Name assigned to the new field.
+ * @return New field with all components set to quiet NaN.
+ */
 Field Field::nan_like(std::string field_name) const {
+    // Reuse the matching layout before marking every component unavailable.
     Field result = zeros_like(std::move(field_name));
     result.fill_nan();
     return result;
 }
 
+/**
+ * @brief Returns mutable access to a nodal or element field component.
+ *
+ * FieldMatrix performs the bounds check; this accessor does not reinterpret
+ * the domain or component ordering.
+ *
+ * @param row Zero-based field row.
+ * @param component Zero-based component.
+ * @return Reference to the selected scalar.
+ */
 Precision& Field::operator()(Index row, Index component) {
     return values(row, component);
 }
 
+/**
+ * @brief Reads one checked field component.
+ *
+ * The stored component is returned without unit or basis conversion.
+ *
+ * @param row Zero-based field row.
+ * @param component Zero-based component.
+ * @return Copy of the selected scalar.
+ */
 Precision Field::operator()(Index row, Index component) const {
     return values(row, component);
 }
 
 /**
- * @brief Accesses the sole component of a scalar field at a checked row.
+ * @brief Returns mutable access to a scalar field row.
  *
- * Require exactly one component before delegating to matrix indexing. This form
- * selects scalar storage without changing metadata or interpreting physical units.
+ * This overload is only defined for fields with exactly one component.
  *
  * @param row Zero-based field row.
- * @return Mutable reference to the scalar entry.
+ * @return Reference to the row value.
  */
 Precision& Field::operator()(Index row) {
-    // Reject ambiguous scalar access before selecting column zero.
     logging::error(components == 1,
         "Field '", name, "': scalar access requires exactly one component");
 
@@ -208,42 +304,76 @@ Precision& Field::operator()(Index row) {
 }
 
 /**
- * @brief Accesses the sole component of a scalar field at a checked row.
+ * @brief Reads the value of a scalar field row.
  *
- * Require exactly one component before delegating to matrix indexing. This form
- * selects scalar storage without changing metadata or interpreting physical units.
+ * Rejects multi-component fields so the requested component is unambiguous.
  *
  * @param row Zero-based field row.
- * @return Copy of the scalar entry.
+ * @return Copy of the row value.
  */
 Precision Field::operator()(Index row) const {
-    // Reject ambiguous scalar access before selecting column zero.
     logging::error(components == 1,
         "Field '", name, "': scalar access requires exactly one component");
 
     return values(row, 0);
 }
 
+/**
+ * @brief Returns non-owning mutable access to the field storage.
+ *
+ * Entries are laid out row by row. The caller must preserve field lifetime.
+ *
+ * @return Pointer to the contiguous scalar data.
+ */
 Precision* Field::data() {
     return values.data();
 }
 
+/**
+ * @brief Returns non-owning read-only access to the field storage.
+ *
+ * The returned pointer refers directly to the owned FieldMatrix values.
+ *
+ * @return Const pointer to the contiguous scalar data.
+ */
 const Precision* Field::data() const {
     return values.data();
 }
 
+/**
+ * @brief Sets all field values to zero.
+ *
+ * The field name, domain and dimensions are preserved.
+ */
 void Field::set_zero() {
     values.set_zero();
 }
 
+/**
+ * @brief Sets all field values to one.
+ *
+ * The field name, domain and dimensions are preserved.
+ */
 void Field::set_ones() {
     values.set_ones();
 }
 
+/**
+ * @brief Sets all field values to quiet NaN.
+ *
+ * The field name, domain and dimensions are preserved.
+ */
 void Field::fill_nan() {
     values.fill_nan();
 }
 
+/**
+ * @brief Checks whether the field contains at least one finite value.
+ *
+ * Delegates to the owned FieldMatrix without requiring all entries to be finite.
+ *
+ * @return True if any stored component is finite.
+ */
 bool Field::has_any_finite() const {
     return values.has_any_finite();
 }
@@ -264,36 +394,32 @@ void Field::resize_rows(Index row_count, Precision fill_value) {
 }
 
 /**
- * @brief Checks a stored component for any nonfinite value.
+ * @brief Tests a component for NaN or infinity.
  *
- * Read the entry through bounds-checked matrix access and negate std::isfinite.
- * Both NaN and positive/negative infinity satisfy this predicate; the operation
- * does not modify field storage or metadata.
+ * Despite its name, the method treats any nonfinite scalar as invalid.
+ * Index validation is performed by the underlying matrix.
  *
  * @param row Zero-based field row.
- * @param component Zero-based scalar component.
- * @return True for NaN or infinity, false for a finite scalar.
+ * @param component Zero-based component.
+ * @return True if the selected value is not finite.
  */
 bool Field::is_nan(Index row, Index component) const {
-    // Use the matrix bounds check before testing the complete nonfinite category.
     const Precision value = values(row, component);
 
     return !std::isfinite(static_cast<double>(value));
 }
 
 /**
- * @brief Validates that every stored field component is finite.
+ * @brief Validates every field entry and reports its location on failure.
  *
- * NaN and infinite values are treated as numerical failures. The supplied
- * label identifies the operation or physical result being checked, while the
- * reported row and component locate the invalid value in the field storage.
- * The method reads rows/components metadata, which must match values storage,
- * and leaves the field unchanged. An empty default field has no entries to check.
+ * The diagnostic includes the supplied label, row and component index.
+ * Only values are checked; physical consistency and metadata/storage
+ * invariants are outside the scope of this method.
  *
- * @param label Diagnostic name included in a failed check.
+ * @param label Description of the quantity being validated.
  */
 void Field::check_finite(const std::string& label) const {
-    // Inspect the complete rectangular field storage
+    // Check each component so diagnostics identify its precise location.
     for (Index row = 0; row < rows; ++row) {
         for (Index component = 0; component < components; ++component) {
             logging::error(std::isfinite(static_cast<double>(values(row, component))),
@@ -303,17 +429,15 @@ void Field::check_finite(const std::string& label) const {
 }
 
 /**
- * @brief Copies the first 3 components of one field row into Vec3.
+ * @brief Copies the leading three scalar components into a Vec3.
  *
- * Require at least 3 components and read them in stored order through checked
- * matrix access. Additional components are ignored. No tensor-component
- * reordering, physical interpretation or coordinate transformation is performed.
+ * At least three components are required. Additional components are ignored;
+ * the stored component order and coordinate basis remain unchanged.
  *
  * @param row Zero-based field row.
- * @return Independent vector copy in the caller-defined component basis.
+ * @return Independent three-component vector.
  */
 Vec3 Field::row_vec3(Index row) const {
-    // Ensure the row has enough components before copying its first 3 scalar values.
     logging::error(components >= 3,
         "Field '", name, "': row_vec3 requires at least three components");
 
@@ -325,17 +449,15 @@ Vec3 Field::row_vec3(Index row) const {
 }
 
 /**
- * @brief Copies the first 6 components of one field row into Vec6.
+ * @brief Copies the leading six scalar components into a Vec6.
  *
- * Require at least 6 components and read them in stored order through checked
- * matrix access. Additional components are ignored. No tensor-component
- * reordering, physical interpretation or coordinate transformation is performed.
+ * At least six components are required. Additional components are ignored;
+ * the stored component order and coordinate basis remain unchanged.
  *
  * @param row Zero-based field row.
- * @return Independent vector copy in the caller-defined component basis.
+ * @return Independent six-component vector.
  */
 Vec6 Field::row_vec6(Index row) const {
-    // Ensure the row has enough components before copying its first 6 scalar values.
     logging::error(components >= 6,
         "Field '", name, "': row_vec6 requires at least six components");
 
@@ -350,18 +472,14 @@ Vec6 Field::row_vec6(Index row) const {
 }
 
 /**
- * @brief Applies scalar addition to every stored field component.
+ * @brief Adds a scalar to every component in place.
  *
- * Update the contiguous row-major values with a_i <- a_i + scalar, retaining the name,
- * domain and dimensions. This is componentwise arithmetic in the existing
- * caller-defined basis; there is no vector/tensor transformation.
- * Nonfinite inputs/results are not checked by this operation.
+ * Preserves field metadata and applies no finite-value validation.
  *
- * @param scalar Scalar operand applied uniformly to all entries.
- * @return This field after the in-place update.
+ * @param scalar Value added to each component.
+ * @return Modified left operand.
  */
 Field& Field::operator+=(Precision scalar) {
-    // Traverse owned contiguous storage without changing the field metadata.
     Precision* field_data = values.data();
 
     for (std::size_t i = 0; i < values.size(); ++i) {
@@ -372,18 +490,14 @@ Field& Field::operator+=(Precision scalar) {
 }
 
 /**
- * @brief Applies scalar subtraction to every stored field component.
+ * @brief Subtracts a scalar from every component in place.
  *
- * Update the contiguous row-major values with a_i <- a_i - scalar, retaining the name,
- * domain and dimensions. This is componentwise arithmetic in the existing
- * caller-defined basis; there is no vector/tensor transformation.
- * Nonfinite inputs/results are not checked by this operation.
+ * Preserves field metadata and applies no finite-value validation.
  *
- * @param scalar Scalar operand applied uniformly to all entries.
- * @return This field after the in-place update.
+ * @param scalar Value subtracted from each component.
+ * @return Modified left operand.
  */
 Field& Field::operator-=(Precision scalar) {
-    // Traverse owned contiguous storage without changing the field metadata.
     Precision* field_data = values.data();
 
     for (std::size_t i = 0; i < values.size(); ++i) {
@@ -394,18 +508,14 @@ Field& Field::operator-=(Precision scalar) {
 }
 
 /**
- * @brief Applies scalar multiplication to every stored field component.
+ * @brief Multiplies every component by a scalar in place.
  *
- * Update the contiguous row-major values with a_i <- a_i * scalar, retaining the name,
- * domain and dimensions. This is componentwise arithmetic in the existing
- * caller-defined basis; there is no vector/tensor transformation.
- * Nonfinite inputs/results are not checked by this operation.
+ * This is a scalar-value operation, not a tensor product.
  *
- * @param scalar Scalar operand applied uniformly to all entries.
- * @return This field after the in-place update.
+ * @param scalar Uniform multiplier.
+ * @return Modified left operand.
  */
 Field& Field::operator*=(Precision scalar) {
-    // Traverse owned contiguous storage without changing the field metadata.
     Precision* field_data = values.data();
 
     for (std::size_t i = 0; i < values.size(); ++i) {
@@ -416,22 +526,19 @@ Field& Field::operator*=(Precision scalar) {
 }
 
 /**
- * @brief Applies scalar division to every stored field component.
+ * @brief Divides every component by a scalar in place.
  *
- * Update the contiguous row-major values with a_i <- a_i / scalar, retaining the name,
- * domain and dimensions. This is componentwise arithmetic in the existing
- * caller-defined basis; there is no vector/tensor transformation.
- * Require scalar != 0 before any update; nonfinite inputs/results are not checked.
+ * An exact zero divisor is rejected before any values are modified.
+ * Nonfinite divisors and results are not otherwise checked.
  *
- * @param scalar Scalar operand applied uniformly to all entries.
- * @return This field after the in-place update.
+ * @param scalar Uniform divisor.
+ * @return Modified left operand.
  */
 Field& Field::operator/=(Precision scalar) {
-    // Reject an exact zero scalar before modifying any component.
+    // Validate the uniform divisor before touching the destination.
     logging::error(scalar != Precision(0),
         "Field '", name, "': division by zero in scalar '/=' operation");
 
-    // Traverse owned contiguous storage without changing the field metadata.
     Precision* field_data = values.data();
 
     for (std::size_t i = 0; i < values.size(); ++i) {
@@ -442,23 +549,18 @@ Field& Field::operator/=(Precision scalar) {
 }
 
 /**
- * @brief Performs componentwise field addition in the existing storage basis.
+ * @brief Adds a compatible field componentwise in place.
  *
- * Validate equal domains and dimensions before pairing entries with the same
- * row/component index. Names, physical units, tensor meaning and coordinate bases
- * are not compared; their compatibility is a caller responsibility. Update this
- * field in place and retain its metadata. The operand is not copied, so self-use
- * follows the same componentwise arithmetic.
- * Nonfinite values/results are not checked here.
+ * Domain and dimensions must match; names, units and coordinate bases are
+ * not compared. Self-use is supported through in-place arithmetic.
  *
- * @param other Operand with matching row layout, domain and component count.
- * @return This field after the in-place component updates.
+ * @param other Field supplying the added components.
+ * @return Modified left operand.
  */
 Field& Field::operator+=(const Field& other) {
-    // Establish matching row/component layouts before touching destination values.
+    // Confirm identical layouts before traversing the two scalar buffers.
     validate_compatible(other, "+=");
 
-    // Pair entries by their shared row-major offset in the existing component basis.
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
@@ -470,23 +572,18 @@ Field& Field::operator+=(const Field& other) {
 }
 
 /**
- * @brief Performs componentwise field subtraction in the existing storage basis.
+ * @brief Subtracts a compatible field componentwise in place.
  *
- * Validate equal domains and dimensions before pairing entries with the same
- * row/component index. Names, physical units, tensor meaning and coordinate bases
- * are not compared; their compatibility is a caller responsibility. Update this
- * field in place and retain its metadata. The operand is not copied, so self-use
- * follows the same componentwise arithmetic.
- * Nonfinite values/results are not checked here.
+ * Domain and dimensions must match; names, units and coordinate bases are
+ * not compared. Self-use is supported through in-place arithmetic.
  *
- * @param other Operand with matching row layout, domain and component count.
- * @return This field after the in-place component updates.
+ * @param other Field supplying the subtracted components.
+ * @return Modified left operand.
  */
 Field& Field::operator-=(const Field& other) {
-    // Establish matching row/component layouts before touching destination values.
+    // Confirm identical layouts before traversing the two scalar buffers.
     validate_compatible(other, "-=");
 
-    // Pair entries by their shared row-major offset in the existing component basis.
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
@@ -498,24 +595,18 @@ Field& Field::operator-=(const Field& other) {
 }
 
 /**
- * @brief Performs componentwise field multiplication in the existing storage basis.
+ * @brief Multiplies compatible fields componentwise in place.
  *
- * Validate equal domains and dimensions before pairing entries with the same
- * row/component index. Names, physical units, tensor meaning and coordinate bases
- * are not compared; their compatibility is a caller responsibility. Update this
- * field in place and retain its metadata. The operand is not copied, so self-use
- * follows the same componentwise arithmetic.
- * Multiplication, when used, is a scalar-entry product rather than a tensor product.
- * Nonfinite values/results are not checked here.
+ * This is an entrywise product, not matrix or tensor multiplication.
+ * Domain and dimensions must match; physical meaning is caller-defined.
  *
- * @param other Operand with matching row layout, domain and component count.
- * @return This field after the in-place component updates.
+ * @param other Field supplying the component multipliers.
+ * @return Modified left operand.
  */
 Field& Field::operator*=(const Field& other) {
-    // Establish matching row/component layouts before touching destination values.
+    // Confirm identical layouts before traversing the two scalar buffers.
     validate_compatible(other, "*=");
 
-    // Pair entries by their shared row-major offset in the existing component basis.
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
@@ -527,27 +618,23 @@ Field& Field::operator*=(const Field& other) {
 }
 
 /**
- * @brief Performs componentwise field division in the existing storage basis.
+ * @brief Divides compatible fields componentwise in place.
  *
- * Validate equal domains and dimensions before pairing entries with the same
- * row/component index. Names, physical units, tensor meaning and coordinate bases
- * are not compared; their compatibility is a caller responsibility. Update this
- * field in place and retain its metadata. The operand is not copied, so self-use
- * follows the same componentwise arithmetic.
- * Each denominator is checked for exact zero immediately before its update.
- * A later failure can leave earlier components modified; there is no rollback.
- * Nonfinite values/results are not checked here.
+ * Domain and dimensions must match. Each denominator is checked for exact
+ * zero immediately before division; a failure may leave earlier entries
+ * modified. Units and component bases are not verified.
  *
- * @param other Operand with matching row layout, domain and component count.
- * @return This field after the in-place component updates.
+ * @param other Field supplying the component divisors.
+ * @return Modified left operand.
  */
 Field& Field::operator/=(const Field& other) {
-    // Establish matching row/component layouts before touching destination values.
+    // Validate layout once; denominators are checked during each update.
     validate_compatible(other, "/=");
 
-    // Check and divide one component at a time; no rollback follows a later zero divisor.
+    // Check each component so diagnostics identify its precise location.
     for (Index row = 0; row < rows; ++row) {
         for (Index component = 0; component < components; ++component) {
+            // A zero in a later component leaves earlier divisions applied.
             const Precision denominator = other(row, component);
             logging::error(denominator != Precision(0),
                 "Field '", name, "': division by zero at (", row, ",", component,
@@ -561,19 +648,81 @@ Field& Field::operator/=(const Field& other) {
 }
 
 /**
- * @brief Validates structural compatibility for componentwise field arithmetic.
+ * @brief Returns the componentwise sum of two fields.
  *
- * Require the same FieldDomain, row count and component count before an operation
- * can pair stored entries. Public metadata must agree with each field's matrix
- * storage; this method does not check that invariant or physical units/bases.
- * No values or metadata are changed by validation.
+ * Copies the left operand, then applies `+=`. The new field retains the left
+ * operand's metadata, while both input fields remain unchanged.
  *
- * @param other Field whose structural metadata is compared with this field.
- * @param operation Diagnostic operator label included in failure messages.
+ * @param other Field added to this field.
+ * @return Independent sum field.
+ */
+Field Field::operator+(const Field& other) const {
+    // Compound arithmetic validates the inputs and preserves the left metadata.
+    Field result = *this;
+    result += other;
+    return result;
+}
+
+/**
+ * @brief Returns the componentwise difference of two fields.
+ *
+ * Copies the left operand, then applies `-=`. The new field retains the left
+ * operand's metadata, while both input fields remain unchanged.
+ *
+ * @param other Field subtracted from this field.
+ * @return Independent difference field.
+ */
+Field Field::operator-(const Field& other) const {
+    // Compound arithmetic validates the inputs and preserves the left metadata.
+    Field result = *this;
+    result -= other;
+    return result;
+}
+
+/**
+ * @brief Returns the componentwise product of two fields.
+ *
+ * Copies the left operand, then applies `*=`. The operation is entrywise and
+ * does not represent tensor or matrix multiplication.
+ *
+ * @param other Field multiplied with this field.
+ * @return Independent product field.
+ */
+Field Field::operator*(const Field& other) const {
+    // Compound arithmetic validates the inputs and preserves the left metadata.
+    Field result = *this;
+    result *= other;
+    return result;
+}
+
+/**
+ * @brief Returns the componentwise quotient of two fields.
+ *
+ * Copies the left operand, then applies `/=`. Denominator checks are inherited
+ * from the compound operator; the input fields are not modified.
+ *
+ * @param other Field dividing this field.
+ * @return Independent quotient field.
+ */
+Field Field::operator/(const Field& other) const {
+    // Compound arithmetic validates the inputs and preserves the left metadata.
+    Field result = *this;
+    result /= other;
+    return result;
+}
+
+/**
+ * @brief Validates layouts before componentwise field operations.
+ *
+ * Requires identical domains, row counts and component counts. Names, units,
+ * coordinate bases and physical component meanings are not compared.
+ *
+ * @param other Field whose metadata is compared.
+ * @param operation Operator name used in an error message.
  */
 void Field::validate_compatible(const Field& other,
                                 const char*  operation) const {
-    // Verify semantic row association and rectangular shape as one compatibility phase.
+    // Compare the entity domain separately from the rectangular field shape.
     logging::error(domain == other.domain,
         "Field '", name, "': domain mismatch in '", operation, "' (",
         static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")"

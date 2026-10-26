@@ -44,27 +44,19 @@ namespace fem::bc {
 /**
  * Evaluates the effective film coefficient used by both convection contributions.
  *
- * The stored film coefficient h must be finite and non-negative. If an amplitude
- * is assigned, h is multiplied by its value at the physical analysis time.
- * The result is checked again because a negative or non-finite coefficient
- * would invalidate the dissipative convection boundary operator.
+ * The stored film coefficient h must be finite and non-negative. The caller's
+ * multiplier is applied to h and checked before assembling the boundary operator.
  *
- * @param time Analysis time used for amplitude evaluation.
- * @param ignore_amplitude Use the nominal coefficient directly when true.
+ * @param scale Externally computed multiplier.
  * @return Validated effective film coefficient.
  */
-Precision Convection::effective_film_coefficient(
-    Precision time,
-    bool      ignore_amplitude
-) const {
+Precision Convection::effective_film_coefficient(Precision scale) const {
     // Validate the physical parameters before applying temporal scaling.
     logging::error(std::isfinite(film_coefficient_) && film_coefficient_ >= Precision(0),
         "CONVECTION: film coefficient must be finite and non-negative");
     logging::error(std::isfinite(ambient_temperature_),
         "CONVECTION: ambient temperature must be finite");
 
-    const Precision scale = amplitude_ && !ignore_amplitude
-        ? amplitude_->evaluate(time) : Precision(1);
     const Precision h = film_coefficient_ * scale;
 
     logging::error(std::isfinite(h) && h >= Precision(0),
@@ -86,18 +78,14 @@ Precision Convection::effective_film_coefficient(
  * maps K_h through the active temperature DOF indices and appends sparse
  * triplets. Both surface integrals use the reference configuration.
  *
- * An assigned amplitude scales h and therefore both contributions at
- * physical time. No start/target history is stored for convection, so
- * step_progress is currently unused. Equations remain unchanged.
+ * The caller supplies a common scale for h, its ambient source and boundary
+ * operator. Equations remain unchanged.
  *
  * @param model_data Compiled surfaces and reference nodal positions.
  * @param rhs Scalar thermal RHS modified in place.
  * @param equations Constraint equations left unchanged.
  * @param system_dof_ids Active temperature DOF numbering used for K_h.
  * @param matrix Sparse matrix triplets receiving the convection operator.
- * @param time Physical time used for amplitude evaluation.
- * @param ignore_amplitude Use the nominal film coefficient when true.
- * @param step_progress Unused; convection has no start/target interpolation.
  */
 void Convection::apply(
     model::ModelData&      model_data,
@@ -105,13 +93,11 @@ void Convection::apply(
     constraint::Equations&,
     const SystemDofIds&    system_dof_ids,
     TripletList&           matrix,
-    Precision              time,
-    bool                   ignore_amplitude,
-    Precision
+    Precision              scale
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
-    apply_rhs(model_data, rhs, time, ignore_amplitude);
-    apply_matrix(model_data, system_dof_ids, matrix, time, ignore_amplitude);
+    apply_rhs(model_data, rhs, scale);
+    apply_matrix(model_data, system_dof_ids, matrix, scale);
 }
 
 /**
@@ -127,14 +113,11 @@ void Convection::apply(
  *
  * @param model_data Compiled surface topology and reference geometry.
  * @param rhs Scalar nodal thermal RHS receiving the ambient source.
- * @param time Analysis time used for optional amplitude evaluation.
- * @param ignore_amplitude Apply the nominal film coefficient when true.
  */
 void Convection::apply_rhs(
     model::ModelData& model_data,
     model::Field&     rhs,
-    Precision         time,
-    bool              ignore_amplitude
+    Precision         scale
 ) {
     // Validate the surface target, reference geometry and scalar RHS domain.
     logging::error(region_ != nullptr,
@@ -145,7 +128,7 @@ void Convection::apply_rhs(
         "CONVECTION: target field must be a NODE field with exactly one component");
 
     // The film coefficient is shared by the ambient source and operator.
-    const Precision h = effective_film_coefficient(time, ignore_amplitude);
+    const Precision h = effective_film_coefficient(scale);
     if (h == Precision(0)) return;
 
     const Precision source = h * ambient_temperature_;
@@ -242,15 +225,12 @@ void Convection::apply_rhs(
  * @param model_data Compiled surface topology and reference geometry.
  * @param system_dof_ids Scalar node-to-active-temperature equation mapping.
  * @param matrix Sparse triplet list receiving convection operator entries.
- * @param time Analysis time used for optional amplitude evaluation.
- * @param ignore_amplitude Apply the nominal film coefficient when true.
  */
 void Convection::apply_matrix(
     model::ModelData&   model_data,
     const SystemDofIds& system_dof_ids,
     TripletList&        matrix,
-    Precision           time,
-    bool                ignore_amplitude
+    Precision           scale
 ) {
     // Validate the surface geometry and scalar thermal equation numbering.
     logging::error(region_ != nullptr,
@@ -262,7 +242,7 @@ void Convection::apply_matrix(
     logging::error(system_dof_ids.cols() == 1,
         "CONVECTION: thermal DOF map must contain exactly one component");
 
-    const Precision h = effective_film_coefficient(time, ignore_amplitude);
+    const Precision h = effective_film_coefficient(scale);
     if (h == Precision(0)) return;
 
     const auto& positions     = *model_data.positions_reference;

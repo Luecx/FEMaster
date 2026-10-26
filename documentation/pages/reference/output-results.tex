@@ -1,19 +1,18 @@
-\chapter{Output, Diagnostics, and Results}
-\label{chap:output-results}
+\section{Output and Diagnostics}
+\label{sec:output-results}
 
 FEMaster writes analysis results in its own result formats and provides several diagnostic commands for inspecting matrices, constraints, and the assembled model. These diagnostics do not change the physical problem; they are intended for verification, comparison, and troubleshooting.
 
 The native \file{.res} format preserves FEMaster Field domains and is the most complete textual result source. FEMR provides a seekable, compressed binary representation for efficient programmatic access. FRD output provides a CalculiX/CGX-compatible visualization format for supported nodal quantities.
 
-Abaqus/CalculiX field-output cards such as \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} select which FEMaster result Fields are written for the active step. The first explicit field-output request replaces that step's default result selection. \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted for compatibility but remain ignored because FEMaster does not implement a separate text-print result path.
+Abaqus/CalculiX field-output cards such as \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} select which FEMaster result Fields are written for the active step. The first explicit field-output request replaces that step's default result selection. \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted for compatibility but remain ignored because FEMaster does not implement a separate text-print result path.
 
 \section*{Pretension results}
 When a pretension section exists, linear-static output also provides \val{PTGAP},
 \val{PTFORC} and \val{TF}. These fields describe the axial gap, interface force
 and total signed section force. They can be selected with \cmd{NODE FILE} and
-are available in RES, FRD and FEMR. Control-node U1 is a scalar adjustment;
-it is not a physical mesh-node translation. See Chapter~\ref{chap:pretension}
-for signs, control-node reactions and force-recovery limits.
+are available in RES, FRD and FEMR. No control node is created. See
+Chapter~\ref{chap:pretension} for signs and force-recovery limits.
 
 \keywordpage{OVERVIEW}
 
@@ -25,15 +24,12 @@ In models with a Part/Instance hierarchy or many named regions, the overview exp
 
 A structurally plausible overview establishes only the reported model organization. It does not establish the physical consistency of material units, element orientations, shell normals, surface sides, load directions, or boundary conditions.
 
+This root-level diagnostic prints a model summary for checking the assembled input. It does not choose results or alter the finite-element solution.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *OVERVIEW
-\end{femasterdeck}
-\begin{noabaqus}
-No Abaqus input keyword maps directly to FEMaster's native \cmd{OVERVIEW} diagnostic.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{REQUESTSTIFFNESS}
 
@@ -47,18 +43,18 @@ Matrix output is a diagnostic and verification feature distinct from the ordinar
 \key{FILE} & optional & Stiffness-matrix output filename. \\
 \end{keywordparameters}
 
+The matrix request belongs inside the analysis whose assembled stiffness matrix is to be exported. The FILE name controls the output destination.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *REQUESTSTIFFNESS, FILE=K_service.txt
-...
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-Abaqus matrix-output controls are currently not translated to FEMaster's native matrix diagnostics.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{REQUESTSTGEOM}
 
@@ -72,19 +68,21 @@ The command changes output only; it does not modify the preload or buckling eige
 \key{FILE} & optional & Geometric-stiffness output filename/base. \\
 \end{keywordparameters}
 
+This example requests the elastic and geometric stiffnesses of the linear-buckling problem, including the preload-dependent geometric contribution.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARBUCKLING
+*SUPPORTS
+BC
+*LOADS
+PRELOAD
+*NUMEIGENVALUES
+5
 *REQUESTSTIFFNESS, FILE=K.txt
 *REQUESTSTGEOM, FILE=KG.txt
-...
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-No corresponding geometric-stiffness export card is currently translated from Abaqus input.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{CONSTRAINTSUMMARY}
 
@@ -96,23 +94,23 @@ In an unexpectedly singular or over-constrained model, the constraint groups can
 
 \cmd{CONSTRAINTSUMMARY} does not choose the enforcement method. \cmd{CONSTRAINTMETHOD} separately determines whether the equations are handled by nullspace projection, elimination, or Lagrange multipliers where supported.
 
+The report describes the equations and ranks used to enforce supports and coupling constraints. It is useful for diagnosing underconstraint or redundant equations.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *LOADCASE, TYPE=LINEARSTATIC
-*CONSTRAINTSUMMARY
+*SUPPORTS
+BC
+*LOADS
+SERVICE
 *CONSTRAINTMETHOD, TYPE=NULLSPACE
-...
+*CONSTRAINTSUMMARY
 *END
-\end{femasterdeck}
-\begin{noabaqus}
-No Abaqus output-request card maps to this FEMaster constraint diagnostic.
-\end{noabaqus}
-\end{dialectexamples}
+\end{inputdeck}
 
-\section{Abaqus and CalculiX output-request keywords}
+\subsection{Abaqus and CalculiX output-request keywords}
 
-FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, and \cmd{EL FILE} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
+FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
 The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
 
@@ -124,101 +122,104 @@ The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does 
 
 \cmd{NODE OUTPUT} selects nodal result quantities for the active step. When it is the first explicit output card, the step defaults are cleared before the listed variables are added.
 
+The nodal output request is attached to the current analysis step. U requests displacements and RF requests reaction forces, provided those quantities are available for that procedure.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*NODE OUTPUT
-U, RF
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *OUTPUT, FIELD
 *NODE OUTPUT
 U, RF
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+The CalculiX-compatible \cmd{NODE FILE} keyword accepts the
+same nodal field list and configures the same output request.
 
 \keywordpage{ELEMENT OUTPUT}
 
 \cmd{ELEMENT OUTPUT} selects element-derived result quantities for the active step. It uses the same request set as \cmd{EL FILE}; the spelling does not select a different FEMaster result format.
 
+The element output request selects derived fields such as stress S and strain E for the active step. Output availability still depends on the elements and procedure.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ELEMENT OUTPUT
-S, E
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *OUTPUT, FIELD
 *ELEMENT OUTPUT
 S, E
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+The CalculiX-compatible \cmd{EL FILE} keyword accepts the
+same element field list and configures the same output request.
 
 \keywordpage{NODE FILE}
 
 \cmd{NODE FILE} is the CalculiX-style alias of \cmd{NODE OUTPUT}. It selects the listed nodal result quantities for the active step but does not force creation of a separate ASCII node-results file.
 
+This CalculiX-compatible alias selects the same nodal fields as NODE OUTPUT. It does not create a separate unrelated output stream.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *NODE FILE
 U, RF
-\end{femasterdeck}
-\begin{abaqusdeck}
-*NODE FILE
-U, RF
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
+
+The equivalent \cmd{NODE OUTPUT} keyword accepts the same
+field list. The surrounding \cmd{OUTPUT, FIELD} is an optional
+compatibility container and does not itself select fields.
 
 \keywordpage{EL FILE}
 
 \cmd{EL FILE} is the CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It selects the listed element-derived result quantities without changing the configured FEMaster result writer.
 
+This alias selects the same element result fields as ELEMENT OUTPUT. The available variables depend on the active procedure and element formulations.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *EL FILE
 S, E
-\end{femasterdeck}
-\begin{abaqusdeck}
-*EL FILE
+\end{inputdeck}
+
+The equivalent \cmd{ELEMENT OUTPUT} keyword accepts the same
+field list. The surrounding \cmd{OUTPUT, FIELD} is an optional
+compatibility container and does not itself select fields.
+
+\keywordpage{EL OUTPUT}
+
+\cmd{EL OUTPUT} selects element-derived Fields using the same request
+mechanism as \cmd{ELEMENT OUTPUT} and \cmd{EL FILE}. The active
+result writer determines the output-file format.
+
+The following card requests stress and strain in the active step:
+\exampleheading
+\begin{inputdeck}
+*EL OUTPUT
 S, E
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{NODE PRINT}
 
 \cmd{NODE PRINT} is accepted and ignored. It does not modify the active field-output request set and does not generate an Abaqus/CalculiX text print table.
 
+This input is accepted for file compatibility but currently ignored. It neither changes the frame output selection nor produces an additional text-results table.
+
 \exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
+\begin{inputdeck}
 *NODE PRINT
 U, RF
-\end{femasterdeck}
-\begin{abaqusdeck}
-*NODE PRINT
-U, RF
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
 \keywordpage{EL PRINT}
 
 \cmd{EL PRINT} is accepted and ignored in the same way as \cmd{NODE PRINT}. It neither filters FEMaster result Fields nor generates a separate textual element-results table.
 
-\exampleheading
-\begin{dialectexamples}
-\begin{femasterdeck}
-*EL PRINT
-S, E
-\end{femasterdeck}
-\begin{abaqusdeck}
-*EL PRINT
-S, E
-\end{abaqusdeck}
-\end{dialectexamples}
+This command is parsed for compatibility but has no effect on the result fields. Use ELEMENT OUTPUT or EL FILE to request actual element output.
 
-\section{Native \file{.res} files}
+\exampleheading
+\begin{inputdeck}
+*EL PRINT
+S, E
+\end{inputdeck}
+
+\subsection{Native \file{.res} files}
 
 The native \file{.res} file is organized into loadcase and Field blocks. A loadcase header has the form
 \begin{syntax}
@@ -226,7 +227,7 @@ LC <id>
 \end{syntax}
 and is followed by the Fields produced by that analysis.
 
-\subsection*{Indexed Field storage}
+\subsubsection*{Indexed Field storage}
 
 All standard result Fields associated with model entities are written in indexed form. Every row therefore contains one or more explicit index columns followed by the Field values. The header states both counts:
 
@@ -280,7 +281,7 @@ END FIELD
 
 For \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}, the first index is the semantic element identifier and the second is the zero-based local position within that element. This keeps the external result format independent of any internal element ordering.
 
-\subsection*{Common result quantities}
+\subsubsection*{Common result quantities}
 
 Typical Fields depend on analysis type:
 \begin{longtable}{@{}p{0.27\linewidth}p{0.63\linewidth}@{}}
@@ -303,7 +304,7 @@ Generalized nodal motion and force vectors use the six-component nodal order \do
 \]
 The component meaning of raw result data therefore depends on whether the Field contains generalized nodal quantities or stress/strain tensors.
 
-\subsection*{Structural stress and strain recovery}
+\subsubsection*{Structural stress and strain recovery}
 
 For solid elements, FEMaster evaluates constitutive stress and strain at the element's actual material integration points. Result recovery extrapolates those values to the element's local nodes with a topology-specific interpolation/extrapolation matrix; the global nodal result is then assembled from the contributions of incident elements. A reduced-integration element can only recover the spatial variation represented by its integration-point data (for example, a single-point \val{C3D8R} supplies a constant recovered value per element). Extrapolated element-nodal values and averaged nodal values therefore need not equal the original integration-point values.
 
@@ -311,7 +312,7 @@ The distinction is particularly important at a material interface, a stress disc
 
 FEMR version 1 stores \val{NODE} and \val{ELEMENT} result fields but does not serialize \val{ELEMENT\_NODAL}, \val{ELEMENT\_IP}, or \val{ELEMENT\_MP} fields. The writer skips unsupported domains with a warning; use \file{.res} when the local-field domain is needed. The absence of a local field in FEMR does not imply that FEMaster did not evaluate that quantity internally.
 
-\subsection*{Harmonic results}
+\subsubsection*{Harmonic results}
 
 A complex harmonic quantity is written as separate real and imaginary components:
 \[
@@ -329,7 +330,7 @@ The node-wise magnitude of the complex displacement vector can be reconstructed 
 
 The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.
 
-\section{FEMR binary result format}
+\subsection{FEMR binary result format}
 \label{sec:femr-format}
 
 FEMR version 1 is FEMaster's seekable binary result container. Multi-byte integers and floating-point values are little-endian. Unknown chunks are skipped using their stored size, allowing compatible format extensions.
@@ -341,7 +342,7 @@ FEMaster model.inp --output-format res frd femr
 \end{verbatim}
 FEMR version 1 always compresses each independently loadable field-data chunk with LZ4. There is no compression setting in the command-line interface.
 
-\subsection{Chunk envelope}
+\subsubsection{Chunk envelope}
 
 Every chunk begins with a 32-byte envelope containing, in order:
 \begin{itemize}
@@ -353,7 +354,7 @@ Every chunk begins with a 32-byte envelope containing, in order:
 \end{itemize}
 Only \texttt{FDAT} is compressed in version 1. Each field is a separate LZ4 block, so loading one field never decompresses another field.
 
-\subsection{Chunks}
+\subsubsection{Chunks}
 
 \begin{description}
   \item[HEAD] Must be first. It stores the \texttt{FEMR} magic, major and minor version, byte order, scalar width, default compression and reserved data.
@@ -368,11 +369,11 @@ Only \texttt{FDAT} is compressed in version 1. Each field is a separate LZ4 bloc
 
 Strings use a \texttt{uint16} byte length followed by UTF-8 bytes. Version 1 supports only the field domains \texttt{UNKNOWN} (0), \texttt{NODE} (1), and \texttt{ELEMENT} (2). Writers skip fields from other domains with a warning; readers reject unsupported domain codes found in a version 1 file.
 
-\subsection{Stable mesh and field indexing}
+\subsubsection{Stable mesh and field indexing}
 
 MESH ordering defines the stable dense result indexing. Node entry $i$ maps to row $i$ of every NODE field, and element entry $i$ maps to row $i$ of every ELEMENT field. Node and element identifiers are nevertheless stored explicitly; they must not be reconstructed from element connectivity. The accompanying instance and part-local identifiers preserve semantic labels such as \texttt{17} and \texttt{bolt.17}.
 
-\subsection{Lazy access}
+\subsubsection{Lazy access}
 
 A reader scans only chunk envelopes and the small metadata chunks. It seeks over MESH and FDAT payloads and retains their offsets. Mesh or field payloads are read, decompressed and checked only when requested.
 
@@ -384,7 +385,7 @@ with femaster.open_results("model.femr") as results:
     mesh = results.mesh
 \end{verbatim}
 
-\section{FRD visualization output}
+\subsection{FRD visualization output}
 
 FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Data that do not naturally map to FRD nodal blocks---for example some element-local, integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
 

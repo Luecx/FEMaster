@@ -45,12 +45,22 @@
 \setlist[itemize]{leftmargin=*,topsep=2pt,itemsep=2pt}
 \setlist[enumerate]{leftmargin=*,topsep=2pt,itemsep=2pt}
 
+% Keep keyword entries visible and numbered inside grouped reference topics.
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{FEMaster Reference Manual}
 \fancyhead[R]{\leftmark}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
+
+% Start every section level on a fresh page, including consecutive headings.
+% Chapters already start on a fresh page through the book class.
+\AddToHook{cmd/section/before}{\clearpage}
+\AddToHook{cmd/subsection/before}{\clearpage}
+\AddToHook{cmd/subsubsection/before}{\clearpage}
 
 \titleformat{\chapter}
   {\normalfont\huge\bfseries\color{FMDark}}
@@ -61,6 +71,9 @@
 \titleformat{\subsection}
   {\normalfont\large\bfseries\color{FMDark}}
   {\thesubsection}{0.7em}{}
+\titleformat{\paragraph}[block]
+  {\normalfont\normalsize\bfseries\color{FMDark}}
+  {\theparagraph}{0.7em}{}
 
 \lstdefinestyle{femasterInput}{
   basicstyle=\ttfamily\small,

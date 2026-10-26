@@ -39,6 +39,7 @@
 #include "geometry/surface/surface.h"
 #include "instance.h"
 #include "model_data.h"
+#include "../bc/condition_state.h"
 #include "part.h"
 
 #include <ostream>
@@ -165,9 +166,7 @@ struct Model {
                                           const std::string& surface_set_a,
                                           const std::string& surface_set_b);
     void prepare_pretension_sections();
-    void set_pretension_load(const std::string& name,
-                             pretension::Control control,
-                             Precision value);
+    void set_pretension_load(const std::string& name, Precision value);
     void lock_pretension_section(const std::string& name);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
@@ -195,18 +194,21 @@ struct Model {
     SparseMatrix build_thermal_conductivity_matrix(
         const SystemDofIds& system_dof_ids);
 
-    // Thermal passes use direct thermal history and optional named thermal
-    // selections in ModelData. Each pass supplies complete valid apply outputs
-    // and retains only the contribution required by the caller.
-    Field build_thermal_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
-    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, Precision time = 0);
-    constraint::Equations collect_thermal_constraints();
+    // Thermal passes read explicitly provided target conditions and retain
+    // only the operator or right-hand side contribution required by the caller.
+    Field build_thermal_load_matrix(const bc::ConditionState& target, Precision time = 0, Precision step_progress = Precision(1));
+    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
+    constraint::Equations collect_thermal_constraints(const bc::ConditionState& target);
 
-    // Structural conditions are read from the current direct history and named
-    // selections in ModelData; callers supply only assembly/analysis parameters.
-    Field build_load_matrix(Precision time = 0, Precision step_progress = Precision(1));
-    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids);
-    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis();
+    // Structural loads shared by both states remain constant; removed loads
+    // ramp down and newly activated loads follow their amplitude or a linear
+    // ramp. Supports are assembled from the target state only.
+    Field build_load_matrix(const bc::ConditionState& initial,
+                            const bc::ConditionState& target,
+                            Precision time, Precision step_progress);
+    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
+                                                    const bc::ConditionState& target);
+    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
 
     // Element operators use active numbering and optional element scaling
     Field build_pretension_force_matrix();
@@ -223,7 +225,9 @@ struct Model {
         const Field* target_temperature,
         const Field& base_displacement,
         const Field* base_temperature,
-        const Field* stiffness_scalar = nullptr);
+        const Field* stiffness_scalar = nullptr,
+        bool update_state = true,
+        const SparseMatrix* pattern = nullptr);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
         const Field& target_displacement,

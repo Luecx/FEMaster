@@ -50,6 +50,8 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
                     "LINEARHARMONIC", "NONLINEARSTATIC"})
                 .key("NAME").optional()
+                .key("RESUME").optional("NO").allowed({"YES", "NO"})
+                    .doc("Continue the preceding converged state; NO by default")
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
@@ -75,6 +77,8 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
                 logging::error(false,
                     "Unsupported loadcase type: ", type);
             }
+
+            parser.active_loadcase()->resume = keys.get<bool>("RESUME");
         });
 
         // Execute and release the completed load case when its scope closes

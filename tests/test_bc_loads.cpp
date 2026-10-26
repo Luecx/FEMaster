@@ -24,8 +24,8 @@
 
 using namespace fem;
 
-TEST(BC_Loads, ConditionManagerFamilyIsolation) {
-    bc::ConditionManager manager;
+TEST(BC_Loads, ConditionStateFamilyIsolation) {
+    bc::ConditionState manager;
     auto load         = std::make_shared<bc::CLoad>();
     auto other_load   = std::make_shared<bc::CLoad>();
     auto support      = std::make_shared<bc::Support>();
@@ -48,6 +48,178 @@ TEST(BC_Loads, ConditionManagerFamilyIsolation) {
 
     EXPECT_TRUE(manager.remove(bc::SUPPORT, support));
     EXPECT_TRUE(manager.get(bc::SUPPORT).empty());
+}
+
+TEST(BC_Loads, ConditionStateCopiesOnlyMembership) {
+    bc::ConditionState original;
+    auto load = std::make_shared<bc::CLoad>();
+    load->values_[0] = Precision(100);
+    original.add(bc::CLOAD, load);
+
+    // A state copy has independent membership, but shares immutable definitions.
+    auto copied = original;
+    EXPECT_TRUE(copied.contains(bc::CLOAD, load));
+    copied.remove(bc::CLOAD, load);
+    EXPECT_TRUE(original.contains(bc::CLOAD, load));
+    EXPECT_FALSE(copied.contains(bc::CLOAD, load));
+}
+
+TEST(BC_Loads, StaticHistoryUsesAmplitudeOnlyForNewLoads) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    // The nonlinear step-time history acts on newly activated loads only.
+    // A continued pointer must retain its nominal load even though its
+    // original amplitude would otherwise change the intermediate force.
+    auto amplitude = std::make_shared<bc::Amplitude>("RAMP");
+    amplitude->add_sample(Precision(0),   Precision(0));
+    amplitude->add_sample(Precision(0.5), Precision(0.25));
+    amplitude->add_sample(Precision(1),   Precision(1));
+
+    auto old_load = std::make_shared<bc::CLoad>();
+    old_load->region_    = region;
+    old_load->values_[0] = Precision(100);
+    old_load->amplitude_ = amplitude;
+
+    auto new_load = std::make_shared<bc::CLoad>();
+    new_load->region_    = region;
+    new_load->values_[0] = Precision(200);
+    new_load->amplitude_ = amplitude;
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, old_load);
+    target.add(bc::CLOAD, new_load);
+
+    const auto at = [&](Precision time, Precision progress) {
+        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+    };
+
+    // Replacement: old load ramps down linearly, new load follows A(t).
+    EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(1),   Precision(1)),   Precision(200), 1e-12);
+
+    // Intersection: assemble the old load once at full magnitude and ignore
+    // its stored amplitude without modifying the shared physical object.
+    target.remove(bc::CLOAD, new_load);
+    target.add(bc::CLOAD, old_load);
+    EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(1),   Precision(1)),   Precision(100), 1e-12);
+    EXPECT_EQ(old_load->amplitude_, amplitude);
+}
+
+TEST(BC_Loads, StaticIntersectionCombinesContinuedRemovedAndAddedLoads) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto amplitude = std::make_shared<bc::Amplitude>("RAMP");
+    amplitude->add_sample(Precision(0),   Precision(0));
+    amplitude->add_sample(Precision(0.5), Precision(0.25));
+    amplitude->add_sample(Precision(1),   Precision(1));
+
+    auto continued = std::make_shared<bc::CLoad>();
+    continued->region_    = region;
+    continued->values_[0] = Precision(100);
+    continued->amplitude_ = amplitude;
+
+    auto removed = std::make_shared<bc::CLoad>();
+    removed->region_    = region;
+    removed->values_[0] = Precision(80);
+
+    auto added = std::make_shared<bc::CLoad>();
+    added->region_    = region;
+    added->values_[0] = Precision(60);
+    added->amplitude_ = amplitude;
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, continued);
+    initial.add(bc::CLOAD, removed);
+    target.add(bc::CLOAD, continued);
+    target.add(bc::CLOAD, added);
+
+    // f(t) = 100 + (1 - lambda) * 80 + A(t) * 60.
+    const auto at = [&](Precision time, Precision progress) {
+        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+    };
+    EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(180), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(155), 1e-12);
+    EXPECT_NEAR(at(Precision(1),   Precision(1)),   Precision(160), 1e-12);
+}
+
+TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto amplitude = std::make_shared<bc::Amplitude>("PULSE");
+    amplitude->add_sample(Precision(0), Precision(2));
+    amplitude->add_sample(Precision(1), Precision(0));
+    amplitude->add_sample(Precision(2), Precision(1));
+
+    auto load = std::make_shared<bc::CLoad>();
+    load->region_ = region;
+    load->values_[0] = Precision(100);
+    load->amplitude_ = amplitude;
+
+    bc::ConditionState target;
+    target.add(bc::CLOAD, load);
+
+    const auto at = [&](Precision time) {
+        // The final flag matches transient/harmonic build_target_load_matrix().
+        return mdl.build_load_matrix(
+            bc::ConditionState{}, target, time, Precision(1))(0, 0);
+    };
+    EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
+    EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
+    EXPECT_NEAR(at(Precision(1)), Precision(0), 1e-12);
+    EXPECT_NEAR(at(Precision(2)), Precision(100), 1e-12);
+}
+
+TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
+    model::Model mdl;
+    mdl.set_node(0, 0, 0, 0);
+    mdl.compile();
+
+    auto region = std::make_shared<model::NodeRegion>("NODE");
+    region->add(0);
+
+    auto old_load = std::make_shared<bc::CLoad>();
+    old_load->region_   = region;
+    old_load->values_[0] = Precision(100);
+
+    auto new_load = std::make_shared<bc::CLoad>();
+    new_load->region_   = region;
+    new_load->values_[0] = Precision(200);
+
+    bc::ConditionState initial;
+    bc::ConditionState target;
+    initial.add(bc::CLOAD, old_load);
+    target.add(bc::CLOAD, new_load);
+
+    const auto start = mdl.build_load_matrix(
+        initial, target, Precision(0), Precision(0));
+    const auto middle = mdl.build_load_matrix(
+        initial, target, Precision(0.5), Precision(0.5));
+    const auto end = mdl.build_load_matrix(
+        initial, target, Precision(1), Precision(1));
+
+    EXPECT_NEAR(start(0, 0), 100, 1e-12);
+    EXPECT_NEAR(middle(0, 0), 150, 1e-12);
+    EXPECT_NEAR(end(0, 0), 200, 1e-12);
 }
 
 TEST(BC_Loads, ParserMatchesOnlySelectedIdentifierAndComponent) {
@@ -107,11 +279,13 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
     L2->values_[0] = 2.0;
     collector->add(L2);
 
-    // The DSL-equivalent activation expands collector definitions into model state
+    // Collector entries belong to a step target, not the compiled model.
+    bc::ConditionState target;
     for (const auto& condition : *collector) {
-        mdl._data->conditions.add(bc::CLOAD, condition);
+        target.add(bc::CLOAD, condition);
     }
-    const model::Field bc = mdl.build_load_matrix();
+    const model::Field bc = mdl.build_load_matrix(
+        bc::ConditionState{}, target, Precision(1), Precision(1));
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -155,7 +329,7 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -209,18 +383,18 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, Precision(0.5));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
     }
 
-    // Unit volume, density 7 and acceleration 2 give 14 force, scaled by amplitude 0.5.
+    // Unit volume, density 7 and acceleration 2 give 14 force; the caller scales by 0.5.
     EXPECT_NEAR(total_x, 7.0, 1e-12);
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 1.0, true);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
@@ -260,12 +434,12 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, 0.0);
+    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);

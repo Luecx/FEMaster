@@ -37,11 +37,9 @@ Equations get_pretension_equations(
     Vec3 tangent_1 = axis.cross(reference).normalized();
     Vec3 tangent_2 = axis.cross(tangent_1).normalized();
     const std::array<Vec3, 2> tangents = {tangent_1, tangent_2};
-    const bool force_control = section.state == pretension::State::Loading
-        && section.control == pretension::Control::Force;
-    const Precision normal_gap = section.state == pretension::State::Open ? Precision(0)
-        : section.state == pretension::State::Locked ? section.locked_gap
-        : section.prescribed_value;
+    const bool force_control = section.state == pretension::State::Force;
+    const Precision normal_gap = section.state == pretension::State::Hold
+        ? section.locked_gap : Precision(0);
 
     const auto append_projection = [&](std::vector<EquationEntry>& entries,
                                        const pretension::InterfacePair& pair,
@@ -79,15 +77,21 @@ Equations get_pretension_equations(
         }
     }
 
-    // Each axial pair gap equals the single scalar generalized displacement q.
-    for (const auto& pair : section.interface_pairs) {
+    // The first physical pair is the reference for the common axial gap.
+    // In FORCE this leaves exactly one relative axial displacement free.
+    const auto& first = section.interface_pairs.front();
+    for (std::size_t i = 0; i < section.interface_pairs.size(); ++i) {
+        const auto& pair = section.interface_pairs[i];
         std::vector<EquationEntry> entries;
         append_projection(entries, pair, axis, Precision(1));
-        entries.push_back({section.control_node, 0, Precision(-1)});
-        add_equation(std::move(entries), Precision(0));
+        if (force_control) {
+            if (i == 0) continue;
+            append_projection(entries, first, axis, Precision(-1));
+            add_equation(std::move(entries), Precision(0));
+        } else {
+            add_equation(std::move(entries), normal_gap);
+        }
     }
-    if (!force_control && (!section.nodal_control || section.state == pretension::State::Open))
-        add_equation({{section.control_node, 0, Precision(1)}}, normal_gap);
 
     return equations;
 }

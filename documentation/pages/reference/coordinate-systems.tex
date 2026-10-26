@@ -1,11 +1,11 @@
-\chapter{Coordinate Systems and Orientations}
-\label{chap:coordinates}
+\subsection{Coordinate Systems and Orientations}
+\label{sec:coordinates}
 
 Coordinate systems define local directions used by materials, Sections, loads, supports, and nodal transformations. They determine the interpretation of anisotropy, beam or shell local axes, cylindrical loading, and boundary-condition components expressed outside the global Cartesian basis.
 
 \cmd{ORIENTATION} and \cmd{TRANSFORM} act on different concepts. \cmd{ORIENTATION} defines a named coordinate system that can be referenced by Sections and other orientation-aware native FEMaster features. Abaqus \cmd{TRANSFORM} assigns a local degree-of-freedom basis to a node set. Neither command moves the geometry; rigid placement of a Part is defined by \cmd{INSTANCE}.
 
-\keywordpage{ORIENTATION}
+\keywordnestedpage{ORIENTATION}
 
 Native \cmd{ORIENTATION} creates a named rectangular or cylindrical coordinate system. \key{NAME} identifies the system and \key{TYPE} selects \val{RECTANGULAR} or \val{CYLINDRICAL}.
 
@@ -39,26 +39,28 @@ Native cylindrical & 9 scalar components defining the cylindrical system geometr
 Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to the origin. \\
 \end{keyworddata}
 
+This example defines local material directions. The orientation can subsequently be selected by a section that needs directional constitutive properties. A nodal TRANSFORM instead changes the basis used for nodal DOFs.
+
 \exampleheading
 
-\begin{dialectexamples}
-\begin{femasterdeck}
-*ORIENTATION, NAME=MAT_AXES,
- TYPE=RECTANGULAR
-1., 0., 0.,
-0., 1., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
+\begin{inputdeck}
 *ORIENTATION, NAME=MAT_AXES,
  DEFINITION=COORDINATES,
  SYSTEM=RECTANGULAR
 1., 0., 0., 0., 1., 0., 0., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
 
-\keywordpage{TRANSFORM}
+\paragraph*{Compact rectangular orientation}
+\begin{inputdeck}
+*ORIENTATION, NAME=MAT_AXES,
+ TYPE=RECTANGULAR
+1., 0., 0.,
+0., 1., 0.
+\end{inputdeck}
 
-\cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. It does not exist as a native FEMaster keyword because native FEMaster loads and supports can reference named orientations directly where a local basis is required.
+\keywordnestedpage{TRANSFORM}
+
+\cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. The nodal basis differs from a named \cmd{ORIENTATION}: local support and load directions may also be specified by referencing named coordinate systems.
 
 \key{NSET} identifies the nodes that use the transformation. \key{TYPE=R} selects a rectangular transform and is the default. The six data values define two directions or points that establish the local rectangular basis. The directions must be nonzero and non-collinear.
 
@@ -83,14 +85,16 @@ A node has one effective nodal basis. Overlapping transformed sets with incompat
 \val{a1,a2,a3,b1,b2,b3} & Two directions/points defining the rectangular basis or cylindrical axis. \\
 \end{keyworddata}
 
-\exampleheading
+\paragraph*{Rectangular transformation}
+The selected node set receives a local basis for nodal degrees of freedom. The two variants describe different coordinate systems rather than competing file formats.
 
-\begin{dialectexamples}
-\begin{nofemaster}
-Native FEMaster does not use a separate \cmd{TRANSFORM} keyword. Loads, supports, Sections, and other supported features reference named \cmd{ORIENTATION} definitions directly where needed.
-\end{nofemaster}
-\begin{abaqusdeck}
+\begin{inputdeck}
+*TRANSFORM, NSET=EDGE_NODES, TYPE=R
+1., 0., 0., 0., 1., 0.
+\end{inputdeck}
+
+\paragraph*{Cylindrical transformation}
+\begin{inputdeck}
 *TRANSFORM, NSET=CYLINDER_NODES, TYPE=C
 0., 0., 0., 0., 0., 100.
-\end{abaqusdeck}
-\end{dialectexamples}
+\end{inputdeck}
