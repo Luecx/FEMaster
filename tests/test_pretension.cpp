@@ -1,5 +1,6 @@
 #include "../src/io/reader/parser.h"
 #include "../src/model/model.h"
+#include "../src/constraints/transformer/constraint_transformer.h"
 
 #include <gtest/gtest.h>
 
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -129,5 +131,52 @@ TEST_F(Pretension, RejectsHoldWithoutCompletedStep) {
     replace(deck, "*PRETENSION, SECTION=PT1, MODE=FORCE, VALUE=1000.0",
         "*PRETENSION, SECTION=PT1, MODE=HOLD");
     EXPECT_THROW(run(), std::exception);
+}
+TEST(PretensionPostCheck, RejectsUnbalancedAndNonfiniteSolutions) {
+    SystemDofIds dofs(1, 6);
+    dofs.setConstant(-1);
+    dofs(0, 0) = 0;
+    constraint::ConstraintTransformer::Options options;
+    options.method = constraint::ConstraintTransformer::Method::NullSpace;
+    constraint::ConstraintTransformer transformer({}, dofs, 1, options);
+    SparseMatrix stiffness(1, 1);
+    stiffness.insert(0, 0) = 1;
+    const DynamicVector load = DynamicVector::Ones(1);
+    EXPECT_TRUE(transformer.post_check_static(stiffness, load, load));
+    EXPECT_FALSE(transformer.post_check_static(stiffness, load, DynamicVector::Zero(1)));
+    EXPECT_FALSE(transformer.post_check_static(stiffness, load,
+        DynamicVector::Constant(1, std::numeric_limits<Precision>::quiet_NaN())));
+}
+
+TEST_F(Pretension, RejectsFailedPostCheckBeforeCapturingGap) {
+    replace(deck, "VALUE=1000.0", "VALUE=1e200");
+    try {
+        run();
+        FAIL() << "Expected the numerical post-check to reject the step";
+    } catch (const std::exception& error) {
+        EXPECT_NE(std::string(error.what()).find("numerical post-check failed"), std::string::npos);
+    }
+    const auto& section = *parser.model()._data->pretension_sections.front();
+    EXPECT_FALSE(section.has_solved_gap);
+    EXPECT_EQ(section.last_solved_gap, 0);
+    EXPECT_THROW(parser.model().lock_pretension_section(section.name), std::exception);
+    EXPECT_TRUE(read_frames(read_file(directory / "model.res")).empty());
+}
+TEST_F(Pretension, FailedStepPreservesPreviouslyAcceptedGap) {
+    replace(deck, "*PRETENSION, SECTION=PT1, MODE=HOLD",
+        "*PRETENSION, SECTION=PT1, MODE=FORCE, VALUE=1e200");
+    try {
+        run();
+        FAIL() << "Expected the second step to fail its numerical post-check";
+    } catch (const std::exception& error) {
+        EXPECT_NE(std::string(error.what()).find("numerical post-check failed"), std::string::npos);
+    }
+    const auto& section = *parser.model()._data->pretension_sections.front();
+    const double expected_gap = 1000.0 * 3.0 / (210000.0 * 4.0);
+    EXPECT_TRUE(section.has_solved_gap);
+    EXPECT_NEAR(section.last_solved_gap, expected_gap, 1e-8);
+    ASSERT_NO_THROW(parser.model().lock_pretension_section(section.name));
+    EXPECT_NEAR(section.locked_gap, expected_gap, 1e-8);
+    EXPECT_EQ(read_frames(read_file(directory / "model.res")).size(), 1u);
 }
 } // namespace

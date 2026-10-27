@@ -290,6 +290,12 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
+    // Reject invalid solutions before writing results or accepting step history.
+    if (!transformer->post_check_static(K, f, q)) {
+        model->step_end();
+        logging::error(false, "LINEARSTATIC: numerical post-check failed; step was not committed");
+    }
+
     // The solver's affine internal forces are the only force outputs.
     // Perturbations emit their increment, not the prestressed base force.
     auto internal_active = Timer::measure(
@@ -386,7 +392,6 @@ void LinearStatic::run() {
         },
         "resolving and writing requested result fields");
 
-    transformer->post_check_static(K, f, q);
     // Commit the total displacement only for ordinary linear statics.
     if (!perturbation) {
         commit_state(global_disp_mat);

@@ -267,7 +267,8 @@ public:
     // The full residual check is disabled by default through an infinite
     // tolerance because constrained systems generally retain reaction forces in
     // the full-space residual.
-    void post_check_static(
+    // Returns true only when every enabled numerical check passes.
+    bool post_check_static(
         const SparseMatrix&  matrix,
         const DynamicVector& rhs,
         const DynamicVector& solution,
