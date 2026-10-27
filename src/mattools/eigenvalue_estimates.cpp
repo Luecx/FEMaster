@@ -6,6 +6,8 @@
  * normalization avoids dependence on its amplitude; a relative denominator
  * check handles cancellation when B is indefinite. The diagonal estimate
  * supplies a characteristic eigenvalue scale without solving an eigenproblem.
+ * A separate lower-quartile diagonal-ratio estimate preserves the conservative
+ * fallback used by buckling analyses when no directional estimate is available.
  *
  * Solver configuration, physical interpretation and fallback decisions belong
  * to the calling analysis. No factorization or model state is modified.
@@ -17,8 +19,10 @@
 
 #include "eigenvalue_estimates.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace fem {
 namespace mattools {
@@ -90,6 +94,46 @@ Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) 
 
     const Precision scale = numerator / denominator;
     return std::isfinite(scale) ? scale : invalid;
+}
+
+/**
+ * Estimates a positive generalized eigenvalue from individual diagonal ratios.
+ *
+ * Inspect A_ii / B_ii in the supplied coordinate system, retaining finite
+ * positive ratios with |A_ii| >= 1e-20 and B_ii > 1e-20. These thresholds and
+ * the sorted index floor(n / 4) preserve the existing buckling fallback.
+ * Selecting the lower quartile limits the influence of large positive outliers;
+ * it does not bound the smallest eigenvalue or detect null modes.
+ *
+ * No geometric-stiffness sign is applied here. A buckling caller representing
+ * A phi = lambda (-Kg) phi supplies -Kg as B. Invalid diagonal terms are skipped
+ * individually so the remaining eligible directions can still define an estimate.
+ *
+ * @return Lower-quartile positive ratio, or NaN for incompatible dimensions
+ *         or an empty collection of eligible ratios. Inputs remain unchanged.
+ */
+Precision estimate_eigenvalue_diag_ratio(const SparseMatrix& A, const SparseMatrix& B) {
+    // Require a common square coordinate space before inspecting diagonals.
+    const Precision invalid = std::numeric_limits<Precision>::quiet_NaN();
+    if (A.rows() != A.cols() || B.rows() != B.cols() || A.rows() != B.rows()) return invalid;
+
+    // Keep only the positive diagonal ratios admitted by the buckling fallback.
+    std::vector<Precision> ratios;
+    ratios.reserve(A.rows());
+    for (Eigen::Index i = 0; i < A.rows(); ++i) {
+        const Precision numerator   = A.coeff(i, i);
+        const Precision denominator = B.coeff(i, i);
+        if (!std::isfinite(numerator) || !std::isfinite(denominator)) continue;
+        if (std::abs(numerator) < Precision(1e-20) || denominator <= Precision(1e-20)) continue;
+
+        const Precision ratio = numerator / denominator;
+        if (std::isfinite(ratio) && ratio > Precision(0)) ratios.push_back(ratio);
+    }
+    if (ratios.empty()) return invalid;
+
+    // Use the same lower-quartile index as the original load-case estimator.
+    std::sort(ratios.begin(), ratios.end());
+    return ratios[ratios.size() / 4];
 }
 
 } // namespace mattools

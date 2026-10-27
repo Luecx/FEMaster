@@ -4,8 +4,9 @@
  *
  * The matrix tools layer measures A x = lambda B x without assuming stiffness,
  * mass or geometric-stiffness semantics. It provides a directional Rayleigh
- * quotient and a characteristic scale from absolute diagonal sums. Neither
- * quantity is guaranteed to approximate the smallest eigenvalue.
+ * quotient, a characteristic scale from absolute diagonal sums and a lower
+ * quartile of positive diagonal ratios. These quantities are not guaranteed
+ * to approximate the smallest eigenvalue.
  *
  * Callers choose spectral shifts, signs, acceptance criteria and fallback
  * values. Invalid or undefined estimates return NaN; inputs remain unchanged.
@@ -32,6 +33,12 @@ Precision estimate_eigenvalue_rayleigh(const SparseMatrix& A, const SparseMatrix
 // Return NaN for incompatible dimensions, nonfinite diagonals or a zero
 // denominator. Off-diagonal coefficients do not enter this scale estimate.
 Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B);
+
+// Return the lower quartile of finite positive A_ii / B_ii for A x = lambda B x.
+// Retain the buckling fallback's thresholds: |A_ii| >= 1e-20 and B_ii > 1e-20.
+// Skip invalid/nonpositive ratios; return NaN for incompatible square matrices
+// or when no eligible diagonal entry remains. Inputs are not modified.
+Precision estimate_eigenvalue_diag_ratio(const SparseMatrix& A, const SparseMatrix& B);
 
 } // namespace mattools
 } // namespace fem

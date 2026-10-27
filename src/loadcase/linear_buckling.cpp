@@ -55,8 +55,8 @@
 #include "../io/writer/write_mtx.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
-#include <limits>
 
 namespace fem { namespace loadcase {
 
@@ -79,33 +79,6 @@ struct BucklingMode {
 
     BucklingMode(Precision lam, DynamicVector q) : lambda(lam), q_mode(std::move(q)) {}
 };
-
-static double estimate_lambda_diag_ratio(const SparseMatrix& A,
-                                         const SparseMatrix& B) {
-    std::vector<double> vals;
-    vals.reserve(A.rows());
-
-    for (int i = 0; i < A.rows(); ++i) {
-        const double aii = A.coeff(i, i);
-        const double mii = -B.coeff(i, i);
-
-        if (!std::isfinite(aii) || !std::isfinite(mii)) continue;
-        if (std::abs(aii) < 1e-20) continue;
-        if (mii <= 1e-20) continue;
-
-        const double lam = aii / mii;
-        if (std::isfinite(lam) && lam > 0.0)
-            vals.push_back(lam);
-    }
-
-    if (vals.empty()) return std::numeric_limits<double>::quiet_NaN();
-
-    std::sort(vals.begin(), vals.end());
-
-    // Robust gegen Ausreißer:
-    const size_t idx = vals.size() / 4;   // eher konservativ kleiner als Median
-    return vals[idx];
-}
 
 /**
  * @brief Pretty-print a short table of buckling factors and settings.
@@ -328,7 +301,7 @@ void LinearBuckling::run() {
             logging::info(true, "Rayleigh estimate failed or degenerate; falling back to diagonal ratio.");
 
             lambda_est_raw = Timer::measure(
-                [&]() { return estimate_lambda_diag_ratio(A, B); },
+                [&]() { return mattools::estimate_eigenvalue_diag_ratio(A, Bneg); },
                 "estimating initial raw lambda (diag ratio)"
             );
 
