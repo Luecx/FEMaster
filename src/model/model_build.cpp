@@ -227,8 +227,11 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  *
  * Dense elements and post-compile point elements activate the components used by
  * their formulations. Couplings and connectors may additionally activate
- * generalized nodal directions. The final boolean mask is converted to contiguous
- * zero-based system indices.
+ * generalized nodal directions. Manual equations activate every component with
+ * a nonzero coefficient, including components of nodes without elements. These
+ * components must remain in the algebraic system until constraint reduction;
+ * dropping them would change the equations into unintended supports.
+ * The final boolean mask is converted to contiguous zero-based system indices.
  *
  * @return Node-by-six matrix of global unconstrained system DOF identifiers.
  */
@@ -261,6 +264,22 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
             const ID node_id = element->nodes()[local_node];
             for (ID dof = 0; dof < 6; ++dof) {
                 mask(node_id, dof) |= dofs(0, dof);
+            }
+        }
+    }
+
+    // Preserve manual equation terms even when their nodes have no elements.
+    // Only the referenced directions are activated. Do this before deriving
+    // coupling and MPC master DOFs so their masks include these directions.
+    for (const auto& equation : _data->equations) {
+        for (const auto& entry : equation.entries) {
+            logging::error(entry.node_id >= 0 && entry.node_id < mask.rows()
+                        && entry.dof < 6 && std::isfinite(entry.coeff),
+                "Model: invalid manual equation term (node=", entry.node_id,
+                ", dof=", int(entry.dof), ", coefficient=", entry.coeff, ")");
+
+            if (entry.coeff != Precision(0)) {
+                mask(entry.node_id, entry.dof) = true;
             }
         }
     }

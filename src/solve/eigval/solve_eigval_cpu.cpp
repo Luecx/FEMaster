@@ -1,3 +1,22 @@
+/**
+ * @file solve_eigval_cpu.cpp
+ * @brief Dispatches CPU eigenvalue solves and extracts generalized modal intervals.
+ *
+ * Count-based solves are forwarded to the regular, shift-invert, buckling or
+ * Cayley implementation. Interval extraction uses generalized shift-invert and
+ * retains eigenpairs strictly inside the supplied eigenvalue bounds. With MKL,
+ * the inertia of A - max_val B determines how many eigenvalues lie below the
+ * upper bound; other CPU backends enlarge the requested count iteratively.
+ *
+ * Matrix assembly, constraint reduction and physical frequency scaling belong
+ * to the caller. Interval extraction preserves the caller's spectral shift so
+ * free-body stiffness matrices need not be factorized at zero.
+ *
+ * @see EigvalOpts
+ * @author Finn Eggers
+ * @date 27.10.2026
+ */
+
 #include "solve_eigval_cpu.h"
 #include <algorithm>
 
@@ -40,9 +59,10 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
     logging::error(min_val < max_val,
         "Generalized eigval interval requires min_val < max_val");
 
-    // use new opts to ignore the sigma
+    // Keep the caller's shift: modal analysis places it below the nonnegative
+    // spectrum. Forcing zero here would factor a singular free-body stiffness
+    // and undo the modal frequency scaling and shift selection.
     EigvalOpts opts_new = opts;
-    opts_new.sigma = 0.0;
     opts_new.sort  = EigvalOpts::Sort::LargestMagn;
 
     const int max_attempt = static_cast<int>(A.rows()) - 1;
