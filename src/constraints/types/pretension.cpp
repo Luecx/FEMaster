@@ -7,6 +7,8 @@
 
 #include "../../core/logging.h"
 
+#include <Eigen/Geometry>
+
 #include <array>
 #include <cmath>
 #include <utility>
@@ -14,10 +16,9 @@
 namespace fem::constraint {
 
 Equations get_pretension_equations(
-    SystemDofIds& system_dof_ids,
-    model::ModelData& model_data,
-    pretension::PretensionSection& section) {
-    (void) model_data;
+    const SystemDofIds& system_dof_ids,
+    const pretension::PretensionSection& section,
+    bool force_control, Precision normal_gap) {
 
     Equations equations;
     logging::error(!section.interface_pairs.empty(),
@@ -37,9 +38,6 @@ Equations get_pretension_equations(
     Vec3 tangent_1 = axis.cross(reference).normalized();
     Vec3 tangent_2 = axis.cross(tangent_1).normalized();
     const std::array<Vec3, 2> tangents = {tangent_1, tangent_2};
-    const bool force_control = section.state == pretension::State::Force;
-    const Precision normal_gap = section.state == pretension::State::Hold
-        ? section.locked_gap : Precision(0);
 
     const auto append_projection = [&](std::vector<EquationEntry>& entries,
                                        const pretension::InterfacePair& pair,

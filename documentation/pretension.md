@@ -34,10 +34,24 @@ transmitted force. A section with no FORCE or HOLD action starts with zero gap.
 Use NULLSPACE or ELIMINATION constraint handling. LAGRANGE, nonlinear and
 perturbation steps with pretension are not supported.
 
+Failed numerical post-checks reject the step before results and step history
+are accepted. The last accepted pretension gap remains available to HOLD;
+HOLD without a previously accepted gap is rejected.
+
+FORCE and HOLD are immutable conditions in the same initial/target step-history
+framework as other prescriptions. A new command replaces the target condition
+for its section without changing the frozen initial condition. Omitting a new
+command inherits the previously accepted mode and value. HOLD freezes the last
+accepted gap when its condition is defined. A rejected step does not become the
+inherited input state for the next step. Section geometry is independent of
+these prescriptions; only accepted solution results are stored on the section.
+
 PTGAP gives the axial relative displacement on both nodes of each pair.
 PTFORC gives equal and opposite transmitted force vectors on the two faces.
 The signed section force is the sum of PTFORC on side B projected onto the
 section axis. TF repeats that total at the side B nodes for convenient
-inspection. Supports on cut nodes prevent unambiguous force recovery.
+inspection. Active supports, couplings, MPCs, ties, connectors, rigid-body constraints and manual equations
+on either cut face are rejected because their forces cannot be separated from the interface force.
+Place these constraints away from the cut. External loads at cut nodes remain supported.
 
 See [the complete example](../examples/09_constraints/095_bolt_pretension.inp).

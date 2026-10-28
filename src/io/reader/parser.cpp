@@ -37,6 +37,7 @@
 #include "../../bc/structural/load_v.h"
 #include "../../bc/structural/load_inertial.h"
 #include "../../bc/structural/support.h"
+#include "../../bc/structural/pretension.h"
 #include "../../bc/thermal/temperature.h"
 #include "../../bc/thermal/heat_flux.h"
 #include "../../bc/thermal/convection.h"
@@ -229,6 +230,9 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Assembly regions, properties and dense fields
     // ---------------------------------------------------------------------
+    root.execute_children("FIELD");
+    root.execute_children("NORMAL");
+
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("NSET");
         assembly->execute_children("ELSET");
@@ -238,18 +242,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("MASS");
         assembly->execute_children("ROTARYINERTIA");
         assembly->execute_children("SPRING");
-    }
 
-    root.execute_children("PRETENSIONSECTION");
-    model_->prepare_pretension_sections();
-
-    root.execute_children("FIELD");
-    root.execute_children("NORMAL");
-    for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("FIELD");
         assembly->execute_children("NORMAL");
     }
-
+    root.execute_children("PRETENSIONSECTION");
+    model_->prepare_pretension_sections();
     // Initial conditions bind already materialized named fields to persistent
     // model-state handles. Temperature and velocity then remain authoritative
     // until a later analysis procedure explicitly evolves them.
@@ -765,6 +763,11 @@ static bool same_condition_target(const bc::Condition& current, const bc::Condit
     // The concrete type is deliberately resolved here in the input layer;
     // assembly never needs to know these keyword replacement rules.
     const auto same_target = [&](const bc::Condition& current, const bc::Condition& replacement) {
+        if (const auto* a = dynamic_cast<const bc::PretensionCondition*>(&current)) {
+            const auto* b = dynamic_cast<const bc::PretensionCondition*>(&replacement);
+            return b && a->section == b->section;
+        }
+
         if (const auto* a = dynamic_cast<const bc::CLoad*>(&current)) {
             const auto* b = dynamic_cast<const bc::CLoad*>(&replacement);
             if (!b) return false;

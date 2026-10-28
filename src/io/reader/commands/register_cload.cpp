@@ -152,7 +152,8 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
         ) {
             auto& model = parser.model();
             auto region = model.resolve_node_region(target);
-            std::string identifier = (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+            const std::string identifier = (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+
             std::vector<bc::Condition::Ptr> replacements;
             for (auto& [load_region, load_orientation] :
                  group_by_orientation(parser, std::move(region), *orientation)) {

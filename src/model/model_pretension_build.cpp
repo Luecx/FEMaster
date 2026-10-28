@@ -1,24 +1,7 @@
 #include "model.h"
+#include "../bc/structural/pretension.h"
 
 namespace fem::model {
-
-Field Model::build_pretension_force_matrix() {
-    Field force{"PRETENSION_FORCE", FieldDomain::NODE,
-                _data->field_rows(FieldDomain::NODE), 3};
-    force.set_zero();
-    for (const auto& section : _data->pretension_sections) {
-        if (!section || section->state != pretension::State::Force ||
-            section->interface_pairs.empty()) continue;
-        const Vec3 nodal_force = section->prescribed_value /
-            static_cast<Precision>(section->interface_pairs.size()) * section->axis_direction;
-        for (const auto& pair : section->interface_pairs)
-            for (Dim component = 0; component < 3; ++component) {
-                force(pair.side_a, component) -= nodal_force(component);
-                force(pair.side_b, component) += nodal_force(component);
-            }
-    }
-    return force;
-}
 
 Field Model::build_pretension_gap_matrix(const Field& displacement) {
     logging::error(displacement.domain == FieldDomain::NODE && displacement.components >= 3,
@@ -41,12 +24,12 @@ Field Model::build_pretension_gap_matrix(const Field& displacement) {
     return gap;
 }
 
-void Model::capture_pretension_gaps(const Field& displacement) {
+void Model::capture_pretension_gaps(const Field& displacement, const bc::ConditionState& target) {
     logging::error(displacement.domain == FieldDomain::NODE && displacement.components >= 3,
         "Capturing pretension gaps requires a nodal displacement field");
-    for (const auto& section : _data->pretension_sections) {
-        if (!section || section->state == pretension::State::Open ||
-            section->interface_pairs.empty()) continue;
+    for (const auto& condition : target.get(bc::PRETENSION)) {
+        const auto& section = static_cast<const bc::PretensionCondition&>(*condition).section;
+        if (section->interface_pairs.empty()) continue;
         const auto& pair = section->interface_pairs.front();
         section->last_solved_gap = section->axis_direction.dot(
             displacement.row_vec3(pair.side_b) - displacement.row_vec3(pair.side_a));

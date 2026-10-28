@@ -14,6 +14,7 @@
  */
 
 #include "linear_static.h"
+#include "../bc/structural/pretension.h"
 
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/rbm.h"
@@ -290,10 +291,10 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
-    // Reject invalid solutions before writing results or accepting step history.
-    if (!transformer->post_check_static(K, f, q)) {
+    // Pretension history requires a successfully checked solution.
+    if (has_pretension && !transformer->post_check_static(K, f, q)) {
         model->step_end();
-        logging::error(false, "LINEARSTATIC: numerical post-check failed; step was not committed");
+        logging::error(false, "PRETENSION: numerical post-check failed; step was not committed");
     }
 
     // The solver's affine internal forces are the only force outputs.
@@ -348,9 +349,12 @@ void LinearStatic::run() {
     for (const auto& section : model->_data->pretension_sections) {
         section->total_force = 0;
         Vec3 applied = Vec3::Zero();
-        if (section->state == pretension::State::Force)
-            applied = section->axis_direction * (section->prescribed_value /
-                static_cast<Precision>(section->interface_pairs.size()));
+        for (const auto& condition : target_conditions.get(bc::PRETENSION)) {
+            const auto& prescription = static_cast<const bc::PretensionCondition&>(*condition);
+            if (prescription.section == section && prescription.mode == bc::PretensionCondition::Mode::Force)
+                applied = section->axis_direction * (prescription.value /
+                    static_cast<Precision>(section->interface_pairs.size()));
+        }
         for (const auto& pair : section->interface_pairs) {
             for (Dim component = 0; component < 3; ++component) {
                 const Precision transmitted = global_internal_mat(pair.side_b, component)
@@ -391,12 +395,15 @@ void LinearStatic::run() {
             output.write_frame(*writer, model->_data.get());
         },
         "resolving and writing requested result fields");
-
-    // Commit the total displacement only for ordinary linear statics.
+    // Preserve the existing diagnostic behavior without pretension.
+    if (!has_pretension) {
+        transformer->post_check_static(K, f, q);
+    }
+        // Commit the total displacement only for ordinary linear statics.
     if (!perturbation) {
         commit_state(global_disp_mat);
         committed_structural_load = std::make_shared<model::Field>(global_load_mat);
-        model->capture_pretension_gaps(global_disp_mat);
+        model->capture_pretension_gaps(global_disp_mat, target_conditions);
     }
     model->step_end();
 }

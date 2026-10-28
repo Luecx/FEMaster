@@ -40,13 +40,14 @@ enum ConditionFamily : std::size_t {
     TEMPERATURE,
     HEAT_FLUX,
     CONVECTION,
+    PRETENSION,
     N_CONDITION_FAMILIES
 };
 
 // Structural Neumann conditions: used for load assembly, load bases and
 // static-amplitude diagnostics. Supports and thermal conditions are separate.
-inline constexpr std::array<ConditionFamily, 6> STRUCTURAL_LOAD_FAMILIES = {
-    CLOAD, DLOAD, DSLOAD, PLOAD, VLOAD, INERTIAL_LOAD
+inline constexpr std::array<ConditionFamily, 7> STRUCTURAL_LOAD_FAMILIES = {
+    CLOAD, DLOAD, DSLOAD, PLOAD, VLOAD, INERTIAL_LOAD, PRETENSION
 };
 
 /**

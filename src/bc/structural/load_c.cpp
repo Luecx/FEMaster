@@ -70,8 +70,7 @@ void CLoad::apply(
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
 
-    // Assemble the local generalized load vector [Fx, Fy, Fz, Mx, My, Mz].
-    // NaN target components are omitted; undefined start values are zero.
+    // Omitted generalized components contribute no nodal forces or moments.
     Vec6 values = Vec6::Zero();
     for (Dim i = 0; i < 6; ++i) {
         if (std::isfinite(values_[i])) values[i] = scale * values_[i];

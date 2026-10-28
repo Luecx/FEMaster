@@ -136,27 +136,4 @@ void Model::prepare_pretension_sections() {
     }
 }
 
-void Model::set_pretension_load(const std::string& name, Precision value) {
-    logging::error(std::isfinite(value), "PRETENSION: FORCE value must be finite");
-    for (auto& section : _data->pretension_sections) {
-        if (section->name != name) continue;
-        section->state = pretension::State::Force;
-        section->prescribed_value = value;
-        return;
-    }
-    logging::error(false, "PRETENSION: unknown section ", name);
-}
-
-void Model::lock_pretension_section(const std::string& name) {
-    for (auto& section : _data->pretension_sections) {
-        if (section->name != name) continue;
-        logging::error(section->has_solved_gap,
-            "PRETENSION HOLD: section ", name, " has no successfully completed prior step");
-        section->locked_gap = section->last_solved_gap;
-        section->state = pretension::State::Hold;
-        return;
-    }
-    logging::error(false, "PRETENSION: unknown section ", name);
-}
-
 } // namespace fem::model

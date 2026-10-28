@@ -33,6 +33,7 @@
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "../constraints/types/pretension.h"
+#include "../bc/structural/pretension.h"
 #include "element/element_structural.h"
 #include "model.h"
 #include "solid/element_solid.h"
@@ -41,6 +42,7 @@
 #include <cmath>
 #include <iterator>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -371,15 +373,6 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
         coupling.apply_loads(*_data, load_matrix);
     }
 
-    if (!_data->pretension_sections.empty()) {
-        const Field pretension_force = build_pretension_force_matrix();
-        for (Index node = 0; node < load_matrix.rows; ++node) {
-            for (Dim component = 0; component < 3; ++component) {
-                load_matrix(node, component) += pretension_force(node, component);
-            }
-        }
-    }
-
     return load_matrix;
 }
 
@@ -509,17 +502,18 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
     collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
 
-    Index pretension_idx = 0;
-    for (auto& section : _data->pretension_sections) {
-        if (!section) continue;
-        auto equations = constraint::get_pretension_equations(
-            system_dof_ids, *_data, *section);
-        for (auto& equation : equations) {
-            equation.source = constraint::EquationSourceKind::Manual;
-            equation.source_index = pretension_idx;
-            groups.pretensions.push_back(std::move(equation));
-        }
-        ++pretension_idx;
+    collect(target.get(bc::PRETENSION), Source::Manual, groups.pretensions, get_supports);
+
+    // Before its first prescription, a cut remains tied with a zero gap.
+    // This default does not establish accepted pretension history.
+    for (const auto& section : _data->pretension_sections) {
+        const auto& conditions = target.get(bc::PRETENSION);
+        const bool prescribed = std::any_of(conditions.begin(), conditions.end(), [&](const auto& c) {
+            return static_cast<const bc::PretensionCondition&>(*c).section == section;
+        });
+        if (prescribed) continue;
+        auto rows = constraint::get_pretension_equations(system_dof_ids, *section, false, Precision(0));
+        groups.pretensions.insert(groups.pretensions.end(), rows.begin(), rows.end());
     }
 
     // Append manually defined equations without regenerating their coefficients.
@@ -533,6 +527,32 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
         // Preserve the original ordering for diagnostics and source identification
         equation.source_index = manual_idx++;
         groups.others.push_back(std::move(equation));
+    }
+
+    // Nodal residuals identify interface forces only when no other constraint
+    // contributes forces at the cut. Check active equations, not definitions.
+    std::unordered_map<ID, const pretension::PretensionSection*> cut_nodes;
+    for (const auto& section : _data->pretension_sections) {
+        if (!section) continue;
+        for (const auto& pair : section->interface_pairs) {
+            cut_nodes.emplace(pair.side_a, section.get());
+            cut_nodes.emplace(pair.side_b, section.get());
+        }
+    }
+    for (const auto* group : {&groups.supports, &groups.connectors, &groups.mpcs,
+                             &groups.couplings, &groups.ties, &groups.rbms, &groups.others}) {
+        for (const auto& equation : *group) {
+            for (const auto& entry : equation.entries) {
+                if (entry.coeff == Precision(0) || entry.dof < 0 || entry.dof >= 3) continue;
+                const auto cut = cut_nodes.find(entry.node_id);
+                if (cut == cut_nodes.end()) continue;
+                logging::error(false,
+                    "PRETENSION section '", cut->second->name,
+                    "': additional constraint at cut node ", entry.node_id,
+                    " (DOF ", entry.dof + 1, ") prevents unambiguous interface force recovery. ",
+                    "Move supports, couplings and other constraints away from both cut faces.");
+            }
+        }
     }
 
     return groups;

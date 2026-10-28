@@ -173,7 +173,6 @@ public:
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
-
     StepState& step_state();
     const StepState& step_state() const;
 

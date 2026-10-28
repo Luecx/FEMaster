@@ -182,10 +182,7 @@ struct Field {
     // Returns whether at least one field value is finite
     [[nodiscard]] bool has_any_finite() const;
 
-    // Changes the row count while preserving the overlapping prefix.
-    void resize_rows(Index row_count, Precision fill_value = Precision(0));
-
-    // Returns whether a field component is not finite
+    // Detect NaN or infinity at a checked row/component index.
     [[nodiscard]] bool is_nan(Index row, Index component) const;
 
     // Validates that every stored component is finite and identifies invalid

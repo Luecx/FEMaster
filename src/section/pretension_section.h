@@ -9,12 +9,6 @@
 
 namespace fem::pretension {
 
-enum class State {
-    Open,
-    Force,
-    Hold
-};
-
 struct InterfacePair {
     ID side_a = -1;
     ID side_b = -1;
@@ -32,10 +26,6 @@ struct PretensionSection {
 
     Vec3 axis_direction = Vec3::UnitX();
     std::vector<InterfacePair> interface_pairs;
-    State state = State::Open;
-
-    Precision prescribed_value = 0;
-    Precision locked_gap = 0;
     Precision last_solved_gap = 0;
     bool has_solved_gap = false;
 
