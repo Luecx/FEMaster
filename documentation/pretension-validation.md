@@ -19,6 +19,13 @@ the rework branch. The broad suite was not run or rebuilt again after the
 condition-history refactor; the earlier compiler failures remain known blockers.
 These focused results do not prove absence of other integration defects.
 
+## Cleanup validation (28 October 2026)
+
+A fresh workspace build after the manual review and removal of the pretension
+benchmarks passed all 27 focused tests and the CLI face-pair regression. The
+remaining example `095_bolt_pretension.inp` also completed without failed
+numerical post-checks. The separate focused test target is retained.
+
 ## Analytical and negative regressions
 
 The linear static regression uses two coincident faces with separate node IDs.

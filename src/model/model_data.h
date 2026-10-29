@@ -112,8 +112,6 @@ struct ModelData {
     std::vector<LinePtr>    lines;
     std::vector<ID>         surface_element_ids;
 
-    // Append compiled cut/control nodes in one field resize; returns first dense ID.
-
     // Auxiliary point elements created from post-compile FEMaster POINTMASS
     // commands. They reference compiled node ids but deliberately stay outside
     // the frozen dense element namespace and its element-domain enumerations.

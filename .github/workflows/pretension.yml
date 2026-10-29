@@ -1,0 +1,36 @@
+name: Test — Pretension
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pretension:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Configure CPU tests
+        run: cmake --preset linux -DFEMASTER_BUILD_TESTS=ON
+
+      - name: Build solver and focused tests
+        run: cmake --build --preset linux --target FEMaster FEMaster_pretension_test --parallel 2
+
+      - name: Run pretension tests and CLI regression
+        run: ctest --test-dir build/linux -R '^Pretension' --output-on-failure --no-tests=error
+
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretension-test-log
+          path: build/linux/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
