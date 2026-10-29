@@ -25,9 +25,7 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
     using OpB = Spectra::SparseSymMatProd<Precision>;
 
     const int n        = static_cast<int>(A.rows());
-    // Leave enough basis vectors to recover the multiplicities of clustered
-    // elastic eigenvalues alongside the rigid-body modes.
-    const int ncv_user = std::min(n, 4 * k + 40);
+    const int ncv_user = choose_ncv(n, k);
 
     logging::info(true, "Eigval (gen): ShiftInvert, sigma=", opts.sigma, ", ncv=", ncv_user);
 

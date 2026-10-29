@@ -21,7 +21,7 @@
  *         Mr = T^T M T           (reduced "mass")
  *   (6) Solve generalized EVP:
  *         A * phi = lambda * Mr * phi
- *       We target the *smallest* eigenvalues by shift-invert in scaled coordinates.
+ *       We target the *smallest* eigenvalues by shift-invert in physical units.
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
  *       Expand to node x 6 and compute simple modal participations.
@@ -33,7 +33,8 @@
  *   see its cost (which can dominate without zero-column compression).
  * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
- * - The eigval solver uses a negative shift in scaled eigenvalue coordinates.
+ * - The negative shift is -0.01 times a quadratic Ritz estimate of the lowest
+ *   flexible eigenvalue omega^2, after removing admissible rigid-body modes.
  *   Sorting is "largest magnitude" in shift-invert space.
  *
  * Notes
@@ -321,38 +322,41 @@ void LinearEigenfrequency::run() {
     );
 
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
-    // Estimate a characteristic omega^2 from the reduced matrix diagonals.
-    // Rigid-body modes do not make this scale zero when elastic stiffness exists.
-    Precision spectral_scale = mattools::estimate_spectral_scale(A, Mr);
-    logging::error(std::isfinite(spectral_scale) && spectral_scale >= Precision(0),
-        "Eigenfrequency: invalid spectral scale");
-    if (spectral_scale == Precision(0)) spectral_scale = Precision(1);
+    // Estimate the lowest flexible omega^2 from admissible quadratic fields.
+    // Matrices, interval bounds and returned eigenvalues remain in physical units.
+    const Precision lambda_estimate = Timer::measure(
+        [&]() { return mattools::estimate_eigenvalue_ritz(
+            A, Mr, *model->_data->positions, active_dof_idx_mat, CT->reduced_map()); },
+        "estimating lowest flexible omega^2 (quadratic Ritz)"
+    );
+    logging::error(std::isfinite(lambda_estimate) && lambda_estimate > Precision(0),
+        "Eigenfrequency: no positive flexible eigenvalue in quadratic Ritz space");
 
-    // Solve (A / scale) phi = mu Mr phi with mu = lambda / scale.
-    // A dimensionless shift avoids both a nearly singular free-body solve and
-    // unit-dependent Lanczos thresholds. Its physical value is -1e-4 * scale.
-    // Mr stays unchanged, preserving the eigenvectors' mass normalization.
-    A /= spectral_scale;
+    // A strictly negative shift avoids factorizing the singular stiffness of
+    // free bodies. Largest shift-invert magnitude targets the lowest modes.
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
-    eigopt.sigma = -1e-4;
+    eigopt.sigma = -Precision(0.01) * lambda_estimate;
+    logging::error(std::isfinite(eigopt.sigma) && eigopt.sigma < 0,
+        "Eigenfrequency: invalid negative Ritz shift");
+    logging::info(true, "Quadratic Ritz omega^2 estimate = ", lambda_estimate,
+        ", shift sigma = ", eigopt.sigma);
     eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
         [&]() {
             if (use_eigenvalue_range) {
-                return solver::eigvals(device, A, Mr,
-                    min_eigenvalue / spectral_scale, max_eigenvalue / spectral_scale, eigopt);
+                return solver::eigvals(device, A, Mr, min_eigenvalue, max_eigenvalue, eigopt);
             }
             return solver::eigvals(device, A, Mr, k_req, eigopt);
         },
         "solving generalized EVP (modal)"
     );
 
-    // Restore physical lambda = scale * mu and collect all modes (ascending lambda)
+    // Collect the physical eigenvalues and mode shapes (ascending lambda).
     std::vector<ModalMode> modes; modes.reserve(eig_pairs.size());
-    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value) * spectral_scale, p.vector);
+    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
     std::sort(modes.begin(), modes.end(),
               [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 

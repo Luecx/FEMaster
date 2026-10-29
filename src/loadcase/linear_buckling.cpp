@@ -34,8 +34,8 @@
  *   element evaluates the stress or stress resultants required by its own
  *   formulation locally; no global integration-point stress scratch field is
  *   constructed by the buckling load case.
- * - We estimate a shift sigma from the preload displacement using a Rayleigh
- *   quotient in reduced space (optional but often helpful for convergence).
+ * - We estimate a shift sigma from a quadratic Ritz subspace of the reduced
+ *   elastic and geometric operators unless the user supplies a shift.
  * - If you use direct solvers for A and the EVP, building explicit A/B is fine.
  *   For very large systems you could switch to operator mode (matrix-free),
  *   but that is not required here.
@@ -272,7 +272,7 @@ void LinearBuckling::run() {
     );
 
     // Use the generalized EVP convention A phi = lambda Bneg phi for both
-    // the Rayleigh estimate and the subsequent buckling solve.
+    // the quadratic Ritz estimate and the subsequent buckling solve.
     SparseMatrix Bneg = (-1.0) * B;
 
     if (std::abs(this->sigma) > 1e-24) {
@@ -280,35 +280,18 @@ void LinearBuckling::run() {
         logging::info(true, "User-provided shift sigma = ",
                       std::scientific, std::setprecision(4), this->sigma);
     } else {
-        double lambda_est_raw = 0.0;
-        bool rayleigh_ok = false;
-
-        logging::info(true, "");
-        logging::info(true, "Estimating initial shift sigma");
-
-        lambda_est_raw = Timer::measure(
-            [&]() { return mattools::estimate_eigenvalue_rayleigh(A, Bneg, q_pre); },
-            "estimating initial raw lambda (Rayleigh)"
+        // Bneg can be indefinite. The Ritz estimator uses elastic energy as
+        // its positive metric and selects the smallest positive load factor.
+        const Precision lambda_est_raw = Timer::measure(
+            [&]() { return mattools::estimate_eigenvalue_ritz(
+                A, Bneg, *model->_data->positions, active_dof_idx_mat, CT->reduced_map()); },
+            "estimating initial raw lambda (quadratic Ritz)"
         );
-        // The generic quotient also permits zero/negative values. Buckling
-        // shift generation retains its existing positive-estimate requirement.
-        rayleigh_ok = std::isfinite(lambda_est_raw) && lambda_est_raw > 0.0;
+        logging::info(true, "Raw quadratic Ritz estimate = ",
+            std::scientific, std::setprecision(6), lambda_est_raw);
 
-        if (rayleigh_ok) {
-            logging::info(true, "Raw Rayleigh estimate = ",
-                          std::scientific, std::setprecision(6), lambda_est_raw);
-        } else {
-            logging::info(true, "Rayleigh estimate failed or degenerate; falling back to diagonal ratio.");
-
-            lambda_est_raw = Timer::measure(
-                [&]() { return mattools::estimate_eigenvalue_diag_ratio(A, Bneg); },
-                "estimating initial raw lambda (diag ratio)"
-            );
-
-            logging::info(true, "Raw diagonal-ratio estimate = ",
-                          std::scientific, std::setprecision(6), lambda_est_raw);
-        }
-
+        // Preserve the established small positive buckling shift and its
+        // fallback when the trial space contains no positive load factor.
         if (std::isfinite(lambda_est_raw) && lambda_est_raw > 0.0) {
             this->sigma = lambda_est_raw / 1e6;
         } else {
