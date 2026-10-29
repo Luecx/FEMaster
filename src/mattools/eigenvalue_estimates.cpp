@@ -36,10 +36,11 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 
+#include "../core/logging.h"
+
 #include <array>
 #include <cmath>
 #include <limits>
-#include <utility>
 #include <vector>
 
 namespace fem {
@@ -74,19 +75,19 @@ Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) 
     // ---------------------------------------------------------------------
     // (1) Prepare the diagonal scale and validate the completed quantities
     // ---------------------------------------------------------------------
-    // Guard diagonal access by the common square dimensions. A nonpositive
-    // mass sum yields NaN directly, before any invalid division can occur.
-    const Precision invalid    = std::numeric_limits<Precision>::quiet_NaN();
-    const bool      compatible = A.rows() > 0 && A.rows() == A.cols()
-                              && B.rows() == A.rows() && B.cols() == A.cols();
-    const Precision stiffness_sum = compatible ? A.diagonal().sum() : invalid;
-    const Precision mass_sum      = compatible ? B.diagonal().sum() : invalid;
-    const Precision scale         = mass_sum > Precision(0) ? stiffness_sum / mass_sum : invalid;
+    // First verify matching square dimensions, then sum the diagonals.
+    // Forming both sums before division avoids division by a zero mass entry.
+    const Precision invalid = std::numeric_limits<Precision>::quiet_NaN();
+    if (A.rows() <= 0 || A.rows() != A.cols()) return invalid;
+    if (B.rows() != A.rows() || B.cols() != A.cols()) return invalid;
 
-    if (!compatible) return invalid;
-    if (!std::isfinite(stiffness_sum) || stiffness_sum <= Precision(0)) return invalid;
-    if (!std::isfinite(mass_sum) || mass_sum <= Precision(0)) return invalid;
-    if (!std::isfinite(scale) || scale <= Precision(0)) return invalid;
+    const Precision stiffness_sum = A.diagonal().sum();
+    const Precision mass_sum      = B.diagonal().sum();
+    if (!std::isfinite(stiffness_sum) || stiffness_sum <= 0) return invalid;
+    if (!std::isfinite(mass_sum) || mass_sum <= 0) return invalid;
+
+    const Precision scale = stiffness_sum / mass_sum;
+    if (!std::isfinite(scale) || scale <= 0) return invalid;
 
     // ---------------------------------------------------------------------
     // (2) Return the scale in physical eigenvalue units
@@ -146,27 +147,45 @@ Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) 
  *         invalid arithmetic, no usable flexible basis or no positive Ritz value.
  *         All inputs and model/material states remain unchanged.
  */
-Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
-                                 const SparseMatrix&              B,
-                                 const model::Field&              positions,
-                                 const IndexMatrix&               active_dof_idx_mat,
-                                 const constraint::ConstraintMap& map) {
+Precision estimate_eigenvalue_ritz(
+     const SparseMatrix&              A,
+     const SparseMatrix&              B,
+     const model::Field&              positions,
+     const IndexMatrix&               active_dof_idx_mat,
+     const constraint::ConstraintMap& map) {
     // ---------------------------------------------------------------------
     // (1) Validate the reduced operators and their coordinate descriptions
     // ---------------------------------------------------------------------
-    // A and B must act on the same independent coordinates. The map connects
-    // these coordinates to the active node/DOF numbering used below. Prepare
-    // dimension-independent diagnostics first, then keep the guards together.
+    // A and B act on the same independent coordinates. The map connects these
+    // coordinates to the full active node/DOF numbering. Structural mismatches
+    // are programming errors; an empty or numerically unusable operator may
+    // legitimately fall back to a different spectral scale estimator.
     const Precision invalid        = std::numeric_limits<Precision>::quiet_NaN();
     const Precision tolerance      = Precision(100) * std::numeric_limits<Precision>::epsilon();
     const Precision stiffness_norm = A.norm();
 
-    if (A.rows() == 0 || A.rows() != A.cols() || B.rows() != A.rows() || B.cols() != A.cols()
-        || map.n_master() != static_cast<Index>(A.rows()) || map.full_size != static_cast<Index>(map.T.rows())
-        || map.T.cols() != A.rows() || positions.rows != static_cast<Index>(active_dof_idx_mat.rows())
-        || positions.components < 3 || active_dof_idx_mat.cols() != 6) {
-        return invalid;
-    }
+    // Validate matrix dimensions and constraint mapping
+    logging::error(A.rows()  == A.cols(),
+        "Ritz estimator requires a square stiffness matrix");
+    logging::error(B.rows()  == A.rows() && B.cols() == A.cols(),
+        "Ritz estimator requires matching operator dimensions");
+    logging::error(map.n_master() == static_cast<Index>(A.rows()),
+        "Ritz estimator: master count does not match reduced system");
+    logging::error(map.full_size == static_cast<Index>(map.T.rows()),
+        "Ritz estimator: invalid constraint transformation rows");
+    logging::error(map.T.cols() == A.rows(),
+        "Ritz estimator: invalid constraint transformation columns");
+
+    // Validate nodal geometry and DOF layout
+    logging::error(positions.rows == static_cast<Index>(active_dof_idx_mat.rows()),
+        "Ritz estimator: nodal position and DOF counts differ");
+    logging::error(positions.components >= 3,
+        "Ritz estimator requires three-dimensional positions");
+    logging::error(active_dof_idx_mat.cols() == 6,
+        "Ritz estimator requires six DOF columns");
+
+    // Reject systems without a usable elastic stiffness scale
+    if (A.rows() == 0) return invalid;
     if (!std::isfinite(stiffness_norm) || stiffness_norm <= Precision(0)) return invalid;
 
     // ---------------------------------------------------------------------
@@ -217,110 +236,127 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
     // set that normalized coordinate and its derivative to zero. If all spans
     // vanish, the quadratic geometric construction is unavailable; the caller
     // can still obtain a modal shift from the separate diagonal fallback.
-    const Vec3      center    = Precision(0.5) * minimum + Precision(0.5) * maximum;
-    const Vec3      half_span = Precision(0.5) * maximum - Precision(0.5) * minimum;
-    const Precision length    = Precision(2) * half_span.maxCoeff();
-    if (!center.allFinite() || !half_span.allFinite() || !std::isfinite(length) || length <= Precision(0)) {
-        return invalid;
-    }
+    // Compute the bounding-box center, half-spans and characteristic length
+    const Vec3      center    = minimum / 2 + maximum / 2;
+    const Vec3      half_span = maximum / 2 - minimum / 2;
+    const Precision length    = 2 * half_span.maxCoeff();
+
+    if (!std::isfinite(length) || length <= 0) return invalid;
+
+    // Compute inverse half-spans, preserving zero for degenerate dimensions
     Vec3 inverse_span = Vec3::Zero();
     for (int axis = 0; axis < 3; ++axis) {
-        if (half_span[axis] > Precision(0)) inverse_span[axis] = Precision(1) / half_span[axis];
+        if (half_span[axis] > 0)
+            inverse_span[axis] = Precision(1) / half_span[axis];
     }
 
     // ---------------------------------------------------------------------
     // (4) Identify independent admissible global rigid motions
     // ---------------------------------------------------------------------
-    // Translation along e_i has u = e_i and theta = 0. Rotation about e_i has
-    // u = e_i cross r and theta = e_i, including beam/shell rotational DOFs.
-    // Restricting these values to masters can turn a physical rigid field into
-    // a flexible constrained field. Therefore only a near-null vector of A is
-    // eligible for removal; supported flexible content must remain available.
-    std::vector<DynamicVector> rigid_basis;
-    rigid_basis.reserve(6);
+    // For each Cartesian axis e_i, a global translation has u = e_i and
+    // theta = 0; a global rotation has u = e_i cross (X - center) and
+    // theta = e_i. The first three columns of R represent translations,
+    // followed by the three rotations. Sampling only masters gives reduced
+    // candidates; their complete constrained fields would be T * R.
+    //
+    // Such sampled motions need not be truly rigid after constraint recovery:
+    // an MPC can map their master values to non-rigid slave displacements.
+    // Therefore accept a candidate for deflation only if A q is near zero.
+    // R is reused for the accepted orthonormal basis, avoiding a second
+    // collection of full-length vectors.
+    DynamicMatrix R = DynamicMatrix::Zero(A.rows(), 6);
 
+    for (Index master = 0; master < map.n_master(); ++master) {
+        const Index gid  = map.masters[master];
+        const int   dof  = dof_of_gid[gid];
+
+        if (dof < 3) {
+            const Index node = node_of_gid[gid];
+            const Vec3  r(positions(node, 0) - center[0],
+                          positions(node, 1) - center[1],
+                          positions(node, 2) - center[2]);
+
+            R(master, dof) = 1;
+            for (int axis = 0; axis < 3; ++axis) {
+                R(master, axis + 3) = Vec3::Unit(axis).cross(r)[dof];
+            }
+        } else {
+            // Rotational DOFs have no translational rigid-mode component.
+            R(master, dof) = 1;
+        }
+    }
+
+    // Test the original six candidates in column order. A rigid displacement
+    // must satisfy A q approximately zero; normalize first so the residual
+    // threshold is independent of the candidate's arbitrary amplitude.
+    // Use two-pass Euclidean modified Gram-Schmidt to remove dependent rigid
+    // candidates. The B metric is not suitable here because it may be
+    // indefinite in buckling analyses.
+    Eigen::Index rigid_count = 0;
     for (int mode = 0; mode < 6; ++mode) {
-        DynamicVector q = DynamicVector::Zero(A.rows());
-        for (Index master = 0; master < map.n_master(); ++master) {
-            const Index gid      = map.masters[master];
-            const Index node     = node_of_gid[gid];
-            const int   dof      = dof_of_gid[gid];
-            const Vec3  relative(positions(node, 0) - center[0],
-                                 positions(node, 1) - center[1],
-                                 positions(node, 2) - center[2]);
-            if (mode < 3) {
-                q[master] = dof == mode ? Precision(1) : Precision(0);
-            } else {
-                const int axis = mode - 3;
-                if (dof < 3) q[master] = Vec3::Unit(axis).cross(relative)[dof];
-                else         q[master] = dof - 3 == axis ? Precision(1) : Precision(0);
+        DynamicVector q = R.col(mode);
+        const Precision norm = q.stableNorm();
+        if (!std::isfinite(norm)) return invalid;
+        if (norm == 0) continue; // This mode has no active master component.
+        q /= norm;
+
+        const DynamicVector Aq = A * q;
+        if (!Aq.allFinite()) return invalid;
+        if (Aq.norm() > Precision(1e-8) * stiffness_norm) continue; // Not a free rigid mode.
+
+        for (int pass = 0; pass < 2; ++pass) {
+            for (Eigen::Index j = 0; j < rigid_count; ++j) {
+                q -= R.col(j).dot(q) * R.col(j);
             }
         }
 
-        // Normalize before the residual test: ||A q|| / ||A|| then measures
-        // stiffness response independently of the candidate's amplitude.
-        const Precision norm = q.stableNorm();
-        if (!std::isfinite(norm)) return invalid;
-        if (norm == Precision(0)) continue; // This rigid direction has no active masters.
-        q /= norm;
-        const DynamicVector Aq = A * q;
-        if (!Aq.allFinite()) return invalid;
-        if (Aq.norm() > Precision(1e-8) * stiffness_norm) continue; // Constrained flexible field.
-
-        // Build R with R^T R approximately I by modified Gram-Schmidt.
-        // The second pass reduces loss of orthogonality for nearly dependent
-        // candidates. The B metric is introduced only after R is complete;
-        // using it here would assume definiteness that buckling B may not have.
-        for (int pass = 0; pass < 2; ++pass) {
-            for (const auto& rigid : rigid_basis) q -= rigid.dot(q) * rigid;
-        }
         const Precision remaining_norm = q.stableNorm();
         if (!std::isfinite(remaining_norm)) return invalid;
-        if (remaining_norm <= tolerance) continue; // Redundant rigid direction.
-        q /= remaining_norm;
-        rigid_basis.push_back(std::move(q));
+        if (remaining_norm <= tolerance) continue; // Linearly dependent candidate.
+        R.col(rigid_count++) = q / remaining_norm;
     }
+    R.conservativeResize(Eigen::NoChange, rigid_count);
 
     // ---------------------------------------------------------------------
-    // (5) Construct dual vectors for rigid-content removal in the B metric
+    // (5) Construct B-dual vectors for rigid-content removal
     // ---------------------------------------------------------------------
-    // For a nonzero modal eigenvalue and a rigid vector r with A r = 0,
-    // symmetry gives 0 = r^T A q = lambda r^T B q. Flexible modes must therefore
-    // be B-orthogonal to rigid motions; Euclidean orthogonality is insufficient.
+    // For a nonzero eigenvalue and a rigid vector r with A r = 0, symmetry
+    // gives r^T A q = lambda r^T B q = 0. Thus flexible eigenvectors are
+    // B-orthogonal to the stiffness nullspace, not generally Euclidean-
+    // orthogonal. We remove the B component along the accepted rigid modes.
     //
-    // Diagonalize G = R^T B R = U diag(d_j) U^T and rotate the rigid basis:
-    //     r_j = R U_j,    B r_j = B R U_j.
-    // For non-negligible d_j, define dual_j = B r_j / d_j, so subtraction
-    //     q <- q - r_j (dual_j^T q)
-    // removes that rigid component. Both signs of d_j are admitted because B
-    // may be indefinite. For near-zero d_j the existing procedure instead uses
-    // dual_j = r_j, i.e. Euclidean removal of that rigid direction. In the
-    // positive semidefinite modal case this includes massless rigid directions;
-    // a zero projected metric alone does not prove B r_j = 0 for indefinite B.
-    std::vector<DynamicVector> rigid_duals;
-    if (!rigid_basis.empty()) {
-        const Eigen::Index count = static_cast<Eigen::Index>(rigid_basis.size());
-        DynamicMatrix      R(A.rows(), count);
-        for (Eigen::Index j = 0; j < count; ++j) R.col(j) = rigid_basis[j];
-
-        // Average with the transpose to remove floating-point asymmetry before
-        // the dense symmetric eigensolve. This block has at most six rows.
-        const DynamicMatrix BR           = B * R;
-        DynamicMatrix       rigid_metric = R.transpose() * BR;
+    // Diagonalize the small symmetric rigid metric
+    //     G = R^T B R = U diag(d_j) U^T.
+    // Rotate the rigid columns to R U and form corresponding dual columns
+    //     D_j = B (R U)_j / d_j   for sufficiently large |d_j|.
+    // This supports positive and negative metric eigenvalues. For near-zero
+    // d_j, use D_j = (R U)_j instead, producing Euclidean deflation in that
+    // direction. With indefinite B, a zero d_j does not imply B R_j = 0.
+    // In both cases D^T R is approximately the identity, so the two-pass
+    // subtraction q <- q - R (D^T q) removes rigid content.
+    DynamicMatrix rigid_duals(A.rows(), rigid_count);
+    if (rigid_count > 0) {
+        const DynamicMatrix BR = B * R;
+        DynamicMatrix rigid_metric = R.transpose() * BR;
         rigid_metric = (Precision(0.5) * (rigid_metric + rigid_metric.transpose())).eval();
         if (!rigid_metric.allFinite()) return invalid;
+
         Eigen::SelfAdjointEigenSolver<DynamicMatrix> rigid_eig(rigid_metric);
         if (rigid_eig.info() != Eigen::Success) return invalid;
-        const DynamicMatrix rotated_R    = R  * rigid_eig.eigenvectors();
-        const DynamicMatrix rotated_BR   = BR * rigid_eig.eigenvectors();
-        const Precision     metric_scale = rigid_eig.eigenvalues().cwiseAbs().maxCoeff();
-        for (Eigen::Index j = 0; j < count; ++j) {
-            rigid_basis[j] = rotated_R.col(j);
+
+        // Rotate both R and B R with the same eigenvectors. Only six or fewer
+        // columns are present; this does not factorize the full FE operators.
+        const DynamicMatrix rotated_R = R * rigid_eig.eigenvectors();
+        rigid_duals = BR * rigid_eig.eigenvectors();
+        R = rotated_R;
+
+        const Precision metric_scale = rigid_eig.eigenvalues().cwiseAbs().maxCoeff();
+        for (Eigen::Index j = 0; j < rigid_count; ++j) {
             const Precision value = rigid_eig.eigenvalues()[j];
             if (std::abs(value) > tolerance * metric_scale) {
-                rigid_duals.push_back(rotated_BR.col(j) / value);
+                rigid_duals.col(j) /= value;
             } else {
-                rigid_duals.push_back(rotated_R.col(j));
+                rigid_duals.col(j) = R.col(j);
             }
         }
     }
@@ -328,131 +364,140 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
     // ---------------------------------------------------------------------
     // (6) Sample quadratic fields and build the flexible elastic-energy basis
     // ---------------------------------------------------------------------
-    // Six monomials times three translation directions produce at most 18
-    // candidates. For monomial f(p), direction e_i and model length L, use
+    // Each of the six scalar monomials f(p) = x², y², z², xy, xz, yz is
+    // combined with all three Cartesian displacement directions e_i:
     //     u(X)     = L f(p(X)) e_i,
     //     theta(X) = (L / 2) grad_X(f) cross e_i.
-    // L is the maximum bounding-box span. It gives translations length units
-    // and rotations angle units, preserving their compatible relative scale.
+    // The characteristic length L scales translation and rotation consistently.
+    // Derivatives contain inverse half-spans because the monomials use
+    // dimensionless coordinates. Slave values are not sampled separately;
+    // they are implied by T q and need not match the unconstrained polynomial.
     //
-    // Values are assigned only to masters. Slave values are implicitly T q;
-    // they need not equal the unconstrained polynomial at their own nodes.
-    // stiffness_basis[j] stores A * ritz_basis[j] to reuse the sparse product
-    // during elastic-energy Gram-Schmidt.
-    std::vector<DynamicVector> ritz_basis;
-    std::vector<DynamicVector> stiffness_basis;
-    ritz_basis.reserve(18);
-    stiffness_basis.reserve(18);
+    // For each monomial, construct the three displacement directions together.
+    // This evaluates coordinates, monomials and gradients once per master,
+    // rather than repeating the same computation for each direction. Only
+    // three temporary candidate columns are needed at any time.
+    //
+    // Q stores the accepted elastic-energy-orthonormal Ritz vectors, while KQ
+    // caches A * Q for two-pass modified Gram-Schmidt. Both have up to 18
+    // columns; the current count identifies the accepted leading columns.
+    DynamicMatrix Q(A.rows(), 18);
+    DynamicMatrix KQ(A.rows(), 18);
+    Eigen::Index  count = 0;
 
     for (int polynomial = 0; polynomial < 6; ++polynomial) {
-        for (int direction = 0; direction < 3; ++direction) {
-            DynamicVector q = DynamicVector::Zero(A.rows());
-            for (Index master = 0; master < map.n_master(); ++master) {
-                const Index gid      = map.masters[master];
-                const Index node     = node_of_gid[gid];
-                const int   dof      = dof_of_gid[gid];
-                const Vec3  relative(positions(node, 0) - center[0],
-                                     positions(node, 1) - center[1],
-                                     positions(node, 2) - center[2]);
-                const Vec3  p        = relative.cwiseProduct(inverse_span);
+        DynamicMatrix candidates = DynamicMatrix::Zero(A.rows(), 3);
 
-                // Scalar fields use normalized coordinates. Their gradients
-                // include inverse_span so curl(u) uses physical derivatives.
-                const std::array<Precision, 6> monomials{
-                    p[0] * p[0], p[1] * p[1], p[2] * p[2],
-                    p[0] * p[1], p[0] * p[2], p[1] * p[2]
-                };
-                const std::array<Vec3, 6> gradients{
-                    Vec3(Precision(2) * p[0] * inverse_span[0], 0, 0),
-                    Vec3(0, Precision(2) * p[1] * inverse_span[1], 0),
-                    Vec3(0, 0, Precision(2) * p[2] * inverse_span[2]),
-                    Vec3(p[1] * inverse_span[0], p[0] * inverse_span[1], 0),
-                    Vec3(p[2] * inverse_span[0], 0,                       p[0] * inverse_span[2]),
-                    Vec3(0,                       p[2] * inverse_span[1], p[1] * inverse_span[2])
-                };
+        for (Index master = 0; master < map.n_master(); ++master) {
+            const Index gid      = map.masters[master];
+            const Index node     = node_of_gid[gid];
+            const int   dof      = dof_of_gid[gid];
+            const Vec3  relative(positions(node, 0) - center[0],
+                                 positions(node, 1) - center[1],
+                                 positions(node, 2) - center[2]);
+            const Vec3 p = relative.cwiseProduct(inverse_span);
 
-                // Translational and rotational samples describe the same
-                // physical displacement field, rather than independent probes.
-                if (dof == direction) q[master] = length * monomials[polynomial];
-                if (dof >= 3) {
-                    const Vec3 rotation = Precision(0.5) * length * gradients[polynomial].cross(Vec3::Unit(direction));
-                    q[master] = rotation[dof - 3];
+            // Scalar polynomial values are dimensionless. Gradients are with
+            // respect to physical X, not p, for the compatible nodal curl.
+            const Precision x  = p[0], y  = p[1], z  = p[2];
+            const Precision ix = inverse_span[0], iy = inverse_span[1], iz = inverse_span[2];
+
+            const std::array<Precision, 6> monomials{
+                x * x, y * y, z * z, x * y, x * z, y * z
+            };
+            const std::array<Vec3, 6> gradients{
+                Vec3(2 * x * ix, 0,          0),
+                Vec3(0,          2 * y * iy, 0),
+                Vec3(0,          0,          2 * z * iz),
+                Vec3(y * ix,     x * iy,     0),
+                Vec3(z * ix,     0,          x * iz),
+                Vec3(0,          z * iy,     y * iz)
+            };
+
+            if (dof < 3) {
+                // Only displacement in the selected direction is nonzero.
+                candidates(master, dof) = length * monomials[polynomial];
+            } else {
+                // Nodal rotation equals half the curl of the same field.
+                for (int direction = 0; direction < 3; ++direction) {
+                    candidates(master, direction) = Precision(0.5) * length
+                        * gradients[polynomial].cross(Vec3::Unit(direction))[dof - 3];
                 }
             }
+        }
 
-            // First remove amplitude dependence, then remove rigid content in
-            // two passes. A geometric zero sample is a valid empty candidate,
-            // for example when all translational masters lie at the center.
+        // Treat the three fields in the same order as the original algorithm:
+        // first polynomial, then x/y/z direction. Preserve this order for
+        // reproducible orthogonalization and dependence checks.
+        for (int direction = 0; direction < 3; ++direction) {
+            DynamicVector q = candidates.col(direction);
+
+            // Normalize first and remove rigid content in two passes. A zero
+            // sample is valid (e.g. a monomial vanishing on all masters).
             const Precision initial_norm = q.stableNorm();
             if (!q.allFinite() || !std::isfinite(initial_norm)) return invalid;
-            if (initial_norm == Precision(0)) continue; // Vanishing monomial on this geometry.
+            if (initial_norm == 0) continue;
             q /= initial_norm;
+
             for (int pass = 0; pass < 2; ++pass) {
-                for (std::size_t j = 0; j < rigid_basis.size(); ++j) {
-                    q -= rigid_duals[j].dot(q) * rigid_basis[j];
-                }
+                if (rigid_count == 0) break;
+                const DynamicVector weights = rigid_duals.transpose() * q;
+                q -= R * weights;
             }
 
-            // Renormalize after deflation so the subsequent stiffness-energy
-            // threshold is applied to an initially Euclidean unit direction.
+            // Normalize after deflation so the stiffness-energy threshold is
+            // relative to a Euclidean unit vector, not the arbitrary amplitude
+            // left after subtracting rigid content.
             const Precision deflated_norm = q.stableNorm();
             if (!q.allFinite() || !std::isfinite(deflated_norm)) return invalid;
-            if (deflated_norm <= tolerance) continue; // Pure rigid trial field.
+            if (deflated_norm <= tolerance) continue; // Pure rigid direction.
             q /= deflated_norm;
 
-            // Modified Gram-Schmidt in <x,y>_A = x^T A y:
+            // Two-pass modified Gram-Schmidt in the elastic energy metric:
             //     alpha = Q_j^T A q,
-            //     q    <- q    - alpha Q_j,
-            //     A q  <- A q  - alpha A Q_j.
-            // Accepted Q_j have unit elastic energy. Updating q and A q in
-            // parallel avoids another sparse matrix-vector product per step.
-            // Two passes reduce cancellation errors for dependent monomials;
-            // using A avoids a positive-metric assumption on buckling B.
+            //     q     <- q   - alpha Q_j,
+            //     A q   <- A q - alpha A Q_j.
+            // Reuse KQ rather than recomputing a sparse product for every
+            // projection. B may be indefinite, so it is not a valid positive
+            // orthogonalization metric in the buckling case.
             DynamicVector Aq = A * q;
             for (int pass = 0; pass < 2; ++pass) {
-                for (std::size_t j = 0; j < ritz_basis.size(); ++j) {
-                    const Precision projection = ritz_basis[j].dot(Aq);
-                    q  -= projection * ritz_basis[j];
-                    Aq -= projection * stiffness_basis[j];
+                for (Eigen::Index j = 0; j < count; ++j) {
+                    const Precision projection = Q.col(j).dot(Aq);
+                    q  -= projection * Q.col(j);
+                    Aq -= projection * KQ.col(j);
                 }
             }
+
+            // A is assumed nonnegative on flexible directions. Reject negative
+            // energy beyond roundoff; zero/tiny energy means a null or dependent
+            // candidate. Compare against ||A|| at unit preprojection amplitude.
             const Precision energy = q.dot(Aq);
             if (!q.allFinite() || !Aq.allFinite()) return invalid;
             if (!std::isfinite(energy) || energy < -tolerance * stiffness_norm) return invalid;
-
-            // A significantly negative energy violates the assumed flexible
-            // stiffness metric. A zero/tiny nonnegative energy instead marks a
-            // null or nearly dependent candidate and is skipped. The threshold
-            // uses ||A|| and the unit amplitude before Gram-Schmidt, rather than
-            // the norm of the small remainder left after cancellation.
             if (energy <= tolerance * stiffness_norm) continue;
 
-            // Scale q so q^T A q = 1, retaining its corresponding A q.
+            // Store Q_j^T A Q_j = 1 together with the corresponding A Q_j.
             const Precision inverse_norm = Precision(1) / std::sqrt(energy);
-            q  *= inverse_norm;
-            Aq *= inverse_norm;
-            ritz_basis.push_back(std::move(q));
-            stiffness_basis.push_back(std::move(Aq));
+            Q.col(count)  = inverse_norm * q;
+            KQ.col(count) = inverse_norm * Aq;
+            ++count;
         }
     }
-    // No flexible field can be inferred from an empty space. This says nothing
-    // about whether the full FE model has positive eigenvalues; the modal
-    // caller can still use the independent diagonal-sum fallback.
-    if (ritz_basis.empty()) return invalid;
+
+    // An empty quadratic flexible space does not imply that the FE model has
+    // no positive eigenvalues. The caller may use its independent fallback.
+    if (count == 0) return invalid;
+    Q.conservativeResize(Eigen::NoChange, count);
 
     // ---------------------------------------------------------------------
     // (7) Project both operators onto the accepted quadratic subspace
     // ---------------------------------------------------------------------
     // For a reduced trial vector phi = Q a, Galerkin projection gives
     //     Ar a = lambda Br a,   Ar = Q^T A Q,   Br = Q^T B Q.
-    // Recompute A Q from the final Q to make the projected operator consistent
-    // despite roundoff accumulated in the cached Gram-Schmidt products. Ar is
-    // close to I, but explicitly forming it preserves the actual Ritz problem.
-    const Eigen::Index count = static_cast<Eigen::Index>(ritz_basis.size());
-    DynamicMatrix      Q(A.rows(), count);
-    for (Eigen::Index j = 0; j < count; ++j) {
-        Q.col(j) = ritz_basis[j];
-    }
+    // Recompute A Q from the accepted Q, rather than relying on KQ after
+    // repeated orthogonalization updates. Ar is close to I, but retaining it
+    // explicitly preserves the actual projected Ritz problem in finite precision.
     const DynamicMatrix AQ          = A * Q;
     const DynamicMatrix BQ          = B * Q;
     DynamicMatrix       projected_A = Q.transpose() * AQ;
@@ -475,6 +520,7 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
     Eigen::GeneralizedSelfAdjointEigenSolver<DynamicMatrix> eig(projected_B, projected_A, Eigen::EigenvaluesOnly);
     if (eig.info() != Eigen::Success) return invalid;
     const Precision reciprocal = eig.eigenvalues()[count - 1];
+
     if (!std::isfinite(reciprocal) || reciprocal <= Precision(0)) return invalid;
     // Keep the result in the caller's original eigenvalue units. A failed or
     // nonpositive reciprocal cannot define a usable spectral scale here.
