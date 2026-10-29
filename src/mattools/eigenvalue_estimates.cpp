@@ -7,6 +7,8 @@
  * vectors through ConstraintMap; admissible rigid motions are removed before
  * elastic-energy orthonormalization. A small symmetric reciprocal eigenproblem
  * handles both positive mass and indefinite geometric stiffness matrices.
+ * A diagonal-sum scale supplies a geometry-independent modal fallback when
+ * the quadratic trial space contains no usable flexible direction.
  *
  * The calling load case assembles the operators, supplies the sign of geometric
  * stiffness and chooses its spectral shift. No full-system factorization is
@@ -30,6 +32,39 @@
 
 namespace fem {
 namespace mattools {
+
+/**
+ * @brief Returns a characteristic modal eigenvalue scale from diagonal sums.
+ *
+ * For positive semidefinite stiffness A and mass B, the ratio trace(A)/trace(B)
+ * has the units of omega^2 and is positive whenever elastic stiffness and mass
+ * are present. Summing before division also supports massless individual DOFs.
+ * Geometry, coordinate spans and availability of polynomial fields play no role.
+ * This scale does not bound or specifically estimate the lowest eigenvalue.
+ *
+ * The modal caller selects this fallback only when its Ritz estimate is invalid
+ * and retains ownership of the shift. Indefinite geometric-stiffness operators
+ * should continue to use the Ritz estimator rather than this modal scale.
+ *
+ * @return Finite positive diagonal-sum ratio, or NaN for incompatible matrices,
+ *         nonfinite arithmetic or nonpositive stiffness/mass sums.
+ */
+Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) {
+    // Prepare safe diagnostics first, then validate them as one consecutive block.
+    const Precision invalid = std::numeric_limits<Precision>::quiet_NaN();
+    const bool compatible = A.rows() > 0 && A.rows() == A.cols()
+                         && B.rows() == A.rows() && B.cols() == A.cols();
+    const Precision stiffness_sum = compatible ? A.diagonal().sum() : invalid;
+    const Precision mass_sum      = compatible ? B.diagonal().sum() : invalid;
+    const Precision scale         = mass_sum > Precision(0) ? stiffness_sum / mass_sum : invalid;
+
+    if (!compatible) return invalid;
+    if (!std::isfinite(stiffness_sum) || stiffness_sum <= Precision(0)) return invalid;
+    if (!std::isfinite(mass_sum) || mass_sum <= Precision(0)) return invalid;
+    if (!std::isfinite(scale) || scale <= Precision(0)) return invalid;
+
+    return scale;
+}
 
 /**
  * @brief Estimates the lowest positive eigenvalue in a quadratic Ritz space.
@@ -61,15 +96,16 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
                                    const IndexMatrix&               active_dof_idx_mat,
                                    const constraint::ConstraintMap& map) {
     // Validate the common reduced coordinate space before indexing or products.
-    const Precision invalid   = std::numeric_limits<Precision>::quiet_NaN();
-    const Precision tolerance = Precision(100) * std::numeric_limits<Precision>::epsilon();
+    const Precision invalid        = std::numeric_limits<Precision>::quiet_NaN();
+    const Precision tolerance      = Precision(100) * std::numeric_limits<Precision>::epsilon();
+    const Precision stiffness_norm = A.norm();
+
     if (A.rows() == 0 || A.rows() != A.cols() || B.rows() != A.rows() || B.cols() != A.cols()
-        || map.n_master() != static_cast<Index>(A.rows()) || map.full_size != map.T.rows()
+        || map.n_master() != static_cast<Index>(A.rows()) || map.full_size != static_cast<Index>(map.T.rows())
         || map.T.cols() != A.rows() || positions.rows != static_cast<Index>(active_dof_idx_mat.rows())
         || positions.components < 3 || active_dof_idx_mat.cols() != 6) {
         return invalid;
     }
-    const Precision stiffness_norm = A.norm();
     if (!std::isfinite(stiffness_norm) || stiffness_norm <= Precision(0)) return invalid;
 
     // Map active system indices back to node/DOF pairs. Only active nodes enter
@@ -219,9 +255,8 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
                     q[master] = rotation[dof - 3];
                 }
             }
-            if (!q.allFinite()) return invalid;
             const Precision initial_norm = q.stableNorm();
-            if (!std::isfinite(initial_norm)) return invalid;
+            if (!q.allFinite() || !std::isfinite(initial_norm)) return invalid;
             if (initial_norm == Precision(0)) continue; // Vanishing monomial on this geometry.
             q /= initial_norm;
             for (int pass = 0; pass < 2; ++pass) {
@@ -229,9 +264,8 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
                     q -= rigid_duals[j].dot(q) * rigid_basis[j];
                 }
             }
-            if (!q.allFinite()) return invalid;
             const Precision deflated_norm = q.stableNorm();
-            if (!std::isfinite(deflated_norm)) return invalid;
+            if (!q.allFinite() || !std::isfinite(deflated_norm)) return invalid;
             if (deflated_norm <= tolerance) continue; // Pure rigid trial field.
             q /= deflated_norm;
 
@@ -245,8 +279,8 @@ Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
                     Aq -= projection * stiffness_basis[j];
                 }
             }
-            if (!q.allFinite() || !Aq.allFinite()) return invalid;
             const Precision energy = q.dot(Aq);
+            if (!q.allFinite() || !Aq.allFinite()) return invalid;
             if (!std::isfinite(energy) || energy < -tolerance * stiffness_norm) return invalid;
             // Reject null/near-dependent fields using the stiffness scale of
             // the initially unit-normalized candidate, before cancellation.

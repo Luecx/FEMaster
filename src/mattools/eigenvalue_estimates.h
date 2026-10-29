@@ -6,7 +6,8 @@
  * coordinates of a ConstraintMap. The reduced elastic stiffness A supplies
  * the positive energy metric; B may be a mass matrix or indefinite negative
  * geometric stiffness. Constraint assembly and spectral shifts belong to the
- * calling load case. Inputs and model state remain unchanged.
+ * calling load case. A separate diagonal-sum scale provides a geometry-independent
+ * fallback for positive semidefinite modal operators. Inputs remain unchanged.
  *
  * @see constraint::ConstraintMap
  * @author Finn Eggers
@@ -21,6 +22,11 @@
 
 namespace fem {
 namespace mattools {
+
+// Return sum(A_ii) / sum(B_ii) for positive semidefinite modal operators.
+// This characteristic scale need not approximate the lowest eigenvalue.
+// Return NaN for incompatible dimensions or a nonfinite/nonpositive scale.
+Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B);
 
 // Estimate the smallest positive lambda in A q = lambda B q using at most
 // 18 quadratic displacement fields with compatible beam/shell rotations.

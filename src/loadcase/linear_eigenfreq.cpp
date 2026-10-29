@@ -35,6 +35,7 @@
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
  * - The negative shift is -0.01 times a quadratic Ritz estimate of the lowest
  *   flexible eigenvalue omega^2, after removing admissible rigid-body modes.
+ *   A diagonal-sum scale supplies the shift if the Ritz estimate is unavailable.
  *   Sorting is "largest magnitude" in shift-invert space.
  *
  * Notes
@@ -324,24 +325,40 @@ void LinearEigenfrequency::run() {
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
     // Estimate the lowest flexible omega^2 from admissible quadratic fields.
     // Matrices, interval bounds and returned eigenvalues remain in physical units.
-    const Precision lambda_estimate = Timer::measure(
+    Precision lambda_estimate = Timer::measure(
         [&]() { return mattools::estimate_eigenvalue_ritz(
             A, Mr, *model->_data->positions, active_dof_idx_mat, CT->reduced_map()); },
         "estimating lowest flexible omega^2 (quadratic Ritz)"
     );
-    logging::error(std::isfinite(lambda_estimate) && lambda_estimate > Precision(0),
-        "Eigenfrequency: no positive flexible eigenvalue in quadratic Ritz space");
 
-    // A strictly negative shift avoids factorizing the singular stiffness of
-    // free bodies. Largest shift-invert magnitude targets the lowest modes.
+    // Polynomial samples may vanish at every master, and a point oscillator
+    // has no coordinate span at all. Neither implies missing stiffness or mass.
+    // Use a geometry-independent characteristic omega^2 in these cases.
+    const bool use_diagonal_fallback = !std::isfinite(lambda_estimate) || lambda_estimate <= Precision(0);
+    if (use_diagonal_fallback) {
+        lambda_estimate = Timer::measure(
+            [&]() { return mattools::estimate_spectral_scale(A, Mr); },
+            "estimating modal omega^2 scale (diagonal fallback)"
+        );
+    }
+
+    // Prepare the shift before checking the completed spectral configuration.
+    // A strictly negative shift avoids factorizing singular free-body stiffness.
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
     eigopt.sigma = -Precision(0.01) * lambda_estimate;
+    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn;
+
+    // Validate the estimate and shift consecutively before solver/output work.
+    logging::error(std::isfinite(lambda_estimate) && lambda_estimate > Precision(0),
+        "Eigenfrequency: neither quadratic Ritz nor diagonal fallback provides a positive eigenvalue scale");
     logging::error(std::isfinite(eigopt.sigma) && eigopt.sigma < 0,
-        "Eigenfrequency: invalid negative Ritz shift");
-    logging::info(true, "Quadratic Ritz omega^2 estimate = ", lambda_estimate,
-        ", shift sigma = ", eigopt.sigma);
-    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
+        "Eigenfrequency: invalid negative spectral shift");
+
+    logging::info(use_diagonal_fallback,
+        "Quadratic Ritz estimate unavailable; using diagonal-sum fallback.");
+    logging::info(true, use_diagonal_fallback ? "Diagonal omega^2 scale = " : "Quadratic Ritz omega^2 estimate = ",
+        lambda_estimate, ", shift sigma = ", eigopt.sigma);
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
