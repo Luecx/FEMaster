@@ -21,7 +21,7 @@
  *         Mr = T^T M T           (reduced "mass")
  *   (6) Solve generalized EVP:
  *         A * phi = lambda * Mr * phi
- *       We target the *smallest* eigenvalues by shift-invert at sigma = -1.
+ *       We target the *smallest* eigenvalues by shift-invert in scaled coordinates.
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
  *       Expand to node x 6 and compute simple modal participations.
@@ -33,8 +33,8 @@
  *   see its cost (which can dominate without zero-column compression).
  * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
- * - The eigval solver is configured for shift-invert at sigma=-1 to extract the
- *   lowest frequencies first. Sorting is "largest magnitude" in SI space.
+ * - The eigval solver uses a negative shift in scaled eigenvalue coordinates.
+ *   Sorting is "largest magnitude" in shift-invert space.
  *
  * Notes
  * -----
@@ -53,6 +53,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <vector>
 
 #include "../core/logging.h"
@@ -62,6 +63,7 @@
 #include "../constraints/types/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../mattools/eigenvalue_estimates.h"
 
 using fem::constraint::ConstraintTransformer;
 
@@ -319,27 +321,38 @@ void LinearEigenfrequency::run() {
     );
 
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
-    // We use shift-invert at sigma = -1.0, so "largest magnitude" in SI space
-    // corresponds to the smallest original eigenvalues.
+    // Estimate a characteristic omega^2 from the reduced matrix diagonals.
+    // Rigid-body modes do not make this scale zero when elastic stiffness exists.
+    Precision spectral_scale = mattools::estimate_spectral_scale(A, Mr);
+    logging::error(std::isfinite(spectral_scale) && spectral_scale >= Precision(0),
+        "Eigenfrequency: invalid spectral scale");
+    if (spectral_scale == Precision(0)) spectral_scale = Precision(1);
+
+    // Solve (A / scale) phi = mu Mr phi with mu = lambda / scale.
+    // A dimensionless shift avoids both a nearly singular free-body solve and
+    // unit-dependent Lanczos thresholds. Its physical value is -1e-4 * scale.
+    // Mr stays unchanged, preserving the eigenvectors' mass normalization.
+    A /= spectral_scale;
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
-    eigopt.sigma = -1.0;
+    eigopt.sigma = -1e-4;
     eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
         [&]() {
             if (use_eigenvalue_range) {
-                return solver::eigvals(device, A, Mr, min_eigenvalue, max_eigenvalue, eigopt);
+                return solver::eigvals(device, A, Mr,
+                    min_eigenvalue / spectral_scale, max_eigenvalue / spectral_scale, eigopt);
             }
             return solver::eigvals(device, A, Mr, k_req, eigopt);
         },
         "solving generalized EVP (modal)"
     );
 
-    // Collect modes (ascending lambda)
+    // Restore physical lambda = scale * mu and collect all modes (ascending lambda)
     std::vector<ModalMode> modes; modes.reserve(eig_pairs.size());
-    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
+    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value) * spectral_scale, p.vector);
     std::sort(modes.begin(), modes.end(),
               [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 

@@ -50,12 +50,13 @@
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../mattools/eigenvalue_estimates.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "../io/writer/write_mtx.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
-#include <limits>
 
 namespace fem { namespace loadcase {
 
@@ -78,69 +79,6 @@ struct BucklingMode {
 
     BucklingMode(Precision lam, DynamicVector q) : lambda(lam), q_mode(std::move(q)) {}
 };
-
-/**
- * @brief Cheap Rayleigh quotient estimate: lambda ~= (q^T A q) / (q^T (-B) q).
- *
- * Purpose
- * -------
- * Provides a quick, scale-informed initial shift estimate from the preload
- * solution (expressed in reduced coordinates). This is not essential, but can
- * improve robustness of the eigval solver in buckling problems.
- */
-static bool estimate_lambda_rayleigh(const SparseMatrix& A,
-                                     const SparseMatrix& B,
-                                     const DynamicVector& q,
-                                     double& lambda_out) {
-    lambda_out = 0.0;
-
-    if (q.size() == 0) return false;
-
-    DynamicVector Aq = A * q;
-    DynamicVector Bq = B * q;
-
-    const double num = q.dot(Aq);
-    const double den = q.dot(-Bq);
-
-    logging::info(true, "Rayleigh num = ", std::scientific, std::setprecision(12), num);
-    logging::info(true, "Rayleigh den = ", std::scientific, std::setprecision(12), den);
-    logging::info(true, "||q_pre||    = ", std::scientific, std::setprecision(12), q.norm());
-    logging::info(true, "||B q_pre||  = ", std::scientific, std::setprecision(12), Bq.norm());
-
-    const double den_tol = 1e-14 * std::max(1.0, std::abs(num));
-    if (!std::isfinite(num) || !std::isfinite(den) || std::abs(den) <= den_tol)
-        return false;
-
-    lambda_out = num / den;
-    return std::isfinite(lambda_out) && lambda_out > 0.0;
-}
-
-static double estimate_lambda_diag_ratio(const SparseMatrix& A,
-                                         const SparseMatrix& B) {
-    std::vector<double> vals;
-    vals.reserve(A.rows());
-
-    for (int i = 0; i < A.rows(); ++i) {
-        const double aii = A.coeff(i, i);
-        const double mii = -B.coeff(i, i);
-
-        if (!std::isfinite(aii) || !std::isfinite(mii)) continue;
-        if (std::abs(aii) < 1e-20) continue;
-        if (mii <= 1e-20) continue;
-
-        const double lam = aii / mii;
-        if (std::isfinite(lam) && lam > 0.0)
-            vals.push_back(lam);
-    }
-
-    if (vals.empty()) return std::numeric_limits<double>::quiet_NaN();
-
-    std::sort(vals.begin(), vals.end());
-
-    // Robust gegen Ausreißer:
-    const size_t idx = vals.size() / 4;   // eher konservativ kleiner als Median
-    return vals[idx];
-}
 
 /**
  * @brief Pretty-print a short table of buckling factors and settings.
@@ -333,6 +271,10 @@ void LinearBuckling::run() {
         "assembling B = T^T K_g T"
     );
 
+    // Use the generalized EVP convention A phi = lambda Bneg phi for both
+    // the Rayleigh estimate and the subsequent buckling solve.
+    SparseMatrix Bneg = (-1.0) * B;
+
     if (std::abs(this->sigma) > 1e-24) {
         logging::info(true, "");
         logging::info(true, "User-provided shift sigma = ",
@@ -344,10 +286,13 @@ void LinearBuckling::run() {
         logging::info(true, "");
         logging::info(true, "Estimating initial shift sigma");
 
-        rayleigh_ok = Timer::measure(
-            [&]() { return estimate_lambda_rayleigh(A, B, q_pre, lambda_est_raw); },
+        lambda_est_raw = Timer::measure(
+            [&]() { return mattools::estimate_eigenvalue_rayleigh(A, Bneg, q_pre); },
             "estimating initial raw lambda (Rayleigh)"
         );
+        // The generic quotient also permits zero/negative values. Buckling
+        // shift generation retains its existing positive-estimate requirement.
+        rayleigh_ok = std::isfinite(lambda_est_raw) && lambda_est_raw > 0.0;
 
         if (rayleigh_ok) {
             logging::info(true, "Raw Rayleigh estimate = ",
@@ -356,7 +301,7 @@ void LinearBuckling::run() {
             logging::info(true, "Rayleigh estimate failed or degenerate; falling back to diagonal ratio.");
 
             lambda_est_raw = Timer::measure(
-                [&]() { return estimate_lambda_diag_ratio(A, B); },
+                [&]() { return mattools::estimate_eigenvalue_diag_ratio(A, Bneg); },
                 "estimating initial raw lambda (diag ratio)"
             );
 
@@ -382,7 +327,6 @@ void LinearBuckling::run() {
 
     // (10) Solve generalized EVP in reduced space: A * phi = lambda * (-B) * phi
     // Many libraries expect the "K x = lambda M x" form; we pass (-B) as the "mass" side.
-    SparseMatrix Bneg = (-1.0) * B;
 
     const int k_req = std::max(1, std::min<int>(num_eigenvalues, std::max<int>(1, int(A.rows()))));
     solver::EigvalOpts eigopt;
