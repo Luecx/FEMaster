@@ -325,9 +325,10 @@ void LinearEigenfrequency::run() {
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
     // Estimate the lowest flexible omega^2 from admissible quadratic fields.
     // Matrices, interval bounds and returned eigenvalues remain in physical units.
+    CT->initialize_dof_locations(active_dof_idx_mat);
     Precision lambda_estimate = Timer::measure(
         [&]() { return mattools::estimate_eigenvalue_ritz(
-            A, Mr, *model->_data->positions, active_dof_idx_mat, CT->reduced_map()); },
+            A, Mr, *model->_data->positions, *CT); },
         "estimating lowest flexible omega^2 (quadratic Ritz)"
     );
 

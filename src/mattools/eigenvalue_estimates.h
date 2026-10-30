@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "../constraints/transformer/constraint_map.h"
+#include "../constraints/transformer/constraint_transformer.h"
 #include "../core/types_eig.h"
 #include "../data/field.h"
 
@@ -29,15 +29,14 @@ namespace mattools {
 // Return NaN for incompatible dimensions, a nonfinite/negative scale or nonpositive mass sum.
 Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B);
 
-// Estimate the smallest positive lambda in A q = lambda B q using at most
-// 18 quadratic displacement fields with compatible beam/shell rotations.
-// A must be positive on the flexible trial space. B may be indefinite.
-// Return NaN when no finite positive Ritz value can be determined.
-Precision estimate_eigenvalue_ritz(const SparseMatrix&              A,
-                                   const SparseMatrix&              B,
-                                   const model::Field&              positions,
-                                   const IndexMatrix&               active_dof_idx_mat,
-                                   const constraint::ConstraintMap& map);
+// Estimate the smallest positive eigenvalue using rigid and quadratic trial fields.
+// The transformer must have initialized its master DOF locations beforehand.
+// A must be positive semidefinite; B may be indefinite.
+// Return NaN if no finite positive Ritz estimate can be determined.
+Precision estimate_eigenvalue_ritz(const SparseMatrix&                      A,
+                                   const SparseMatrix&                      B,
+                                   const model::Field&                      positions,
+                                   const constraint::ConstraintTransformer& transformer);
 
 } // namespace mattools
 } // namespace fem

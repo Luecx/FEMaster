@@ -17,7 +17,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <vector>
 
 namespace fem {
 namespace mattools {
@@ -62,20 +61,20 @@ Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) 
  * nullspace analysis. NaN signals that no usable positive estimate was found.
  */
 Precision estimate_eigenvalue_ritz(
-    const SparseMatrix&              A,
-    const SparseMatrix&              B,
-    const model::Field&              positions,
-    const IndexMatrix&               active_dof_idx_mat,
-    const constraint::ConstraintMap& map) {
+    const SparseMatrix&                      A,
+    const SparseMatrix&                      B,
+    const model::Field&                      positions,
+    const constraint::ConstraintTransformer& transformer) {
 
     const Precision invalid   = std::numeric_limits<Precision>::quiet_NaN();
     const Precision tolerance = Precision(100) * std::numeric_limits<Precision>::epsilon();
+    const auto&     map       = transformer.reduced_map();
 
     // ---------------------------------------------------------------------
-    // (1) Validate the reduced system and map master DOFs to physical nodes
+    // (1) Validate the reduced system and access prepared master locations
     // ---------------------------------------------------------------------
-    // The matrices are already constraint-reduced. We only need the map to
-    // determine where to sample the geometric trial fields, not to apply T.
+    // The matrices are already constraint-reduced. The transformer supplies
+    // the physical interpretation of each independent coordinate.
     logging::error(A.rows() == A.cols(),
         "Ritz estimator requires a square stiffness matrix");
     logging::error(B.rows() == A.rows() && B.cols() == A.cols(),
@@ -84,39 +83,26 @@ Precision estimate_eigenvalue_ritz(
         "Ritz estimator: master count does not match reduced system");
     logging::error(map.full_size == static_cast<Index>(map.T.rows()) && map.T.cols() == A.rows(),
         "Ritz estimator: invalid constraint transformation dimensions");
-    logging::error(positions.rows == static_cast<Index>(active_dof_idx_mat.rows()),
-        "Ritz estimator: nodal position and DOF counts differ");
-    logging::error(positions.components >= 3 && active_dof_idx_mat.cols() == 6,
-        "Ritz estimator requires 3D positions and six DOF columns");
+    logging::error(transformer.has_dof_locations(),
+        "Ritz estimator requires initialized transformer DOF locations");
+    logging::error(positions.components >= 3,
+        "Ritz estimator requires three-dimensional positions");
 
     if (A.rows() == 0) return invalid;
 
-    std::vector<Index> node_of_gid(map.full_size, positions.rows);
-    std::vector<int>   dof_of_gid(map.full_size, -1);
+    // The bounding box includes all active nodes, including nodes whose DOFs
+    // are fully constrained. Unused node rows do not influence the span.
     Vec3 minimum = Vec3::Constant(std::numeric_limits<Precision>::infinity());
     Vec3 maximum = -minimum;
 
-    for (Index node = 0; node < positions.rows; ++node) {
-        bool active = false;
-        for (int dof = 0; dof < 6; ++dof) {
-            const auto gid = active_dof_idx_mat(node, dof);
-            if (gid < 0) continue;
-            if (static_cast<Index>(gid) >= map.full_size || dof_of_gid[gid] >= 0) return invalid;
-            node_of_gid[gid] = node;
-            dof_of_gid[gid]  = dof;
-            active = true;
-        }
+    for (Index node : transformer.active_nodes()) {
+        logging::error(node < positions.rows,
+            "Ritz estimator: active node outside position field: ", node);
 
-        // Unused node coordinates need not be valid and do not define the span.
-        if (!active) continue;
         const Vec3 x(positions(node, 0), positions(node, 1), positions(node, 2));
         if (!x.allFinite()) return invalid;
         minimum = minimum.cwiseMin(x);
         maximum = maximum.cwiseMax(x);
-    }
-
-    for (Index gid : map.masters) {
-        if (gid >= map.full_size || dof_of_gid[gid] < 0) return invalid;
     }
 
     // ---------------------------------------------------------------------
@@ -141,9 +127,9 @@ Precision estimate_eigenvalue_ritz(
 
     DynamicMatrix V = DynamicMatrix::Zero(A.rows(), 24);
     for (Index master = 0; master < map.n_master(); ++master) {
-        const Index gid  = map.masters[master];
-        const Index node = node_of_gid[gid];
-        const int   dof  = dof_of_gid[gid];
+        const auto [node, dof] = transformer.master_location(master);
+        logging::error(dof >= 0 && dof < 6,
+            "Ritz estimator requires translational/rotational DOFs");
         const Vec3  r(positions(node, 0) - center[0],
                       positions(node, 1) - center[1],
                       positions(node, 2) - center[2]);

@@ -282,9 +282,10 @@ void LinearBuckling::run() {
     } else {
         // Bneg can be indefinite. The Ritz estimator uses elastic energy as
         // its positive metric and selects the smallest positive load factor.
+        CT->initialize_dof_locations(active_dof_idx_mat);
         const Precision lambda_est_raw = Timer::measure(
             [&]() { return mattools::estimate_eigenvalue_ritz(
-                A, Bneg, *model->_data->positions, active_dof_idx_mat, CT->reduced_map()); },
+                A, Bneg, *model->_data->positions, *CT); },
             "estimating initial raw lambda (quadratic Ritz)"
         );
         logging::info(true, "Raw quadratic Ritz estimate = ",
