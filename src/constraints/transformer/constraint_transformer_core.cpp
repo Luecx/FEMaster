@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <tuple>
+#include <utility>
 
 namespace fem {
 namespace constraint {
@@ -51,6 +52,78 @@ ConstraintTransformer::ConstraintTransformer(const Equations&    equations,
     } else {
         initialize_lagrange();
     }
+}
+
+void ConstraintTransformer::initialize_dof_locations(const SystemDofIds& dofs) {
+    logging::error(has_reduced_map(),
+        "[ConstraintTransformer] DOF locations require a reduced map");
+    logging::error(dofs.cols() > 0,
+        "[ConstraintTransformer] DOF numbering has no components");
+
+    // Invert only the master part of the global numbering. This temporary
+    // lookup is released when initialization finishes, so the transformer
+    // retains no redundant full-system mapping.
+    const Index n_master = map_.n_master();
+    std::vector<Index> full_to_master(map_.full_size, n_master);
+
+    for (Index master = 0; master < n_master; ++master) {
+        const Index gid = map_.masters[master];
+        logging::error(gid < map_.full_size && full_to_master[gid] == n_master,
+            "[ConstraintTransformer] invalid or repeated master DOF: ", gid);
+        full_to_master[gid] = master;
+    }
+
+    std::vector<DofLocation> locations(n_master);
+    std::vector<Index>       active_nodes;
+    std::vector<char>        found(n_master, false);
+    active_nodes.reserve(static_cast<std::size_t>(dofs.rows()));
+
+    // Walk the original node-by-component numbering once. A node belongs to
+    // the geometric extent even when its active DOFs are all slaves.
+    for (Index node = 0; node < static_cast<Index>(dofs.rows()); ++node) {
+        bool active = false;
+        for (Eigen::Index component = 0; component < dofs.cols(); ++component) {
+            const auto gid = dofs(node, component);
+            if (gid < 0) continue;
+
+            active = true;
+            logging::error(static_cast<Index>(gid) < map_.full_size,
+                "[ConstraintTransformer] active DOF index out of range: ", gid);
+
+            const Index master = full_to_master[gid];
+            if (master == n_master) continue;
+
+            logging::error(!found[master],
+                "[ConstraintTransformer] master DOF appears more than once: ", gid);
+            locations[master] = {node, static_cast<int>(component)};
+            found[master]     = true;
+        }
+        if (active) active_nodes.push_back(node);
+    }
+
+    // Every reduced coordinate must correspond to one physical nodal DOF.
+    for (Index master = 0; master < n_master; ++master) {
+        logging::error(found[master],
+            "[ConstraintTransformer] no node/DOF for master ", master);
+    }
+
+    // Publish the new data only after all numbering checks pass.
+    master_locations_          = std::move(locations);
+    active_nodes_              = std::move(active_nodes);
+    dof_locations_initialized_ = true;
+}
+
+const DofLocation& ConstraintTransformer::master_location(Index master) const {
+    logging::error(dof_locations_initialized_ &&
+                   master < static_cast<Index>(master_locations_.size()),
+        "[ConstraintTransformer] master location is unavailable: ", master);
+    return master_locations_[master];
+}
+
+const std::vector<Index>& ConstraintTransformer::active_nodes() const {
+    logging::error(dof_locations_initialized_,
+        "[ConstraintTransformer] active nodes require initialize_dof_locations()");
+    return active_nodes_;
 }
 
 const char* ConstraintTransformer::method_name() const {

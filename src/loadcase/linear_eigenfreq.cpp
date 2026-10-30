@@ -21,7 +21,7 @@
  *         Mr = T^T M T           (reduced "mass")
  *   (6) Solve generalized EVP:
  *         A * phi = lambda * Mr * phi
- *       We target the *smallest* eigenvalues by shift-invert in scaled coordinates.
+ *       We target the *smallest* eigenvalues by shift-invert in physical units.
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
  *       Expand to node x 6 and compute simple modal participations.
@@ -33,7 +33,9 @@
  *   see its cost (which can dominate without zero-column compression).
  * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
- * - The eigval solver uses a negative shift in scaled eigenvalue coordinates.
+ * - The negative shift is -0.01 times a quadratic Ritz estimate of the lowest
+ *   flexible eigenvalue omega^2, after removing admissible rigid-body modes.
+ *   A diagonal-sum scale supplies the shift if the Ritz estimate is unavailable.
  *   Sorting is "largest magnitude" in shift-invert space.
  *
  * Notes
@@ -321,38 +323,65 @@ void LinearEigenfrequency::run() {
     );
 
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
-    // Estimate a characteristic omega^2 from the reduced matrix diagonals.
-    // Rigid-body modes do not make this scale zero when elastic stiffness exists.
-    Precision spectral_scale = mattools::estimate_spectral_scale(A, Mr);
-    logging::error(std::isfinite(spectral_scale) && spectral_scale >= Precision(0),
-        "Eigenfrequency: invalid spectral scale");
-    if (spectral_scale == Precision(0)) spectral_scale = Precision(1);
+    // Estimate the lowest flexible omega^2 from admissible quadratic fields.
+    // Matrices, interval bounds and returned eigenvalues remain in physical units.
+    CT->initialize_dof_locations(active_dof_idx_mat);
+    Precision lambda_estimate = Timer::measure(
+        [&]() { return mattools::estimate_eigenvalue_ritz(
+            A, Mr, *model->_data->positions, *CT); },
+        "estimating lowest flexible omega^2 (quadratic Ritz)"
+    );
 
-    // Solve (A / scale) phi = mu Mr phi with mu = lambda / scale.
-    // A dimensionless shift avoids both a nearly singular free-body solve and
-    // unit-dependent Lanczos thresholds. Its physical value is -1e-4 * scale.
-    // Mr stays unchanged, preserving the eigenvectors' mass normalization.
-    A /= spectral_scale;
+    // Polynomial samples may vanish at every master, and a point oscillator
+    // has no coordinate span at all. Neither implies missing stiffness or mass.
+    // Use a geometry-independent characteristic omega^2 in these cases.
+    const bool use_diagonal_fallback = !std::isfinite(lambda_estimate) || lambda_estimate <= Precision(0);
+    if (use_diagonal_fallback) {
+        lambda_estimate = Timer::measure(
+            [&]() { return mattools::estimate_spectral_scale(A, Mr); },
+            "estimating modal omega^2 scale (diagonal fallback)"
+        );
+    }
+
+    // A zero scale is valid for free masses with no elastic stiffness. Such
+    // systems have no positive physical scale; retain the conventional unit
+    // reference for the shift only, leaving all physical eigenvalues unchanged.
+    const Precision shift_scale = lambda_estimate == Precision(0) ? Precision(1) : lambda_estimate;
+
+    // Prepare the shift before checking the completed spectral configuration.
+    // A strictly negative shift avoids factorizing singular free-body stiffness.
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
-    eigopt.sigma = -1e-4;
-    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
+    eigopt.sigma = -Precision(0.01) * shift_scale;
+    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn;
+
+    // Validate the estimate and shift consecutively before solver/output work.
+    logging::error(std::isfinite(lambda_estimate) && lambda_estimate >= Precision(0),
+        "Eigenfrequency: neither quadratic Ritz nor diagonal fallback provides a nonnegative eigenvalue scale");
+    logging::error(std::isfinite(eigopt.sigma) && eigopt.sigma < 0,
+        "Eigenfrequency: invalid negative spectral shift");
+
+    logging::info(use_diagonal_fallback,
+        "Quadratic Ritz estimate unavailable; using diagonal-sum fallback.");
+    logging::info(lambda_estimate == Precision(0),
+        "Zero stiffness scale; using unit reference scale for the negative shift.");
+    logging::info(true, use_diagonal_fallback ? "Diagonal omega^2 scale = " : "Quadratic Ritz omega^2 estimate = ",
+        lambda_estimate, ", shift sigma = ", eigopt.sigma);
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
         [&]() {
             if (use_eigenvalue_range) {
-                return solver::eigvals(device, A, Mr,
-                    min_eigenvalue / spectral_scale, max_eigenvalue / spectral_scale, eigopt);
+                return solver::eigvals(device, A, Mr, min_eigenvalue, max_eigenvalue, eigopt);
             }
             return solver::eigvals(device, A, Mr, k_req, eigopt);
         },
         "solving generalized EVP (modal)"
     );
 
-    // Restore physical lambda = scale * mu and collect all modes (ascending lambda)
+    // Collect the physical eigenvalues and mode shapes (ascending lambda).
     std::vector<ModalMode> modes; modes.reserve(eig_pairs.size());
-    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value) * spectral_scale, p.vector);
+    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
     std::sort(modes.begin(), modes.end(),
               [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 

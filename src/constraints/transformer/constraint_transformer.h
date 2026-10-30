@@ -46,9 +46,16 @@
 #include "null_space.h"
 
 #include <limits>
+#include <vector>
 
 namespace fem {
 namespace constraint {
+
+// Physical nodal location of an active global displacement DOF.
+struct DofLocation {
+    Index node{};
+    int   component{};
+};
 
 /**
  * @brief Assembles constraints and exposes a method-independent solver interface.
@@ -135,6 +142,12 @@ private:
     // Numerical diagnostics describing rank, redundancy, homogeneity and
     // feasibility of the constructed representation.
     ConstraintBuildReport report_{};
+
+    // Optional geometric metadata for reduced master coordinates.
+    std::vector<DofLocation> master_locations_{};
+    std::vector<Index>       active_nodes_{};
+    bool                     dof_locations_initialized_{false};
+
 public:
 
     // Construct a transformer using default options. The default-initialized
@@ -167,6 +180,20 @@ public:
     // Return the affine reduced-coordinate map. This function is valid only for
     // null-space reduction and elimination.
     const ConstraintMap& reduced_map() const;
+
+    // Build master-to-node/DOF locations on demand from the existing global
+    // numbering. Also store all nodes with at least one active DOF.
+    // Valid for null-space reduction and elimination, not Lagrange.
+    void initialize_dof_locations(const SystemDofIds& dofs);
+
+    // Check whether the optional geometric lookup has been initialized.
+    bool has_dof_locations() const { return dof_locations_initialized_; }
+
+    // Physical location of reduced coordinate q[master].
+    const DofLocation& master_location(Index master) const;
+
+    // Nodes with active full-system DOFs, including constrained-only nodes.
+    const std::vector<Index>& active_nodes() const;
 
     // Return true when the selected method owns an affine reduced-coordinate
     // map. The Lagrange formulation does not construct one.
