@@ -342,21 +342,28 @@ void LinearEigenfrequency::run() {
         );
     }
 
+    // A zero scale is valid for free masses with no elastic stiffness. Such
+    // systems have no positive physical scale; retain the conventional unit
+    // reference for the shift only, leaving all physical eigenvalues unchanged.
+    const Precision shift_scale = lambda_estimate == Precision(0) ? Precision(1) : lambda_estimate;
+
     // Prepare the shift before checking the completed spectral configuration.
     // A strictly negative shift avoids factorizing singular free-body stiffness.
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
-    eigopt.sigma = -Precision(0.01) * lambda_estimate;
+    eigopt.sigma = -Precision(0.01) * shift_scale;
     eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn;
 
     // Validate the estimate and shift consecutively before solver/output work.
-    logging::error(std::isfinite(lambda_estimate) && lambda_estimate > Precision(0),
-        "Eigenfrequency: neither quadratic Ritz nor diagonal fallback provides a positive eigenvalue scale");
+    logging::error(std::isfinite(lambda_estimate) && lambda_estimate >= Precision(0),
+        "Eigenfrequency: neither quadratic Ritz nor diagonal fallback provides a nonnegative eigenvalue scale");
     logging::error(std::isfinite(eigopt.sigma) && eigopt.sigma < 0,
         "Eigenfrequency: invalid negative spectral shift");
 
     logging::info(use_diagonal_fallback,
         "Quadratic Ritz estimate unavailable; using diagonal-sum fallback.");
+    logging::info(lambda_estimate == Precision(0),
+        "Zero stiffness scale; using unit reference scale for the negative shift.");
     logging::info(true, use_diagonal_fallback ? "Diagonal omega^2 scale = " : "Quadratic Ritz omega^2 estimate = ",
         lambda_estimate, ", shift sigma = ", eigopt.sigma);
 

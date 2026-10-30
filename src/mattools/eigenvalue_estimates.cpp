@@ -54,7 +54,9 @@ namespace mattools {
  *     lambda_scale = trace(A) / trace(B) = sum_i A_ii / sum_i B_ii.
  *
  * This has the units of omega^2 and is positive whenever the operators contain
- * elastic stiffness and mass. The sums are formed before division, so a DOF
+ * elastic stiffness and mass. Zero stiffness gives a valid zero scale; the
+ * caller supplies a nonzero shift reference for purely zero-frequency modes.
+ * The sums are formed before division, so a DOF
  * with B_ii = 0 does not cause an individual division by zero. Coordinates,
  * polynomial samples and the stiffness nullspace are not needed.
  *
@@ -67,8 +69,8 @@ namespace mattools {
  *
  * @param A Reduced symmetric positive semidefinite elastic stiffness.
  * @param B Reduced symmetric positive semidefinite mass in the same coordinates.
- * @return Finite positive diagonal-sum ratio, or NaN for incompatible dimensions,
- *         nonfinite arithmetic or nonpositive stiffness/mass sums. No input is
+ * @return Finite nonnegative diagonal-sum ratio, or NaN for incompatible dimensions,
+ *         nonfinite arithmetic, negative stiffness sum or nonpositive mass sum. No input is
  *         modified and no factorization is performed.
  */
 Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) {
@@ -83,11 +85,11 @@ Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B) 
 
     const Precision stiffness_sum = A.diagonal().sum();
     const Precision mass_sum      = B.diagonal().sum();
-    if (!std::isfinite(stiffness_sum) || stiffness_sum <= 0) return invalid;
+    if (!std::isfinite(stiffness_sum) || stiffness_sum < 0) return invalid;
     if (!std::isfinite(mass_sum) || mass_sum <= 0) return invalid;
 
     const Precision scale = stiffness_sum / mass_sum;
-    if (!std::isfinite(scale) || scale <= 0) return invalid;
+    if (!std::isfinite(scale) || scale < 0) return invalid;
 
     // ---------------------------------------------------------------------
     // (2) Return the scale in physical eigenvalue units

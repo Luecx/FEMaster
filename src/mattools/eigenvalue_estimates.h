@@ -25,7 +25,8 @@ namespace mattools {
 
 // Return sum(A_ii) / sum(B_ii) for positive semidefinite modal operators.
 // This characteristic scale need not approximate the lowest eigenvalue.
-// Return NaN for incompatible dimensions or a nonfinite/nonpositive scale.
+// Zero stiffness gives zero; the caller must still choose a nonzero shift.
+// Return NaN for incompatible dimensions, a nonfinite/negative scale or nonpositive mass sum.
 Precision estimate_spectral_scale(const SparseMatrix& A, const SparseMatrix& B);
 
 // Estimate the smallest positive lambda in A q = lambda B q using at most
