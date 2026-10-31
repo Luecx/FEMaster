@@ -242,6 +242,8 @@ void OutputRequestHandler::write_frame(ResultWriters& writer, const model::Model
     for (std::size_t i = 0; i < field_count; ++i) {
         const auto field = static_cast<OutputField>(i);
         if (!requests_[i] || output_field_is_step_field(field)) continue;
+        if ((field == OutputField::PTFORC || field == OutputField::PTGAP || field == OutputField::TF) &&
+            model_data && model_data->pretension_sections.empty()) continue;
 
         write(field, writer, model_data, frame_suffix_, frame_value_);
     }

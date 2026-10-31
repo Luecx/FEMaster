@@ -21,7 +21,7 @@
 namespace fem {
 namespace constraint {
 
-void ConstraintTransformer::post_check_static(const SparseMatrix& K,
+bool ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                               const DynamicVector& f,
                                               const DynamicVector& solution,
                                               Precision tol_constraint_rel,
@@ -83,6 +83,8 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
             logging::info(true, line2.str());
         }
         logging::down();
+        return std::all_of(items.begin(), items.end(),
+            [](const Item& item) { return !item.show || item.pass; });
     };
 
     const DynamicVector u    = recover_displacement(solution);
@@ -143,8 +145,7 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                  true});
         }
 
-        print_items(items);
-        return;
+        return print_items(items);
     }
 
     const DynamicVector resid = K * u - f;
@@ -229,7 +230,7 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                              true});
     }
 
-    print_items(items);
+    return print_items(items);
 }
 } // namespace constraint
 } // namespace fem

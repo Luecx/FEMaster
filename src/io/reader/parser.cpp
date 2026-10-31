@@ -37,6 +37,7 @@
 #include "../../bc/structural/load_v.h"
 #include "../../bc/structural/load_inertial.h"
 #include "../../bc/structural/support.h"
+#include "../../bc/structural/pretension.h"
 #include "../../bc/thermal/temperature.h"
 #include "../../bc/thermal/heat_flux.h"
 #include "../../bc/thermal/convection.h"
@@ -111,7 +112,12 @@ void Parser::run(const std::string& input_path,
     const io::dsl::Deck deck = deck_parser.parse(file);
 
     // Semantic dependencies are now explicit and independent of source order.
-    process_deck(deck, input_path, output_path, writer_formats);
+    try {
+        process_deck(deck, input_path, output_path, writer_formats);
+    } catch (...) {
+        close_writers();
+        throw;
+    }
 }
 
 /**
@@ -240,7 +246,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("FIELD");
         assembly->execute_children("NORMAL");
     }
-
+    root.execute_children("PRETENSIONSECTION");
+    model_->prepare_pretension_sections();
     // Initial conditions bind already materialized named fields to persistent
     // model-state handles. Temperature and velocity then remain authoritative
     // until a later analysis procedure explicitly evolves them.
@@ -333,7 +340,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         return name == "BOUNDARY" || name == "SUPPORT" || name == "CLOAD" || name == "DLOAD"
             || name == "DSLOAD" || name == "PLOAD" || name == "VLOAD"
             || name == "INERTIALOAD" || name == "TEMPERATURE"
-            || name == "HEATFLUX" || name == "CONVECTION";
+            || name == "HEATFLUX" || name == "CONVECTION" || name == "PRETENSION";
     };
 
     for (const auto* command : root.children()) {
@@ -403,6 +410,7 @@ void Parser::initialize_writers(const std::string&                    input_path
 
     writer_ = io::writer::ResultWriters(writer_base, writer_formats);
     writer_.write_model_data(*model_->_data);
+    writer_.write_pretension_sections(*model_->_data);
 }
 
 /**
@@ -551,6 +559,9 @@ void Parser::end_loadcase() {
         "Parser: cannot end a load case when none is active");
 
     auto loadcase = std::move(active_loadcase_);
+    logging::error(model_->_data->pretension_sections.empty() ||
+        loadcase->type_name() == "LINEARSTATIC",
+        "PRETENSION currently supports LINEARSTATIC load cases only");
 
     // Apply only explicitly selected collectors to the step target. Reusable
     // definitions stay unmodified, and the next target omits these selections
@@ -752,6 +763,11 @@ static bool same_condition_target(const bc::Condition& current, const bc::Condit
     // The concrete type is deliberately resolved here in the input layer;
     // assembly never needs to know these keyword replacement rules.
     const auto same_target = [&](const bc::Condition& current, const bc::Condition& replacement) {
+        if (const auto* a = dynamic_cast<const bc::PretensionCondition*>(&current)) {
+            const auto* b = dynamic_cast<const bc::PretensionCondition*>(&replacement);
+            return b && a->section == b->section;
+        }
+
         if (const auto* a = dynamic_cast<const bc::CLoad*>(&current)) {
             const auto* b = dynamic_cast<const bc::CLoad*>(&replacement);
             if (!b) return false;
@@ -1017,6 +1033,8 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_tie(registry, mdl);
     commands::register_contact(registry, mdl);
     commands::register_point_mass(registry, mdl);
+    commands::register_pretension_section(registry, mdl);
+    commands::register_pretension(registry, mdl, *this);
     commands::register_overview(registry, mdl);
     commands::register_equation(registry, mdl);
 

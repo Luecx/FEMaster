@@ -14,6 +14,7 @@
  */
 
 #include "linear_static.h"
+#include "../bc/structural/pretension.h"
 
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/rbm.h"
@@ -67,6 +68,13 @@ void LinearStatic::run() {
     logging::info(true, "LINEAR STATIC ANALYSIS");
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
+
+    const bool has_pretension = !model->_data->pretension_sections.empty();
+    logging::error(!has_pretension || constraint_method != ConstraintTransformer::Method::Lagrange,
+        "PRETENSION: LAGRANGE is unsupported because its multiplier path does not "
+        "check constraint rank or consistency. Use NULLSPACE or ELIMINATION.");
+    logging::error(!has_pretension || !perturbation,
+        "PRETENSION: perturbation steps are not supported");
 
     // Ordinary linear statics never continues a deformed tangent: the
     // reference configuration is its geometry throughout assembly.
@@ -241,6 +249,10 @@ void LinearStatic::run() {
         "building constraint transformer");
 
     logging::info(true, "");
+    logging::error(!has_pretension || transformer->feasible(),
+        "PRETENSION: inconsistent constraint equations (supports, equations or interface gap); "
+        "residual ||C u - d|| = ", transformer->report().residual_norm);
+
     logging::info(true, "Constraint summary");
     logging::up();
     logging::info(true, "m (rows of C)        : ", transformer->report().equations);
@@ -279,6 +291,12 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
+    // Pretension history requires a successfully checked solution.
+    if (has_pretension && !transformer->post_check_static(K, f, q)) {
+        model->step_end();
+        logging::error(false, "PRETENSION: numerical post-check failed; step was not committed");
+    }
+
     // The solver's affine internal forces are the only force outputs.
     // Perturbations emit their increment, not the prestressed base force.
     auto internal_active = Timer::measure(
@@ -316,6 +334,40 @@ void LinearStatic::run() {
         global_react_mat, groups.support_mask(active_dof_idx_mat), "REACTION_FORCES"
     );
 
+    model::Field pretension_force, pretension_gap, pretension_total;
+    if (!model->_data->pretension_sections.empty()) {
+        pretension_force = model::Field{"PRETENSION_FORCE", model::FieldDomain::NODE,
+            model->_data->field_rows(model::FieldDomain::NODE), 3};
+        pretension_force.set_zero();
+        pretension_total = model::Field{"TF", model::FieldDomain::NODE,
+            model->_data->field_rows(model::FieldDomain::NODE), 1};
+        pretension_total.set_zero();
+        pretension_gap = model->build_pretension_gap_matrix(global_disp_mat);
+    }
+    // Recover the force transmitted on B by adding the applied FORCE load
+    // back to the residual of external and internal nodal forces.
+    for (const auto& section : model->_data->pretension_sections) {
+        section->total_force = 0;
+        Vec3 applied = Vec3::Zero();
+        for (const auto& condition : target_conditions.get(bc::PRETENSION)) {
+            const auto& prescription = static_cast<const bc::PretensionCondition&>(*condition);
+            if (prescription.section == section && prescription.mode == bc::PretensionCondition::Mode::Force)
+                applied = section->axis_direction * (prescription.value /
+                    static_cast<Precision>(section->interface_pairs.size()));
+        }
+        for (const auto& pair : section->interface_pairs) {
+            for (Dim component = 0; component < 3; ++component) {
+                const Precision transmitted = global_internal_mat(pair.side_b, component)
+                    - global_load_mat(pair.side_b, component) + applied(component);
+                pretension_force(pair.side_b, component) = transmitted;
+                pretension_force(pair.side_a, component) = -transmitted;
+                section->total_force += transmitted * section->axis_direction(component);
+            }
+        }
+        for (const auto& pair : section->interface_pairs)
+            pretension_total(pair.side_b, 0) = section->total_force;
+    }
+
     Timer::measure(
         [&]() {
             using io::writer::OutputField;
@@ -337,16 +389,21 @@ void LinearStatic::run() {
                 output.provide(OutputField::TEMPERATURE,*target_temperature);
             }
 
+            output.provide(OutputField::PTFORC, pretension_force);
+            output.provide(OutputField::PTGAP, pretension_gap);
+            output.provide(OutputField::TF, pretension_total);
             output.write_frame(*writer, model->_data.get());
         },
         "resolving and writing requested result fields");
-
-    transformer->post_check_static(K, f, q);
-
-    // Commit the total displacement only for ordinary linear statics.
+    // Preserve the existing diagnostic behavior without pretension.
+    if (!has_pretension) {
+        transformer->post_check_static(K, f, q);
+    }
+        // Commit the total displacement only for ordinary linear statics.
     if (!perturbation) {
         commit_state(global_disp_mat);
         committed_structural_load = std::make_shared<model::Field>(global_load_mat);
+        model->capture_pretension_gaps(global_disp_mat, target_conditions);
     }
     model->step_end();
 }

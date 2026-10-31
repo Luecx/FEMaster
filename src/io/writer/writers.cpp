@@ -72,6 +72,12 @@ void ResultWriters::write_model_data(const model::ModelData& model_data) {
     }
 }
 
+void ResultWriters::write_pretension_sections(const model::ModelData& model_data) {
+    if (res_writer) {
+        res_writer->write_pretension_sections(model_data);
+    }
+}
+
 void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
     if (res_writer) {
         res_writer->add_loadcase(id, step_type);

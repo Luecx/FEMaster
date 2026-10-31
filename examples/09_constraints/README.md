@@ -5,3 +5,4 @@
 - `092_constraint_structural_coupling_shell_surface_load.inp`
 - `093_constraint_tie_shell_to_solid_patch.inp`
 - `094_constraint_connector_two_beams.inp`
+- [`095_bolt_pretension.inp`](095_bolt_pretension.inp): FORCE, HOLD and external loading; see the [pretension reference](../../documentation/pretension.md).
