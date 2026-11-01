@@ -101,6 +101,98 @@ struct ModalMode {
 };
 
 /**
+ * Constructs the mass-weighted rigid-body directions for modal participation.
+ *
+ * Each active node contributes three uniform translations and three rotations.
+ * The translational displacement induced by rotation about axis e is
+ *
+ *     u = e x (position - center).
+ *
+ * Existing rotational DOFs contribute the corresponding unit rotations.
+ * This produces the six excitation directions even for solid-only models,
+ * which have no explicit rotational DOFs.
+ *
+ * The mass center is obtained from the translation/rotation coupling of the
+ * assembled mass matrix so that point masses and all assembled inertia are
+ * represented. When translational mass is zero, the center is undefined and
+ * the global origin is retained. In that case valid pure-rotary modal systems
+ * can still be projected without dividing by zero.
+ *
+ * @param dofs Mapping from nodal components to active global DOF indices.
+ * @param positions Global nodal positions.
+ * @param M Assembled active-system mass matrix.
+ * @return Mass-weighted rigid directions M R with six columns.
+ */
+static DynamicMatrix build_mass_weighted_rigid_body_directions(const SystemDofIds& dofs,
+                                                               const model::Field&  positions,
+                                                               const SparseMatrix&  M) {
+    // Construct rigid-body translations and rotations about the global origin
+    DynamicMatrix R = DynamicMatrix::Zero(M.rows(), 6);
+
+    for (Index node = 0; node < positions.rows; ++node) {
+        const Vec3 position = positions.row_vec3(node);
+        const Precision x   = position(0);
+        const Precision y   = position(1);
+        const Precision z   = position(2);
+
+        Mat6 directions = Mat6::Identity();
+        directions(0, 4) =  z;
+        directions(0, 5) = -y;
+        directions(1, 3) = -z;
+        directions(1, 5) =  x;
+        directions(2, 3) =  y;
+        directions(2, 4) = -x;
+
+        // Scatter only existing DOFs; solid nodes have no explicit rotations
+        for (int dof = 0; dof < 6; ++dof) {
+            const int gid = dofs(node, dof);
+            if (gid >= 0) R.row(gid) = directions.row(dof);
+        }
+    }
+
+    // Determine the center of mass from the assembled inertia, including point
+    // masses and translational/rotational coupling already represented in M.
+    // For rigid translations, R_t^T M R_t = m I; about the global origin,
+    // R_t^T M R_rot = -m [center]x, with [center]x the cross-product matrix.
+    DynamicMatrix MR = M * R;
+
+    const Mat3 translational_mass = R.leftCols(3).transpose() * MR.leftCols(3);
+    const Mat3 coupling_mass      = R.leftCols(3).transpose() * MR.rightCols(3);
+    const Precision total_mass    = translational_mass.trace() / Precision(3);
+
+    logging::error(std::isfinite(total_mass) && total_mass >= Precision(0),
+        "Eigenfrequency: invalid total translational mass for participation");
+
+    // With rotary inertia but no translational mass, the center of mass is
+    // undefined. Keep the global origin as the rotational reference in this case.
+    if (total_mass > Precision(0)) {
+        const Precision inv_two_mass = Precision(0.5) / total_mass;
+        const Vec3 center(
+            (coupling_mass(1, 2) - coupling_mass(2, 1)) * inv_two_mass,
+            (coupling_mass(2, 0) - coupling_mass(0, 2)) * inv_two_mass,
+            (coupling_mass(0, 1) - coupling_mass(1, 0)) * inv_two_mass
+        );
+
+        logging::error(center.allFinite(),
+            "Eigenfrequency: invalid center of mass for modal participation");
+
+        // Shift the rotational directions to the mass center. Apply the same
+        // transformation directly to M R without another sparse multiplication.
+        Mat3 center_cross = Mat3::Zero();
+        center_cross(0, 1) = -center(2);
+        center_cross(0, 2) =  center(1);
+        center_cross(1, 0) =  center(2);
+        center_cross(1, 2) = -center(0);
+        center_cross(2, 0) = -center(1);
+        center_cross(2, 1) =  center(0);
+
+        MR.rightCols(3) += MR.leftCols(3) * center_cross;
+    }
+
+    return MR;
+}
+
+/**
  * @brief Compute a power-of-ten scaling exponent so that reported participations
  *        are O(1). If all participations are zero, returns 0.
  */
@@ -376,69 +468,10 @@ void LinearEigenfrequency::run() {
         m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
     }
 
-    // (8) Build global rigid-body translation and rotation directions
-    //     A unit rotation about an axis moves a node by e_axis x position.
-    //     Rotational DOFs contribute their own unit rotation where present.
-    const auto&   positions = *model->_data->positions;
-    DynamicMatrix R         = DynamicMatrix::Zero(K.rows(), 6);
-
-    for (Index node = 0; node < positions.rows; ++node) {
-        const Vec3 position = positions.row_vec3(node);
-        const Precision x   = position(0);
-        const Precision y   = position(1);
-        const Precision z   = position(2);
-
-        Mat6 directions = Mat6::Identity();
-        directions(0, 4) =  z;
-        directions(0, 5) = -y;
-        directions(1, 3) = -z;
-        directions(1, 5) =  x;
-        directions(2, 3) =  y;
-        directions(2, 4) = -x;
-
-        // Scatter only existing DOFs; solid nodes have no explicit rotations
-        for (int dof = 0; dof < 6; ++dof) {
-            const int gid = active_dof_idx_mat(node, dof);
-            if (gid >= 0) R.row(gid) = directions.row(dof);
-        }
-    }
-
-    // Determine the center of mass from the assembled inertia, including point
-    // masses and translational/rotational coupling already represented in M.
-    // For rigid translations, R_t^T M R_t = m I; about the global origin,
-    // R_t^T M R_rot = -m [center]x, with [center]x the cross-product matrix.
-    DynamicMatrix MR = M * R;
-
-    const Mat3 translational_mass = R.leftCols(3).transpose() * MR.leftCols(3);
-    const Mat3 coupling_mass      = R.leftCols(3).transpose() * MR.rightCols(3);
-    const Precision total_mass    = translational_mass.trace() / Precision(3);
-
-    logging::error(std::isfinite(total_mass) && total_mass > Precision(0),
-        "Eigenfrequency: non-positive total translational mass for participation");
-
-    const Precision inv_two_mass = Precision(0.5) / total_mass;
-    const Vec3 center(
-        (coupling_mass(1, 2) - coupling_mass(2, 1)) * inv_two_mass,
-        (coupling_mass(2, 0) - coupling_mass(0, 2)) * inv_two_mass,
-        (coupling_mass(0, 1) - coupling_mass(1, 0)) * inv_two_mass
+    // (8) Construct the mass-weighted rigid-body directions about the mass center
+    const DynamicMatrix MR = build_mass_weighted_rigid_body_directions(
+        active_dof_idx_mat, *model->_data->positions, M
     );
-
-    logging::error(center.allFinite(),
-        "Eigenfrequency: invalid center of mass for modal participation");
-
-    // Shift the rotational directions from the origin to the mass center:
-    // R_rot(center) = R_rot(origin) + R_t [center]x.
-    // Apply the same linear shift to M R without another sparse multiplication.
-    Mat3 center_cross = Mat3::Zero();
-    center_cross(0, 1) = -center(2);
-    center_cross(0, 2) =  center(1);
-    center_cross(1, 0) =  center(2);
-    center_cross(1, 2) = -center(0);
-    center_cross(2, 0) = -center(1);
-    center_cross(2, 1) =  center(0);
-
-    R.rightCols(3)  += R.leftCols(3)  * center_cross;
-    MR.rightCols(3) += MR.leftCols(3) * center_cross;
 
     // Project all mass-normalized modes onto the six rigid-body directions
     const DynamicMatrix P = Phi.transpose() * MR;
