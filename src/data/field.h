@@ -34,6 +34,8 @@
 namespace fem {
 namespace model {
 
+struct ModelData;
+
 /**
  * @brief Identifies the entity layout represented by numerical field rows.
  *
@@ -182,12 +184,21 @@ struct Field {
     // Returns whether at least one field value is finite
     [[nodiscard]] bool has_any_finite() const;
 
+    // True for a completely finite row; false for a completely unwritten (NaN)
+    // row. Rejects partially written rows and infinite numerical values.
+    [[nodiscard]] bool has_valid_row(Index row) const;
+
     // Detect NaN or infinity at a checked row/component index.
     [[nodiscard]] bool is_nan(Index row, Index component) const;
 
     // Validates that every stored component is finite and identifies invalid
     // rows and components through the supplied diagnostic label.
     void check_finite(const std::string& label) const;
+
+    // Average valid ELEMENT_NODAL rows at connected global nodes; unwritten
+    // all-NaN rows do not contribute.
+    [[nodiscard]] Field to_nodal(const ModelData&   model_data,
+                                 const std::string& target_name = {}) const;
 
     // Returns the first three components of a row
     [[nodiscard]] Vec3 row_vec3(Index row) const;

@@ -52,13 +52,16 @@ class OutputRequestHandler {
 
     // Request state: defaults remain available so PRESELECT can restore them
     std::array<bool, field_count> defaults_{};
-    std::array<bool, field_count> requests_{};
+    // Output domain flags per field: bit 0 is NODE/native, bit 1 ELEMENT_NODAL
+    std::array<std::uint8_t, field_count> requests_{};
     bool explicit_requests_ = false;
 
     // Non-owning primary/direct fields and owned lazily recovered frame fields
     std::array<model::Field*, field_count> step_fields_{};
     std::array<model::Field*, field_count> frame_fields_{};
     std::array<std::optional<model::Field>, field_count> computed_{};
+    std::array<std::optional<model::Field>, field_count> element_nodal_{};
+
 
     // Recursion guard for accidental cyclic requirement definitions
     std::array<bool, field_count> resolving_{};
@@ -90,7 +93,7 @@ public:
 
     // Explicit requests supplied by the input deck
     void begin_explicit_requests();
-    void request(OutputField field);
+    void request(OutputField field, model::FieldDomain domain = model::FieldDomain::NODE);
     bool requested(OutputField field) const;
 
     // Direct quantities supplied by the active analysis
@@ -102,6 +105,7 @@ public:
     // Recursive dependency resolution
     std::vector<OutputField> requirements(OutputField field) const;
     model::Field& resolve(OutputField field);
+    model::Field& resolve_element_nodal(OutputField field);
 
     // Write all requested quantities belonging to the respective lifetime
     void write_frame(ResultWriters& writer, const model::ModelData* model_data);
@@ -109,6 +113,7 @@ public:
 
 private:
     static std::size_t index(OutputField field);
+    static bool supports_element_nodal(OutputField field);
 
     // Compute one missing field after all declared requirements are available
     void compute(OutputField field);
@@ -118,7 +123,8 @@ private:
                ResultWriters& writer,
                const model::ModelData* model_data,
                const std::string& suffix,
-               Precision frame_value);
+               Precision frame_value,
+               model::FieldDomain domain = model::FieldDomain::NODE);
 };
 
 } // namespace fem::io::writer

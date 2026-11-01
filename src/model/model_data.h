@@ -203,14 +203,6 @@ struct ModelData {
         bool              fill_nan = true
     ) const;
 
-    // Weighted projection from element-local nodal rows onto unique global
-    // nodes. Element weights control participation and the relative contribution
-    // of every connected element to the final nodal average.
-    Field element_nodal_to_nodal(
-        const Field&       element_nodal,
-        const Field&       element_weights,
-        const std::string& name
-    ) const;
 };
 
 } // namespace fem::model

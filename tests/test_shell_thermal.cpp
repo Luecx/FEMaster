@@ -151,10 +151,11 @@ void check_uniform_thermal_load(
         }
 
         auto stress_strain =
-            model.compute_stress_nodal(
+            model.compute_stress(
                 displacement, temperature.get(), nullptr, nullptr);
-        const auto& stress = std::get<0>(stress_strain);
-        const auto& strain = std::get<1>(stress_strain);
+
+        const auto stress  = std::get<0>(stress_strain).to_nodal(*model._data, "STRESS");
+        const auto strain  = std::get<1>(stress_strain).to_nodal(*model._data, "STRAIN");
 
         bool planar_xy = true;
         for (Index node = 1; node < static_cast<Index>(N); ++node) {
@@ -198,8 +199,8 @@ void check_uniform_thermal_load(
         // sigma_x = sigma_y = -E * alpha * DeltaT / (1 - nu).
         if (planar_xy) {
             const auto restrained =
-                model.compute_stress_nodal(displacement);
-            const auto& restrained_stress = std::get<0>(restrained);
+                model.compute_stress(displacement);
+            const auto restrained_stress = std::get<0>(restrained).to_nodal(*model._data, "STRESS");
             for (Index node = 0; node < static_cast<Index>(N); ++node) {
                 EXPECT_NEAR(restrained_stress(node, 0), -1000.0 * free_strain / 0.75, 1e-8);
                 EXPECT_NEAR(restrained_stress(node, 1), -1000.0 * free_strain / 0.75, 1e-8);
@@ -491,9 +492,10 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     }
 
     // Free compatible expansion must leave no recovered stress or prestress
-    const auto recovered = model.compute_stress_nodal(
+    const auto recovered = model.compute_stress(
         displacement, temperature.get(), nullptr, nullptr);
-    const auto& stress = std::get<0>(recovered);
+
+    const auto stress  = std::get<0>(recovered).to_nodal(*model._data, "STRESS");
     for (Index node = 0; node < 8; ++node) {
         for (Index component = 0; component < 6; ++component) {
             EXPECT_NEAR(stress(node, component), 0.0, 1e-8);

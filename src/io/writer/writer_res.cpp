@@ -305,7 +305,7 @@ void write_indexed_field(std::ofstream& file_path,
     const ID num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-    // Format semantic identifiers and field rows independently
+    // Format all node rows, preserving component-wise NaNs in the result
     parallel::for_index(num_threads, static_cast<int>(num_threads),
         [&](ID thread, int /*worker*/) {
             auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
@@ -383,12 +383,8 @@ void write_element_location_field(std::ofstream& file_path,
             const Index end_index   = element_count * (thread + 1) / num_threads;
 
             for (Index elem_row = start_index; elem_row < end_index; ++elem_row) {
-                const auto& element =
-                    model_data.elements[static_cast<std::size_t>(elem_row)];
-
-                if (!element) {
-                    continue;
-                }
+                const auto& element = model_data.elements[static_cast<std::size_t>(elem_row)];
+                if (!element) continue;
 
                 const Index begin = static_cast<Index>(offsets(elem_row, 0));
                 const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
@@ -401,7 +397,6 @@ void write_element_location_field(std::ofstream& file_path,
 
                 for (Index local = 0; local < end - begin; ++local) {
                     const Index row = begin + local;
-
                     append_string(buffer, elem_id);
                     append_integer(buffer, local);
                     append_field_values(buffer, field, row);

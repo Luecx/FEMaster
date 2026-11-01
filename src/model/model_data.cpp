@@ -4,7 +4,7 @@
  *
  * The implementation derives storage dimensions from compiled assembly data,
  * constructs prefix offsets for variable-size element domains, manages named and
- * temporary fields and projects element-nodal results onto unique global nodes.
+ * temporary fields.
  *
  * Element formulations own the number and ordering of their local nodes,
  * integration points and material points. `ModelData` concatenates those local
@@ -20,11 +20,6 @@
 
 #include "model_data.h"
 #include "element/element.h"
-
-#include "../core/config.h"
-#include "../core/parallel.h"
-
-#include <vector>
 
 namespace fem::model {
 
@@ -238,148 +233,5 @@ Field ModelData::create_field_(const std::string& name,
     return field;
 }
 
-/**
- * Projects element-nodal values onto unique global nodes by weighted averaging.
- *
- * The compiled element-nodal prefix offsets locate the local rows belonging to
- * each dense element. A compact node-to-element-row gather map is constructed
- * for the participating elements and stores each source row together with its
- * scalar element weight. Global nodes are then independent reduction targets,
- * so OpenMP partitions the nodal range without atomics or overlapping writes.
- *
- * Elements with zero weight do not participate. Nodes without a contributing
- * element retain the initialized zero row. The operation assumes that every
- * represented element owns exactly one element-nodal row per connectivity node.
- *
- * @param element_nodal Source field in the `ELEMENT_NODAL` domain.
- * @param element_weights Scalar `ELEMENT` field controlling contribution weight.
- * @param name Non-empty name assigned to the returned nodal field.
- * @return Weighted global `NODE` field with the source component count.
- */
-Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
-                                        const Field&       element_weights,
-                                        const std::string& name) const {
-    // Validate field domains, component conventions and compiled prerequisites
-    logging::error(element_nodal.domain == FieldDomain::ELEMENT_NODAL,
-        "ModelData: element_nodal_to_nodal requires ELEMENT_NODAL input field '",
-        element_nodal.name, "'");
-    logging::error(element_weights.domain == FieldDomain::ELEMENT,
-        "ModelData: element_nodal_to_nodal requires ELEMENT weight field '",
-        element_weights.name, "'");
-    logging::error(element_weights.components == 1,
-        "ModelData: element weight field '", element_weights.name,
-        "' must have exactly one component");
-    logging::error(element_nodal_offsets != nullptr,
-        "ModelData: element nodal offsets are not initialized");
-    logging::error(positions != nullptr,
-        "ModelData: POSITION field is not initialized");
-    logging::error(!name.empty(),
-        "ModelData: projected nodal field name cannot be empty");
-
-    // Resolve dense assembly dimensions and validate the complete source layout
-    const Index element_count = static_cast<Index>(elements.size());
-    const Index node_count    = positions->rows;
-
-    logging::error(element_weights.rows == element_count,
-        "ModelData: element weight field '", element_weights.name,
-        "' has ", element_weights.rows, " rows, expected ", element_count);
-
-    const Field& offsets      = *element_nodal_offsets;
-    const Index expected_rows = static_cast<Index>(offsets(element_count, 0));
-    logging::error(element_nodal.rows == expected_rows,
-        "ModelData: ELEMENT_NODAL field '", element_nodal.name,
-        "' has ", element_nodal.rows, " rows, expected ", expected_rows);
-
-    // Count participating element-nodal source rows for every global node. The
-    // shifted count layout becomes a CSR-style offset array after prefix summing.
-    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
-
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        const auto& element = elements[static_cast<std::size_t>(elem_idx)];
-        if (!element) continue;
-
-        const ID elem_id = element->elem_id;
-        logging::error(elem_id >= 0 && static_cast<Index>(elem_id) < element_count,
-            "ModelData: element id out of range in element_nodal_to_nodal: ", elem_id);
-
-        const Precision weight = element_weights(static_cast<Index>(elem_id), 0);
-        if (weight == Precision(0)) continue;
-
-        const Index offset      = static_cast<Index>(offsets(static_cast<Index>(elem_id), 0));
-        const Index next_offset = static_cast<Index>(offsets(static_cast<Index>(elem_id) + 1, 0));
-        logging::error(next_offset >= offset,
-            "ModelData: invalid element nodal offsets for element ", elem_id);
-        logging::error(next_offset - offset == static_cast<Index>(element->n_nodes()),
-            "ModelData: element nodal offset span does not match node count for element ", elem_id);
-
-        for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
-            const Index node_id = static_cast<Index>(element->nodes()[local_node]);
-            logging::error(node_id < node_count,
-                "ModelData: node id out of range in element_nodal_to_nodal: ", node_id);
-            ++node_offsets[static_cast<std::size_t>(node_id + 1)];
-        }
-    }
-
-    // Convert nodal contribution counts into half-open gather ranges
-    for (Index node = 0; node < node_count; ++node) {
-        node_offsets[static_cast<std::size_t>(node + 1)] += node_offsets[static_cast<std::size_t>(node)];
-    }
-
-    const Index contribution_count = node_offsets.back();
-    std::vector<Index>     source_rows   (static_cast<std::size_t>(contribution_count));
-    std::vector<Precision> source_weights(static_cast<std::size_t>(contribution_count));
-    std::vector<Index>     write_offsets = node_offsets;
-
-    // Fill the compact gather map in element order. Each entry identifies one
-    // element-nodal source row and its already resolved scalar element weight.
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        const auto& element = elements[static_cast<std::size_t>(elem_idx)];
-        if (!element) continue;
-
-        const ID elem_id = element->elem_id;
-        const Precision weight = element_weights(static_cast<Index>(elem_id), 0);
-        if (weight == Precision(0)) continue;
-
-        const Index offset = static_cast<Index>(offsets(static_cast<Index>(elem_id), 0));
-        for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
-            const Index node_id = static_cast<Index>(element->nodes()[local_node]);
-            const Index target  = write_offsets[static_cast<std::size_t>(node_id)]++;
-
-            source_rows   [static_cast<std::size_t>(target)] = offset + local_node;
-            source_weights[static_cast<std::size_t>(target)] = weight;
-        }
-    }
-
-    // Gather and normalize each global node independently. OpenMP partitions the
-    // target rows, so no two workers can write the same nodal result entry.
-    Field nodal = create_field_(name, FieldDomain::NODE, element_nodal.components, false);
-    nodal.set_zero();
-
-    parallel::for_index(node_count, global_config.max_threads,
-        [&](Index node, int /*worker*/) {
-            Precision weight_sum = Precision(0);
-            const Index begin = node_offsets[static_cast<std::size_t>(node)];
-            const Index end   = node_offsets[static_cast<std::size_t>(node + 1)];
-
-            for (Index entry = begin; entry < end; ++entry) {
-                const auto index         = static_cast<std::size_t>(entry);
-                const Index source_row   = source_rows[index];
-                const Precision weight   = source_weights[index];
-                weight_sum              += weight;
-
-                for (Index component = 0; component < element_nodal.components; ++component) {
-                    nodal(node, component) += weight * element_nodal(source_row, component);
-                }
-            }
-
-            if (weight_sum == Precision(0)) return;
-
-            for (Index component = 0; component < element_nodal.components; ++component) {
-                nodal(node, component) /= weight_sum;
-            }
-        }, Index(256));
-
-    return nodal;
-}
 
 } // namespace fem::model

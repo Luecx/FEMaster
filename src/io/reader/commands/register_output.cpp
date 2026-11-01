@@ -30,7 +30,9 @@ namespace fem::io::reader::commands {
 
 namespace {
 
-void request_tokens(Parser& parser, const std::array<std::string, 32>& tokens) {
+void request_tokens(Parser&                           parser,
+                    const std::array<std::string, 32>& tokens,
+                    model::FieldDomain                 domain) {
     auto* loadcase = parser.active_loadcase();
     logging::error(loadcase != nullptr,
         "Output requests require an active analysis step");
@@ -51,23 +53,23 @@ void request_tokens(Parser& parser, const std::array<std::string, 32>& tokens) {
         if (loadcase->as<loadcase::LinearHarmonic>() != nullptr) {
             switch (*field) {
                 case io::writer::OutputField::DISPLACEMENT:
-                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL);
-                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_IMAG);
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL, domain);
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_IMAG, domain);
                     continue;
                 case io::writer::OutputField::STRESS:
-                    loadcase->output.request(io::writer::OutputField::STRESS_REAL);
-                    loadcase->output.request(io::writer::OutputField::STRESS_IMAG);
+                    loadcase->output.request(io::writer::OutputField::STRESS_REAL, domain);
+                    loadcase->output.request(io::writer::OutputField::STRESS_IMAG, domain);
                     continue;
                 case io::writer::OutputField::STRAIN:
-                    loadcase->output.request(io::writer::OutputField::STRAIN_REAL);
-                    loadcase->output.request(io::writer::OutputField::STRAIN_IMAG);
+                    loadcase->output.request(io::writer::OutputField::STRAIN_REAL, domain);
+                    loadcase->output.request(io::writer::OutputField::STRAIN_IMAG, domain);
                     continue;
                 default:
                     break;
             }
         }
 
-        loadcase->output.request(*field);
+        loadcase->output.request(*field, domain);
     }
 }
 
@@ -75,6 +77,13 @@ void register_field_list(io::dsl::Registry& registry,
                          Parser& parser,
                          const std::string& command_name,
                          const std::string& description) {
+    const bool element_output = command_name == "ELEMENTOUTPUT"
+                             || command_name == "ELFILE"
+                             || command_name == "ELOUTPUT";
+    const model::FieldDomain domain = element_output
+        ? model::FieldDomain::ELEMENT_NODAL
+        : model::FieldDomain::NODE;
+
     registry.command(command_name, [&](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(description);
@@ -87,8 +96,8 @@ void register_field_list(io::dsl::Registry& registry,
                         .desc("Requested Abaqus/CalculiX/FEMaster output variables")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser](const std::array<std::string, 32>& fields) {
-                    request_tokens(parser, fields);
+                .bind([&parser, domain](const std::array<std::string, 32>& fields) {
+                    request_tokens(parser, fields, domain);
                 })
             )
         );
