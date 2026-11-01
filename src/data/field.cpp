@@ -1,6 +1,6 @@
 /**
  * @file field.cpp
- * @brief Implements dense field storage, validation and componentwise arithmetic.
+ * @brief Implements dense field storage, arithmetic and domain-aware projection.
  *
  * The model-data implementation allocates row-major scalar vectors, converts
  * checked row/component indices into storage offsets and exposes non-owning data
@@ -22,7 +22,11 @@
 
 #include "field.h"
 
+#include "../core/config.h"
 #include "../core/logging.h"
+#include "../core/parallel.h"
+#include "../model/element/element.h"
+#include "../model/model_data.h"
 
 #include <algorithm>
 #include <cmath>
@@ -379,6 +383,40 @@ bool Field::has_any_finite() const {
 }
 
 /**
+ * Reports whether an element-local result row was completely written.
+ *
+ * All-NaN rows are uncomputed and do not participate in recovery. Any mixture
+ * of finite and missing values, or an infinity, indicates invalid recovery.
+ *
+ * @param row Zero-based element-local result row.
+ * @return True when every component of the row is finite.
+ */
+bool Field::has_valid_row(Index row) const {
+    logging::error(row < rows,
+        "Field '", name, "': row ", row, " is outside the field");
+
+    // Classify the complete row before reporting invalid numerical values
+    bool any_finite   = false;
+    bool any_nan      = false;
+    bool any_infinite = false;
+
+    for (Index component = 0; component < components; ++component) {
+        const Precision value = (*this)(row, component);
+        any_finite   |= std::isfinite(value);
+        any_nan      |= std::isnan(value);
+        any_infinite |= std::isinf(value);
+    }
+
+    // A row must be completely written or completely uninitialized
+    logging::error(!any_infinite,
+        "Field '", name, "': infinite value in row ", row);
+    logging::error(!(any_finite && any_nan),
+        "Field '", name, "': partially written row ", row);
+
+    return any_finite;
+}
+
+/**
  * @brief Tests a component for NaN or infinity.
  *
  * Despite its name, the method treats any nonfinite scalar as invalid.
@@ -717,6 +755,115 @@ void Field::validate_compatible(const Field& other,
         "Field '", name, "': size mismatch in '", operation, "' (",
         rows, "x", components, " vs ", other.rows, "x", other.components, ")"
     );
+}
+
+/**
+ * Projects element-local nodal values onto global nodes by equal averaging.
+ *
+ * Uncomputed element-local rows remain all NaN and are omitted. Fully finite
+ * rows participate, including values equal to zero. The compact node gather
+ * permits independent parallel reduction per global node. Nodes with no valid
+ * contributing element remain NaN, distinguishing missing results from zero.
+ *
+ * @param model_data Compiled element connectivity and element-local offsets.
+ * @param target_name Optional output field name, defaults to the source name.
+ * @return Global nodal field with the same number of components.
+ */
+Field Field::to_nodal(const ModelData& model_data, const std::string& target_name) const {
+    // Validate source domain and the compiled model topology
+    logging::error(domain == FieldDomain::ELEMENT_NODAL,
+        "Field '", name, "': to_nodal requires ELEMENT_NODAL input");
+    logging::error(model_data.element_nodal_offsets != nullptr,
+        "Field '", name, "': element-nodal offsets are not initialized");
+    logging::error(model_data.positions != nullptr,
+        "Field '", name, "': model positions are not initialized");
+
+    const Index       element_count = static_cast<Index>(model_data.elements.size());
+    const Index       node_count    = model_data.positions->rows;
+    const Field&      offsets       = *model_data.element_nodal_offsets;
+    const std::string result_name   = target_name.empty() ? name : target_name;
+
+    logging::error(offsets.rows == element_count + 1,
+        "Field '", name, "': element-nodal offsets have unexpected length");
+    const Index expected_rows = static_cast<Index>(offsets(element_count, 0));
+    logging::error(rows == expected_rows,
+        "Field '", name, "': row count does not match element-nodal offsets");
+
+    // Count only rows that contain a complete finite element-node result
+    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = model_data.elements[static_cast<std::size_t>(elem_idx)];
+        if (!element) continue;
+
+        const Index offset = static_cast<Index>(offsets(elem_idx, 0));
+        const Index end    = static_cast<Index>(offsets(elem_idx + 1, 0));
+        logging::error(end >= offset && end - offset == static_cast<Index>(element->n_nodes()),
+            "Field '", name, "': invalid element-nodal row span at element ", elem_idx);
+
+        for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
+            if (!has_valid_row(offset + local)) continue;
+
+            const Index node = static_cast<Index>(element->nodes()[local]);
+            logging::error(node < node_count,
+                "Field '", name, "': invalid node ID ", node);
+            ++node_offsets[static_cast<std::size_t>(node + 1)];
+        }
+    }
+
+    // Convert contribution counts to contiguous per-node gather ranges
+    for (Index node = 0; node < node_count; ++node) {
+        node_offsets[static_cast<std::size_t>(node + 1)] +=
+            node_offsets[static_cast<std::size_t>(node)];
+    }
+
+    const Index        contribution_count = node_offsets.back();
+    std::vector<Index> source_rows        (static_cast<std::size_t>(contribution_count));
+    std::vector<Index> write_offsets      = node_offsets;
+
+    // Gather each element's valid local values once into the corresponding node
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = model_data.elements[static_cast<std::size_t>(elem_idx)];
+        if (!element) continue;
+
+        const Index offset = static_cast<Index>(offsets(elem_idx, 0));
+        for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
+            if (!has_valid_row(offset + local)) continue;
+
+            const Index node   = static_cast<Index>(element->nodes()[local]);
+            const Index target = write_offsets[static_cast<std::size_t>(node)]++;
+
+            source_rows[static_cast<std::size_t>(target)] = offset + local;
+        }
+    }
+
+    // Independent global-node reductions; no atomics or worker-local fields
+    Field nodal = model_data.create_field_(result_name, FieldDomain::NODE, components);
+
+    parallel::for_index(node_count, global_config.max_threads,
+        [&](Index node, int /*worker*/) {
+            const Index begin = node_offsets[static_cast<std::size_t>(node)];
+            const Index end   = node_offsets[static_cast<std::size_t>(node + 1)];
+            if (begin == end) return;
+
+            for (Index component = 0; component < components; ++component) {
+                nodal(node, component) = Precision(0);
+            }
+
+            for (Index entry = begin; entry < end; ++entry) {
+                const Index source = source_rows[static_cast<std::size_t>(entry)];
+                for (Index component = 0; component < components; ++component) {
+                    nodal(node, component) += (*this)(source, component);
+                }
+            }
+
+            // Normalize the accumulated components by the number of contributions
+            const Precision count = static_cast<Precision>(end - begin);
+            for (Index component = 0; component < components; ++component) {
+                nodal(node, component) /= count;
+            }
+        }, Index(256));
+
+    return nodal;
 }
 
 } // namespace model

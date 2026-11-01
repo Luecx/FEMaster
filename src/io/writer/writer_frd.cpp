@@ -3,7 +3,7 @@
  * @brief Implements the ASCII CalculiX/CGX FRD result writer.
  *
  * The writer emits compiled FEMaster nodes, supported structural elements and
- * NODE-domain result fields in CalculiX FRD syntax.
+ * NODE-domain and unaveraged ELEMENT_NODAL result fields in FRD syntax.
  *
  * FEMaster solver topology uses dense node identifiers. When model data is
  * written, the semantic reverse mapping retained by `ModelData` is evaluated
@@ -27,7 +27,8 @@
  * original order so parallel formatting does not alter the FRD record order.
  *
  * All compiled nodes are emitted, including nodes not referenced by supported
- * elements. Compiled element identifiers are written unchanged.
+ * elements. Element identifiers preserve the original part-local labels with
+ * per-instance offsets, consistently in mesh and element-nodal result records.
  *
  * @see FrdWriter
  * @see model::ModelData
@@ -126,18 +127,13 @@ void append_integer(std::string& buffer,
 /**
  * Appends one FRD floating-point value in uppercase scientific notation.
  *
- * FRD numerical records use five digits after the decimal point. Non-finite
- * values are replaced by zero before formatting, preserving the previous writer
- * behavior.
+ * FRD numerical records use five digits after the decimal point. NaN values
+ * remain visible rather than being silently converted to zero.
  */
 void append_float(std::string& buffer,
                   Precision value,
                   std::size_t width = 12) {
     char tmp[64];
-
-    if (!std::isfinite(value)) {
-        value = Precision(0);
-    }
 
     const auto [end, ec] = std::to_chars(
         tmp,
@@ -322,7 +318,13 @@ const char* frd_analysis_name(WriterStepType step_type) {
 const FRDField& frd_field(const std::string& field_name) {
     std::string name;
 
-    for (unsigned char c : field_name) {
+    std::string_view source(field_name);
+    constexpr std::string_view prefix = "ELEMENT_NODAL_";
+    if (source.substr(0, prefix.size()) == prefix) {
+        source.remove_prefix(prefix.size());
+    }
+
+    for (unsigned char c : source) {
         if (std::isalpha(c)) {
             name += static_cast<char>(std::toupper(c));
         }
@@ -571,33 +573,30 @@ const FRDField& frd_field(const std::string& field_name) {
 }
 
 /**
- * Returns one finite FRD field component value.
+ * Returns a stored field component or its derived vector magnitude.
  *
- * Non-finite stored values are written as zero. Derived vector norms use the
- * first three field components and replace non-finite individual components by
- * zero before evaluating their Euclidean norm.
+ * Missing nodal components retain their NaN values. Derived norms are also
+ * NaN when any of their first three components is undefined.
  *
  * @param field Source FEMaster field.
- * @param row Nodal field row.
+ * @param row Result field row.
  * @param component Component index for directly stored values.
  * @param frd_component FRD component metadata.
- * @return Finite scalar value for output.
+ * @return Component value or derived vector norm, possibly NaN.
  */
 Precision field_value(const model::Field& field,
                       Index row,
                       Index component,
                       const FRDComponent& frd_component) {
     if (frd_component.derived) {
-        const Precision x = std::isfinite(field(row, 0)) ? field(row, 0) : 0.0;
-        const Precision y = std::isfinite(field(row, 1)) ? field(row, 1) : 0.0;
-        const Precision z = std::isfinite(field(row, 2)) ? field(row, 2) : 0.0;
+        const Precision x = field(row, 0);
+        const Precision y = field(row, 1);
+        const Precision z = field(row, 2);
 
         return std::sqrt(x * x + y * y + z * z);
     }
 
-    return std::isfinite(field(row, component))
-        ? field(row, component)
-        : 0;
+    return field(row, component);
 }
 
 /**
@@ -748,11 +747,12 @@ void append_result_control_line(std::string& buffer,
  * Appends the -4 field-definition record.
  */
 void append_field_definition_line(std::string& buffer,
-                                  const FRDField& field) {
+                                  const FRDField& field,
+                                  int data_type) {
     buffer.append(" -4  ");
     append_string_left(buffer, field.name, 8);
     append_integer(buffer, static_cast<int>(field.components.size()), 5);
-    append_integer(buffer, 1, 5);
+    append_integer(buffer, data_type, 5);
     buffer.push_back('\n');
 }
 
@@ -773,6 +773,59 @@ void append_component_definition_line(std::string& buffer,
         buffer.append(component.name);
     }
 
+    buffer.push_back('\n');
+}
+
+/**
+ * Returns the internal node index corresponding to FRD connectivity order.
+ *
+ * Higher-order solids permute midside nodes in their FRD connectivity. The
+ * same mapping is required for their unaveraged element-nodal result rows.
+ */
+Index frd_local_node(Index local, int type) {
+    if (type == 4) {
+        constexpr Index order[] = {
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+            10, 11, 16, 17, 18, 19, 12, 13, 14, 15
+        };
+        return order[local];
+    }
+    if (type == 5) {
+        constexpr Index order[] = {
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
+            13, 14, 9, 10, 11
+        };
+        return order[local];
+    }
+    return local;
+}
+
+/**
+ * Appends one unaveraged element-nodal record with both element and node IDs.
+ * The record uses FRD long ASCII identifiers followed by the field components.
+ */
+void append_result_element_node_lines(std::string& buffer,
+                                      ID element_id,
+                                      ID node_id,
+                                      const model::Field& field,
+                                      Index row,
+                                      const FRDField& frd) {
+    constexpr Index values_per_line = 6;
+
+    for (Index component = 0;
+         component < static_cast<Index>(frd.components.size());
+         ++component) {
+        if (component == 0) {
+            buffer.append(" -1");
+            append_integer(buffer, element_id, 10);
+            append_integer(buffer, node_id, 10);
+        } else if (component % values_per_line == 0) {
+            buffer.push_back('\n');
+            buffer.append(" -2");
+            buffer.append(20, ' ');
+        }
+        append_float(buffer, field_value(field, row, component, frd.components[component]));
+    }
     buffer.push_back('\n');
 }
 
@@ -849,6 +902,7 @@ void FrdWriter::open(const std::string& filename) {
 
     // Reset mesh numbering and analysis-frame state
     node_ids.clear();
+    element_ids.clear();
 
     model_data_written   = false;
     current_step         = 1;
@@ -945,6 +999,24 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
             + local_id;
     }
 
+    // Preserve original element labels using the same per-instance numbering as nodes
+    logging::error(model_data.element_mapping.size() == model_data.elements.size(),
+        "FrdWriter: element mapping does not match compiled elements");
+
+    element_ids.resize(model_data.element_mapping.size());
+    for (std::size_t i = 0; i < model_data.element_mapping.size(); ++i) {
+        if (!model_data.elements[i]) continue;
+
+        const auto& [instance, local_id] = model_data.element_mapping[i];
+        logging::error(instance != nullptr,
+            "FrdWriter: dense element ", i, " has no source instance");
+        logging::error(local_id < static_cast<Index>(100000000),
+            "FrdWriter: local element ID ", local_id, " exceeds the supported instance range");
+
+        element_ids[i] = static_cast<ID>(100000000) * static_cast<ID>(instance->instance_id)
+                       + static_cast<ID>(local_id);
+    }
+
     // Emit geometry and connectivity using the fixed external numbering
     write_nodes(model_data);
     write_elements(model_data);
@@ -974,19 +1046,26 @@ void FrdWriter::write_field(const model::Field& field,
         return;
     }
 
-    if (field.domain != model::FieldDomain::NODE) {
-        return;
-    }
+    const bool nodal = field.domain == model::FieldDomain::NODE;
+    const bool element_nodal = field.domain == model::FieldDomain::ELEMENT_NODAL
+        && field_name.rfind("ELEMENT_NODAL_", 0) == 0;
+
+    if (!nodal && !element_nodal) return;
 
     if (!model_data_written) {
         logging::error(model_data != nullptr,
-            "FrdWriter: NODE field '", field_name,
-            "' requires model data because mesh was not written yet");
+            "FrdWriter: field '", field_name, "' requires model data");
 
         write_model_data(*model_data);
     }
 
-    write_nodal_field(field, field_name, frame_value);
+    if (nodal) {
+        write_nodal_field(field, field_name, frame_value);
+    } else {
+        logging::error(model_data != nullptr,
+            "FrdWriter: ELEMENT_NODAL field '", field_name, "' requires model data");
+        write_element_nodal_field(field, field_name, *model_data, frame_value);
+    }
 }
 
 /**
@@ -1045,7 +1124,7 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
 /**
  * Writes all supported compiled structural elements and their connectivity.
  *
- * Element identifiers are emitted unchanged. Their connectivity contains dense
+ * Element identifiers retain their source instance numbering. Their connectivity contains dense
  * FEMaster node identifiers internally and is translated through the cached
  * dense-to-FRD node mapping immediately before output.
  *
@@ -1106,7 +1185,7 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                     continue;
                 }
 
-                append_element_header_line(buffer, element->elem_id, type);
+                append_element_header_line(buffer, element_ids[static_cast<std::size_t>(elem_row)], type);
 
                 // Copy connectivity so FRD-specific high-order permutations remain local
                 std::vector<ID> connectivity;
@@ -1116,37 +1195,17 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                     connectivity.push_back(node_id);
                 }
 
-                if (type == 4 && connectivity.size() == 20) {
-                    const std::vector<ID> internal = connectivity;
-
-                    const int order[] = {
-                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                        10, 11, 16, 17, 18, 19, 12, 13, 14, 15
-                    };
-
-                    for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                        connectivity[i] = internal[order[i]];
-                    }
-                }
-
-                if (type == 5 && connectivity.size() == 15) {
-                    const std::vector<ID> internal = connectivity;
-
-                    const int order[] = {
-                        0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
-                        13, 14, 9, 10, 11
-                    };
-
-                    for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                        connectivity[i] = internal[order[i]];
-                    }
+                // Use the same local-node ordering as element-nodal result records
+                const std::vector<ID> internal = connectivity;
+                for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
+                    connectivity[local] = internal[frd_local_node(local, type)];
                 }
 
                 append_element_connectivity(
                     buffer,
                     connectivity,
                     node_ids,
-                    element->elem_id
+                    element_ids[static_cast<std::size_t>(elem_row)]
                 );
             }
         });
@@ -1155,6 +1214,69 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
     write_thread_buffers(file_path, thread_buffers);
 
     file_path << " -3\n";
+}
+
+/**
+ * Emits shared modal/static/dynamic frame metadata for both FRD output domains.
+ */
+void FrdWriter::write_result_header(const std::string& field_name,
+                                    Precision          frame_value,
+                                    Index              rows,
+                                    int                data_type) {
+    // Resolve field metadata and analysis-frame numbering
+    const FRDField& frd   = frd_field(field_name);
+    int             frame = frd_frame(field_name);
+    const int       step  = current_step > 0 ? current_step : 1;
+    const int       block = ++current_result_block;
+
+    if (current_step_type == WriterStepType::Dynamic) {
+        ++frame;
+    }
+
+    if (frame < 1) {
+        frame = 1;
+    }
+
+    const Precision value = std::isfinite(frame_value)
+        ? frame_value
+        : static_cast<Precision>(frame);
+
+    if (last_frame_step != step || last_frame_id != frame) {
+        ++current_global_frame;
+        last_frame_step = step;
+        last_frame_id   = frame;
+    }
+
+    const int   global_frame = current_global_frame;
+    const int   ictype       = frd_increment_type(current_step_type);
+    const char* analysis     = frd_analysis_name(current_step_type);
+
+    // Build all compact result metadata records in one local buffer
+    std::string metadata;
+    metadata.reserve(1024);
+
+    append_result_step_line(metadata, block, frame, step);
+
+    if (current_step_type == WriterStepType::Eigenfrequency) {
+        append_result_mode_line(metadata, frame);
+    }
+
+    append_result_control_line(
+        metadata,
+        global_frame,
+        value,
+        rows,
+        ictype,
+        analysis
+    );
+
+    append_field_definition_line(metadata, frd, data_type);
+
+    for (const FRDComponent& component : frd.components) {
+        append_component_definition_line(metadata, component);
+    }
+
+    file_path.write(metadata.data(), static_cast<std::streamsize>(metadata.size()));
 }
 
 /**
@@ -1178,63 +1300,9 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     logging::error(node_ids.size() == static_cast<std::size_t>(field.rows),
         "FrdWriter: node id mapping does not match field rows");
 
-    // Resolve field metadata and analysis-frame numbering
+    // Preserve all nodal rows, including partially masked reaction vectors
+    write_result_header(field_name, frame_value, field.rows, 1);
     const FRDField& frd = frd_field(field_name);
-    int frame           = frd_frame(field_name);
-    const int step      = current_step > 0 ? current_step : 1;
-    const int block     = ++current_result_block;
-
-    if (current_step_type == WriterStepType::Dynamic) {
-        ++frame;
-    }
-
-    if (frame < 1) {
-        frame = 1;
-    }
-
-    const Precision value = std::isfinite(frame_value)
-        ? frame_value
-        : static_cast<Precision>(frame);
-
-    if (last_frame_step != step || last_frame_id != frame) {
-        ++current_global_frame;
-        last_frame_step = step;
-        last_frame_id   = frame;
-    }
-
-    const int global_frame = current_global_frame;
-    const int ictype       = frd_increment_type(current_step_type);
-    const char* analysis   = frd_analysis_name(current_step_type);
-
-    // Build all compact result metadata records in one local buffer
-    std::string metadata;
-    metadata.reserve(1024);
-
-    append_result_step_line(metadata, block, frame, step);
-
-    if (current_step_type == WriterStepType::Eigenfrequency) {
-        append_result_mode_line(metadata, frame);
-    }
-
-    append_result_control_line(
-        metadata,
-        global_frame,
-        value,
-        field.rows,
-        ictype,
-        analysis
-    );
-
-    append_field_definition_line(metadata, frd);
-
-    for (const FRDComponent& component : frd.components) {
-        append_component_definition_line(metadata, component);
-    }
-
-    file_path.write(
-        metadata.data(),
-        static_cast<std::streamsize>(metadata.size())
-    );
 
     // Format contiguous node-result ranges independently
     const ID num_threads = output_thread_count(field.rows);
@@ -1261,6 +1329,89 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     // Preserve dense node order in the completed result block
     write_thread_buffers(file_path, thread_buffers);
 
+    file_path << " -3\n";
+}
+
+/**
+ * Writes unaveraged element-node values using FRD IRTYPE=3.
+ *
+ * Element/node identifiers are the same ones used in the mesh. The local
+ * recovery rows follow the element's internal ordering, which is permuted to
+ * match FRD connectivity for higher-order solid elements.
+ */
+void FrdWriter::write_element_nodal_field(const model::Field& field,
+                                          const std::string& field_name,
+                                          const model::ModelData& model_data,
+                                          Precision frame_value) {
+    logging::error(model_data.element_nodal_offsets != nullptr,
+        "FrdWriter: element-nodal offsets are not initialized");
+
+    const Index element_count = static_cast<Index>(model_data.elements.size());
+    logging::error(model_data.element_nodal_offsets->rows == element_count + 1,
+        "FrdWriter: element-nodal offsets do not match compiled elements");
+    const Index expected_rows = static_cast<Index>(
+        (*model_data.element_nodal_offsets)(element_count, 0));
+    logging::error(field.rows == expected_rows,
+        "FrdWriter: element-nodal field row count does not match offsets");
+
+    // Count the element-local rows included in the FRD mesh
+    Index result_count = 0;
+    for (const auto& element : model_data.elements) {
+        if (element && frd_element_type(*element) != 0) {
+            result_count += element->n_nodes();
+        }
+    }
+
+    write_result_header(field_name, frame_value, result_count, 3);
+    const FRDField& frd = frd_field(field_name);
+
+    // Format element-major output in the same FRD order as the connectivity
+    const ID num_threads = output_thread_count(element_count);
+    auto thread_buffers = create_thread_buffers(num_threads);
+
+    parallel::for_index(num_threads, static_cast<int>(num_threads),
+        [&](ID thread, int /*worker*/) {
+            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+
+            const Index begin = element_count * thread       / num_threads;
+            const Index end   = element_count * (thread + 1) / num_threads;
+
+            for (Index elem_row = begin; elem_row < end; ++elem_row) {
+                const auto& element = model_data.elements[static_cast<std::size_t>(elem_row)];
+                if (!element) continue;
+
+                const int type = frd_element_type(*element);
+                if (type == 0) continue;
+
+                const Index offset = static_cast<Index>(
+                    (*model_data.element_nodal_offsets)(elem_row, 0));
+
+                std::vector<ID> connectivity;
+                connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
+                for (ID node_id : *element) {
+                    connectivity.push_back(node_id);
+                }
+
+                for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
+                    const Index internal = frd_local_node(local, type);
+                    const Index node     = static_cast<Index>(connectivity[internal]);
+
+                    logging::error(node < node_ids.size(),
+                        "FrdWriter: element-nodal result references unknown node ", node);
+
+                    append_result_element_node_lines(
+                        buffer,
+                        element_ids[static_cast<std::size_t>(elem_row)],
+                        node_ids[static_cast<std::size_t>(node)],
+                        field,
+                        offset + internal,
+                        frd
+                    );
+                }
+            }
+        });
+
+    write_thread_buffers(file_path, thread_buffers);
     file_path << " -3\n";
 }
 

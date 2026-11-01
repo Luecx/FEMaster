@@ -43,10 +43,10 @@ namespace io {
 namespace writer {
 
 /**
- * @brief Minimal ASCII CalculiX/CGX FRD mesh and nodal-result writer.
+ * @brief ASCII CalculiX/CGX FRD mesh, nodal and element-nodal result writer.
  *
  * The writer emits all compiled nodes, supported structural element
- * connectivities and NODE-domain result fields. Nodes are not filtered by
+ * connectivities and NODE/ELEMENT_NODAL results (IRTYPE 1 and 3). Nodes are not filtered by
  * element participation, so isolated model nodes remain present in the output.
  *
  * FEMaster uses dense node identifiers internally. During the first mesh write,
@@ -66,8 +66,9 @@ class FrdWriter {
     private:
     std::ofstream file_path;
 
-    // Dense global node id -> FRD node id
+    // Dense global node/element IDs mapped to original instance identifiers
     std::vector<ID> node_ids;
+    std::vector<ID> element_ids;
 
     // Writer state
     bool model_data_written = false;
@@ -102,12 +103,20 @@ class FrdWriter {
                      Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 
     private:
-    // FRD mesh and NODE-domain result blocks
+    // FRD mesh and result blocks
     void write_nodes      (const model::ModelData& model_data);
     void write_elements   (const model::ModelData& model_data);
     void write_nodal_field(const model::Field& field,
                            const std::string& field_name,
                            Precision frame_value);
+    void write_element_nodal_field(const model::Field& field,
+                                   const std::string& field_name,
+                                   const model::ModelData& model_data,
+                                   Precision frame_value);
+    void write_result_header(const std::string& field_name,
+                             Precision          frame_value,
+                             Index              rows,
+                             int                data_type);
 };
 
 } // namespace writer

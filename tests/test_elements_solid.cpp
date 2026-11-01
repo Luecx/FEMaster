@@ -98,7 +98,11 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
         displacement(node, 0) = (node >= 4) ? 1.0 : 0.0;
     }
 
-    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, nullptr, nullptr, nullptr);
+    auto [element_top, element_bot] = model.compute_stress_top_bot(
+        displacement, nullptr, nullptr, nullptr);
+
+    const auto stress_top = element_top.to_nodal(*model._data, "STRESS_TOP");
+    const auto stress_bot = element_bot.to_nodal(*model._data, "STRESS_BOT");
 
     ASSERT_EQ(stress_top.rows, stress_bot.rows);
     ASSERT_EQ(stress_top.components, stress_bot.components);
@@ -511,7 +515,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     // Model-level output uses the thermal-aware virtual overload even when no
     // thermal field is supplied; this call therefore also checks C3D8I recovery
     // dispatch through StructuralElement.
-    EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr, &displacement, nullptr));
+    EXPECT_NO_THROW(model.compute_stress(displacement, nullptr, &displacement, nullptr));
 
     model.step_end();
 }
@@ -764,8 +768,8 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
         // Auxiliary paths may reconstruct local parameters but must not commit history
         element->evaluate(storage, nullptr, nullptr, nullptr, nullptr, nullptr, false);
         element->evaluate(nullptr, storage, nullptr, &displacement, nullptr, nullptr, nullptr, false);
-        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, &displacement));
-        EXPECT_NO_THROW(model.compute_stress_nodal(displacement, nullptr, nullptr, nullptr));
+        EXPECT_NO_THROW(model.compute_stress(displacement, &displacement));
+        EXPECT_NO_THROW(model.compute_stress(displacement, nullptr, nullptr, nullptr));
         for (Index row = 0; row < trial.rows; ++row) {
             for (Dim component = 0; component < trial.components; ++component) {
                 EXPECT_DOUBLE_EQ((*model._data->material_state_old)(row, component), committed(row, component));

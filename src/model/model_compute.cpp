@@ -5,8 +5,8 @@
  * The routines allocate result fields in their physical storage domains and
  * delegate element-specific evaluation to compiled structural elements.
  * Integration-point results use the offsets established during compilation;
- * element-nodal quantities are recovered into global nodal fields through the
- * weighting operation provided by `ModelData`.
+ * element-nodal quantities are projected to global nodes only when required,
+ * using Field::to_nodal() to omit undefined element-local values.
  *
  * Nodal stress recovery, shell-face recovery, shell-resultant recovery, beam
  * section forces, shear flow and thermal heat-flux recovery may evaluate
@@ -30,26 +30,27 @@
 #include "element/element_thermal.h"
 #include "model.h"
 
+#include <utility>
 #include <vector>
 
 namespace fem::model {
 
 /**
- * Recovers averaged nodal stress and strain fields.
+ * Recovers unaveraged element-nodal stress and strain.
  *
  * Every supporting structural element supplies its natural nodal recovery
  * coordinates and writes six-component stress and strain values into
  * `ELEMENT_NODAL` storage. The compiled element-nodal offsets keep parallel
- * writes disjoint. `ModelData::element_nodal_to_nodal()` then averages the
- * contributing element values at each global node using unit element weights.
+ * writes disjoint. Unwritten element-local rows remain NaN and are omitted
+ * by Field::to_nodal() when a global nodal result is requested.
  *
  * Elements without nodal recovery coordinates do not participate.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
- * @return Pair containing the global nodal stress field followed by strain.
+ * @return Element-nodal stress and strain fields.
  */
-std::tuple<Field, Field> Model::compute_stress_nodal(
+std::tuple<Field, Field> Model::compute_stress(
     Field&       target_displacement,
     const Field* target_temperature,
     const Field* base_displacement,
@@ -59,23 +60,19 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index element_count       = static_cast<Index>(_data->elements.size());
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Allocate disjoint element-nodal recovery fields and participation weights
-    Field element_stress = _data->create_field_("ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, 6, false);
-    Field element_strain = _data->create_field_("ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, 6, false);
-    Field element_weights = _data->create_field_("STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
-    element_stress .set_zero();
-    element_strain .set_zero();
-    element_weights.set_zero();
+    // Allocate disjoint element-nodal recovery fields
+    Field element_stress = _data->create_field_("ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, 6);
+    Field element_strain = _data->create_field_("ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, 6);
 
     // Recover element-nodal values into non-overlapping compiled row ranges
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) return;
 
-            if (auto sel = el->as<StructuralElement>()) {
+            if (auto sel = element->as<StructuralElement>()) {
                 RowMatrix rst = sel->stress_strain_nodal_rst();
                 if (rst.rows() == 0) return;
 
@@ -91,17 +88,10 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
                     base_displacement,
                     base_temperature
                 );
-                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }, Index(8));
 
-
-    // Average participating element values onto global nodes and validate them
-    Field stress = _data->element_nodal_to_nodal(element_stress, element_weights, "STRESS");
-    Field strain = _data->element_nodal_to_nodal(element_strain, element_weights, "STRAIN");
-    stress.check_finite("Nodal stress");
-    strain.check_finite("Nodal strain");
-    return {stress, strain};
+    return {std::move(element_stress), std::move(element_strain)};
 }
 
 /**
@@ -114,8 +104,8 @@ std::tuple<Field, Field> Model::compute_stress_nodal(
  * disjoint, after which the ordinary element-nodal projection averages
  * contributions at shared global nodes.
  *
- * Elements without a PEEQ-capable material or formulation are assigned zero
- * weight and therefore do not dilute neighboring plasticity results.
+ * Elements without a PEEQ-capable material or formulation retain NaN and do
+ * not dilute the nodal average.
  *
  * @return Scalar global NODE field named PEEQ.
  */
@@ -124,45 +114,38 @@ Field Model::compute_peeq_nodal() {
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index element_count       = static_cast<Index>(_data->elements.size());
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Allocate disjoint element-nodal PEEQ storage and participation weights
-    Field element_peeq = _data->create_field_("ELEMENT_NODAL_PEEQ", FieldDomain::ELEMENT_NODAL, 1, false);
-    Field element_weights = _data->create_field_("PEEQ_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
-    element_peeq.set_zero();
-    element_weights.set_zero();
+    // Unsupported element-local PEEQ rows remain unwritten (NaN)
+    Field element_peeq = _data->create_field_("ELEMENT_NODAL_PEEQ", FieldDomain::ELEMENT_NODAL, 1);
 
     // Let each structural formulation recover accepted material history locally
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) return;
 
-            if (auto sel = el->as<StructuralElement>()) {
-                if (sel->compute_peeq(element_peeq)) {
-                    element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
-                }
+            if (auto sel = element->as<StructuralElement>()) {
+                sel->compute_peeq(element_peeq);
             }
         }, Index(8));
 
-    // Average participating element values onto global nodes
-    Field peeq = _data->element_nodal_to_nodal(element_peeq, element_weights, "PEEQ");
-    peeq.check_finite("Nodal PEEQ");
-    return peeq;
+    // Average the written element-local values at shared global nodes
+    return element_peeq.to_nodal(*_data, "PEEQ");
 }
 
 /**
- * Recovers averaged stress on the top and bottom shell faces.
+ * Recovers element-nodal stress on the top and bottom shell faces.
  *
  * Shell recovery coordinates use the formulation-provided natural nodal points
  * with the through-thickness coordinate set to `+1` for the top face and `-1`
  * for the bottom face. Non-shell structural elements use their unchanged nodal
- * recovery coordinates for both fields. Element-nodal results are averaged onto
- * global nodes using the same participation weighting as regular nodal stress.
+ * recovery coordinates for both fields. Unwritten rows remain NaN and are
+ * omitted by Field::to_nodal() when nodal results are requested.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
- * @return Pair containing global nodal top-face and bottom-face stress fields.
+ * @return Element-nodal top and bottom stress fields.
  */
 std::tuple<Field, Field> Model::compute_stress_top_bot(
     Field&       target_displacement,
@@ -174,24 +157,20 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
 
-    const Index element_count       = static_cast<Index>(_data->elements.size());
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Allocate separate element-nodal fields for both faces and their weights
-    Field element_top = _data->create_field_("ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, 6, false);
-    Field element_bot = _data->create_field_("ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, 6, false);
-    Field element_weights = _data->create_field_("STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
-    element_top.set_zero();
-    element_bot.set_zero();
-    element_weights.set_zero();
+    // Allocate separate element-nodal fields for both faces
+    Field element_top = _data->create_field_("ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, 6);
+    Field element_bot = _data->create_field_("ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, 6);
 
     // Evaluate both faces in each element's disjoint compiled row range
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) return;
 
-            if (auto sel = el->as<StructuralElement>()) {
-                RowMatrix base_rst = sel->stress_strain_nodal_rst();
+            if (auto sel = element->as<StructuralElement>()) {
+                const RowMatrix base_rst = sel->stress_strain_nodal_rst();
                 if (base_rst.rows() == 0) return;
 
                 RowMatrix rst_bot = base_rst;
@@ -215,17 +194,10 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
                     target_displacement, target_temperature,
                     rst_top,
                     base_displacement, base_temperature);
-                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }, Index(8));
 
-
-    // Average face values onto global nodes and reject invalid numerical output
-    Field stress_top = _data->element_nodal_to_nodal(element_top, element_weights, "STRESS_TOP");
-    Field stress_bot = _data->element_nodal_to_nodal(element_bot, element_weights, "STRESS_BOT");
-    stress_top.check_finite("Nodal top stress");
-    stress_bot.check_finite("Nodal bottom stress");
-    return {stress_top, stress_bot};
+    return {std::move(element_top), std::move(element_bot)};
 }
 
 /**
@@ -488,8 +460,8 @@ Field Model::compute_shear_flow(Field& displacement) {
  *
  * Element recovery is parallel because no two elements write the same
  * `ELEMENT_NODAL` rows. Afterwards
- * `ModelData::element_nodal_to_nodal()` averages the discontinuous
- * element-local values onto unique global nodes with unit element weights,
+ * `Field::to_nodal()` averages the discontinuous
+ * element-local values onto unique global nodes over written rows,
  * matching the established nodal stress-recovery path.
  *
  * No model-wide integration-point heat-flux field is created or exported.
@@ -509,16 +481,10 @@ Field Model::compute_heat_flux(const Field& temperature) {
     logging::error(_data->element_nodal_offsets != nullptr,
         "Model: element nodal offsets are not initialized");
 
-    const Index element_count       = static_cast<Index>(_data->elements.size());
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Allocate disjoint element-local nodal storage and one participation weight
-    // per dense element. Non-thermal elements retain zero weight and therefore do
-    // not influence the global nodal average.
-    Field element_heat_flux = _data->create_field_("ELEMENT_NODAL_HEAT_FLUX", FieldDomain::ELEMENT_NODAL, 3, false);
-    Field element_weights = _data->create_field_("HEAT_FLUX_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, 1, false);
-    element_heat_flux.set_zero();
-    element_weights.set_zero();
-
+    // Thermal elements write their values; unsupported rows remain NaN
+    Field element_heat_flux = _data->create_field_("ELEMENT_NODAL_HEAT_FLUX", FieldDomain::ELEMENT_NODAL, 3);
 
     // Recover each thermal element into its disjoint element-nodal field range
     parallel::for_index(element_count, global_config.max_threads,
@@ -530,21 +496,12 @@ Field Model::compute_heat_flux(const Field& temperature) {
 
             if (auto* thermal = element->as<ThermalElement>()) {
                 thermal->compute_heat_flux(element_heat_flux, temperature);
-                element_weights(static_cast<Index>(element->elem_id), 0) = Precision(1);
             }
         }, Index(8));
 
 
-    // Average all participating element-local nodal vectors onto unique global
-    // nodes. The projection itself is parallelized over independent target nodes.
-    Field heat_flux = _data->element_nodal_to_nodal(
-        element_heat_flux,
-        element_weights,
-        "HEAT_FLUX"
-    );
-
-    heat_flux.check_finite("Nodal heat flux");
-    return heat_flux;
+    // Average the written thermal values at unique global nodes
+    return element_heat_flux.to_nodal(*_data, "HEAT_FLUX");
 }
 
 

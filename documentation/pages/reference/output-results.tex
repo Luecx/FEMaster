@@ -105,7 +105,7 @@ SERVICE
 
 FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
-The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
+The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Each variable also records the requested result location: \cmd{NODE FILE}/\cmd{NODE OUTPUT} select global nodal output; \cmd{EL FILE}/\cmd{ELEMENT OUTPUT}/\cmd{EL OUTPUT} select element-nodal output where supported. The same variable may be requested at both locations in one step without repeating the element recovery. For stress, strain and upper/lower shell surface stress, element-nodal data are recovered first and the global nodal result is created only when requested. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
 
 The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does not itself change the request set. The actual selection is performed by the following node/element output cards.
 
@@ -131,7 +131,7 @@ same nodal field list and configures the same output request.
 
 \cmd{ELEMENT OUTPUT} selects element-derived result quantities for the active step. It uses the same request set as \cmd{EL FILE}; the spelling does not select a different FEMaster result format.
 
-The element output request selects derived fields such as stress S and strain E for the active step. Output availability still depends on the elements and procedure.
+The element output request selects derived fields such as stress S and strain E for the active step. For these quantities FEMaster preserves separate values for each element-local node without averaging over neighbouring elements. Recovery fields initialize unwritten rows as NaN; FEMaster averages only fully written element-local rows for nodal output. The result writers retain NaN entries rather than replacing them with zero or rejecting partly masked nodal vectors (for example reaction forces at partially constrained nodes). These datasets use the \val{ELEMENT_NODAL} domain in \file{.res}, and FRD result type 3 (element data at nodes) in \file{.frd}. Output availability still depends on the elements and procedure.
 
 \exampleheading
 \begin{inputdeck}
@@ -163,7 +163,7 @@ compatibility container and does not itself select fields.
 
 \cmd{EL FILE} is the CalculiX-style alias of \cmd{ELEMENT OUTPUT}. It selects the listed element-derived result quantities without changing the configured FEMaster result writer.
 
-This alias selects the same element result fields as ELEMENT OUTPUT. The available variables depend on the active procedure and element formulations.
+This alias selects the same element result fields as ELEMENT OUTPUT. For supported stress and strain quantities, the data are written element-nodally instead of averaged globally. The available variables depend on the active procedure and element formulations.
 
 \exampleheading
 \begin{inputdeck}
@@ -380,7 +380,7 @@ with femaster.open_results("model.femr") as results:
 
 \subsection{FRD visualization output}
 
-FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Data that do not naturally map to FRD nodal blocks---for example some element-local, integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
+FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Supported unaveraged element-nodal stress and strain outputs use FRD result type 3; each record identifies both the original element and node. Some older postprocessors may not implement this result type. Data that do not naturally map to FRD result blocks---for example integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
 
 Typical mappings include:
 \begin{longtable}{@{}p{0.30\linewidth}p{0.22\linewidth}p{0.38\linewidth}@{}}
