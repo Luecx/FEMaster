@@ -24,7 +24,7 @@
  *       We target the *smallest* eigenvalues by shift-invert in physical units.
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
- *       Expand to node x 6 and compute simple modal participations.
+ *       Expand to node x 6 and project all modes onto global rigid-body motions.
  *   (8) Print a summary table and write all results.
  *
  * Implementation highlights
@@ -42,9 +42,10 @@
  * -----
  * - The modal case is homogeneous in practice (d = 0), hence u_p = 0, but we
  *   keep the general path and do not assume it; diagnostics will tell you.
- * - The helper "participation" is a simple mass-weighted projection onto the
- *   six global axes over the active DOFs. It is not a full modal effective
- *   mass computation but is often sufficient for quick screening.
+ * - Modal participation uses the assembled mass matrix and six rigid-body
+ *   translation/rotation directions about the assembled-mass center. All modes
+ *   are projected together in expanded DOF space. The reported quantities are
+ *   mass-weighted projections, not effective modal masses.
  *
  * @date    15.09.2025
  * @author  Finn
@@ -83,7 +84,7 @@ constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
  * - freq  : physical frequency f = sqrt(lambda) / (2*pi), guarded for lambda < 0.
  * - q_mode: eigenvector in reduced coordinates (size = n_master).
  * - mode_mat: full mode in node x 6 layout, suitable for writer output.
- * - participation: simple mass-weighted projections onto global axes (x,y,z,rx,ry,rz).
+ * - participation: mass-weighted projections onto rigid motions (x,y,z,rx,ry,rz).
  */
 struct ModalMode {
     Precision     lambda;        // eigenvalue (omega^2)
@@ -97,33 +98,6 @@ struct ModalMode {
           freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * pi)),
           q_mode(std::move(q)) {}
 };
-
-/**
- * @brief Build 6 "unit" direction vectors over active DOFs (length n).
- *
- * The returned matrix U (n x 6) has one column per global axis:
- *   - col 0..2 -> translations x/y/z,
- *   - col 3..5 -> rotations    rx/ry/rz.
- *
- * For each active (node, dof) pair, we place a 1.0 in the corresponding axis
- * column at the global active DOF index. This provides a quick basis to
- * compute axis participations by dotting with M*u.
- */
-static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx_mat) {
-    const int n = active_dof_idx_mat.maxCoeff() + 1; // active system size
-    DynamicMatrix U = DynamicMatrix::Zero(n, 6);
-
-    const int nNodes = static_cast<int>(active_dof_idx_mat.rows());
-    for (int node = 0; node < nNodes; ++node) {
-        for (int dof = 0; dof < 6; ++dof) {
-            int gid = active_dof_idx_mat(node, dof);
-            if (gid >= 0) {
-                U(gid, dof) += 1.0;
-            }
-        }
-    }
-    return U;
-}
 
 /**
  * @brief Compute a power-of-ten scaling exponent so that reported participations
@@ -385,25 +359,93 @@ void LinearEigenfrequency::run() {
     std::sort(modes.begin(), modes.end(),
               [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 
-    // (7) Expand mode shapes and compute simple participations
-    //     For homogeneous constraints, u_p = 0 and u_mode = T * q_mode.
-    DynamicMatrix axes_full = build_active_axis_vectors(active_dof_idx_mat); // n x 6
-    for (auto& m : modes) {
-        // Full vector u
+    // (7) Recover all eigenvectors in the full active DOF space
+    DynamicMatrix Phi(K.rows(), static_cast<Index>(modes.size()));
+    for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
+        auto& m = modes[static_cast<std::size_t>(i)];
+
+        // Recover the physical mode and preserve the existing nodal writer output
         DynamicVector u_mode = CT->recover_displacement(m.q_mode);
         CT->post_check_static(K, DynamicVector::Zero(K.rows()), m.q_mode,
                       /*tol_constraint_rel*/1e-10,
                       /*tol_reduced_rel   */std::numeric_limits<Precision>::infinity(),
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
-        // Node x 6 layout for writer
-        auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
-        m.mode_mat = mode_field;
-        // Participations p_i = e_i^T (M u) using axis columns as e_i
-        DynamicVector Mu = M * u_mode;
-        for (int i = 0; i < 6; ++i) m.participation(i) = axes_full.col(i).dot(Mu);
+
+        Phi.col(i) = u_mode;
+        m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
     }
 
-    // (8) Print + write
+    // (8) Build global rigid-body translation and rotation directions
+    //     A unit rotation about an axis moves a node by e_axis x position.
+    //     Rotational DOFs contribute their own unit rotation where present.
+    const auto&   positions = *model->_data->positions;
+    DynamicMatrix R         = DynamicMatrix::Zero(K.rows(), 6);
+
+    for (Index node = 0; node < positions.rows; ++node) {
+        const Vec3 position = positions.row_vec3(node);
+        const Precision x   = position(0);
+        const Precision y   = position(1);
+        const Precision z   = position(2);
+
+        Mat6 directions = Mat6::Identity();
+        directions(0, 4) =  z;
+        directions(0, 5) = -y;
+        directions(1, 3) = -z;
+        directions(1, 5) =  x;
+        directions(2, 3) =  y;
+        directions(2, 4) = -x;
+
+        // Scatter only existing DOFs; solid nodes have no explicit rotations
+        for (int dof = 0; dof < 6; ++dof) {
+            const int gid = active_dof_idx_mat(node, dof);
+            if (gid >= 0) R.row(gid) = directions.row(dof);
+        }
+    }
+
+    // Determine the center of mass from the assembled inertia, including point
+    // masses and translational/rotational coupling already represented in M.
+    // For rigid translations, R_t^T M R_t = m I; about the global origin,
+    // R_t^T M R_rot = -m [center]x, with [center]x the cross-product matrix.
+    DynamicMatrix MR = M * R;
+
+    const Mat3 translational_mass = R.leftCols(3).transpose() * MR.leftCols(3);
+    const Mat3 coupling_mass      = R.leftCols(3).transpose() * MR.rightCols(3);
+    const Precision total_mass    = translational_mass.trace() / Precision(3);
+
+    logging::error(std::isfinite(total_mass) && total_mass > Precision(0),
+        "Eigenfrequency: non-positive total translational mass for participation");
+
+    const Precision inv_two_mass = Precision(0.5) / total_mass;
+    const Vec3 center(
+        (coupling_mass(1, 2) - coupling_mass(2, 1)) * inv_two_mass,
+        (coupling_mass(2, 0) - coupling_mass(0, 2)) * inv_two_mass,
+        (coupling_mass(0, 1) - coupling_mass(1, 0)) * inv_two_mass
+    );
+
+    logging::error(center.allFinite(),
+        "Eigenfrequency: invalid center of mass for modal participation");
+
+    // Shift the rotational directions from the origin to the mass center:
+    // R_rot(center) = R_rot(origin) + R_t [center]x.
+    // Apply the same linear shift to M R without another sparse multiplication.
+    Mat3 center_cross = Mat3::Zero();
+    center_cross(0, 1) = -center(2);
+    center_cross(0, 2) =  center(1);
+    center_cross(1, 0) =  center(2);
+    center_cross(1, 2) = -center(0);
+    center_cross(2, 0) = -center(1);
+    center_cross(2, 1) =  center(0);
+
+    R.rightCols(3)  += R.leftCols(3)  * center_cross;
+    MR.rightCols(3) += MR.leftCols(3) * center_cross;
+
+    // Project all mass-normalized modes onto the six rigid-body directions
+    const DynamicMatrix P = Phi.transpose() * MR;
+    for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
+        modes[static_cast<std::size_t>(i)].participation = P.row(i).transpose();
+    }
+
+    // (9) Print + write
     display_eigen_summary(modes);
     write_results(modes, output, writer, id, model);
 
