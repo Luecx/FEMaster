@@ -39,8 +39,10 @@ void request_tokens(Parser& parser, const std::array<std::string, 32>& tokens) {
         if (token.empty()) continue;
 
         const auto field = io::writer::output_field_from_request(token);
-        logging::error(field.has_value(),
-            "Unsupported output field request: ", token);
+        if (!field.has_value()) {
+            logging::warning(false, "Unsupported output field request: ", token, " (ignored)");
+            continue;
+        }
 
         // Harmonic response stores real and imaginary solution components as
         // separate primary fields. Standard Abaqus/CalculiX U/S/E requests
