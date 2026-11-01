@@ -3,8 +3,8 @@ name: Build — Cross-Platform
 on:
   push:
     branches:
-      - '**'
-      
+      - master
+
   workflow_dispatch:
     inputs:
       platform:
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   compile-linux:
-    if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -60,6 +60,7 @@ jobs:
         run: |
           set -o pipefail
           source /opt/intel/oneapi/setvars.sh
+
           cmake --build --preset linux-mkl-omp \
             2>&1 | tee compile-linux-build.log
 
@@ -76,7 +77,7 @@ jobs:
           retention-days: 14
 
   compile-windows:
-    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     runs-on: windows-latest
 
     steps:
@@ -130,7 +131,7 @@ jobs:
           retention-days: 14
 
   compile-macos:
-    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'macos' }}
     runs-on: macos-15
 
     steps:
@@ -159,6 +160,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+
           cmake --build --preset macos-omp-accelerate \
             2>&1 | tee compile-macos-build.log
 
