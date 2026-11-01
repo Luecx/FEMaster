@@ -468,7 +468,7 @@ void LinearEigenfrequency::run() {
         m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
     }
 
-    // (8) Construct the mass-weighted rigid-body directions about the mass center
+    // (8) Build mass-weighted rigid directions about the mass center or origin
     const DynamicMatrix MR = build_mass_weighted_rigid_body_directions(
         active_dof_idx_mat, *model->_data->positions, M
     );
