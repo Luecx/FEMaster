@@ -25,7 +25,8 @@
  *   (7) Recover full mode shapes:
  *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
  *       Expand to node x 6 and project all modes onto global rigid-body motions.
- *   (8) Print a summary table and write all results.
+ *   (8) Assemble six mass-centered rigid-body directions and project all modes.
+ *   (9) Print a summary table and write all results.
  *
  * Implementation highlights
  * -------------------------
