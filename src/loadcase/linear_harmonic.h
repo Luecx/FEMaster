@@ -1,24 +1,24 @@
 /**
  * @file linear_harmonic.h
- * @brief Declares the direct linear harmonic response load case.
+ * @brief Declares full and modal-reduced steady-state harmonic response.
  *
- * Solves the steady-state response
+ * The load case solves the complex equilibrium equation
  *
- *     (K - omega^2 M + i omega C) u_hat = f_hat
+ *     (K - omega^2 M + i omega C) u_hat = f_hat,
  *
- * over a prescribed set of excitation frequencies. The implementation uses a
- * real 2x2 block system so the existing real sparse solver backends can be
- * reused.
+ * with Rayleigh damping C = alpha M + beta K. Homogeneous support constraints
+ * are eliminated before the frequency sweep. A real block representation
+ * allows FEMaster's existing real-valued solvers to handle complex responses.
  *
+ * The optional *MODALBASIS setting constructs a Ritz space from low-frequency
+ * eigenmodes and static residual vectors for the target load patterns.
+ * Both approaches recover real and imaginary displacement result fields;
+ * corresponding stresses and strains are recovered by the output handler.
+ *
+ * @see LinearHarmonic
  * @see src/loadcase/linear_harmonic.cpp
  * @author Finn Eggers
  * @date 05.08.2026
- *
- * Evaluates (K - omega^2 M + i omega C) u_hat = f_hat over the supplied
- * frequencies using a real block representation and Rayleigh damping. run()
- * obtains supports and amplituded loads from the current ModelData state.
- * This object owns frequency, damping, solver and output settings, while direct
- * condition history and collector-activated conditions remain with the model.
  */
 
 #pragma once
@@ -35,19 +35,35 @@ namespace fem {
 namespace loadcase {
 
 /**
- * @struct LinearHarmonic
- * @brief Executes a direct linear harmonic response analysis.
+ * @brief Executes a frequency sweep for linear structural harmonic response.
+ *
+ * The default method solves the full constrained complex dynamic stiffness
+ * through a real sparse block system. When modal_basis is enabled, low-frequency
+ * generalized eigenvectors and mass-orthogonal static load responses define
+ * a reduced Ritz space for the same frequency-dependent equations.
+ *
+ * The step-owned target_conditions supply supports and frequency-dependent
+ * loads. Structural matrices and the null-space constraint transformation
+ * are reused throughout the sweep. Real and imaginary fields are written
+ * separately.
  */
 struct LinearHarmonic : public LoadCase {
-    std::vector<Precision> frequencies; ///< Excitation frequencies.
+    // Excitation frequencies in Hz; support and load state is inherited
+    // from LoadCase through target_conditions.
+    // The solver evaluates one result frame per value
+    std::vector<Precision> frequencies;
 
+    // Solver backend for the full or reduced harmonic system
     solver::SolverDevice device = solver::CPU;
     solver::SolverMethod method = solver::DIRECT;
 
+    // Homogeneous supports are reduced by the null-space transformation
     constraint::ConstraintTransformer::Method constraint_method =
         constraint::ConstraintTransformer::Method::NullSpace;
 
-    tools::RayleighDamping damping; ///< Proportional viscous damping model.
+    // Rayleigh damping coefficients and optional modal residual reduction
+    tools::RayleighDamping damping;
+    bool modal_basis = false;
 
     // Construction and default result requests
     LinearHarmonic() {

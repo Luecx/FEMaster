@@ -29,6 +29,17 @@
 
 namespace fem::io::reader::commands {
 
+/**
+ * Registers excitation-frequency sweeps and optional modal reduction.
+ *
+ * FREQUENCIES stores an explicit list of non-negative excitation frequencies,
+ * linearly spaced between its endpoints. MODALBASIS only enables the Ritz-space
+ * solution; eigenvector computation and static-residual enrichment take place
+ * within LinearHarmonic::run() after the structural matrices are assembled.
+ *
+ * @param registry DSL command registry.
+ * @param parser Parser providing the active harmonic load case.
+ */
 void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("FREQUENCIES", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
@@ -89,6 +100,33 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
                         })
                 )
         );
+    });
+
+    // A bare MODALBASIS card selects the reduced harmonic solution.
+    // The Ritz basis is assembled later from modes and static load responses.
+    registry.command("MODALBASIS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.doc(
+            "Use eigenmodes below twice the maximum excitation frequency and "
+            "static load residuals; an empty basis uses the direct solver.");
+
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
+            // Validate the active procedure and reject unsupported parameters
+            auto* loadcase = parser.active_loadcase();
+            logging::error(loadcase != nullptr,
+                "MODALBASIS must appear inside *LOADCASE");
+
+            auto* harmonic = loadcase->as<loadcase::LinearHarmonic>();
+            logging::error(harmonic != nullptr,
+                "MODALBASIS not supported for loadcase type ", loadcase->type_name());
+            logging::error(keys._kv.empty(),
+                "MODALBASIS does not accept parameters");
+
+            // Only record the choice; construction belongs to the load case
+            harmonic->modal_basis = true;
+        });
+
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

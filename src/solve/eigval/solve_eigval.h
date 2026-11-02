@@ -101,13 +101,25 @@ eigvals(SolverDevice device,
         int k,
         const EigvalOpts& opts);
 
-
+/**
+ * Extracts generalized eigenpairs inside an open eigenvalue interval.
+ *
+ * Sparse eigensolvers can compute at most N-1 eigenpairs. If a non-null
+ * interval_unresolved pointer is supplied and the solver cannot establish
+ * complete interval coverage without the Nth eigenpair, the function returns
+ * an empty vector and sets the flag to true. Callers can then use a direct
+ * physical response solver. Otherwise, incomplete coverage remains an error.
+ *
+ * @param interval_unresolved Optional flag for the sparse coverage limit.
+ * @return Complete interval eigenpairs unless the flag reports unresolved.
+ */
 std::vector<EigvalPair>
 eigvals(SolverDevice device,
         const SparseMatrix& A,
         const SparseMatrix& B,
         Precision min_val,
         Precision max_val,
-        const EigvalOpts& opts);
+        const EigvalOpts& opts,
+        bool* interval_unresolved = nullptr);
 
 } // namespace fem::solver
