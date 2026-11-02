@@ -35,7 +35,8 @@ eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, int k
 }
 
 std::vector<EigvalPair>
-eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val, const EigvalOpts& opts) {
+eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val,
+        const EigvalOpts& opts, bool* interval_unresolved) {
     logging::error(A.rows() == A.cols(), "A must be square");
     logging::error(B.rows() == B.cols(), "B must be square");
     logging::error(A.rows() == B.rows(), "A and B must have the same size");
@@ -45,9 +46,13 @@ eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, Preci
     detail::ensure_compressed(A);
     detail::ensure_compressed(B);
 
+    // Report only the unsupported full-spectrum case; an empty covered
+    // interval is distinct from one whose sparse coverage cannot be proved.
+    if (interval_unresolved) *interval_unresolved = false;
+
     return (device == GPU)
-        ? detail::eigval_general_gpu(A, B, min_val, max_val, opts)
-        : detail::eigval_general_cpu(A, B, min_val, max_val, opts);
+        ? detail::eigval_general_gpu(A, B, min_val, max_val, opts, interval_unresolved)
+        : detail::eigval_general_cpu(A, B, min_val, max_val, opts, interval_unresolved);
 }
 
 

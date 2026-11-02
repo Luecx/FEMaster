@@ -67,10 +67,12 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const Ei
  * interval width. A nextafter step ensures strict separation after rounding.
  * Matrix units, constraints and any physical scaling remain caller-owned.
  *
- * @return Eigenpairs within the open interval, in the supplied coordinates.
+ * @param interval_unresolved Optional fallback signal for Nth-eigenpair coverage.
+ * @return Eigenpairs within the open interval, or empty if coverage is unresolved.
  */
 std::vector<EigvalPair>
-eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val, const EigvalOpts& opts) {
+eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_val, Precision max_val,
+                   const EigvalOpts& opts, bool* interval_unresolved) {
     logging::error(opts.mode == EigvalMode::ShiftInvert,
         "Generalized eigval interval supports only ShiftInvert for eigenfrequency analysis");
     logging::error(A.rows() > 1,
@@ -95,7 +97,8 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
 
     const int max_attempt = static_cast<int>(A.rows()) - 1;
 #ifdef USE_MKL
-    // compute eigenvalues below min and below max
+    // Count eigenvalues below the interval's upper bound using the inertia of
+    // K - max_val M; no partial eigenvectors need to be computed yet
     Eigen::PardisoLDLT<SparseMatrix> solver{};
     SparseMatrix D = A - max_val * B;
     D.makeCompressed();
@@ -104,11 +107,20 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
         "Generalized eigval interval: shifted stiffness factorization failed");
     const int num_below_max = solver.pardisoParameterArray()[22];
 
-    if (num_below_max == 0) {
+    logging::error(num_below_max >= 0 && num_below_max <= static_cast<int>(A.rows()),
+        "Generalized eigval interval: invalid inertia count");
+
+    if (num_below_max == 0) return {};
+
+    // All N eigenvalues lie below the upper bound: the partial solver cannot
+    // return the requested complete basis. Let opted-in callers use direct
+    // harmonic response rather than requesting the unsupported k = N.
+    if (num_below_max > max_attempt) {
+        logging::error(interval_unresolved != nullptr,
+            "Generalized eigval interval requires k < N in sparse partial mode");
+        *interval_unresolved = true;
         return {};
     }
-    logging::error(num_below_max > 0 && num_below_max <= max_attempt,
-        "Generalized eigval interval requires k < N in sparse partial mode");
 
     const int k = num_below_max + std::min(num_below_max / 5, max_attempt - num_below_max);
     std::vector<EigvalPair> eig_values_raw = eigval_general_cpu(A, B, k, opts_new);
@@ -124,9 +136,14 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
             break;
         }
 
-        // break if upper limit is reached
-        logging::error(i < max_attempt,
-            "Generalized eigval interval cannot establish complete coverage with k < N");
+        // N-1 eigenpairs without one above max_val cannot certify coverage:
+        // the uncomputed Nth mode might still lie inside the interval.
+        if (i == max_attempt) {
+            logging::error(interval_unresolved != nullptr,
+                "Generalized eigval interval cannot establish complete coverage with k < N");
+            *interval_unresolved = true;
+            return {};
+        }
     }
 #endif
 
