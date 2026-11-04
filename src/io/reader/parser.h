@@ -111,6 +111,7 @@ struct StepState {
 class Parser {
     // Persistent model and result-output state
     std::shared_ptr<model::Model> model_;
+    std::string                   input_path_;
     io::writer::ResultWriters     writer_;
 
     // Complete command grammar used exclusively for documentation queries
@@ -165,6 +166,7 @@ public:
     void document(const DocOptions& opts) const;
 
     // Current model and read-only documentation grammar
+    const std::string& input_path() const { return input_path_; }
     const model::Model& model() const;
           model::Model& model();
     const io::dsl::Registry& registry() const;
