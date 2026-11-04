@@ -92,6 +92,7 @@ void Parser::run(const std::string& input_path,
     next_loadcase_id_ = 1;
     step_state_ = StepState{};
     node_transforms.clear();
+    input_path_ = input_path;
     committed_conditions_ = bc::ConditionState{};
     pending_conditions_   = bc::ConditionState{};
     for (auto& index : committed_identifiers_) index.clear();
@@ -220,6 +221,10 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Transition from sparse topology to dense assembly data
     // ---------------------------------------------------------------------
     model_->compile();
+
+    // Geometric imperfections modify the stress-free reference configuration
+    // before geometry-dependent normals and solver data are prepared.
+    root.execute_children("IMPERFECTION");
 
     // ---------------------------------------------------------------------
     // Assembly regions, properties and dense fields
@@ -959,6 +964,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_instance    (registry, mdl);
     commands::register_end_instance(registry);
     commands::register_node        (registry, mdl);
+    commands::register_imperfection(registry, mdl, *this);
     commands::register_element     (registry, mdl);
     commands::register_nset        (registry, mdl);
     commands::register_elset       (registry, mdl);
