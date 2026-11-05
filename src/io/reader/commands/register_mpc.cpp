@@ -3,8 +3,8 @@
  * @brief Registers simple Abaqus-style multi-point constraints.
  *
  * The shared MPC command accepts the two-node BEAM, TIE and PIN relations used
- * by both native and Abaqus input modes. Each data line is resolved after model
- * compilation and stored as one constraint::Mpc definition.
+ * by both native and Abaqus input modes. Node sets are expanded after model
+ * compilation into individual constraint::Mpc definitions.
  *
  * Equation generation remains inside constraint::Mpc and is deferred until the
  * active structural DOF map is built for a load case.
@@ -36,7 +36,9 @@ namespace dsl = fem::io::dsl;
  *
  *     TYPE, dependent node, independent node
  *
- * and creates one persistent Mpc object. Only the simple two-node BEAM, TIE and
+ * and creates one Mpc object per resolved node pair. A first-operand NSET
+ * expands against a single master node or pairs with an equally sized second
+ * NSET in compiled set order. Only the simple two-node BEAM, TIE and
  * PIN types are accepted; more specialized MPC formulations require additional
  * geometric definitions and are intentionally outside this command.
  *
@@ -76,11 +78,40 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                             "MPC: unsupported type ", type, "; supported types are BEAM, TIE and PIN");
                     }
 
-                    model._data->mpcs.emplace_back(
-                        model.compiled_node_id(node_1),
-                        model.compiled_node_id(node_2),
-                        mpc_type
-                    );
+                    const bool first_is_set  = model._data->node_sets.has(node_1);
+                    const bool second_is_set = model._data->node_sets.has(node_2);
+
+                    logging::error(!second_is_set || first_is_set,
+                        "MPC: second node set requires a first node set");
+
+                    if (!first_is_set) {
+                        model._data->mpcs.emplace_back(
+                            model.compiled_node_id(node_1),
+                            model.compiled_node_id(node_2),
+                            mpc_type
+                        );
+                        return;
+                    }
+
+                    const auto first = model._data->node_sets.get(node_1);
+                    logging::error(first != nullptr && first->size() > 0,
+                        "MPC: first node set ", node_1, " is empty");
+
+                    if (second_is_set) {
+                        const auto second = model._data->node_sets.get(node_2);
+                        logging::error(second != nullptr && second->size() == first->size(),
+                            "MPC: node set ", node_2, " has incompatible size");
+
+                        for (std::size_t i = 0; i < first->size(); ++i) {
+                            model._data->mpcs.emplace_back(first->at(i), second->at(i), mpc_type);
+                        }
+                        return;
+                    }
+
+                    const ID master = model.compiled_node_id(node_2);
+                    for (std::size_t i = 0; i < first->size(); ++i) {
+                        model._data->mpcs.emplace_back(first->at(i), master, mpc_type);
+                    }
                 })
             )
         );
