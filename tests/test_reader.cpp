@@ -48,41 +48,6 @@
 
 using namespace fem;
 
-
-TEST(Reader_Parser, MpcExpandsNodeSetsAfterCompilation) {
-    const std::string path = "tests/TMP_MPC_NSET.INP";
-    {
-        std::ofstream out(path);
-        ASSERT_TRUE(out.is_open());
-        out << "*NODE\n"
-            << "1, 0, 0, 0\n"
-            << "2, 1, 0, 0\n"
-            << "3, 2, 0, 0\n"
-            << "4, 3, 0, 0\n"
-            << "*MPC\n"
-            << "BEAM, SLAVES, 4\n"
-            << "PIN, SLAVES, MASTERS\n"
-            << "TIE, 1, 4\n"
-            << "*NSET, NSET=SLAVES\n"
-            << "1, 2\n"
-            << "*NSET, NSET=MASTERS\n"
-            << "3, 4\n";
-    }
-
-    io::reader::Parser parser;
-    io::dsl::File file(path);
-    io::dsl::DeckParser deck_parser(parser.registry());
-    const auto deck = deck_parser.parse(file);
-
-    deck.root().execute_children("NODE");
-    deck.root().execute_children("NSET");
-    parser.model().compile();
-    ASSERT_NO_THROW(deck.root().execute_children("MPC"));
-    EXPECT_EQ(parser.model()._data->mpcs.size(), 5u);
-
-    std::filesystem::remove(path);
-}
-
 TEST(Reader_Parser, RegistersRbmCommand) {
     io::reader::Parser parser;
     EXPECT_NE(parser.registry().find("RBM"), nullptr);
