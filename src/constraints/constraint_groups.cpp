@@ -39,6 +39,7 @@ Equations ConstraintGroups::flatten() const {
     all.insert(all.end(), couplings .begin(), couplings .end());
     all.insert(all.end(), ties      .begin(), ties      .end());
     all.insert(all.end(), rbms      .begin(), rbms      .end());
+    all.insert(all.end(), pretensions.begin(), pretensions.end());
     all.insert(all.end(), others    .begin(), others    .end());
 
     return all;
@@ -98,6 +99,7 @@ void ConstraintGroups::report() const {
         {"Couplings",  couplings},
         {"Ties",       ties},
         {"RBMs",       rbms},
+        {"Pretensions", pretensions},
         {"Other",      others}
     };
 

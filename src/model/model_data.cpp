@@ -20,6 +20,9 @@
 
 #include "model_data.h"
 #include "element/element.h"
+#include "model.h"
+
+#include <algorithm>
 
 namespace fem::model {
 

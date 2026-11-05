@@ -67,6 +67,7 @@ struct Part : public fem::Namable {
     std::unordered_map<ID, ElementPtr> elements;
     std::unordered_map<ID, SurfacePtr> surfaces;
     std::unordered_map<ID, LinePtr>    lines;
+    std::unordered_map<ID, ID>         surface_element_ids;
 
     // Named regions in the same local identifier space as the topology above.
     // Each registry also owns its aggregate *ALL region. Compilation creates an

@@ -1,0 +1,85 @@
+\chapter{Bolt Pretension}
+\label{chap:pretension}
+
+Pretension in linear statics requires two coincident, planar solid faces with
+separate node IDs. The preprocessor must split the mesh. FEMaster does not
+modify topology. Reference-coordinate matching must be bijective: missing or
+ambiguous matches are rejected.
+
+\keywordpage{PRETENSIONSECTION}
+
+\begin{keywordparameters}
+\key{NAME} & required & Unique section name. \\
+\key{SURFACE\_A} & required & First solid face set. \\
+\key{SURFACE\_B} & required & Coincident, topologically separate second set. \\
+\end{keywordparameters}
+
+The section axis is the area-weighted normal of \val{SURFACE\_A}. For every
+paired node, both tangential relative displacements vanish. All pairs share
+one axial relative displacement in \val{FORCE} mode; this uses only physical
+nodal degrees of freedom.
+
+\keywordpage{PRETENSION}
+
+\begin{keywordparameters}
+\key{SECTION} & required & Previously defined section. \\
+\key{MODE} & required & \val{FORCE} or \val{HOLD}. \\
+\key{VALUE} & for FORCE & Total signed force on side B. \\
+\end{keywordparameters}
+
+The force is distributed equally across node pairs and applied in opposite
+directions on the two faces. HOLD fixes the common axial gap from the preceding
+successfully completed step, while subsequent loads may change the force.
+Before its first action, a section has zero gap. No control node or additional
+degree of freedom is created.
+
+A failed numerical post-check rejects the step before results and step history
+are accepted. It does not replace the last accepted pretension gap. HOLD without
+a previously accepted gap is rejected.
+
+Both modes use the common initial/target condition history. A new command
+replaces only the target prescription for its section; the initial prescription
+remains unchanged. Without a new command, the last accepted prescription is
+inherited. HOLD freezes the last accepted gap when its condition is defined.
+There is no separate pretension mode or load-step manager on the section.
+
+\begin{femasterdeck}
+*PRETENSIONSECTION, NAME=PT1, SURFACE_A=CUT_A, SURFACE_B=CUT_B
+*LOADCASE, TYPE=LINEARSTATIC, NAME=PRELOAD
+*PRETENSION, SECTION=PT1, MODE=FORCE, VALUE=1000
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*END
+*LOADCASE, TYPE=LINEARSTATIC, NAME=SERVICE
+*PRETENSION, SECTION=PT1, MODE=HOLD
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*END
+\end{femasterdeck}
+
+Use NULLSPACE or ELIMINATION. LAGRANGE, nonlinear and perturbation steps are
+unsupported for pretension.
+
+\section{Results}
+
+\val{PTGAP} gives the axial relative displacement on both nodes of each pair.
+\val{PTFORC} gives opposite transmitted force vectors on the two faces.
+The signed section force is the sum of \val{PTFORC} on side B projected onto
+the section axis. \val{TF} repeats that total on side B nodes. Additional active supports, couplings, MPCs, ties, connectors, rigid-body constraints
+and manual equations on either cut face are rejected. Place constraints away from the cut;
+external loads at cut nodes remain supported.
+
+\section{Validation scope}
+
+The focused regression suite covers FORCE followed by HOLD and external loading,
+oblique cut axes, both supported constraint methods and two independent sections
+with different axes and forces. It checks common axial gap, zero tangential
+relative displacement, opposite interface forces and analytical section-force
+values. It also checks rejection of invalid node pairing, additional constraints
+at the cut and failed numerical post-checks.
+
+For a fixed-ended straight bar with $E=210000$, $\nu=0$, $A=4$ and length $L=3$,
+a pretension force of $1000$ produces a gap of $1000L/(EA)=0.00357142857$.
+A total axial load of $-4$ at length coordinate $2$ increases the compressive
+force at the held cut at coordinate $1$ to $1000+4/3$.
+These are internal analytical regressions; comparison with an external solver
+has not been completed. They do not establish that the full repository test
+suite passes.

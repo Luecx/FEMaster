@@ -45,6 +45,7 @@ struct ConstraintGroups {
     Equations couplings;
     Equations ties;
     Equations rbms;
+    Equations pretensions;
     Equations others;
 
     // Combine all constraint groups into a single equation list.

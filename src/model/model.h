@@ -162,6 +162,11 @@ struct Model {
     // Register a named, reusable time-history definition.
     void add_amplitude(bc::Amplitude::Ptr amplitude);
 
+    void add_pretension_interface_section(const std::string& name,
+                                          const std::string& surface_set_a,
+                                          const std::string& surface_set_b);
+    void prepare_pretension_sections();
+
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal
     // construction prepares element-nodal reference geometry. step_begin() and
@@ -204,6 +209,8 @@ struct Model {
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
 
     // Element operators use active numbering and optional element scaling
+    Field build_pretension_gap_matrix(const Field& displacement);
+    void capture_pretension_gaps(const Field& displacement, const bc::ConditionState& target);
     SparseMatrix build_stiffness_matrix(
         SystemDofIds& indices,
         const Field* base_temperature = nullptr,

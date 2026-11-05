@@ -44,6 +44,7 @@
 #include "../material/material.h"
 #include "../section/profile.h"
 #include "../section/section.h"
+#include "../section/pretension_section.h"
 #include "instance.h"
 
 #include <string>
@@ -109,6 +110,7 @@ struct ModelData {
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
     std::vector<LinePtr>    lines;
+    std::vector<ID>         surface_element_ids;
 
     // Auxiliary point elements created from post-compile FEMaster POINTMASS
     // commands. They reference compiled node ids but deliberately stay outside
@@ -118,6 +120,7 @@ struct ModelData {
     // Assembly section assignments and shared non-topological definitions.
     std::vector<Section::Ptr> sections;
     Dict<Profile>             profiles;
+    std::vector<pretension::PretensionSection::Ptr> pretension_sections;
 
     // Named definitions shared across the complete assembly. Coordinate systems
     // and amplitudes are global resources rather than part-local topology.

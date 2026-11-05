@@ -33,6 +33,9 @@ class Parser;
 
 namespace fem::io::reader::commands {
 
+void register_pretension_section(fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_pretension(fem::io::dsl::Registry& registry, fem::model::Model& model, Parser& parser);
+
 // Native model and topology commands
 void register_amplitude        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_assembly         (fem::io::dsl::Registry& registry);

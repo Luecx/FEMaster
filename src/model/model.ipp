@@ -149,6 +149,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
             "Model: surface ", local_id, " is already defined in part ", active->name);
 
         active->surfaces.emplace(local_id, std::move(surface));
+        active->surface_element_ids[local_id] = element_id;
         active->surface_sets.add(local_id);
     }
 

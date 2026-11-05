@@ -114,6 +114,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
             if (surface) {
                 const ID surface_id = static_cast<ID>(model._data->surfaces.size());
                 model._data->surfaces.push_back(std::move(surface));
+                model._data->surface_element_ids.push_back(element_id);
                 model._data->surface_sets.activate(name)->add(surface_id);
             }
             if (line) {
