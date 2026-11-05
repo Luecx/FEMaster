@@ -54,19 +54,19 @@ TEST(Reader_Parser, MpcExpandsNodeSetsAfterCompilation) {
     {
         std::ofstream out(path);
         ASSERT_TRUE(out.is_open());
-        out << "*NODE\\n"
-            << "1, 0, 0, 0\\n"
-            << "2, 1, 0, 0\\n"
-            << "3, 2, 0, 0\\n"
-            << "4, 3, 0, 0\\n"
-            << "*MPC\\n"
-            << "BEAM, SLAVES, 4\\n"
-            << "PIN, SLAVES, MASTERS\\n"
-            << "TIE, 1, 4\\n"
-            << "*NSET, NSET=SLAVES\\n"
-            << "1, 2\\n"
-            << "*NSET, NSET=MASTERS\\n"
-            << "3, 4\\n";
+        out << "*NODE\n"
+            << "1, 0, 0, 0\n"
+            << "2, 1, 0, 0\n"
+            << "3, 2, 0, 0\n"
+            << "4, 3, 0, 0\n"
+            << "*MPC\n"
+            << "BEAM, SLAVES, 4\n"
+            << "PIN, SLAVES, MASTERS\n"
+            << "TIE, 1, 4\n"
+            << "*NSET, NSET=SLAVES\n"
+            << "1, 2\n"
+            << "*NSET, NSET=MASTERS\n"
+            << "3, 4\n";
     }
 
     io::reader::Parser parser;
