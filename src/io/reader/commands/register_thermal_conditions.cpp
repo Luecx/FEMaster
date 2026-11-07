@@ -3,7 +3,7 @@
  * @brief Registers persistent scalar thermal boundary-condition histories.
  *
  * TEMPERATURE defines structural target-temperature fields. HEATFLUX and
- * CONVECTION remain thermal condition histories for heat-transfer analyses.
+ * CONVECTION, DSFLUX and SFILM form thermal histories for heat-transfer analyses.
  * OP=NEW on TEMPERATURE resets only the current step's target field.
  *
  * Thermal boundary conditions are distinct from structural predefined fields.
@@ -35,7 +35,7 @@ namespace fem::io::reader::commands {
  * Registers the three independent thermal input-history families.
  *
  * TEMPERATURE writes nodal structural target fields. HEATFLUX and CONVECTION
- * remain separate thermal condition histories for future heat-transfer steps.
+ * remain separate thermal condition histories for heat-transfer steps.
  *
  * @param registry Registry receiving the thermal command grammar.
  * @param parser Parser exposing the authoritative model state.
@@ -197,7 +197,7 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
 
     // Abaqus surface heat flux: SURFACE, S, positive heat input per unit area
     registry.command("DSFLUX", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "HEATTRANSFER"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "HEATTRANSFER"}));
         command.doc("Abaqus uniform surface heat flux, mapped to the thermal HEAT_FLUX family.");
         auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
         command.keyword(dsl::KeywordSpec::make()
@@ -244,7 +244,7 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
 
     // Abaqus surface-based film: SURFACE, F, sink temperature, film coefficient
     registry.command("SFILM", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "HEATTRANSFER"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "HEATTRANSFER"}));
         command.doc("Abaqus uniform surface film, mapped to the thermal CONVECTION family.");
         auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
         command.keyword(dsl::KeywordSpec::make()
