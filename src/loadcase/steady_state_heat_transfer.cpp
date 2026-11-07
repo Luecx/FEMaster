@@ -90,7 +90,7 @@ void SteadyStateHeatTransfer::run() {
     options.method = constraint_method;
     ConstraintTransformer transformer(equations, dofs, n_dofs, options);
 
-    const SparseMatrix A = transformer.assemble_system_matrix(K);
+    SparseMatrix       A = transformer.assemble_system_matrix(K);
     const DynamicVector b = transformer.assemble_system_rhs(K, f);
 
     logging::error(mattools::all_finite(A),
