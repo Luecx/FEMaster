@@ -110,11 +110,20 @@ void SteadyStateHeatTransfer::run() {
     model::Field temperature = mattools::expand_vec_to_mat(dofs, T);
     temperature.name = "TEMPERATURE";
 
-    // Preserve unavailable temperatures on nodes with no thermal equation
+    // Unconnected and non-thermal nodes are not part of the solved system.
+    // Preserve their step-start temperature so the committed field remains
+    // a complete state for subsequent thermal or structural analyses.
+    // A missing start value is not a physical zero and must not be invented.
+    const auto& start_temperature = model->_data->temperature_target;
     for (Index node = 0; node < temperature.rows; ++node) {
-        if (dofs(node, 0) < 0) {
-            temperature(node, 0) = std::numeric_limits<Precision>::quiet_NaN();
-        }
+        if (dofs(node, 0) >= 0) continue;
+
+        logging::error(start_temperature != nullptr
+                    && node < start_temperature->rows
+                    && start_temperature->components == 1
+                    && std::isfinite((*start_temperature)(node, 0)),
+            "STEADYHEATTRANSFER: no finite start temperature for inactive thermal node ", node);
+        temperature(node, 0) = (*start_temperature)(node, 0);
     }
 
     // Publish the total temperature for output and subsequent structural steps
