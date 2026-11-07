@@ -20,10 +20,13 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 
+#include <limits>
 #include <memory>
 #include <utility>
 
 namespace fem::loadcase {
+
+using constraint::ConstraintTransformer;
 
 /**
  * Solves the end-of-step stationary balance (K_cond + K_film) T = q.
@@ -110,7 +113,7 @@ void SteadyStateHeatTransfer::run() {
     // Preserve unavailable temperatures on nodes with no thermal equation
     for (Index node = 0; node < temperature.rows; ++node) {
         if (dofs(node, 0) < 0) {
-            temperature(node, 0) = NAN;
+            temperature(node, 0) = std::numeric_limits<Precision>::quiet_NaN();
         }
     }
 
