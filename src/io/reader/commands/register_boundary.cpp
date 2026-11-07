@@ -1,6 +1,6 @@
 /**
  * @file register_boundary.cpp
- * @brief Registers Abaqus displacement and rotation constraints.
+ * @brief Registers Abaqus mechanical and scalar-temperature constraints.
  *
  * Abaqus `BOUNDARY` rows are translated into shared FEMaster support
  * definitions for individual nodes or compiled node sets. Every prescribed
@@ -8,10 +8,11 @@
  * can replace one DOF without affecting independent support components. Nodal
  * `TRANSFORM` assignments provide the optional local basis.
  *
- * The resulting shared supports are retained in ModelData's persistent
- * SUPPORT history. OP=MOD replaces matching node/DOF definitions, while OP=NEW
- * clears the complete support family before the rows in the current block are
- * applied. Initial BOUNDARY definitions outside STEP seed the same history.
+ * Mechanical DOFs 1-6 create SUPPORT definitions, while Abaqus temperature
+ * DOF 11 creates independent TEMPERATURE constraints for heat-transfer steps.
+ * OP=MOD replaces matching targets; OP=NEW resets the current procedure's
+ * boundary-condition family. Initial BOUNDARY definitions seed the matching
+ * persistent history independently of the selected analysis procedure.
  *
  * Procedure-dependent validation of nonzero values and amplitudes remains tied
  * to the currently supported solver behavior.
@@ -41,14 +42,12 @@
 namespace fem::io::reader::commands {
 
 /**
- * Registers initial and STEP-local prescribed structural components.
+ * Registers initial and STEP-local prescribed mechanical or thermal components.
  *
- * Initial and analysis definitions modify the same ModelData SUPPORT history.
- * NEW clears this family when the keyword is encountered; MOD replaces only
- * matching normalized node/DOF targets. Each row is split into individual
- * prescriptions and nodal TRANSFORM bases are retained for equation assembly.
- * Supported procedures validate nonzero displacements and amplitude scaling
- * before definitions are added. END STEP reads the resulting history directly.
+ * Structural DOFs retain the existing support splitting and nodal TRANSFORM
+ * semantics. DOF 11 instead prescribes an absolute nodal scalar temperature;
+ * it is mapped to thermal component zero when the condition is assembled.
+ * The two independent condition families preserve their own history updates.
  *
  * @param registry Abaqus registry receiving the BOUNDARY command.
  * @param parser Reader supplying compiled targets and current procedure controls.
@@ -189,7 +188,7 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
             )
         );
 
-        // Abaqus/CAE can emit OP=NEW without data rows to clear prior supports.
+        // Abaqus/CAE can emit OP=NEW without data rows to clear prior constraints.
         // Keep all other BOUNDARY occurrences subject to the normal row requirement.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
