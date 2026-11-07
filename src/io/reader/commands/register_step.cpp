@@ -10,8 +10,9 @@
  *
  * Supported procedures include static load control, Riks arc-length analysis,
  * linear static perturbation, eigenfrequency extraction, linear buckling, direct
- * implicit transient dynamics and direct steady-state harmonic response. Abaqus
- * Abaqus/CalculiX field-output requests are handled by the shared output
+ * implicit transient dynamics, direct steady-state harmonic response and
+ * stationary uncoupled heat transfer. Abaqus/CalculiX field-output requests
+ * are handled by the shared output
  * request registration and resolved by each load case at write time.
  *
  * @see loadcase::LinearStatic
@@ -20,6 +21,7 @@
  * @see loadcase::LinearBuckling
  * @see loadcase::Transient
  * @see loadcase::LinearHarmonic
+ * @see loadcase::SteadyStateHeatTransfer
  *
  * @author Finn Eggers
  * @date 17.08.2026
