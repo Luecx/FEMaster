@@ -26,12 +26,13 @@
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_heat_transfer.h"
 
 namespace fem::io::reader::commands {
 
 void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("CONSTRAINTMETHOD", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc(
             "Select constraint backend for supported structural loadcases: NULLSPACE, LAGRANGE or ELIMINATION.\n"
             "LINEARHARMONIC currently accepts only NULLSPACE during execution.\n"
@@ -70,6 +71,10 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
             }
 
             if (auto* lc = base->as<loadcase::LinearStatic>()) {
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = base->as<loadcase::SteadyStateHeatTransfer>()) {
                 lc->constraint_method = method;
                 return;
             }
