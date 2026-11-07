@@ -28,12 +28,13 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_heat_transfer.h"
 
 namespace fem::io::reader::commands {
 
 void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("SOLVER", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc(
             "Configure solver options for the active loadcase.\n"
             "\n"
@@ -72,6 +73,7 @@ void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) 
             if (configure(base->as<loadcase::LinearBuckling>())) return;
             if (configure(base->as<loadcase::LinearStaticTopo>())) return;
             if (configure(base->as<loadcase::LinearStatic>())) return;
+            if (configure(base->as<loadcase::SteadyStateHeatTransfer>())) return;
             if (configure(base->as<loadcase::NonlinearStatic>())) return;
             if (configure(base->as<loadcase::LinearHarmonic>())) return;
             if (configure(base->as<loadcase::Transient>())) return;

@@ -142,6 +142,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("HYPERELASTIC");
         material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
+        material->execute_children("CONDUCTIVITY");
         material->execute_children("THERMALEXPANSION");
         material->execute_children("EXPANSION");
 
@@ -338,7 +339,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         return name == "BOUNDARY" || name == "SUPPORT" || name == "CLOAD" || name == "DLOAD"
             || name == "DSLOAD" || name == "PLOAD" || name == "VLOAD"
             || name == "INERTIALOAD" || name == "TEMPERATURE"
-            || name == "HEATFLUX" || name == "CONVECTION";
+            || name == "HEATFLUX" || name == "CONVECTION"
+            || name == "DSFLUX" || name == "SFILM";
     };
 
     for (const auto* command : root.children()) {
@@ -371,7 +373,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
             const auto& procedure_name = procedure->command().name_;
             logging::error(procedure_name == "STATIC" || procedure_name == "FREQUENCY"
                         || procedure_name == "BUCKLE" || procedure_name == "DYNAMIC"
-                        || procedure_name == "STEADYSTATEDYNAMICS",
+                        || procedure_name == "STEADYSTATEDYNAMICS"
+                        || procedure_name == "HEATTRANSFER",
                 "STEP: unsupported analysis procedure ", procedure_name);
 
             const auto entries = procedure->children();
@@ -617,10 +620,13 @@ void Parser::end_loadcase() {
         }
     }
 
-    // Restore the reference configuration for independent analyses and validate
-    // the prescribed nodal temperature before solving.
+    // Restore the reference configuration for independent analyses.
+    // Structural analyses consume prescribed target temperatures and require
+    // complete input fields. Heat transfer instead computes its target and
+    // validates the unsolved nodes against the available start state.
     loadcase->prepare_state();
-    if (model_->_data->temperature_target) {
+    if (loadcase->type_name() != "STEADYHEATTRANSFER"
+        && model_->_data->temperature_target) {
         const auto& temperature = *model_->_data->temperature_target;
         for (Index node = 0; node < temperature.rows; ++node) {
             logging::error(std::isfinite(temperature(node, 0)),
@@ -992,6 +998,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, mdl);
     commands::register_plastic(registry, mdl);
     commands::register_density(registry, mdl);
+    commands::register_conductivity(registry, mdl);
     commands::register_expansion(registry, mdl);
     commands::register_orientation(registry, mdl);
     commands::register_profile(registry, mdl);

@@ -3,7 +3,7 @@
  * @brief Registers persistent scalar thermal boundary-condition histories.
  *
  * TEMPERATURE defines structural target-temperature fields. HEATFLUX and
- * CONVECTION remain thermal condition histories for heat-transfer analyses.
+ * CONVECTION, DSFLUX and SFILM form thermal histories for heat-transfer analyses.
  * OP=NEW on TEMPERATURE resets only the current step's target field.
  *
  * Thermal boundary conditions are distinct from structural predefined fields.
@@ -35,7 +35,7 @@ namespace fem::io::reader::commands {
  * Registers the three independent thermal input-history families.
  *
  * TEMPERATURE writes nodal structural target fields. HEATFLUX and CONVECTION
- * remain separate thermal condition histories for future heat-transfer steps.
+ * remain separate thermal condition histories for heat-transfer steps.
  *
  * @param registry Registry receiving the thermal command grammar.
  * @param parser Parser exposing the authoritative model state.
@@ -101,7 +101,7 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
 
     // Prescribed heat density supplies the scalar thermal right-hand side
     registry.command("HEATFLUX", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc("Prescribe surface heat input per unit reference area.");
         auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
         command.keyword(dsl::KeywordSpec::make()
@@ -148,7 +148,7 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
 
     // Newton cooling contributes both the ambient source and the film operator
     registry.command("CONVECTION", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc("Define surface convection by film coefficient and ambient temperature.");
         auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
         command.keyword(dsl::KeywordSpec::make()
@@ -192,6 +192,103 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
         // Empty OP=NEW blocks are valid resets; on_enter handles the history update.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))
+        );
+    });
+
+    // Abaqus surface heat flux: SURFACE, S, positive heat input per unit area
+    registry.command("DSFLUX", [&](dsl::Command& command) {
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "HEATTRANSFER"}));
+        command.doc("Abaqus uniform surface heat flux, mapped to the thermal HEAT_FLUX family.");
+        auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
+        command.keyword(dsl::KeywordSpec::make()
+            .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+            .key("AMPLITUDE").optional()
+        );
+        command.on_enter([&parser, amplitude](const dsl::Keys& keys) {
+            const std::string name = keys.raw("AMPLITUDE");
+            auto& data = *parser.model()._data;
+            logging::error(name.empty() || data.amplitudes.has(name),
+                "DSFLUX: amplitude ", name, " does not exist");
+            *amplitude = name.empty() ? nullptr : data.amplitudes.get(name);
+            if (keys.raw("OP") == "NEW") {
+                parser.clear_conditions(bc::HEAT_FLUX);
+            }
+        });
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
+                    .one<std::string>().name("SURFACE").desc("Compiled surface set or surface reference")
+                    .one<std::string>().name("TYPE").desc("Uniform surface flux label S")
+                    .one<Precision>().name("FLUX").desc("Heat flux density into the body")
+                )
+                .bind([&parser, amplitude](const std::string& target,
+                                           const std::string& type, Precision value) {
+                    logging::error(type == "S",
+                        "DSFLUX supports only uniform surface heat flux label S");
+                    logging::error(std::isfinite(value),
+                        "DSFLUX requires a finite heat flux density");
+
+                    auto flux = std::make_shared<bc::HeatFlux>();
+                    flux->region_    = parser.model().resolve_surface_region(target);
+                    flux->heat_flux_ = value;
+                    flux->amplitude_ = *amplitude;
+                    parser.modify_conditions(bc::HEAT_FLUX, "SURFACE:" + target, {std::move(flux)});
+                })
+            )
+        );
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::key_equals("OP", "NEW"))
+        );
+    });
+
+    // Abaqus surface-based film: SURFACE, F, sink temperature, film coefficient
+    registry.command("SFILM", [&](dsl::Command& command) {
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "HEATTRANSFER"}));
+        command.doc("Abaqus uniform surface film, mapped to the thermal CONVECTION family.");
+        auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
+        command.keyword(dsl::KeywordSpec::make()
+            .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+            .key("FILMAMPLITUDE").optional()
+        );
+        command.on_enter([&parser, amplitude](const dsl::Keys& keys) {
+            const std::string name = keys.raw("FILMAMPLITUDE");
+            auto& data = *parser.model()._data;
+            logging::error(name.empty() || data.amplitudes.has(name),
+                "SFILM: film amplitude ", name, " does not exist");
+            *amplitude = name.empty() ? nullptr : data.amplitudes.get(name);
+            if (keys.raw("OP") == "NEW") {
+                parser.clear_conditions(bc::CONVECTION);
+            }
+        });
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
+                    .one<std::string>().name("SURFACE").desc("Compiled surface set or surface reference")
+                    .one<std::string>().name("TYPE").desc("Uniform film label F")
+                    .one<Precision>().name("SINK").desc("Absolute ambient temperature")
+                    .one<Precision>().name("FILM").desc("Film coefficient")
+                )
+                .bind([&parser, amplitude](const std::string& target,
+                                           const std::string& type,
+                                           Precision ambient, Precision film) {
+                    logging::error(type == "F",
+                        "SFILM supports only uniform film label F");
+                    logging::error(std::isfinite(ambient) && std::isfinite(film) && film >= Precision(0),
+                        "SFILM requires finite sink temperature and nonnegative film coefficient");
+
+                    auto convection = std::make_shared<bc::Convection>();
+                    convection->region_              = parser.model().resolve_surface_region(target);
+                    convection->film_coefficient_    = film;
+                    convection->ambient_temperature_ = ambient;
+                    convection->amplitude_            = *amplitude;
+                    parser.modify_conditions(bc::CONVECTION, "SURFACE:" + target, {std::move(convection)});
+                })
+            )
+        );
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::key_equals("OP", "NEW"))
         );
     });
 }

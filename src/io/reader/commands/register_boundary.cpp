@@ -1,6 +1,6 @@
 /**
  * @file register_boundary.cpp
- * @brief Registers Abaqus displacement and rotation constraints.
+ * @brief Registers Abaqus mechanical and scalar-temperature constraints.
  *
  * Abaqus `BOUNDARY` rows are translated into shared FEMaster support
  * definitions for individual nodes or compiled node sets. Every prescribed
@@ -8,10 +8,11 @@
  * can replace one DOF without affecting independent support components. Nodal
  * `TRANSFORM` assignments provide the optional local basis.
  *
- * The resulting shared supports are retained in ModelData's persistent
- * SUPPORT history. OP=MOD replaces matching node/DOF definitions, while OP=NEW
- * clears the complete support family before the rows in the current block are
- * applied. Initial BOUNDARY definitions outside STEP seed the same history.
+ * Mechanical DOFs 1-6 create SUPPORT definitions, while Abaqus temperature
+ * DOF 11 creates independent TEMPERATURE constraints for heat-transfer steps.
+ * OP=MOD replaces matching targets; OP=NEW resets the current procedure's
+ * boundary-condition family. Initial BOUNDARY definitions seed the matching
+ * persistent history independently of the selected analysis procedure.
  *
  * Procedure-dependent validation of nonzero values and amplitudes remains tied
  * to the currently supported solver behavior.
@@ -32,6 +33,7 @@
 
 #include "../parser.h"
 #include "../../../bc/structural/support.h"
+#include "../../../bc/thermal/temperature.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -40,14 +42,12 @@
 namespace fem::io::reader::commands {
 
 /**
- * Registers initial and STEP-local prescribed structural components.
+ * Registers initial and STEP-local prescribed mechanical or thermal components.
  *
- * Initial and analysis definitions modify the same ModelData SUPPORT history.
- * NEW clears this family when the keyword is encountered; MOD replaces only
- * matching normalized node/DOF targets. Each row is split into individual
- * prescriptions and nodal TRANSFORM bases are retained for equation assembly.
- * Supported procedures validate nonzero displacements and amplitude scaling
- * before definitions are added. END STEP reads the resulting history directly.
+ * Structural DOFs retain the existing support splitting and nodal TRANSFORM
+ * semantics. DOF 11 instead prescribes an absolute nodal scalar temperature;
+ * it is mapped to thermal component zero when the condition is assembled.
+ * The two independent condition families preserve their own history updates.
  *
  * @param registry Abaqus registry receiving the BOUNDARY command.
  * @param parser Reader supplying compiled targets and current procedure controls.
@@ -55,7 +55,7 @@ namespace fem::io::reader::commands {
 void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE",
-            "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+            "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
@@ -79,7 +79,12 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
             // NEW resets that target history immediately when the keyword is
             // encountered; MOD leaves unrelated support slots untouched.
             if (keys.raw("OP") == "NEW") {
-                parser.clear_conditions(bc::SUPPORT);
+                // A thermal step replaces temperature constraints, not structural supports.
+                // Outside a step, the keyword may have initialized either family.
+                const auto* active = parser.active_loadcase();
+                const bool thermal = active != nullptr && active->type_name() == "STEADYHEATTRANSFER";
+                if (!thermal) parser.clear_conditions(bc::SUPPORT);
+                if (thermal || active == nullptr) parser.clear_conditions(bc::TEMPERATURE);
             }
         });
 
@@ -97,30 +102,51 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                                            int last_dof,
                                            Precision magnitude) {
                     if (last_dof < 0) last_dof = first_dof;
-                    logging::error(first_dof >= 1 && first_dof <= 6
-                                && last_dof >= first_dof && last_dof <= 6,
-                        "BOUNDARY: structural DOFs must be in [1,6]");
+                    logging::error((first_dof >= 1 && first_dof <= 6
+                                    && last_dof >= first_dof && last_dof <= 6)
+                                || (first_dof == 11 && last_dof == 11),
+                        "BOUNDARY: valid components are structural DOFs 1-6 or temperature DOF 11");
+                    logging::error(std::isfinite(magnitude),
+                        "BOUNDARY: prescribed value must be finite");
+
+                    const auto* active = parser.active_loadcase();
+                    const bool thermal = active != nullptr && active->type_name() == "STEADYHEATTRANSFER";
+                    logging::error(active == nullptr || (thermal == (first_dof == 11)),
+                        "BOUNDARY: temperature DOF 11 is available only in HEAT TRANSFER, "
+                        "and structural DOFs 1-6 only in structural steps");
 
                     if (parser.step_state().step_active && magnitude != Precision(0)) {
                         const std::string procedure = parser.active_loadcase()->type_name();
                         logging::error(procedure == "LINEARSTATIC"
-                                    || procedure == "NONLINEARSTATIC",
+                                    || procedure == "NONLINEARSTATIC"
+                                    || procedure == "STEADYHEATTRANSFER",
                             "BOUNDARY: nonzero values are supported only for static procedures");
                         if (!amplitude->empty()) {
-                            logging::error(procedure == "LINEARSTATIC",
-                                "BOUNDARY: nonzero AMPLITUDE is supported only for linear static procedures");
+                            logging::error(procedure == "LINEARSTATIC"
+                                        || procedure == "STEADYHEATTRANSFER",
+                                "BOUNDARY: nonzero AMPLITUDE requires a linear procedure");
                             magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(
                                 parser.step_state().step_period);
                         }
+                    }
+
+                    auto& model = parser.model();
+                    const std::string identifier =
+                        (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+
+                    // Abaqus temperature DOF 11 maps to local scalar thermal DOF 0.
+                    // Keep it separate from generalized mechanical support components.
+                    if (first_dof == 11) {
+                        auto temperature = std::make_shared<bc::Temperature>(
+                            model.resolve_node_region(target), magnitude);
+                        parser.modify_conditions(bc::TEMPERATURE, identifier, {std::move(temperature)});
+                        return;
                     }
 
                     Vec6 values;
                     values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
                     for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
 
-                    auto& model = parser.model();
-                    const std::string identifier =
-                        (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
                     std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
 
                     const auto add_node = [&](ID node_id) {
@@ -162,7 +188,7 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
             )
         );
 
-        // Abaqus/CAE can emit OP=NEW without data rows to clear prior supports.
+        // Abaqus/CAE can emit OP=NEW without data rows to clear prior constraints.
         // Keep all other BOUNDARY occurrences subject to the normal row requirement.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_equals("OP", "NEW"))

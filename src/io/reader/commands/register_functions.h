@@ -42,6 +42,7 @@ void register_cload            (fem::io::dsl::Registry& registry,            Par
 void register_connector        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_contact          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_coupling         (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_conductivity     (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_density          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_dload            (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_dsload           (fem::io::dsl::Registry& registry,            Parser& parser);

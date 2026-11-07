@@ -36,6 +36,7 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_heat_transfer.h"
 
 namespace fem::io::reader::commands {
 
@@ -48,7 +49,7 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
-                    "LINEARHARMONIC", "NONLINEARSTATIC"})
+                    "LINEARHARMONIC", "NONLINEARSTATIC", "STEADYHEATTRANSFER"})
                 .key("NAME").optional()
                 .key("RESUME").optional("NO").allowed({"YES", "NO"})
                     .doc("Continue the preceding converged state; NO by default")
@@ -71,6 +72,8 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
                 parser.begin_loadcase(std::make_unique<loadcase::LinearEigenfrequency>());
             } else if (type == "LINEARTRANSIENT") {
                 parser.begin_loadcase(std::make_unique<loadcase::Transient>());
+            } else if (type == "STEADYHEATTRANSFER") {
+                parser.begin_loadcase(std::make_unique<loadcase::SteadyStateHeatTransfer>());
             } else if (type == "LINEARHARMONIC") {
                 parser.begin_loadcase(std::make_unique<loadcase::LinearHarmonic>());
             } else {

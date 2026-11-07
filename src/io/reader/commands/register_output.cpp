@@ -85,7 +85,7 @@ void register_field_list(io::dsl::Registry& registry,
         : model::FieldDomain::NODE;
 
     registry.command(command_name, [&](io::dsl::Command& command) {
-        command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc(description);
 
         command.variant(io::dsl::Variant::make()
@@ -115,7 +115,7 @@ void register_field_list(io::dsl::Registry& registry,
  */
 void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("OUTPUT", [](io::dsl::Command& command) {
-        command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc("Accept the Abaqus OUTPUT container without changing result requests.");
 
         command.keyword(
@@ -147,7 +147,7 @@ void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
     // keep compatible decks readable and deliberately ignore their variables.
     const auto register_ignored_print = [&](const std::string& name) {
         registry.command(name, [](io::dsl::Command& command) {
-            command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+            command.allow_if(io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
             command.doc("Accept and ignore a textual PRINT output request.");
 
             command.variant(io::dsl::Variant::make()
