@@ -620,10 +620,13 @@ void Parser::end_loadcase() {
         }
     }
 
-    // Restore the reference configuration for independent analyses and validate
-    // the prescribed nodal temperature before solving.
+    // Restore the reference configuration for independent analyses.
+    // Structural analyses consume prescribed target temperatures and require
+    // complete input fields. Heat transfer instead computes its target and
+    // validates the unsolved nodes against the available start state.
     loadcase->prepare_state();
-    if (model_->_data->temperature_target) {
+    if (loadcase->type_name() != "STEADYHEATTRANSFER"
+        && model_->_data->temperature_target) {
         const auto& temperature = *model_->_data->temperature_target;
         for (Index node = 0; node < temperature.rows; ++node) {
             logging::error(std::isfinite(temperature(node, 0)),
