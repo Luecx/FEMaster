@@ -45,6 +45,7 @@
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_heat_transfer.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
@@ -242,6 +243,60 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                         loadcase->minimum_increment = minimum / period;
                         loadcase->maximum_increment = maximum / period;
                     }
+                })
+            )
+        );
+    });
+
+    // ---------------------------------------------------------------------
+    // Uncoupled stationary heat transfer
+    // ---------------------------------------------------------------------
+    registry.command("HEATTRANSFER", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
+        command.doc("Solve linear, uncoupled stationary conduction with Abaqus HEAT TRANSFER syntax.");
+
+        command.keyword(fem::io::dsl::KeywordSpec::make()
+            .flag("STEADYSTATE").doc("Required; transient heat transfer is not yet supported")
+        );
+
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
+            const auto& state = parser.step_state();
+            logging::error(state.step_active && !parser.active_loadcase(),
+                "STEP must contain exactly one supported procedure card");
+            logging::error(keys.has("STEADYSTATE"),
+                "HEAT TRANSFER currently supports only STEADY STATE");
+            logging::error(!state.nlgeom && !state.perturbation,
+                "HEAT TRANSFER does not support NLGEOM or PERTURBATION");
+
+            parser.begin_loadcase(std::make_unique<loadcase::SteadyStateHeatTransfer>());
+        });
+
+        // Accept Abaqus increment data but solve only the final stationary state.
+        // The step period controls end-of-step thermal load amplitudes.
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .fixed<Precision, 5>().name("DATA")
+                        .desc("Initial increment, period, minimum, maximum, optional convergence rate")
+                        .on_missing(std::numeric_limits<Precision>::quiet_NaN())
+                        .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
+                )
+                .bind([&parser](const std::array<Precision, 5>& data) {
+                    const Precision period = std::isnan(data[1]) ? Precision(1) : data[1];
+                    logging::error(std::isfinite(period) && period > Precision(0),
+                        "HEAT TRANSFER requires a positive step period");
+                    logging::error(std::isnan(data[0]) || (std::isfinite(data[0]) && data[0] > Precision(0)),
+                        "HEAT TRANSFER requires a positive initial increment");
+                    logging::error(std::isnan(data[4]),
+                        "HEAT TRANSFER steady state does not use a temperature change-rate criterion");
+
+                    parser.step_state().step_period = period;
+                    auto* active = parser.active_loadcase();
+                    auto* thermal = active != nullptr ? active->as<loadcase::SteadyStateHeatTransfer>() : nullptr;
+                    logging::error(thermal != nullptr,
+                        "HEAT TRANSFER did not create a thermal load case");
+                    thermal->step_period = period;
                 })
             )
         );
@@ -483,7 +538,7 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
     // ---------------------------------------------------------------------
     registry.command("ENDSTEP", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({
-            "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"
+            "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"
         }));
         command.closes_parent();
         command.doc("Execute and finish the active Abaqus analysis step.");
