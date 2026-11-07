@@ -20,7 +20,7 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 
-#include <limits>
+#include <cmath>
 #include <memory>
 #include <utility>
 
