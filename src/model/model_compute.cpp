@@ -12,8 +12,8 @@
  * section forces, shear flow and thermal heat-flux recovery may evaluate
  * elements with OpenMP. Eigen and MKL internal threading are temporarily
  * restricted during those loops to avoid nested oversubscription. Thermal flux
- * is recovered first in disjoint ELEMENT_NODAL storage and then averaged to
- * unique global nodes.
+ * remains in disjoint ELEMENT_NODAL storage until nodal output requests
+ * averaging through Field::to_nodal().
  *
  * @see Model
  * @see ModelData
@@ -449,7 +449,7 @@ Field Model::compute_shear_flow(Field& displacement) {
 }
 
 /**
- * Recovers conductive heat flux as a global nodal result field.
+ * Recovers conductive heat flux as an element-nodal result field.
  *
  * Each thermal element first produces one heat-flux vector per local node in its
  * disjoint `ELEMENT_NODAL` row range. How those values are obtained is owned by
@@ -459,15 +459,14 @@ Field Model::compute_shear_flow(Field& displacement) {
  * nodes when that is their natural recovery scheme.
  *
  * Element recovery is parallel because no two elements write the same
- * `ELEMENT_NODAL` rows. Afterwards
- * `Field::to_nodal()` averages the discontinuous
- * element-local values onto unique global nodes over written rows,
- * matching the established nodal stress-recovery path.
+ * `ELEMENT_NODAL` rows. As with stress recovery, the caller decides whether
+ * to preserve these discontinuous values or project them onto shared nodes
+ * using `Field::to_nodal()`.
  *
  * No model-wide integration-point heat-flux field is created or exported.
  *
  * @param temperature Scalar global nodal temperature field.
- * @return Three-component global `NODE` heat-flux field.
+ * @return Three-component `ELEMENT_NODAL` heat-flux field.
  */
 Field Model::compute_heat_flux(const Field& temperature) {
     // Validate the scalar primary field and compiled element-nodal enumeration
@@ -500,8 +499,8 @@ Field Model::compute_heat_flux(const Field& temperature) {
         }, Index(8));
 
 
-    // Average the written thermal values at unique global nodes
-    return element_heat_flux.to_nodal(*_data, "HEAT_FLUX");
+    // Preserve the discontinuous element-local values for output selection
+    return element_heat_flux;
 }
 
 
