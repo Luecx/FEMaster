@@ -1,16 +1,13 @@
 /**
  * @file output_request_handler.cpp
- * @brief Implements recursive field dependency resolution and requested output.
+ * @brief Implements domain-aware lazy output recovery and frame-local caching.
  *
- * The dependency graph is intentionally expressed as direct switch statements.
- * Result quantities are few, domain-specific and stable; keeping requirements
- * and recovery visible in one place makes numerical dependencies easy to audit.
- *
- * A requested field is resolved in the following order:
- *  1. a frame field supplied directly by the active analysis,
- *  2. a step field supplied directly by the active analysis,
- *  3. a field already recovered during the current frame,
- *  4. recursive recovery from its declared requirements.
+ * The handler first uses an exact (quantity, domain) match from its cache.
+ * Selected nodal requests may recover the element-nodal representation and
+ * project it with Field::to_nodal(). Otherwise a direct switch evaluates the
+ * requested physical quantity in its natural domain, recursively obtaining
+ * any required primary fields. Recoveries that return multiple fields store
+ * them together so subsequent requests reuse the same model evaluation.
  *
  * @see output_request_handler.h
  */
@@ -22,342 +19,191 @@
 #include "../../core/logging.h"
 #include "../../model/model.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace fem::io::writer {
 
-/**
- * Binds the model used for all derived-field recovery.
- */
 void OutputRequestHandler::bind(model::Model* model) {
     model_ = model;
 }
 
 /**
- * Replaces the step's predefined output selection.
+ * Adds one explicit field/domain request, retaining the order of first use.
  *
- * Defaults are copied to the active request set only while the input deck has
- * not switched to explicit output requests.
+ * Duplicate requests do not cause duplicate output blocks.
  */
-void OutputRequestHandler::set_defaults(std::initializer_list<OutputField> fields) {
-    defaults_.fill(false);
-    for (const OutputField field : fields) defaults_[index(field)] = true;
+void OutputRequestHandler::request(OutputField field, model::FieldDomain domain) {
+    const auto already_requested = std::find_if(
+        requests_.begin(), requests_.end(),
+        [&](const OutputKey& key) { return key.field == field && key.domain == domain; });
 
-    if (!explicit_requests_) {
-        requests_.fill(0);
-        for (std::size_t i = 0; i < field_count; ++i) {
-            if (defaults_[i]) requests_[i] = 1;
-        }
+    if (already_requested == requests_.end()) {
+        requests_.push_back({field, domain});
     }
 }
 
-/**
- * Restores the owning step's predefined output selection.
- */
-void OutputRequestHandler::use_defaults() {
-    requests_.fill(0);
-    for (std::size_t i = 0; i < field_count; ++i) {
-        if (defaults_[i]) requests_[i] = 1;
+void OutputRequestHandler::request(std::initializer_list<OutputKey> fields) {
+    for (const OutputKey& key : fields) {
+        request(key.field, key.domain);
     }
-    explicit_requests_ = false;
 }
 
-/**
- * Selects nonlinear strain kinematics for stress/strain recovery.
- */
+bool OutputRequestHandler::empty() const {
+    return requests_.empty();
+}
+
 void OutputRequestHandler::set_nonlinear(bool nonlinear) {
     nonlinear_ = nonlinear;
 }
 
-/**
- * Selects increment-only recovery about the preloaded configuration.
- * The borrowed displacement field must outlive write_frame().
- */
 void OutputRequestHandler::set_perturbation_base(const model::Field* displacement) {
     perturbation_base_ = displacement;
 }
 
-/**
- * Recovers total constitutive output by linear continuation from a base state.
- * In contrast to perturbations, general static output remains total.
- */
 void OutputRequestHandler::set_linearization_base(const model::Field* displacement,
                                                   const model::Field* temperature) {
     linearization_base_ = displacement;
     linearization_temperature_ = temperature;
 }
 
-/**
- * Installs an optional preparation hook for derived model recovery.
- *
- * Linear procedures leave this empty. Nonlinear procedures use it to reset
- * constitutive trial history before independent post-processing evaluations,
- * preserving the same state semantics as the former direct recovery calls.
- */
 void OutputRequestHandler::set_before_compute(std::function<void()> callback) {
     before_compute_ = std::move(callback);
 }
 
 /**
- * Starts an explicit request set exactly once.
+ * Starts a new frame with an empty cache and fresh primary-field references.
  *
- * Abaqus uses *OUTPUT, FIELD before NODE/ELEMENT OUTPUT, while CalculiX may
- * start directly with NODE FILE/EL FILE. Calling this method from either path
- * gives both syntaxes the same replacement semantics.
- */
-void OutputRequestHandler::begin_explicit_requests() {
-    if (explicit_requests_) return;
-
-    requests_.fill(0);
-    explicit_requests_ = true;
-}
-
-/**
- * Adds one requested quantity. The first explicit request replaces defaults.
- */
-void OutputRequestHandler::request(OutputField field, model::FieldDomain domain) {
-    begin_explicit_requests();
-    requests_[index(field)] |= domain == model::FieldDomain::ELEMENT_NODAL ? 2 : 1;
-}
-
-/**
- * Returns whether a field belongs to the active request set.
- */
-bool OutputRequestHandler::requested(OutputField field) const {
-    return requests_[index(field)] != 0;
-}
-
-/**
- * Supplies a value whose lifetime covers the complete analysis step.
- */
-void OutputRequestHandler::provide_step(OutputField field, model::Field& value) {
-    step_fields_[index(field)] = &value;
-}
-
-/**
- * Starts a new result frame.
- *
- * Step fields and request state deliberately survive. Only frame-owned direct
- * references and lazily recovered fields are invalidated.
+ * Requests persist between frames. Numeric recovery settings are scoped to
+ * the owning analysis and persist for its complete run.
  */
 void OutputRequestHandler::begin_frame(Precision frame_value, std::string suffix) {
-    frame_fields_.fill(nullptr);
-    computed_.fill(std::nullopt);
-    element_nodal_.fill(std::nullopt);
-    resolving_.fill(false);
-
+    fields_.clear();
     frame_value_  = frame_value;
     frame_suffix_ = std::move(suffix);
 }
 
 /**
- * Supplies a direct field for the current frame.
+ * Supplies one analysis-owned field without copying its numerical values.
+ *
+ * The field's own domain selects its cache key. Provided data always wins
+ * over an existing computed representation of the same quantity and domain.
  */
 void OutputRequestHandler::provide(OutputField field, model::Field& value) {
-    frame_fields_[index(field)] = &value;
+    fields_[{field, value.domain}].provided = &value;
 }
 
 /**
- * Declares the immediate dependencies of one recoverable output field.
+ * Stores a result in its native domain, preserving directly supplied data.
  *
- * Requirements may themselves be derived. resolve() therefore walks this list
- * recursively until it reaches fields supplied directly by the analysis step.
+ * Pair recoveries such as stress/strain can populate both cache entries
+ * without overwriting a primary result already provided by the analysis.
  */
-std::vector<OutputField> OutputRequestHandler::requirements(OutputField field) const {
-    switch (field) {
-        case OutputField::MODE_SHAPE:
-        case OutputField::BUCKLING_MODE:
-            return {OutputField::DISPLACEMENT};
-
-        case OutputField::STRESS:
-        case OutputField::STRAIN:
-        case OutputField::STRESS_TOP:
-        case OutputField::STRESS_BOT:
-        case OutputField::SHELL_RESULTANTS:
-            return {OutputField::DISPLACEMENT};
-
-        case OutputField::LOCAL_SECTION_FORCES:
-        case OutputField::SHEAR_FLOW:
-        case OutputField::COMPLIANCE:
-        case OutputField::ORIENTATION_GRAD:
-            return {OutputField::DISPLACEMENT};
-
-        case OutputField::HEAT_FLUX:
-            return {OutputField::TEMPERATURE};
-
-        // Harmonic real and imaginary displacement fields are independent
-        // primary sources. Their constitutive outputs therefore follow two
-        // separate dependency branches rather than a generic DISPLACEMENT.
-        case OutputField::STRESS_REAL:
-        case OutputField::STRAIN_REAL:
-            return {OutputField::DISPLACEMENT_REAL};
-
-        case OutputField::STRESS_IMAG:
-        case OutputField::STRAIN_IMAG:
-            return {OutputField::DISPLACEMENT_IMAG};
-
-        default:
-            return {};
+void OutputRequestHandler::store(OutputField field, model::Field value) {
+    auto& entry = fields_[{field, value.domain}];
+    if (!entry.provided) {
+        entry.computed = std::move(value);
     }
 }
 
 /**
- * Resolves one field recursively.
+ * Returns an existing result or computes the requested physical representation.
  *
- * Aliases such as MODE_SHAPE and BUCKLING_MODE intentionally return the
- * displacement field directly. No duplicate node-sized matrix is created just
- * to attach a different output name; naming is handled only while writing.
+ * Exact cache hits are returned immediately. For eligible NODE requests, the
+ * ELEMENT_NODAL representation is computed first and projected only once.
+ * All other requests are evaluated in their native domain by the explicit
+ * numerical switch below. The switch itself expresses every dependency
+ * through recursive compute() calls; no separate dependency graph is needed.
+ *
+ * Constitutive results use the analysis-supplied linearization/perturbation
+ * context. A supplied before_compute hook restores nonlinear trial history
+ * before each independent material evaluation.
  */
-model::Field& OutputRequestHandler::resolve(OutputField field) {
-    const std::size_t i = index(field);
+model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomain domain) {
+    const OutputKey key{field, domain};
 
-    if (frame_fields_[i] != nullptr) return *frame_fields_[i];
-    if (step_fields_[i]  != nullptr) return *step_fields_[i];
-    if (computed_[i].has_value())    return *computed_[i];
+    // Reuse directly supplied and already computed values
+    if (auto it = fields_.find(key); it != fields_.end()) {
+        if (it->second.provided || it->second.computed.has_value()) {
+            return it->second.value();
+        }
+    }
 
-    // Validate the owning model before accessing its compiled topology
     logging::error(model_ != nullptr,
         "OutputRequestHandler: no model is bound");
 
-    // Project a previously recovered element field only when nodal output is needed
-    if (element_nodal_[i].has_value()) {
-        computed_[i] = element_nodal_[i]->to_nodal(
-            *model_->_data, std::string(output_field_name(field)));
-        return *computed_[i];
+    // Only quantities with meaningful element-nodal recovery can be averaged
+    if (domain == model::FieldDomain::NODE) {
+        bool project_element_nodal = false;
+        switch (field) {
+            case OutputField::STRESS:
+            case OutputField::STRAIN:
+            case OutputField::PEEQ:
+            case OutputField::STRESS_TOP:
+            case OutputField::STRESS_BOT:
+            case OutputField::SHELL_RESULTANTS:
+            case OutputField::LOCAL_SECTION_FORCES:
+            case OutputField::SHEAR_FLOW:
+            case OutputField::HEAT_FLUX:
+            case OutputField::STRESS_REAL:
+            case OutputField::STRAIN_REAL:
+            case OutputField::STRESS_IMAG:
+            case OutputField::STRAIN_IMAG:
+                project_element_nodal = true;
+                break;
+            default:
+                break;
+        }
+
+        if (project_element_nodal) {
+            auto& source = compute(field, model::FieldDomain::ELEMENT_NODAL);
+            store(field, source.to_nodal(*model_->_data, std::string(output_field_name(field))));
+            return fields_.at(key).value();
+        }
     }
 
-    logging::error(!resolving_[i],
-        "OutputRequestHandler: cyclic output dependency while resolving ", output_field_name(field));
-
-    resolving_[i] = true;
-
-    for (const OutputField requirement : requirements(field)) {
-        resolve(requirement);
-    }
-
-    // Modal and buckling vectors are semantically distinct outputs but are
-    // physically the displacement-like eigenvector supplied by the step.
+    // Mode-shape labels are aliases of the displacement field of their frame
     if (field == OutputField::MODE_SHAPE || field == OutputField::BUCKLING_MODE) {
-        resolving_[i] = false;
-        return resolve(OutputField::DISPLACEMENT);
+        logging::error(domain == model::FieldDomain::NODE,
+            "OutputRequestHandler: mode shapes require NODE output");
+        return compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
     }
 
-    compute(field);
-    resolving_[i] = false;
-
-    if (element_nodal_[i].has_value()) return resolve(field);
-
-    logging::error(computed_[i].has_value(),
-        "OutputRequestHandler: field ", output_field_name(field),
-        " is not available for the active analysis step");
-
-    return *computed_[i];
-}
-
-/**
- * Resolves an unaveraged element-nodal field without projecting it onto nodes.
- *
- * Stress/strain, shell-face and heat-flux results are cached element-nodally,
- * so requests for both domains share one recovery. Dependencies are resolved
- * before invoking the same path used for nodal output.
- */
-model::Field& OutputRequestHandler::resolve_element_nodal(OutputField field) {
-    const std::size_t i = index(field);
-
-    if (!element_nodal_[i].has_value()) {
-        for (const OutputField requirement : requirements(field)) {
-            resolve(requirement);
-        }
-        compute(field);
-    }
-
-    logging::error(element_nodal_[i].has_value(),
-        "OutputRequestHandler: element-nodal field ", output_field_name(field),
-        " is not available for the active analysis step");
-    return *element_nodal_[i];
-}
-
-/**
- * Writes every requested frame-lifetime quantity.
- */
-void OutputRequestHandler::write_frame(ResultWriters& writer, const model::ModelData* model_data) {
-    for (std::size_t i = 0; i < field_count; ++i) {
-        const auto field = static_cast<OutputField>(i);
-        if (!requests_[i] || output_field_is_step_field(field)) continue;
-
-        // Resolve nodal and element-nodal requests independently
-        const bool nodal             = (requests_[i] & 1) != 0;
-        const bool element_nodal     = (requests_[i] & 2) != 0;
-        const bool element_supported = supports_element_nodal(field);
-
-        if (nodal || (element_nodal && !element_supported)) {
-            write(field, writer, model_data, frame_suffix_, frame_value_);
-        }
-        if (element_nodal && element_supported) {
-            write(
-                field, writer, model_data, frame_suffix_, frame_value_,
-                model::FieldDomain::ELEMENT_NODAL
-            );
-        }
-    }
-}
-
-/**
- * Writes every provided step-lifetime quantity exactly once.
- *
- * Step fields are compact analysis metadata rather than potentially large mesh
- * fields. If an analysis provides them, they are part of the result definition
- * itself and are therefore written independently of NODE/ELEMENT output
- * filtering. Examples are eigenvalues, frequencies, modal participation and
- * buckling factors.
- */
-void OutputRequestHandler::write_step(ResultWriters& writer, const model::ModelData* model_data) {
-    for (std::size_t i = 0; i < field_count; ++i) {
-        const auto field = static_cast<OutputField>(i);
-        if (!output_field_is_step_field(field) || step_fields_[i] == nullptr) continue;
-
-        write(field, writer, model_data, {}, std::numeric_limits<Precision>::quiet_NaN());
-    }
-}
-
-/**
- * Converts the dense enum value to its array index.
- */
-std::size_t OutputRequestHandler::index(OutputField field) {
-    return static_cast<std::size_t>(field);
-}
-
-/**
- * Returns whether an element-nodal recovery is available for the quantity.
- */
-bool OutputRequestHandler::supports_element_nodal(OutputField field) {
+    // Enforce the actual native domain instead of silently substituting one
     switch (field) {
         case OutputField::STRESS:
         case OutputField::STRAIN:
+        case OutputField::PEEQ:
         case OutputField::STRESS_TOP:
         case OutputField::STRESS_BOT:
+        case OutputField::SHELL_RESULTANTS:
+        case OutputField::LOCAL_SECTION_FORCES:
+        case OutputField::SHEAR_FLOW:
+        case OutputField::HEAT_FLUX:
         case OutputField::STRESS_REAL:
         case OutputField::STRAIN_REAL:
         case OutputField::STRESS_IMAG:
         case OutputField::STRAIN_IMAG:
-        case OutputField::HEAT_FLUX:
-            return true;
-        default:
-            return false;
-    }
-}
+            logging::error(domain == model::FieldDomain::ELEMENT_NODAL,
+                "OutputRequestHandler: field ", output_field_name(field),
+                " requires ELEMENT_NODAL recovery");
+            break;
 
-/**
- * Computes one missing output field from already resolved dependencies.
- *
- * Recovery routines that naturally produce a pair populate both cache entries
- * at once. A later request for the companion field therefore reuses the same
- * recovery work instead of evaluating the model twice.
- */
-void OutputRequestHandler::compute(OutputField field) {
-    // Each derived recovery must observe the same accepted physical state.
-    // This is a no-op for linear analyses and resets nonlinear trial history
-    // when the owning step supplied a preparation callback.
+        case OutputField::COMPLIANCE:
+        case OutputField::VOLUME:
+        case OutputField::ORIENTATION_GRAD:
+            logging::error(domain == model::FieldDomain::ELEMENT,
+                "OutputRequestHandler: field ", output_field_name(field),
+                " requires ELEMENT output");
+            break;
+
+        default:
+            logging::error(false,
+                "OutputRequestHandler: field ", output_field_name(field),
+                " must be provided by the analysis in the requested domain");
+    }
+
+    // Evaluate from the same accepted material state in nonlinear analyses
     if (before_compute_) before_compute_();
 
     const model::Field* target_temperature = model_->_data->temperature_target
@@ -366,11 +212,10 @@ void OutputRequestHandler::compute(OutputField field) {
     const model::Field* base_temperature = linearization_base_
         ? linearization_temperature_ : model_->_data->temperature.get();
 
-    // U denotes du for linear perturbations. Recover constitutive fields by
-    // affine continuation from the committed base and subtract the base value.
+    // Linear perturbation fields are increments relative to the committed base
     if (perturbation_base_) {
-        auto& increment = resolve(OutputField::DISPLACEMENT);
-        model::Field base = *perturbation_base_;
+        auto& increment = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
+        model::Field base  = *perturbation_base_;
         model::Field total = base;
         total += increment;
 
@@ -379,200 +224,207 @@ void OutputRequestHandler::compute(OutputField field) {
             case OutputField::STRAIN: {
                 auto [stress, strain] = model_->compute_stress(
                     total, target_temperature, &base, base_temperature);
+                if (before_compute_) before_compute_();
                 auto [base_stress, base_strain] = model_->compute_stress(
                     base, base_temperature, &base, base_temperature);
 
-                // Evaluate the perturbation in the original element-nodal domain
                 stress -= base_stress;
                 strain -= base_strain;
-
-                element_nodal_[index(OutputField::STRESS)] = std::move(stress);
-                element_nodal_[index(OutputField::STRAIN)] = std::move(strain);
-                return;
+                store(OutputField::STRESS, std::move(stress));
+                store(OutputField::STRAIN, std::move(strain));
+                return fields_.at(key).value();
             }
+
             case OutputField::STRESS_TOP:
             case OutputField::STRESS_BOT: {
                 auto [top, bot] = model_->compute_stress_top_bot(
                     total, target_temperature, &base, base_temperature);
+                if (before_compute_) before_compute_();
                 auto [base_top, base_bot] = model_->compute_stress_top_bot(
                     base, base_temperature, &base, base_temperature);
 
-                // Subtract the base state before any optional nodal projection
                 top -= base_top;
                 bot -= base_bot;
-
-                element_nodal_[index(OutputField::STRESS_TOP)] = std::move(top);
-                element_nodal_[index(OutputField::STRESS_BOT)] = std::move(bot);
-                return;
+                store(OutputField::STRESS_TOP, std::move(top));
+                store(OutputField::STRESS_BOT, std::move(bot));
+                return fields_.at(key).value();
             }
+
             case OutputField::SHELL_RESULTANTS: {
                 auto resultants = model_->compute_shell_resultants(
                     total, target_temperature, &base, base_temperature);
+                if (before_compute_) before_compute_();
                 resultants -= model_->compute_shell_resultants(
                     base, base_temperature, &base, base_temperature);
-                computed_[index(field)] = std::move(resultants);
-                return;
+                store(field, std::move(resultants));
+                return fields_.at(key).value();
             }
+
             case OutputField::LOCAL_SECTION_FORCES: {
                 auto forces = model_->compute_section_forces(
                     total, target_temperature, &base, base_temperature);
+                if (before_compute_) before_compute_();
                 forces -= model_->compute_section_forces(
                     base, base_temperature, &base, base_temperature);
-                computed_[index(field)] = std::move(forces);
-                return;
+                store(field, std::move(forces));
+                return fields_.at(key).value();
             }
+
             case OutputField::SHEAR_FLOW: {
                 auto flow = model_->compute_shear_flow(total);
                 flow -= model_->compute_shear_flow(base);
-                computed_[index(field)] = std::move(flow);
-                return;
+                store(field, std::move(flow));
+                return fields_.at(key).value();
             }
+
             case OutputField::PEEQ: {
-                auto peeq = model_->compute_peeq_nodal();
+                auto peeq = model_->compute_peeq_element_nodal();
                 peeq.set_zero();
-                computed_[index(field)] = std::move(peeq);
-                return;
+                store(field, std::move(peeq));
+                return fields_.at(key).value();
             }
+
             case OutputField::COMPLIANCE:
             case OutputField::ORIENTATION_GRAD:
                 logging::error(false,
                     "Linear perturbation does not support compliance or orientation gradients");
-                return;
-            default: break;
+                break;
+
+            default:
+                break;
         }
     }
 
+    // Recover the requested quantity in the native model-defined domain
     switch (field) {
         case OutputField::STRESS:
         case OutputField::STRAIN: {
-            auto& displacement = resolve(OutputField::DISPLACEMENT);
+            auto& displacement = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
             auto [stress, strain] = model_->compute_stress(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
-            element_nodal_[index(OutputField::STRESS)] = std::move(stress);
-            element_nodal_[index(OutputField::STRAIN)] = std::move(strain);
-            return;
+            store(OutputField::STRESS, std::move(stress));
+            store(OutputField::STRAIN, std::move(strain));
+            break;
         }
 
         case OutputField::STRESS_TOP:
         case OutputField::STRESS_BOT: {
-            auto& displacement = resolve(OutputField::DISPLACEMENT);
+            auto& displacement = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
             auto [top, bot] = model_->compute_stress_top_bot(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
 
-            element_nodal_[index(OutputField::STRESS_TOP)] = std::move(top);
-            element_nodal_[index(OutputField::STRESS_BOT)] = std::move(bot);
-            return;
+            store(OutputField::STRESS_TOP, std::move(top));
+            store(OutputField::STRESS_BOT, std::move(bot));
+            break;
         }
 
         case OutputField::SHELL_RESULTANTS: {
-            auto& displacement = resolve(OutputField::DISPLACEMENT);
-            auto resultants = model_->compute_shell_resultants(
+            auto& displacement = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
+            store(field, model_->compute_shell_resultants(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
-                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
-            computed_[index(field)] = std::move(resultants);
-            return;
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr)));
+            break;
         }
 
         case OutputField::LOCAL_SECTION_FORCES: {
-            auto& displacement = resolve(OutputField::DISPLACEMENT);
-            auto forces = model_->compute_section_forces(
+            auto& displacement = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
+            store(field, model_->compute_section_forces(
                 displacement,
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
-                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr));
-            computed_[index(field)] = std::move(forces);
-            return;
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr)));
+            break;
         }
 
         case OutputField::SHEAR_FLOW:
-            computed_[index(field)] =
-                model_->compute_shear_flow(resolve(OutputField::DISPLACEMENT));
-            return;
+            store(field, model_->compute_shear_flow(
+                compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE)));
+            break;
 
         case OutputField::COMPLIANCE:
-            computed_[index(field)] =
-                model_->compute_compliance(resolve(OutputField::DISPLACEMENT));
-            return;
+            store(field, model_->compute_compliance(
+                compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE)));
+            break;
 
         case OutputField::ORIENTATION_GRAD:
-            computed_[index(field)] =
-                model_->compute_compliance_angle_derivative(resolve(OutputField::DISPLACEMENT));
-            return;
+            store(field, model_->compute_compliance_angle_derivative(
+                compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE)));
+            break;
 
         case OutputField::PEEQ:
-            computed_[index(field)] = model_->compute_peeq_nodal();
-            return;
+            store(field, model_->compute_peeq_element_nodal());
+            break;
 
         case OutputField::VOLUME:
-            computed_[index(field)] = model_->compute_volumes();
-            return;
+            store(field, model_->compute_volumes());
+            break;
 
         case OutputField::HEAT_FLUX:
-            element_nodal_[index(field)] =
-                model_->compute_heat_flux(resolve(OutputField::TEMPERATURE));
-            return;
+            store(field, model_->compute_heat_flux(
+                compute(OutputField::TEMPERATURE, model::FieldDomain::NODE)));
+            break;
 
         case OutputField::STRESS_REAL:
         case OutputField::STRAIN_REAL: {
             auto [stress, strain] = model_->compute_stress(
-                resolve(OutputField::DISPLACEMENT_REAL),
-                target_temperature,
-                nullptr,
-                nullptr);
-
-            element_nodal_[index(OutputField::STRESS_REAL)] = std::move(stress);
-            element_nodal_[index(OutputField::STRAIN_REAL)] = std::move(strain);
-            return;
+                compute(OutputField::DISPLACEMENT_REAL, model::FieldDomain::NODE),
+                target_temperature, nullptr, nullptr);
+            store(OutputField::STRESS_REAL, std::move(stress));
+            store(OutputField::STRAIN_REAL, std::move(strain));
+            break;
         }
 
         case OutputField::STRESS_IMAG:
         case OutputField::STRAIN_IMAG: {
             auto [stress, strain] = model_->compute_stress(
-                resolve(OutputField::DISPLACEMENT_IMAG),
-                target_temperature,
-                nullptr,
-                nullptr);
-
-            element_nodal_[index(OutputField::STRESS_IMAG)] = std::move(stress);
-            element_nodal_[index(OutputField::STRAIN_IMAG)] = std::move(strain);
-            return;
+                compute(OutputField::DISPLACEMENT_IMAG, model::FieldDomain::NODE),
+                target_temperature, nullptr, nullptr);
+            store(OutputField::STRESS_IMAG, std::move(stress));
+            store(OutputField::STRAIN_IMAG, std::move(strain));
+            break;
         }
 
         default:
-            return;
+            break;
     }
+
+    // Native recoveries must produce exactly the representation they declare
+    const auto it = fields_.find(key);
+    logging::error(it != fields_.end() && (it->second.provided || it->second.computed.has_value()),
+        "OutputRequestHandler: recovery produced no ", output_field_name(field), " field");
+    return it->second.value();
 }
 
 /**
- * Resolves and writes one field while preserving the existing FEMaster name.
+ * Writes the requested frame fields in their explicitly selected domains.
  *
- * Empty fields are valid dependency placeholders and are not emitted as result datasets.
+ * The ELEMENT_NODAL name prefix preserves existing RES/FRD conventions.
+ * A field in any other domain keeps its semantic base name.
  */
-void OutputRequestHandler::write(OutputField field,
-                                 ResultWriters& writer,
-                                 const model::ModelData* model_data,
-                                 const std::string& suffix,
-                                 Precision frame_value,
-                                 model::FieldDomain domain) {
-    model::Field& value = domain == model::FieldDomain::ELEMENT_NODAL
-        ? resolve_element_nodal(field) : resolve(field);
-    if (value.rows == 0) return;
+void OutputRequestHandler::write_frame(ResultWriters& writer, const model::ModelData* model_data) {
+    for (const OutputKey& key : requests_) {
+        if (output_field_is_step_field(key.field)) continue;
 
-    const std::string prefix = domain == model::FieldDomain::ELEMENT_NODAL ? "ELEMENT_NODAL_" : "";
-    const std::string name = prefix + std::string(output_field_name(field)) + suffix;
-    const model::ModelData* data =
-        value.domain == model::FieldDomain::UNKNOWN ? nullptr : model_data;
+        model::Field& value = compute(key.field, key.domain);
+        if (value.rows == 0) continue;
 
-    writer.write_field(value, name, data, frame_value);
+        const std::string prefix = key.domain == model::FieldDomain::ELEMENT_NODAL
+            ? "ELEMENT_NODAL_" : "";
+        const std::string name = prefix + std::string(output_field_name(key.field)) + frame_suffix_;
+        const model::ModelData* data = value.domain == model::FieldDomain::UNKNOWN
+            ? nullptr : model_data;
+
+        writer.write_field(value, name, data, frame_value_);
+    }
 }
 
 } // namespace fem::io::writer

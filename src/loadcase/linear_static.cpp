@@ -61,6 +61,23 @@ using constraint::ConstraintTransformer;
  * mutating the physical definitions.
  */
 void LinearStatic::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::DISPLACEMENT        , model::FieldDomain::NODE},
+            {OutputField::STRAIN              , model::FieldDomain::NODE},
+            {OutputField::STRESS              , model::FieldDomain::NODE},
+            {OutputField::STRESS_TOP          , model::FieldDomain::NODE},
+            {OutputField::STRESS_BOT          , model::FieldDomain::NODE},
+            {OutputField::SHELL_RESULTANTS    , model::FieldDomain::NODE},
+            {OutputField::EXTERNAL_FORCES     , model::FieldDomain::NODE},
+            {OutputField::REACTION_FORCES     , model::FieldDomain::NODE},
+            {OutputField::LOCAL_SECTION_FORCES, model::FieldDomain::ELEMENT_NODAL},
+            {OutputField::SHEAR_FLOW          , model::FieldDomain::ELEMENT_NODAL}
+        });
+    }
+
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "===============================================================================================");

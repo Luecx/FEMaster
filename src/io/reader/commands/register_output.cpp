@@ -46,6 +46,28 @@ void request_tokens(Parser&                           parser,
             continue;
         }
 
+        // Use the native element domain for element-wide scalar quantities
+        model::FieldDomain requested_domain = domain;
+        if (domain == model::FieldDomain::ELEMENT_NODAL) {
+            switch (*field) {
+                case io::writer::OutputField::COMPLIANCE:
+                case io::writer::OutputField::VOLUME:
+                case io::writer::OutputField::DENS_GRAD:
+                case io::writer::OutputField::DENSITY:
+                case io::writer::OutputField::ORIENTATION:
+                case io::writer::OutputField::ORIENTATION_GRAD:
+                    requested_domain = model::FieldDomain::ELEMENT;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Global spectral summaries are written once directly by their analyses
+        if (io::writer::output_field_is_step_field(*field)) {
+            requested_domain = model::FieldDomain::UNKNOWN;
+        }
+
         // Harmonic response stores real and imaginary solution components as
         // separate primary fields. Standard Abaqus/CalculiX U/S/E requests
         // therefore expand to both component outputs instead of introducing a
@@ -53,23 +75,23 @@ void request_tokens(Parser&                           parser,
         if (loadcase->as<loadcase::LinearHarmonic>() != nullptr) {
             switch (*field) {
                 case io::writer::OutputField::DISPLACEMENT:
-                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL, domain);
-                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_IMAG, domain);
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_REAL, requested_domain);
+                    loadcase->output.request(io::writer::OutputField::DISPLACEMENT_IMAG, requested_domain);
                     continue;
                 case io::writer::OutputField::STRESS:
-                    loadcase->output.request(io::writer::OutputField::STRESS_REAL, domain);
-                    loadcase->output.request(io::writer::OutputField::STRESS_IMAG, domain);
+                    loadcase->output.request(io::writer::OutputField::STRESS_REAL, requested_domain);
+                    loadcase->output.request(io::writer::OutputField::STRESS_IMAG, requested_domain);
                     continue;
                 case io::writer::OutputField::STRAIN:
-                    loadcase->output.request(io::writer::OutputField::STRAIN_REAL, domain);
-                    loadcase->output.request(io::writer::OutputField::STRAIN_IMAG, domain);
+                    loadcase->output.request(io::writer::OutputField::STRAIN_REAL, requested_domain);
+                    loadcase->output.request(io::writer::OutputField::STRAIN_IMAG, requested_domain);
                     continue;
                 default:
                     break;
             }
         }
 
-        loadcase->output.request(*field, domain);
+        loadcase->output.request(*field, requested_domain);
     }
 }
 
@@ -110,8 +132,8 @@ void register_field_list(io::dsl::Registry& registry,
  * Registers the common result-output grammar.
  *
  * NODE/ELEMENT result cards are self-contained requests in FEMaster. The first
- * such card replaces the owning step's default request set. Abaqus' surrounding
- * *OUTPUT, FIELD card is therefore syntactic compatibility only and is ignored.
+ * such card appends an explicit request to the owning step. Load-case defaults
+ * are added only at execution time when the request list is still empty.
  */
 void register_output(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("OUTPUT", [](io::dsl::Command& command) {

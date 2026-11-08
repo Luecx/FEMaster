@@ -45,6 +45,16 @@ using fem::constraint::ConstraintTransformer;
  * and response frames retain no condition definitions or condition activations.
  */
 void Transient::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::DISPLACEMENT, model::FieldDomain::NODE},
+            {OutputField::VELOCITY    , model::FieldDomain::NODE},
+            {OutputField::ACCELERATION, model::FieldDomain::NODE}
+        });
+    }
+
     // Banner
     logging::info(true, "");
     logging::info(true, "===============================================================================================");

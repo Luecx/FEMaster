@@ -295,12 +295,8 @@ struct StructuralElement : ElementInterface {
     }
 
     // Recovers shell membrane forces, bending moments and transverse shear
-    // resultants and accumulates them directly into NODE-domain fields.
-    //
-    // Neighboring shell elements may contribute to the same global node.
-    // section_forces therefore stores accumulated nodal contributions and
-    // contribution_count records the corresponding number of contributions.
-    // The model-level recovery subsequently reduces and averages these values.
+    // resultants into the element's disjoint ELEMENT_NODAL row range.
+    // A separate nodal projection may average values at shared nodes.
     //
     // target_* defines the requested mechanical state (u,T), while base_*
     // defines the state (u0,T0) about which the response is linearized.
@@ -310,14 +306,12 @@ struct StructuralElement : ElementInterface {
     // Unsupported formulations return false.
     virtual bool compute_shell_section_forces(
         Field&       section_forces,
-        Field&       contribution_count,
         const Field& target_displacement,
         const Field* target_temperature,
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr
     ) {
         (void) section_forces;
-        (void) contribution_count;
         (void) target_displacement;
         (void) target_temperature;
         (void) base_displacement;

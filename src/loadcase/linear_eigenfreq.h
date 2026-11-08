@@ -48,13 +48,6 @@ struct LinearEigenfrequency : public LoadCase {
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
     solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
 
-    // Construction and default result requests
-    LinearEigenfrequency() {
-        using io::writer::OutputField;
-        output.set_defaults({
-            OutputField::MODE_SHAPE
-        });
-    }
 
 public:
     // Analysis identity and execution

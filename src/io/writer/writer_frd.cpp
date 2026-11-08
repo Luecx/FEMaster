@@ -552,6 +552,23 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
+            {"LOCALSECTIONFORCES"}, "SECFR",
+            {
+                FRDComponent::vector("F1", 1),
+                FRDComponent::vector("F2", 2),
+                FRDComponent::vector("F3", 3),
+                FRDComponent::scalar("M1", 4),
+                FRDComponent::scalar("M2", 5),
+                FRDComponent::scalar("M3", 6)
+            }
+        },
+        {
+            {"SHEARFLOW"}, "SHFLOW",
+            {
+                FRDComponent::scalar("Q", 1)
+            }
+        },
+        {
             {"SHELLRESULTANTS"}, "SHR",
             {
                 FRDComponent::vector("NXX", 1),

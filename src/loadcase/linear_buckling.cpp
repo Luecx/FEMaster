@@ -119,6 +119,14 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
  * stress recovery and geometric-stiffness assembly for the eigenproblem.
  */
 void LinearBuckling::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::BUCKLING_MODE, model::FieldDomain::NODE}
+        });
+    }
+
     // Banner
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
@@ -360,8 +368,7 @@ void LinearBuckling::run() {
         output.write_frame(*writer, model->_data.get());
     }
 
-    output.provide_step(OutputField::BUCKLING_FACTORS, lambdas);
-    output.write_step(*writer, model->_data.get());
+    writer->write_field(lambdas, "BUCKLING_FACTORS");
 
     // After (4) K assembled
     if (!stiffness_file.empty()) {
