@@ -63,8 +63,10 @@ void request_tokens(Parser&                           parser,
             }
         }
 
-        // Global spectral summaries are written once directly by their analyses
-        if (io::writer::output_field_is_step_field(*field)) {
+        // Non-spatial results have no nodal or element association.
+        // LAMBDA remains a frame field; spectral summaries are step metadata.
+        if (*field == io::writer::OutputField::LAMBDA
+            || io::writer::output_field_is_step_field(*field)) {
             requested_domain = model::FieldDomain::UNKNOWN;
         }
 
