@@ -347,9 +347,9 @@ Field Model::compute_section_forces(
 
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate zeroed storage for every compiled element-node row
-    Field beam_forces = _data->create_field_("BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, 6, false);
-    beam_forces.set_zero();
+    // Unsupported elements must remain NaN so nodal projection excludes them.
+    // Supported beam and truss formulations write every component of their rows.
+    Field beam_forces = _data->create_field_("BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, 6);
 
     // Recover section forces into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,
@@ -387,9 +387,9 @@ Field Model::compute_shear_flow(Field& displacement) {
 
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate zeroed storage for every compiled element-node row
-    Field shear_flow = _data->create_field_("SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, 1, false);
-    shear_flow.set_zero();
+    // Keep unsupported element rows as NaN rather than diluting nodal averages.
+    // Supported shear-flow formulations write their own element-local rows.
+    Field shear_flow = _data->create_field_("SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, 1);
 
     // Recover shear flow into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,
