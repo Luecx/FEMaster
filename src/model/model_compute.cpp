@@ -95,21 +95,20 @@ std::tuple<Field, Field> Model::compute_stress(
 }
 
 /**
- * Recovers accumulated equivalent plastic strain as a global nodal field.
+ * Recovers accumulated equivalent plastic strain at element nodes.
  *
  * Supporting structural elements read PEEQ directly from accepted constitutive
  * history and write one scalar value per element node. Solid and shell
  * formulations perform their integration-point extrapolation before this
  * model-level operation. The compiled element-nodal offsets keep those writes
- * disjoint, after which the ordinary element-nodal projection averages
- * contributions at shared global nodes.
+ * disjoint until a nodal projection is explicitly requested.
  *
  * Elements without a PEEQ-capable material or formulation retain NaN and do
  * not dilute the nodal average.
  *
- * @return Scalar global NODE field named PEEQ.
+ * @return Scalar ELEMENT_NODAL field named PEEQ.
  */
-Field Model::compute_peeq_nodal() {
+Field Model::compute_peeq_element_nodal() {
     // Validate and access the compiled element-nodal enumeration
     logging::error(_data->element_nodal_offsets != nullptr,
         "element nodal offset field has not been initialized");
@@ -130,8 +129,15 @@ Field Model::compute_peeq_nodal() {
             }
         }, Index(8));
 
-    // Average the written element-local values at shared global nodes
-    return element_peeq.to_nodal(*_data, "PEEQ");
+    // Keep unaveraged material-history results for optional nodal projection
+    return element_peeq;
+}
+
+/**
+ * Retains the existing direct nodal PEEQ API for model callers.
+ */
+Field Model::compute_peeq_nodal() {
+    return compute_peeq_element_nodal().to_nodal(*_data, "PEEQ");
 }
 
 /**
@@ -201,20 +207,17 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
 }
 
 /**
- * Recovers nodal shell force and moment resultants.
+ * Recovers shell forces and moments in the unaveraged element-nodal domain.
  *
- * Supporting elements accumulate their eight-component resultant convention and
- * one participation count at every connected global node. Parallel element
- * recovery writes into one private nodal accumulator per OpenMP worker because
- * adjacent shell elements may share nodes. The worker fields are reduced by
- * global node and divided by the summed counts to preserve the original
- * arithmetic nodal average.
+ * Each shell writes its eight generalized resultants into its own compiled
+ * row range, so adjacent elements may preserve discontinuities and be evaluated
+ * concurrently. A NODE output request projects these values separately.
  *
- * @param target_displacement Requested nodal displacement state.
- * @param target_temperature Requested nodal temperature state.
- * @param base_displacement Base displacement state; null denotes zero.
- * @param base_temperature Base temperature state; null denotes stress-free temperature.
- * @return Averaged eight-component nodal shell-resultant field.
+ * @param target_displacement Global nodal displacement field.
+ * @param target_temperature Target temperature field.
+ * @param base_displacement Linearization displacement field.
+ * @param base_temperature Linearization temperature field.
+ * @return Eight-component ELEMENT_NODAL result field.
  */
 Field Model::compute_shell_resultants(
     Field&       target_displacement,
@@ -222,72 +225,25 @@ Field Model::compute_shell_resultants(
     const Field* base_displacement,
     const Field* base_temperature
 ) {
-    const Index node_count    = _data->field_rows(FieldDomain::NODE);
+    logging::error(_data->element_nodal_offsets != nullptr,
+        "Model: element-nodal offsets are required for shell resultants");
+
     const Index element_count = static_cast<Index>(_data->elements.size());
+    Field resultants = _data->create_field_(
+        "ELEMENT_NODAL_SHELL_RESULTANTS", FieldDomain::ELEMENT_NODAL, 8);
 
-    // Limit full-sized nodal accumulators to workers with useful element batches
-    const int thread_count = parallel::worker_count(element_count, global_config.max_threads, Index(64));
-
-    // Allocate independent nodal accumulators because adjacent shell elements
-    // may write resultants to the same global node.
-    std::vector<Field> thread_resultants;
-    std::vector<Field> thread_counts;
-    thread_resultants.reserve(static_cast<std::size_t>(thread_count));
-    thread_counts.reserve(static_cast<std::size_t>(thread_count));
-
-    for (int thread = 0; thread < thread_count; ++thread) {
-        thread_resultants.push_back(_data->create_field_("SHELL_RESULTANTS_THREAD", FieldDomain::NODE, 8, false));
-        thread_counts.push_back(_data->create_field_("SHELL_RESULTANTS_COUNT_THREAD", FieldDomain::NODE, 1, false));
-        thread_resultants.back().set_zero();
-        thread_counts.back().set_zero();
-    }
-
-
-    // Recover each element into the accumulator owned by its worker
-    parallel::for_index(element_count, thread_count,
-        [&](Index elem_idx, int thread) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
-
-            if (auto sel = el->as<StructuralElement>()) {
+    // Each element writes a disjoint segment; no global nodal reduction is needed
+    parallel::for_index(element_count, global_config.max_threads,
+        [&](Index elem_idx, int /*worker*/) {
+            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!element) return;
+            if (auto sel = element->as<StructuralElement>()) {
                 sel->compute_shell_section_forces(
-                    thread_resultants[static_cast<std::size_t>(thread)],
-                    thread_counts[static_cast<std::size_t>(thread)],
-                    target_displacement,
-                    target_temperature,
-                    base_displacement,
-                    base_temperature
-                );
+                    resultants, target_displacement, target_temperature,
+                    base_displacement, base_temperature);
             }
-        }, Index(64));
+        }, Index(8));
 
-
-    // Reduce worker-local contributions independently for every global node
-    Field resultants = _data->create_field_("SHELL_RESULTANTS", FieldDomain::NODE, 8, false);
-    resultants.set_zero();
-
-    parallel::for_index(node_count, global_config.max_threads,
-        [&](Index node, int /*worker*/) {
-            Precision count = Precision(0);
-
-            for (int thread = 0; thread < thread_count; ++thread) {
-                const auto index = static_cast<std::size_t>(thread);
-                count += thread_counts[index](node, 0);
-
-                for (Index component = 0; component < resultants.components; ++component) {
-                    resultants(node, component) += thread_resultants[index](node, component);
-                }
-            }
-
-            if (count == Precision(0)) return;
-
-            for (Index component = 0; component < resultants.components; ++component) {
-                resultants(node, component) /= count;
-            }
-        }, Index(256));
-
-    // Validate the averaged result field before returning it
-    resultants.check_finite("Shell resultants");
     return resultants;
 }
 
@@ -391,9 +347,9 @@ Field Model::compute_section_forces(
 
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate zeroed storage for every compiled element-node row
-    Field beam_forces = _data->create_field_("BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, 6, false);
-    beam_forces.set_zero();
+    // Unsupported elements must remain NaN so nodal projection excludes them.
+    // Supported beam and truss formulations write every component of their rows.
+    Field beam_forces = _data->create_field_("BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, 6);
 
     // Recover section forces into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,
@@ -431,9 +387,9 @@ Field Model::compute_shear_flow(Field& displacement) {
 
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate zeroed storage for every compiled element-node row
-    Field shear_flow = _data->create_field_("SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, 1, false);
-    shear_flow.set_zero();
+    // Keep unsupported element rows as NaN rather than diluting nodal averages.
+    // Supported shear-flow formulations write their own element-local rows.
+    Field shear_flow = _data->create_field_("SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, 1);
 
     // Recover shear flow into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,

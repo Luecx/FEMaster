@@ -151,12 +151,15 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     fem::model::Field displacement("U", fem::model::FieldDomain::NODE, 4, 6);
     displacement.set_zero();
 
-    fem::model::Field resultants = model.compute_shell_resultants(displacement);
+    // Model recovery now retains independent ELEMENT_NODAL shell resultants.
+    // The existing nodal FRD test explicitly requests the projected values.
+    fem::model::Field element_resultants = model.compute_shell_resultants(displacement);
+    fem::model::Field nodal_resultants = element_resultants.to_nodal(*model._data, "SHELL_RESULTANTS");
 
     {
         fem::io::writer::FrdWriter writer(output_path);
         writer.write_model_data(*model._data);
-        writer.write_field(resultants, "SHELLRESULTANTS", model._data.get());
+        writer.write_field(nodal_resultants, "SHELLRESULTANTS", model._data.get());
     }
 
     const std::string text = read_text(output_path);

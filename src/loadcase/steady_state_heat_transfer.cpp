@@ -42,6 +42,15 @@ using constraint::ConstraintTransformer;
  * are accepted by the reader but do not cause intermediate thermal solves.
  */
 void SteadyStateHeatTransfer::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::TEMPERATURE, model::FieldDomain::NODE},
+            {OutputField::HEAT_FLUX  , model::FieldDomain::NODE}
+        });
+    }
+
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
     logging::info(true, "STEADY-STATE HEAT TRANSFER");

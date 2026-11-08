@@ -533,32 +533,27 @@ bool FRTShell<N>::compute_peeq(Field& peeq) {
 }
 
 /**
- * Averages generalized shell resultants from the element nodes into nodal
- * result fields without advancing material trial history.
+ * Recovers generalized shell resultants independently at element nodes.
  *
- * Each natural nodal output coordinate reuses the closest in-plane integration-
- * point committed state block. This recovery is used by the linear-static load
- * case and therefore evaluates linearized generalized strains in the reference
- * shell configuration. The section evaluates resultants in its configured
- * output basis before they are accumulated for subsequent component-wise
- * averaging.
+ * Each natural output point reuses the closest committed in-plane material
+ * state and evaluates the generalized strain in the shell's output basis.
+ * Each value is written to the element's disjoint ELEMENT_NODAL row range
+ * without advancing trial history or mixing neighboring element results.
  *
- * @param resultants Global nodal generalized-resultant accumulator.
- * @param contribution_count Global nodal contribution counter.
- * @param displacement Global nodal displacement field.
- * @return Always `true` after shell resultants were accumulated.
+ * @param resultants Eight-component ELEMENT_NODAL result field.
+ * @param target_displacement Global nodal displacement field.
+ * @return True after local resultants have been written.
  */
 template<Index N>
 bool FRTShell<N>::compute_shell_section_forces(
     Field&       resultants,
-    Field&       contribution_count,
     const Field& target_displacement,
     const Field* target_temperature,
     const Field* base_displacement,
     const Field* base_temperature
 ) {
-    logging::error(resultants.components >= num_strains,
-        "FRTShell: shell section forces require eight components [N11,N22,N12,M11,M22,M12,Q13,Q23]");
+    logging::error(resultants.domain == FieldDomain::ELEMENT_NODAL && resultants.components >= num_strains,
+        "FRTShell: shell resultants require eight-component ELEMENT_NODAL output");
 
     const RowMatrix rst = this->stress_strain_nodal_rst();
     const CurrentState state = base_displacement
@@ -700,12 +695,11 @@ bool FRTShell<N>::compute_shell_section_forces(
         resultants_shell = resultants_shell.transformed(result_axes_in_shell);
         const Vec8 values = scale * resultants_shell.values();
 
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        // Preserve one value per element-local node, even at shared nodes
+        const Index row = static_cast<Index>(this->elem_nodal_offset) + node;
         for (Index component = 0; component < num_strains; ++component) {
-            resultants(node_id, component) += values(component);
+            resultants(row, component) = values(component);
         }
-
-        contribution_count(node_id, 0) += Precision(1);
     }
 
     return true;

@@ -1,14 +1,17 @@
 /**
  * @file output_request_handler.h
- * @brief Declares lazy dependency-based result recovery for one analysis step.
+ * @brief Declares lazy recovery and caching of finite-element output fields.
  *
- * Every load case owns one OutputRequestHandler. The load case provides only
- * fields that exist directly in its solved state, while the handler recursively
- * resolves requested derived quantities through the model. Step-lifetime and
- * frame-lifetime storage are separated so modal/buckling summaries can coexist
- * with repeatedly changing frame fields.
+ * Each requested result is identified by its physical quantity and FieldDomain.
+ * Analysis steps provide primary fields; the handler recovers derived fields only
+ * when an output requires them. Recoveries retain their natural domain and a
+ * NODE request projects an ELEMENT_NODAL result only where this is meaningful.
  *
- * @see output_field.h
+ * The handler owns computed fields for the current frame and borrows provided
+ * primary fields. No default requests or dependency registry are maintained:
+ * every load case selects its own defaults when the input deck selected none.
+ *
+ * @see OutputField
  * @see model::Field
  */
 
@@ -19,10 +22,10 @@
 #include "../../core/types_num.h"
 #include "../../data/field.h"
 
-#include <array>
 #include <functional>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,98 +36,102 @@ struct ModelData;
 }
 
 namespace fem::io::writer {
+
 struct ResultWriters;
 
+/**
+ * @brief Identifies a result quantity together with its spatial domain.
+ *
+ * The domain distinguishes nodal values, independent element-nodal values,
+ * element totals and element integration/material-point data. It is part of
+ * the cache key, so different representations can coexist within one frame.
+ */
+struct OutputKey {
+    OutputField        field  = OutputField::DISPLACEMENT;
+    model::FieldDomain domain = model::FieldDomain::NODE;
+
+    bool operator<(const OutputKey& other) const {
+        if (field != other.field) return field < other.field;
+        return domain < other.domain;
+    }
+};
 
 /**
- * @brief Resolves and writes requested result quantities for one analysis step.
+ * @brief Stores one borrowed or computed result field for the current frame.
  *
- * The handler owns request state and lazily recovered fields. Fields supplied
- * through provide()/provide_step() remain owned by the analysis step and are
- * referenced only until the next frame reset or the end of the step.
+ * A directly provided field remains owned by the analysis. A lazily recovered
+ * or projected field is owned by the handler and remains valid until the next
+ * begin_frame() call. Provided data takes precedence when both exist.
+ */
+struct CachedOutputField {
+    model::Field*               provided = nullptr;
+    std::optional<model::Field> computed;
+
+    model::Field& value() {
+        return provided ? *provided : *computed;
+    }
+};
+
+/**
+ * @brief Resolves requested model results and dispatches them to result writers.
+ *
+ * Each analysis step owns one instance. The parser appends explicit requests
+ * while reading the step; the load case adds defaults only if no requests exist.
+ * Primary results are provided at each frame, and compute() performs missing
+ * numerical recoveries in their native domain. All computed representations
+ * are cached until the next frame. Independent spectral/step summary fields
+ * are written directly by their owning analysis procedure.
+ *
+ * Linearized, perturbation and nonlinear recovery use the existing model-state
+ * context; these settings do not affect request selection or field ownership.
  */
 class OutputRequestHandler {
-    static constexpr std::size_t field_count =
-        static_cast<std::size_t>(OutputField::COUNT);
+    // Bound model and requested field/domain combinations
+    model::Model*          model_ = nullptr;
+    std::vector<OutputKey> requests_;
 
-    // Analysis dependency used only when a requested field must be recovered
-    model::Model* model_ = nullptr;
+    // Frame-local fields: provided values are borrowed and computed values owned
+    std::map<OutputKey, CachedOutputField> fields_;
 
-    // Request state: defaults remain available so PRESELECT can restore them
-    std::array<bool, field_count> defaults_{};
-    // Output domain flags per field: bit 0 is NODE/native, bit 1 ELEMENT_NODAL
-    std::array<std::uint8_t, field_count> requests_{};
-    bool explicit_requests_ = false;
-
-    // Non-owning primary/direct fields and owned lazily recovered frame fields
-    std::array<model::Field*, field_count> step_fields_{};
-    std::array<model::Field*, field_count> frame_fields_{};
-    std::array<std::optional<model::Field>, field_count> computed_{};
-    std::array<std::optional<model::Field>, field_count> element_nodal_{};
-
-
-    // Recursion guard for accidental cyclic requirement definitions
-    std::array<bool, field_count> resolving_{};
-
-    // Current frame metadata used to preserve existing result names/values
+    // Current frame metadata
     Precision   frame_value_ = std::numeric_limits<Precision>::quiet_NaN();
     std::string frame_suffix_;
 
-    // Kinematic recovery mode selected by the owning analysis step.
+    // Numerical recovery context provided by the owning load case
     bool nonlinear_ = false;
     const model::Field* perturbation_base_ = nullptr;
     const model::Field* linearization_base_ = nullptr;
     const model::Field* linearization_temperature_ = nullptr;
-
-    // Optional analysis hook run before each derived model recovery. Nonlinear
-    // steps use it to restore constitutive trial storage from committed state.
     std::function<void()> before_compute_;
 
 public:
-    // Analysis binding and step-defined default requests
+    // Bind the compiled model and configure requests
     void bind(model::Model* model);
-    void set_defaults(std::initializer_list<OutputField> fields);
-    void use_defaults();
+    void request(OutputField field, model::FieldDomain domain = model::FieldDomain::NODE);
+    void request(std::initializer_list<OutputKey> fields);
+    bool empty() const;
+
+    // Select the constitutive recovery configuration
     void set_nonlinear(bool nonlinear);
     void set_perturbation_base(const model::Field* displacement);
     void set_linearization_base(const model::Field* displacement,
                                 const model::Field* temperature);
     void set_before_compute(std::function<void()> callback);
 
-    // Explicit requests supplied by the input deck
-    void begin_explicit_requests();
-    void request(OutputField field, model::FieldDomain domain = model::FieldDomain::NODE);
-    bool requested(OutputField field) const;
-
-    // Direct quantities supplied by the active analysis
-    void provide_step(OutputField field, model::Field& value);
+    // Supply current-frame primary results; provided fields are not copied
     void begin_frame(Precision frame_value = std::numeric_limits<Precision>::quiet_NaN(),
                      std::string suffix = {});
     void provide(OutputField field, model::Field& value);
 
-    // Recursive dependency resolution
-    std::vector<OutputField> requirements(OutputField field) const;
-    model::Field& resolve(OutputField field);
-    model::Field& resolve_element_nodal(OutputField field);
+    // Return a cached field, recover one natively or project element-nodal data
+    model::Field& compute(OutputField field, model::FieldDomain domain);
 
-    // Write all requested quantities belonging to the respective lifetime
+    // Write all explicitly requested frame fields, using the returned domain
     void write_frame(ResultWriters& writer, const model::ModelData* model_data);
-    void write_step(ResultWriters& writer, const model::ModelData* model_data);
 
 private:
-    static std::size_t index(OutputField field);
-    static bool supports_element_nodal(OutputField field);
-
-    // Compute one missing field after all declared requirements are available
-    void compute(OutputField field);
-
-    // Shared writer path preserving established result names
-    void write(OutputField field,
-               ResultWriters& writer,
-               const model::ModelData* model_data,
-               const std::string& suffix,
-               Precision frame_value,
-               model::FieldDomain domain = model::FieldDomain::NODE);
+    // Save a recovered field in its actual domain without overriding provided data
+    void store(OutputField field, model::Field value);
 };
 
 } // namespace fem::io::writer

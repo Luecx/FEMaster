@@ -208,6 +208,19 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
  *       If the modal basis is empty, the existing direct solver is used.
  */
 void LinearHarmonic::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::DISPLACEMENT_REAL, model::FieldDomain::NODE},
+            {OutputField::DISPLACEMENT_IMAG, model::FieldDomain::NODE},
+            {OutputField::STRESS_REAL      , model::FieldDomain::NODE},
+            {OutputField::STRESS_IMAG      , model::FieldDomain::NODE},
+            {OutputField::STRAIN_REAL      , model::FieldDomain::NODE},
+            {OutputField::STRAIN_IMAG      , model::FieldDomain::NODE}
+        });
+    }
+
     // Validate the requested analysis procedure and excitation frequencies
     logging::error(!frequencies.empty(),
         "LinearHarmonic: no frequencies defined");

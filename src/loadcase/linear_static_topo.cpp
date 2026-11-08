@@ -293,24 +293,26 @@ void LinearStaticTopo::run() {
 
     using io::writer::OutputField;
 
-    // The historical topology defaults include orientation fields only when an
-    // orientation field is configured. Re-applying defaults here is safe:
-    // explicit input-deck requests are retained by OutputRequestHandler.
-    if (has_orientation) {
-        output.set_defaults({
-            OutputField::DISPLACEMENT,
-            OutputField::STRAIN,
-            OutputField::STRESS,
-            OutputField::EXTERNAL_FORCES,
-            OutputField::REACTION_FORCES,
-            OutputField::COMPLIANCE,
-            OutputField::DENS_GRAD,
-            OutputField::VOLUME,
-            OutputField::DENSITY,
-            OutputField::SHEAR_FLOW,
-            OutputField::ORIENTATION_GRAD,
-            OutputField::ORIENTATION
+    // Default topology output also includes orientation data when available
+    if (output.empty()) {
+        output.request({
+            {OutputField::DISPLACEMENT        , model::FieldDomain::NODE},
+            {OutputField::STRAIN              , model::FieldDomain::NODE},
+            {OutputField::STRESS              , model::FieldDomain::NODE},
+            {OutputField::EXTERNAL_FORCES     , model::FieldDomain::NODE},
+            {OutputField::REACTION_FORCES     , model::FieldDomain::NODE},
+            {OutputField::COMPLIANCE          , model::FieldDomain::ELEMENT},
+            {OutputField::DENS_GRAD           , model::FieldDomain::ELEMENT},
+            {OutputField::VOLUME              , model::FieldDomain::ELEMENT},
+            {OutputField::DENSITY             , model::FieldDomain::ELEMENT},
+            {OutputField::SHEAR_FLOW          , model::FieldDomain::ELEMENT_NODAL}
         });
+        if (has_orientation) {
+            output.request({
+                {OutputField::ORIENTATION_GRAD, model::FieldDomain::ELEMENT},
+                {OutputField::ORIENTATION,      model::FieldDomain::ELEMENT}
+            });
+        }
     }
 
     writer->add_loadcase(id, io::writer::WriterStepType::Static);

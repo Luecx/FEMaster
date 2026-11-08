@@ -39,11 +39,6 @@ struct SteadyStateHeatTransfer : LoadCase {
     // End-of-step time used to evaluate thermal boundary amplitudes
     Precision step_period = Precision(1);
 
-    // Thermal output fields are independent of structural displacement fields
-    SteadyStateHeatTransfer() {
-        using io::writer::OutputField;
-        output.set_defaults({OutputField::TEMPERATURE, OutputField::HEAT_FLUX});
-    }
 
     // Analysis identity and execution
     std::string type_name() const override { return "STEADYHEATTRANSFER"; }

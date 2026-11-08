@@ -288,11 +288,10 @@ static void write_results(std::vector<ModalMode>& modes,
 
     // Compact modal metadata belongs to the analysis result itself and is
     // always written, independently of node/element field filtering.
-    output.provide_step(OutputField::EIGENVALUES,      eigenvalues);
-    output.provide_step(OutputField::EIGENFREQUENCIES, eigenfreqs);
-    output.provide_step(OutputField::FREQUENCIES,      freqs);
-    output.provide_step(OutputField::PARTICIPATION,    participation);
-    output.write_step(*writer, mdl->_data.get());
+    writer->write_field(eigenvalues,   "EIGENVALUES");
+    writer->write_field(eigenfreqs,    "EIGENFREQUENCIES");
+    writer->write_field(freqs,         "FREQUENCIES");
+    writer->write_field(participation, "PARTICIPATION");
 }
 
 /**
@@ -308,6 +307,14 @@ static void write_results(std::vector<ModalMode>& modes,
  * settings only; condition definitions and collector identifiers are not retained.
  */
 void LinearEigenfrequency::run() {
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::MODE_SHAPE, model::FieldDomain::NODE}
+        });
+    }
+
     // Banner
     logging::info(true, "");
     logging::info(true, "===============================================================================================");

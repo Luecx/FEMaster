@@ -131,6 +131,24 @@ Precision calculate_relative_force_residual(
  * retains solver and path settings, never a copy of condition definitions.
  */
 void NonlinearStatic::run() {
+    output.set_nonlinear(true);
+    // Apply step-specific defaults only when no output variables were requested
+    if (output.empty()) {
+        using io::writer::OutputField;
+        output.request({
+            {OutputField::DISPLACEMENT   , model::FieldDomain::NODE},
+            {OutputField::STRAIN         , model::FieldDomain::NODE},
+            {OutputField::STRESS         , model::FieldDomain::NODE},
+            {OutputField::PEEQ           , model::FieldDomain::NODE},
+            {OutputField::STRESS_TOP     , model::FieldDomain::NODE},
+            {OutputField::STRESS_BOT     , model::FieldDomain::NODE},
+            {OutputField::EXTERNAL_FORCES, model::FieldDomain::NODE},
+            {OutputField::INTERNAL_FORCES, model::FieldDomain::NODE},
+            {OutputField::REACTION_FORCES, model::FieldDomain::NODE},
+            {OutputField::LAMBDA         , model::FieldDomain::UNKNOWN}
+        });
+    }
+
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "===============================================================================================");

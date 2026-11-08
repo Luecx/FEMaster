@@ -65,18 +65,6 @@ struct LinearHarmonic : public LoadCase {
     tools::RayleighDamping damping;
     bool modal_basis = false;
 
-    // Construction and default result requests
-    LinearHarmonic() {
-        using io::writer::OutputField;
-        output.set_defaults({
-            OutputField::DISPLACEMENT_REAL,
-            OutputField::DISPLACEMENT_IMAG,
-            OutputField::STRESS_REAL,
-            OutputField::STRESS_IMAG,
-            OutputField::STRAIN_REAL,
-            OutputField::STRAIN_IMAG
-        });
-    }
 
     void set_damping(const tools::RayleighDamping& value) { damping = value; }
 
