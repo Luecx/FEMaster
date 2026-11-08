@@ -46,7 +46,7 @@ TEST(ModelThermalDofs, ActivatesOnlyThermalElementNodes) {
 }
 
 
-TEST(ModelThermalResults, RecoversReducedSolidHeatFluxAsNodalField) {
+TEST(ModelThermalResults, RecoversReducedSolidHeatFluxAsElementNodalField) {
     model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
@@ -83,18 +83,28 @@ TEST(ModelThermalResults, RecoversReducedSolidHeatFluxAsNodalField) {
             : Precision(0);
     }
 
-    // C3D8R evaluates heat flux at its single integration point. The solid
-    // formulation must extrapolate that value to ELEMENT_NODAL storage before
-    // the model projects it to unique global nodes.
-    const model::Field heat_flux = model.compute_heat_flux(temperature);
+    // C3D8R evaluates flux at one integration point and extrapolates it to
+    // element nodes. Nodal projection is separate, as for stress and strain.
+    const model::Field element_heat_flux = model.compute_heat_flux(temperature);
 
-    EXPECT_EQ(heat_flux.domain, model::FieldDomain::NODE);
-    ASSERT_EQ(heat_flux.rows, 8);
-    ASSERT_EQ(heat_flux.components, 3);
+    EXPECT_EQ(element_heat_flux.domain, model::FieldDomain::ELEMENT_NODAL);
+    ASSERT_EQ(element_heat_flux.rows, 8);
+    ASSERT_EQ(element_heat_flux.components, 3);
 
-    for (Index node = 0; node < heat_flux.rows; ++node) {
-        EXPECT_NEAR(heat_flux(node, 0), Precision(-2), Precision(1e-12));
-        EXPECT_NEAR(heat_flux(node, 1), Precision(0), Precision(1e-12));
-        EXPECT_NEAR(heat_flux(node, 2), Precision(0), Precision(1e-12));
+    for (Index row = 0; row < element_heat_flux.rows; ++row) {
+        EXPECT_NEAR(element_heat_flux(row, 0), Precision(-2), Precision(1e-12));
+        EXPECT_NEAR(element_heat_flux(row, 1), Precision(0), Precision(1e-12));
+        EXPECT_NEAR(element_heat_flux(row, 2), Precision(0), Precision(1e-12));
+    }
+
+    // The shared projection remains available for *NODE OUTPUT, HFL.
+    const model::Field nodal_heat_flux =
+        element_heat_flux.to_nodal(*model._data, "HEAT_FLUX");
+    EXPECT_EQ(nodal_heat_flux.domain, model::FieldDomain::NODE);
+    ASSERT_EQ(nodal_heat_flux.rows, 8);
+    for (Index node = 0; node < nodal_heat_flux.rows; ++node) {
+        EXPECT_NEAR(nodal_heat_flux(node, 0), Precision(-2), Precision(1e-12));
+        EXPECT_NEAR(nodal_heat_flux(node, 1), Precision(0), Precision(1e-12));
+        EXPECT_NEAR(nodal_heat_flux(node, 2), Precision(0), Precision(1e-12));
     }
 }
