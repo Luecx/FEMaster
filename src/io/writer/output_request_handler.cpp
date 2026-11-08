@@ -257,9 +257,9 @@ model::Field& OutputRequestHandler::resolve(OutputField field) {
 /**
  * Resolves an unaveraged element-nodal field without projecting it onto nodes.
  *
- * Stress/strain and shell-face pairs are cached together, so requests for both
- * domains share a single element recovery. Dependencies are resolved before
- * invoking the same per-analysis recovery path used for nodal output.
+ * Stress/strain, shell-face and heat-flux results are cached element-nodally,
+ * so requests for both domains share one recovery. Dependencies are resolved
+ * before invoking the same path used for nodal output.
  */
 model::Field& OutputRequestHandler::resolve_element_nodal(OutputField field) {
     const std::size_t i = index(field);
@@ -340,6 +340,7 @@ bool OutputRequestHandler::supports_element_nodal(OutputField field) {
         case OutputField::STRAIN_REAL:
         case OutputField::STRESS_IMAG:
         case OutputField::STRAIN_IMAG:
+        case OutputField::HEAT_FLUX:
             return true;
         default:
             return false;
@@ -516,7 +517,7 @@ void OutputRequestHandler::compute(OutputField field) {
             return;
 
         case OutputField::HEAT_FLUX:
-            computed_[index(field)] =
+            element_nodal_[index(field)] =
                 model_->compute_heat_flux(resolve(OutputField::TEMPERATURE));
             return;
 
