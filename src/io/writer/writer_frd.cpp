@@ -392,6 +392,14 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
+            {"HEATFLUX", "HFL", "FLUX"}, "FLUX",
+            {
+                FRDComponent::vector("F1", 1),
+                FRDComponent::vector("F2", 2),
+                FRDComponent::vector("F3", 3)
+            }
+        },
+        {
             {"REACTIONFORCES", "FORC"}, "FORC",
             {
                 FRDComponent::vector("F1" , 1),
