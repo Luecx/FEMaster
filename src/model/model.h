@@ -236,9 +236,8 @@ struct Model {
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural
-    // stresses and shell faces are recovered element-nodally with projection
-    // weights; nodal averaging is performed only when requested by output.
-    // Heat flux currently follows its existing nodal recovery path. Target
+    // stresses, shell faces and heat flux are recovered element-nodally;
+    // nodal averaging is performed only when requested by output. Target
     // and base fields use the same state convention as evaluate().
     std::tuple<Field, Field> compute_stress(
         Field&       target_displacement,
