@@ -79,6 +79,7 @@ void register_rotary_inertia   (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_sfset            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_shell_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_solid_section    (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_specific_heat    (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_spring           (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_support          (fem::io::dsl::Registry& registry,            Parser& parser);
 void register_surface          (fem::io::dsl::Registry& registry, fem::model::Model& model);
