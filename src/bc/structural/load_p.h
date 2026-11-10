@@ -50,6 +50,10 @@ struct PLoad : Condition {
     // Nominal pressure per unit surface area, positive against the normal
     Precision pressure_ = NAN;
 
+    // Reference pressure by default; opt in to current-geometry pressure.
+    bool follower_ = false;
+    bool is_follower() const override { return follower_; }
+
     // Target finite-element surfaces over which the pressure is integrated
     model::SurfaceRegion::Ptr region_ = nullptr;
 
