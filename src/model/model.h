@@ -198,7 +198,9 @@ struct Model {
     // ramp. Supports are assembled from the target state only.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
-                            Precision time, Precision step_progress);
+                            Precision time, Precision step_progress,
+                            const SystemDofIds* indices = nullptr,
+                            SparseMatrix* K_external = nullptr);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
