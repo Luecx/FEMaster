@@ -107,49 +107,75 @@ void PLoad::apply(
             }
         );
 
-        // Differentiate the complete discrete pressure integral, including
-        // rotation of the normal and change of surface area, with central steps.
+        // Evaluate the pressure tangent on an isolated surface-sized geometry.
+        // The general surface interface addresses a Field through its node IDs,
+        // so remap a copied surface rather than copying whole-model fields for
+        // each perturbation. All temporary storage is O(n_surface_nodes).
         if (!follower_ || system_dof_ids.size() == 0) continue;
 
-        model::Field geometry = positions;
-        model::Field plus = rhs;
-        model::Field minus = rhs;
-        auto integrate = [&](model::Field& output) {
+        const Index n_nodes = surface->n_nodes;
+        auto local_surface = surface->copy();
+
+        model::Field geometry{
+            "PRESSURE_LOCAL_GEOMETRY", model::FieldDomain::NODE, n_nodes, 6
+        };
+        model::Field plus{
+            "PRESSURE_LOCAL_PLUS", model::FieldDomain::NODE, n_nodes, 6
+        };
+        model::Field minus{
+            "PRESSURE_LOCAL_MINUS", model::FieldDomain::NODE, n_nodes, 6
+        };
+
+        for (Index i = 0; i < n_nodes; ++i) {
+            const ID global_node = surface->nodes()[i];
+            for (Index d = 0; d < 6; ++d) {
+                geometry(i, d) = positions(global_node, d);
+            }
+            local_surface->nodes()[i] = i;
+        }
+
+        // The local integration writes only to the compact output field.
+        // Reusing it also avoids repeated global zero-fills for every column.
+        const auto integrate = [&](model::Field& output) {
             output.set_zero();
-            surface->integrate_vector_field(
+            local_surface->integrate_vector_field(
                 geometry, output,
                 [&](const Vec3& position) -> Vec3 {
-                    const Vec2 local = surface->global_to_local(position, geometry);
-                    return -pressure * surface->normal(geometry, local);
+                    const Vec2 local = local_surface->global_to_local(position, geometry);
+                    return -pressure * local_surface->normal(geometry, local);
                 }
             );
         };
 
-        for (Index j = 0; j < surface->n_nodes; ++j) {
-            const ID node_j = surface->nodes()[j];
+        // Central differences differentiate both surface normals and area.
+        // Columns with inactive DOFs are skipped entirely.
+        for (Index j = 0; j < n_nodes; ++j) {
+            const ID global_j = surface->nodes()[j];
             for (Index d = 0; d < 3; ++d) {
-                const Index col = system_dof_ids(node_j, d);
-                if (col < 0) continue;
+                const Index column = system_dof_ids(global_j, d);
+                if (column < 0) continue;
 
-                const Precision x = positions(node_j, d);
-                const Precision h = std::sqrt(std::numeric_limits<Precision>::epsilon())
+                const Precision x = geometry(j, d);
+                const Precision h = std::cbrt(std::numeric_limits<Precision>::epsilon())
                     * std::max(Precision(1), std::abs(x));
-                geometry(node_j, d) = x + h;
-                integrate(plus);
-                geometry(node_j, d) = x - h;
-                integrate(minus);
-                geometry(node_j, d) = x;
 
-                for (Index i = 0; i < surface->n_nodes; ++i) {
-                    const ID node_i = surface->nodes()[i];
+                geometry(j, d) = x + h;
+                integrate(plus);
+                geometry(j, d) = x - h;
+                integrate(minus);
+                geometry(j, d) = x;
+
+                for (Index i = 0; i < n_nodes; ++i) {
+                    const ID global_i = surface->nodes()[i];
                     for (Index k = 0; k < 3; ++k) {
-                        const Index row = system_dof_ids(node_i, k);
+                        const Index row = system_dof_ids(global_i, k);
                         if (row < 0) continue;
+
                         const Precision derivative =
-                            (plus(node_i, k) - minus(node_i, k))
-                            / (Precision(2) * h);
-                        if (derivative != Precision(0))
-                            matrix.emplace_back(row, col, derivative);
+                            (plus(i, k) - minus(i, k)) / (Precision(2) * h);
+                        if (derivative != Precision(0)) {
+                            matrix.emplace_back(row, column, derivative);
+                        }
                     }
                 }
             }
