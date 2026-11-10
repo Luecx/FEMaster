@@ -484,20 +484,22 @@ TEST(Reader_Conditions, RejectsUnsupportedFollowerLoads) {
     rejects("*DSLOAD, NAME=TEST\nMISSING, TRVEC, 1., 1., 0., 0.\n",
             "TRVEC is not supported");
 
-    // Native pressure remains unsupported inside nonlinear analysis.
-    rejects("*LOADCASE, TYPE=NONLINEARSTATIC\n*PLOAD\nMISSING, 1.\n*END\n",
-            "follower pressure is not supported");
 }
 
-TEST(Reader_Conditions, RejectsCollectorPressureInNonlinearStep) {
+TEST(Reader_Conditions, AcceptsCollectorPressureInNonlinearStep) {
     io::reader::Parser parser;
     parser.begin_loadcase(std::make_unique<loadcase::NonlinearStatic>());
 
+    // Pressure definitions, including follower pressure, are selectable in a
+    // nonlinear step. The analysis supplies K_external during assembly.
     auto pressure = std::make_shared<bc::PLoad>();
-    EXPECT_THROW(parser.select_collector_condition(bc::CLOAD, pressure), std::runtime_error);
+    EXPECT_NO_THROW(parser.select_collector_condition(bc::PLOAD, pressure));
 
-    // Fixed-direction tractions do not require a follower load stiffness and
-    // must remain selectable (the normal collector lifecycle is unchanged).
+    auto follower = std::make_shared<bc::PLoad>();
+    follower->follower_ = true;
+    EXPECT_NO_THROW(parser.select_collector_condition(bc::PLOAD, follower));
+
+    // Fixed-direction tractions retain the same collector lifecycle.
     auto traction = std::make_shared<bc::CLoad>();
     EXPECT_NO_THROW(parser.select_collector_condition(bc::CLOAD, traction));
 }
