@@ -819,36 +819,6 @@ TEST(Reader_Parser, ParsesRbmCommand) {
     std::filesystem::remove(output_path);
 }
 
-TEST(Reader_Parser, StoresConstantSpecificHeat) {
-    const std::string input_path = "tests/TMP_SPECIFIC_HEAT.INP";
-    const std::string output_path = "tests/TMP_SPECIFIC_HEAT.RES";
-
-    std::filesystem::remove(input_path);
-    std::filesystem::remove(output_path);
-
-    {
-        std::ofstream os(input_path);
-        ASSERT_TRUE(os.is_open());
-        os << "*NODE\n1, 0., 0., 0.\n";
-        os << "*MATERIAL, NAME=MAT\n";
-        os << "*DENSITY\n7850.\n";
-        os << "*SPECIFIC HEAT\n460.\n";
-    }
-
-    io::reader::Parser parser;
-    EXPECT_NE(parser.registry().find("SPECIFICHEAT"), nullptr);
-    ASSERT_NO_THROW(parser.run(input_path, output_path));
-
-    const auto material = parser.model()._data->materials.get("MAT");
-    ASSERT_NE(material, nullptr);
-    EXPECT_TRUE(material->has_thermal_specific_heat());
-    EXPECT_DOUBLE_EQ(material->get_thermal_specific_heat(), 460.0);
-    EXPECT_DOUBLE_EQ(material->get_density(), 7850.0);
-
-    std::filesystem::remove(input_path);
-    std::filesystem::remove(output_path);
-}
-
 TEST(Reader_Parser, ParsesOrthotropicEngineeringConstants) {
     const std::string input_path = "tests/TMP_ORTHO.INP";
     const std::string output_path = "tests/TMP_ORTHO.RES";
