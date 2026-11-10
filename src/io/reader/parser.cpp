@@ -143,6 +143,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
         material->execute_children("CONDUCTIVITY");
+        material->execute_children("SPECIFICHEAT");
         material->execute_children("THERMALEXPANSION");
         material->execute_children("EXPANSION");
 
@@ -999,6 +1000,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_plastic(registry, mdl);
     commands::register_density(registry, mdl);
     commands::register_conductivity(registry, mdl);
+    commands::register_specific_heat(registry, mdl);
     commands::register_expansion(registry, mdl);
     commands::register_orientation(registry, mdl);
     commands::register_profile(registry, mdl);
