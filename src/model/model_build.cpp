@@ -402,7 +402,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
 
     // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
-        coupling.apply_loads(*_data, load_matrix);
+        coupling.apply_loads(*_data, load_matrix, indices, K_external);
     }
 
     return load_matrix;
