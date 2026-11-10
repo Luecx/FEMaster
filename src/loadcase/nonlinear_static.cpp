@@ -411,9 +411,27 @@ void NonlinearStatic::run() {
     // indefinite near compression, limit points or buckling, so SPD is not assumed.
     // Arc length uses a nonsymmetric augmented system and contact may also be
     // nonsymmetric, so those paths keep the general solver.
+    // A follower pressure or geometry-dependent structural load redistribution
+    // can produce nonsymmetric stiffness, even in load-controlled solves.
+    bool has_follower = false;
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        for (const auto& condition : initial_conditions.get(family))
+            has_follower |= condition->is_follower();
+        for (const auto& condition : target_conditions.get(family))
+            has_follower |= condition->is_follower();
+    }
+
+    bool has_structural_coupling = false;
+    for (const auto& coupling : model->_data->couplings) {
+        has_structural_coupling |=
+            coupling.type == constraint::CouplingType::STRUCTURAL;
+    }
+
     const auto matrix_type =
         control == NonlinearControl::LoadControl
         && model->_data->contacts.empty()
+        && !has_follower
+        && !has_structural_coupling
             ? solver::DirectSolverMatrixType::Symmetric
             : solver::DirectSolverMatrixType::General;
 
