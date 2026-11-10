@@ -4,6 +4,7 @@
  */
 
 #include "../src/bc/structural/load_c.h"
+#include "../src/bc/structural/load_p.h"
 #include "../src/bc/structural/load_inertial.h"
 #include "../src/bc/structural/load_v.h"
 #include "../src/constraints/types/equation.h"
@@ -587,4 +588,37 @@ TEST(BC_Loads, StructuralCouplingTransfersTangentAtZeroMasterForce) {
     for (Index node = 1; node < 4; ++node)
         transferred += K.coeff(indices(node, 0), indices(1, 0));
     EXPECT_NEAR(transferred, 12.0, 1e-8);
+}
+
+
+TEST(BC_Loads, FollowerPressureRequiresExternalTangentAtZeroLoadFactor) {
+    model::Model mdl;
+    mdl.set_node(0, 0., 0., 0.);
+    mdl.compile();
+
+    // The check must occur before pressure integration, even for a zero
+    // load factor. An empty valid surface region isolates this contract.
+    auto follower = std::make_shared<bc::PLoad>();
+    follower->pressure_ = Precision(1);
+    follower->follower_ = true;
+    follower->region_ = std::make_shared<model::SurfaceRegion>("EMPTY");
+
+    bc::ConditionState target;
+    target.add(bc::PLOAD, follower);
+
+    EXPECT_THROW(
+        mdl.build_load_matrix(
+            bc::ConditionState{}, target, Precision(0), Precision(0)),
+        std::runtime_error
+    );
+
+    // Nonlinear assembly explicitly supplies numbering and K_external.
+    SystemDofIds indices(1, 6);
+    indices.setConstant(-1);
+    SparseMatrix K_external;
+    EXPECT_NO_THROW(
+        mdl.build_load_matrix(
+            bc::ConditionState{}, target, Precision(0), Precision(0),
+            &indices, &K_external)
+    );
 }
