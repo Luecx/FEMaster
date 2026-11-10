@@ -19,6 +19,9 @@
  * eigenmodes below twice the maximum excitation frequency, then enriches it
  * with the independent static responses of the harmonic load patterns. All
  * projected matrices remain full: the residual vectors are not eigenmodes.
+ * Zero-stiffness modes are identified by their normalized infinity-norm
+ * stiffness action. They remain in the dynamic basis, while a mass-orthogonal
+ * projection removes them from the static residual problem.
  * The existing full-system direct solver is used if no eigenmode is selected.
  *
  * Load amplitudes and constraints use the step-owned target ConditionState.
@@ -35,13 +38,17 @@
 
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
+#include "../core/run_quiet.h"
 #include "../core/timer.h"
 #include "../mattools/append_sparse_block.h"
+#include "../mattools/projection.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../math/pi.h"
 #include "../model/model.h"
 #include "../solve/eigval/solve_eigval.h"
 
 #include <Eigen/LU>
+#include <Eigen/QR>
 #include <Eigen/SparseCholesky>
 
 #ifdef USE_MKL
@@ -51,10 +58,9 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <string>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 namespace fem {
@@ -64,46 +70,69 @@ using constraint::ConstraintTransformer;
 
 namespace {
 
-constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
-
-template<class Function>
-decltype(auto) run_quiet(Function&& function) {
-    const bool logging_was_enabled = logging::is_enabled();
-    logging::disable();
-
-    try {
-        if constexpr (std::is_void_v<std::invoke_result_t<Function>>) {
-            std::forward<Function>(function)();
-            if (logging_was_enabled) logging::enable();
-            return;
-        } else {
-            auto result = std::forward<Function>(function)();
-            if (logging_was_enabled) logging::enable();
-            return result;
-        }
-    } catch (...) {
-        if (logging_was_enabled) logging::enable();
-        throw;
-    }
-}
-
 /**
- * Computes the static load-pattern responses only when Kr is positive definite.
+ * Computes static load-pattern responses outside identified zero-stiffness modes.
  *
- * Modal residual enrichment requires a unique static solution. The generic
- * direct solver falls back to SparseQR for singular matrices and can return
- * finite least-squares displacements that omit rigid-body motion. An explicit
- * Cholesky factorization avoids accepting those invalid Ritz directions.
+ * Without zero modes, the existing positive-definite sparse solve is retained.
+ * With zero modes R, form the mass-orthogonal projector P and solve
  *
- * Reuse the same sparse factorization for every load-pattern right-hand side.
- * Returning nullopt means that harmonic response must use the direct solver.
+ *     (P^T Kr P) z = P^T fr,    s = P z.
+ *
+ * The projected stiffness still has nullity dim(R). A rank-revealing complete
+ * orthogonal decomposition solves for all load patterns without inverting its
+ * zero pivots. Applying P to the solution fixes R^T Mr s = 0. An unexpected
+ * rank or excessive projected equilibrium residual requests the direct sweep.
+ * The physical zero-mode response remains in the dynamic modal basis.
  *
  * @param stiffness Constrained structural stiffness Kr.
+ * @param mass Constrained mass matrix Mr in the same coordinates.
  * @param loads Constrained load patterns, one right-hand side per column.
- * @return Static responses or nullopt if the static system is not well posed.
+ * @param zero_modes Independent positive-mass modes identified by Kr phi = 0.
+ * @return Static responses or nullopt if the complement cannot be resolved.
  */
 std::optional<DynamicMatrix> solve_static_responses(const SparseMatrix& stiffness,
-                                                    const DynamicMatrix& loads) {
+                                                    const SparseMatrix& mass,
+                                                    const DynamicMatrix& loads,
+                                                    const DynamicMatrix& zero_modes) {
+    if (zero_modes.cols() > 0) {
+        // No static enrichment is needed when there are no load patterns.
+        if (loads.cols() == 0) return DynamicMatrix(stiffness.rows(), 0);
+
+        // Assemble the requested projected system explicitly. P acts on
+        // displacement coordinates; virtual work projects forces with P^T.
+        const DynamicMatrix projector = mattools::build_projection_matrix(zero_modes, mass);
+        const DynamicMatrix projected_stiffness = projector.transpose() * (stiffness * projector);
+        const DynamicMatrix projected_loads     = projector.transpose() * loads;
+        if (!projected_stiffness.allFinite() || !projected_loads.allFinite()) return std::nullopt;
+
+        // The projector preserves the matrix dimension and introduces exactly
+        // dim(R) null directions. Extra null directions indicate incomplete
+        // modal coverage or an unresolved elastic complement; do not silently
+        // accept a least-squares response that loses additional motion.
+        Eigen::CompleteOrthogonalDecomposition<DynamicMatrix> factorization;
+        factorization.setThreshold(Precision(1e-10));
+        factorization.compute(projected_stiffness);
+        if (factorization.info() != Eigen::Success
+            || factorization.rank() != stiffness.rows() - zero_modes.cols()) return std::nullopt;
+
+        const DynamicMatrix coordinates = factorization.solve(projected_loads);
+        const DynamicMatrix responses   = projector * coordinates;
+        if (!coordinates.allFinite() || !responses.allFinite()) return std::nullopt;
+
+        // Check equilibrium in the projected test space and the chosen
+        // mass-orthogonal displacement gauge. The original loads provide the
+        // force scale even when their projected elastic part is nearly zero.
+        const DynamicMatrix equilibrium = projector.transpose() * (stiffness * responses - loads);
+        const DynamicMatrix weighted    = mass * responses;
+        const DynamicMatrix zero_motion = zero_modes.transpose() * weighted;
+        const Precision     tolerance   = Precision(1e-8);
+        if (!equilibrium.allFinite() || !weighted.allFinite() || !zero_motion.allFinite()) return std::nullopt;
+        if (equilibrium.norm() > tolerance * loads.norm()) return std::nullopt;
+        if (zero_motion.norm() > tolerance * zero_modes.norm() * weighted.norm()) return std::nullopt;
+
+        return responses;
+    }
+
     // Require a positive-definite constrained stiffness (no rigid-body modes)
 #ifdef USE_MKL
     Eigen::PardisoLLT<SparseMatrix> factorization;
@@ -193,7 +222,10 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
  *
  * 1. Compute eigenvectors of (Kr, Mr) below the specified cutoff and scale
  *    each vector to unit mass, phi^T Mr phi = 1.
- * 2. Solve Kr s_j = fr_j for the independently defined load patterns.
+ * 2. Identify zero-stiffness eigenvectors using
+ *    ||Kr phi||_inf / (||Kr||_inf ||phi||_inf), retaining them dynamically.
+ *    Solve the static load patterns in their mass-orthogonal complement;
+ *    without zero modes, retain the ordinary Kr s_j = fr_j solve.
  * 3. Remove the represented components from every s_j using two passes of
  *    Mr-orthogonalization; retain only independent residual directions.
  * 4. Project Kr, Mr and Cr onto the combined basis. In particular, the
@@ -301,16 +333,23 @@ void LinearHarmonic::run() {
     Index         eigenmode_count = 0;
 
     if (modal_basis) {
+        DynamicMatrix      zero_modes(Kr.rows(), 0);
+        std::vector<Index> zero_mode_indices;
+
         // Select natural modes below twice the highest excitation frequency.
         // The generalized eigenvalues are squared angular frequencies.
         const Precision cutoff_frequency  = 2 * *std::max_element(frequencies.begin(), frequencies.end());
-        const Precision cutoff_omega      = 2 * pi * cutoff_frequency;
+        const Precision cutoff_omega      = 2 * math::pi * cutoff_frequency;
         const Precision cutoff_eigenvalue = cutoff_omega * cutoff_omega;
 
         logging::error(std::isfinite(cutoff_eigenvalue),
             "LinearHarmonic: modal basis upper eigenvalue must be finite");
 
         if (cutoff_eigenvalue > 0 && Kr.rows() > 1) {
+            // The interval is open. Include zero and small negative numerical
+            // eigenvalues rather than discarding them before the Ku test.
+            const Precision minimum_eigenvalue = std::nextafter(
+                -Precision(1e-4) * cutoff_eigenvalue, -std::numeric_limits<Precision>::infinity());
             solver::EigvalOpts opts;
             opts.mode = solver::EigvalMode::ShiftInvert;
             opts.sort = solver::EigvalOpts::Sort::LargestMagn;
@@ -322,7 +361,7 @@ void LinearHarmonic::run() {
             auto eigenpairs = Timer::measure(
                 [&]() {
                     return solver::eigvals(
-                        device, Kr, Mr, Precision(0), cutoff_eigenvalue, opts, &interval_unresolved);
+                        device, Kr, Mr, minimum_eigenvalue, cutoff_eigenvalue, opts, &interval_unresolved);
                 },
                 "constructing harmonic modal basis");
 
@@ -331,6 +370,22 @@ void LinearHarmonic::run() {
 
             eigenmode_count = static_cast<Index>(eigenpairs.size());
             reduction_basis.resize(Kr.rows(), eigenmode_count);
+            zero_modes.resize(Kr.rows(), eigenmode_count);
+
+            // The induced matrix infinity norm is the maximum absolute row
+            // sum, not the largest entry. Assemble row sums explicitly because
+            // Kr uses column-major sparse storage. No backend inertia is used
+            // to classify or count the returned zero-stiffness directions.
+            DynamicVector stiffness_row_sums = DynamicVector::Zero(Kr.rows());
+            for (Eigen::Index col = 0; col < Kr.outerSize(); ++col) {
+                for (SparseMatrix::InnerIterator entry(Kr, col); entry; ++entry) {
+                    stiffness_row_sums(entry.row()) += std::abs(entry.value());
+                }
+            }
+            const Precision stiffness_norm      = stiffness_row_sums.maxCoeff();
+            const Precision zero_mode_tolerance = Precision(1e-10);
+            logging::error(stiffness_row_sums.allFinite() && std::isfinite(stiffness_norm),
+                "LinearHarmonic: stiffness infinity norm must be finite");
 
             // Normalize eigenvectors with respect to the reduced mass matrix
             for (Index mode = 0; mode < eigenmode_count; ++mode) {
@@ -341,7 +396,25 @@ void LinearHarmonic::run() {
                     "LinearHarmonic: modal mass must be finite and positive");
 
                 reduction_basis.col(mode) = eigenvector / std::sqrt(mode_mass);
+
+                // Test eta = ||Kr phi||_inf / (||Kr||_inf ||phi||_inf).
+                // Scale phi first to avoid overflow in the norm product.
+                // For Kr = 0 the equivalent inequality also accepts exact
+                // zero actions without dividing by a zero matrix norm.
+                const Precision mode_norm = reduction_basis.col(mode).lpNorm<Eigen::Infinity>();
+                logging::error(std::isfinite(mode_norm) && mode_norm > 0,
+                    "LinearHarmonic: invalid mode in zero-stiffness classification");
+
+                const DynamicVector action = Kr * (reduction_basis.col(mode) / mode_norm);
+                logging::error(action.allFinite(),
+                    "LinearHarmonic: zero-stiffness action must be finite");
+
+                if (action.lpNorm<Eigen::Infinity>() <= zero_mode_tolerance * stiffness_norm) {
+                    zero_modes.col(static_cast<Eigen::Index>(zero_mode_indices.size())) = reduction_basis.col(mode);
+                    zero_mode_indices.push_back(mode);
+                }
             }
+            zero_modes.conservativeResize(Eigen::NoChange, static_cast<Eigen::Index>(zero_mode_indices.size()));
         }
 
         if (eigenmode_count > 0) {
@@ -358,15 +431,16 @@ void LinearHarmonic::run() {
                 reduced_loads.col(pattern) = transformer->assemble_system_rhs(K, force);
             }
 
-            // A singular Kr has no unique static responses. Do not allow the
-            // general solver's QR fallback to silently discard rigid-body modes.
+            // Retain zero modes dynamically and project only the static
+            // enrichment problem. Unidentified singularities still trigger
+            // the existing direct harmonic fallback.
             const auto static_responses = Timer::measure(
-                [&]() { return solve_static_responses(Kr, reduced_loads); },
+                [&]() { return solve_static_responses(Kr, Mr, reduced_loads, zero_modes); },
                 "factorizing harmonic static load basis");
 
             if (!static_responses.has_value()) {
                 logging::info(true,
-                    "Static stiffness is singular or ill-conditioned; using the direct harmonic solver");
+                    "Static stiffness complement is unresolved or ill-conditioned; using the direct harmonic solver");
                 reduction_basis.resize(Kr.rows(), 0);
                 eigenmode_count = 0;
             } else {
@@ -406,10 +480,19 @@ void LinearHarmonic::run() {
             // operators rather than assuming diagonal modal coefficients.
             projected_stiffness = reduction_basis.transpose() * (Kr * reduction_basis);
             projected_mass      = reduction_basis.transpose() * (Mr * reduction_basis);
+
+            // Identified numerical zeros carry inertia and mass damping but
+            // no elastic stiffness. Remove their roundoff stiffness entries;
+            // at omega = 0 a free zero mode remains physically singular.
+            for (Index mode : zero_mode_indices) {
+                projected_stiffness.row(mode).setZero();
+                projected_stiffness.col(mode).setZero();
+            }
             projected_damping   = damping.alpha * projected_mass + damping.beta * projected_stiffness;
         }
 
         logging::info(true                            , "Modal basis modes          : ", eigenmode_count);
+        logging::info(true                            , "Detected zero modes        : ", zero_modes.cols());
         logging::info(true                            , "Residual basis vectors     : ", reduction_basis.cols() - eigenmode_count);
         logging::info(true                            , "Modal basis upper frequency: ", cutoff_frequency);
         logging::info(reduction_basis.cols() == 0     , "Modal basis is empty; using the direct harmonic solver");
@@ -429,7 +512,7 @@ void LinearHarmonic::run() {
     // only the frequency-dependent load and dynamic stiffness change.
     for (Index i = 0; i < static_cast<Index>(frequencies.size()); ++i) {
         const Precision frequency = frequencies[static_cast<std::size_t>(i)];
-        const Precision omega     = 2 * pi * frequency;
+        const Precision omega     = 2 * math::pi * frequency;
 
         DynamicVector u_real;
         DynamicVector u_imag;
