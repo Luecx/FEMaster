@@ -374,37 +374,53 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 for (ID id : body.rigid_elements) {
                     integrate_mass(model._data->elements[static_cast<std::size_t>(id)]);
                 }
-                // Include point masses attached to any rigid node or the
-                // reference point. Compiled MASS elements are distinct from
-                // post-compile POINTMASS elements, and both are supported.
-                auto is_rigid_node = [&](ID id) {
-                    return id == master || node_is_tie.count(id) != 0;
+                // Abaqus excludes masses located directly on REF NODE from
+                // calculating its new position. If only such mass exists, the
+                // reference node retains its input position.
+                Precision reference_mass = Precision(0);
+                auto point_mass = [&](const model::ElementPtr& element) {
+                    auto* structural = element->as<model::StructuralElement>();
+                    if (!structural) return Precision(0);
+                    return structural->integrate_scalar_field(
+                        true, [](const Vec3&) { return Precision(1); });
+                };
+                auto accumulate_point = [&](const model::ElementPtr& element) {
+                    if (!element || element->n_nodes() != 1) return;
+                    const ID node = element->nodes()[0];
+                    if (node == master) {
+                        reference_mass += point_mass(element);
+                    } else if (node_is_tie.count(node) != 0) {
+                        integrate_mass(element);
+                    }
                 };
                 for (const auto& element : model._data->elements) {
-                    if (!element || element->n_nodes() != 1
-                        || !is_rigid_node(element->nodes()[0])) continue;
+                    if (!element || element->n_nodes() != 1) continue;
                     if (std::find(body.rigid_elements.begin(), body.rigid_elements.end(),
                                   element->elem_id) == body.rigid_elements.end()) {
-                        integrate_mass(element);
+                        accumulate_point(element);
                     }
                 }
                 for (const auto& point : model._data->point_elements) {
-                    if (point && point->n_nodes() == 1
-                        && is_rigid_node(point->nodes()[0])) {
-                        integrate_mass(point);
-                    }
+                    accumulate_point(point);
                 }
-                logging::error(total_mass > Precision(0)
-                    && std::isfinite(total_mass) && first_moment.allFinite(),
-                    "RIGIDBODY: CENTER OF MASS requires positive physical mass");
-                logging::error(model._data->positions != nullptr,
-                    "RIGIDBODY: nodal positions not initialized");
-                const Vec3 center = first_moment / total_mass;
-                for (Index d = 0; d < 3; ++d) {
-                    (*model._data->positions)(master, d) = center[d];
-                    if (model._data->positions_reference
-                        && model._data->positions_reference != model._data->positions) {
-                        (*model._data->positions_reference)(master, d) = center[d];
+
+                logging::error(std::isfinite(total_mass) && total_mass >= Precision(0)
+                    && first_moment.allFinite() && std::isfinite(reference_mass)
+                    && reference_mass >= Precision(0),
+                    "RIGIDBODY: invalid mass properties for CENTER OF MASS");
+                if (total_mass == Precision(0)) {
+                    logging::error(reference_mass > Precision(0),
+                        "RIGIDBODY: CENTER OF MASS requires positive physical mass");
+                } else {
+                    logging::error(model._data->positions != nullptr,
+                        "RIGIDBODY: nodal positions not initialized");
+                    const Vec3 center = first_moment / total_mass;
+                    for (Index d = 0; d < 3; ++d) {
+                        (*model._data->positions)(master, d) = center[d];
+                        if (model._data->positions_reference
+                            && model._data->positions_reference != model._data->positions) {
+                            (*model._data->positions_reference)(master, d) = center[d];
+                        }
                     }
                 }
             }
