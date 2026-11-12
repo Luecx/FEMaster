@@ -360,25 +360,37 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 Precision total_mass = Precision(0);
                 Vec3 first_moment = Vec3::Zero();
                 auto integrate_mass = [&](const model::ElementPtr& element) {
-                    const auto* structural = element->as<model::StructuralElement>();
+                    auto* structural = element->as<model::StructuralElement>();
                     if (!structural) return;
-                    // Element integration operations are currently non-const.
-                    auto* mutable_structural = element->as<model::StructuralElement>();
-                    const Precision mass = mutable_structural->integrate_scalar_field(
+                    const Precision mass = structural->integrate_scalar_field(
                         true, [](const Vec3&) { return Precision(1); });
                     logging::error(std::isfinite(mass) && mass >= Precision(0),
                         "RIGIDBODY: non-finite or negative rigid mass");
                     total_mass += mass;
-                    first_moment += mutable_structural->integrate_vector_field(
+                    first_moment += structural->integrate_vector_field(
                         true, [](const Vec3& x) { return x; });
                 };
 
                 for (ID id : body.rigid_elements) {
                     integrate_mass(model._data->elements[static_cast<std::size_t>(id)]);
                 }
+                // Include point masses attached to any rigid node or the
+                // reference point. Compiled MASS elements are distinct from
+                // post-compile POINTMASS elements, and both are supported.
+                auto is_rigid_node = [&](ID id) {
+                    return id == master || node_is_tie.count(id) != 0;
+                };
+                for (const auto& element : model._data->elements) {
+                    if (!element || element->n_nodes() != 1
+                        || !is_rigid_node(element->nodes()[0])) continue;
+                    if (std::find(body.rigid_elements.begin(), body.rigid_elements.end(),
+                                  element->elem_id) == body.rigid_elements.end()) {
+                        integrate_mass(element);
+                    }
+                }
                 for (const auto& point : model._data->point_elements) {
                     if (point && point->n_nodes() == 1
-                        && node_is_tie.count(point->nodes()[0]) != 0) {
+                        && is_rigid_node(point->nodes()[0])) {
                         integrate_mass(point);
                     }
                 }
