@@ -70,7 +70,7 @@ std::tuple<Field, Field> Model::compute_stress(
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!element) return;
+            if (!element || _data->is_rigid_element(elem_idx)) return;
 
             if (auto sel = element->as<StructuralElement>()) {
                 RowMatrix rst = sel->stress_strain_nodal_rst();
@@ -122,7 +122,7 @@ Field Model::compute_peeq_element_nodal() {
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!element) return;
+            if (!element || _data->is_rigid_element(elem_idx)) return;
 
             if (auto sel = element->as<StructuralElement>()) {
                 sel->compute_peeq(element_peeq);
@@ -173,7 +173,7 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!element) return;
+            if (!element || _data->is_rigid_element(elem_idx)) return;
 
             if (auto sel = element->as<StructuralElement>()) {
                 const RowMatrix base_rst = sel->stress_strain_nodal_rst();
@@ -236,7 +236,7 @@ Field Model::compute_shell_resultants(
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!element) return;
+            if (!element || _data->is_rigid_element(elem_idx)) return;
             if (auto sel = element->as<StructuralElement>()) {
                 sel->compute_shell_section_forces(
                     resultants, target_displacement, target_temperature,
@@ -264,7 +264,7 @@ Field Model::compute_compliance(Field& displacement) {
 
     // Delegate compliance evaluation to every structural element
     for (auto& el : _data->elements) {
-        if (!el) continue;
+        if (!el || _data->is_rigid_element(el->elem_id)) continue;
         if (auto sel = el->as<StructuralElement>()) {
             sel->compute_compliance(displacement, compliance);
         }
@@ -289,7 +289,7 @@ Field Model::compute_compliance_angle_derivative(Field& displacement) {
 
     // Delegate sensitivity evaluation to every structural element
     for (auto& el : _data->elements) {
-        if (!el) continue;
+        if (!el || _data->is_rigid_element(el->elem_id)) continue;
         if (auto sel = el->as<StructuralElement>()) {
             sel->compute_compliance_angle_derivative(displacement, results);
         }
@@ -355,7 +355,7 @@ Field Model::compute_section_forces(
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
+            if (!el || _data->is_rigid_element(elem_idx)) return;
             if (auto sel = el->as<StructuralElement>()) {
                 sel->compute_beam_section_forces(
                     beam_forces,
@@ -395,7 +395,7 @@ Field Model::compute_shear_flow(Field& displacement) {
     parallel::for_index(element_count, global_config.max_threads,
         [&](Index elem_idx, int /*worker*/) {
             auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
-            if (!el) return;
+            if (!el || _data->is_rigid_element(elem_idx)) return;
             if (auto sel = el->as<StructuralElement>()) {
                 sel->compute_shear_flow(shear_flow, displacement);
             }
