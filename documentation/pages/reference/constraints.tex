@@ -161,32 +161,45 @@ PIN, 201, 202
 
 \keywordpage{RIGID BODY}
 
-\cmd{RIGID BODY} couples all six generalized degrees of freedom of
-a node set to a reference node. It is a compact CalculiX-compatible
-way to define a complete kinematic rigid-body constraint. The
-\key{NSET} parameter specifies the coupled nodes; \key{REF NODE}
-selects the reference node (or a one-node set). The optional
-CalculiX \key{ROT NODE} feature is not supported.
+\cmd{RIGID BODY} specifies an Abaqus-style rigid assembly at root or Assembly
+scope. At least one of \key{ELSET}, \key{PIN NSET} or \key{TIE NSET}
+must be present; these selectors can be combined. The legacy FEMaster
+\key{NSET} is retained as a silent alias for \key{TIE NSET}.
 
 \begin{keywordparameters}
-\key{NSET} & required & Node set to be coupled rigidly. \\
-\key{REF NODE} & required & Reference node or one-node set. \\
+\key{REF NODE} & required & Reference node ID or node set containing one node. \\
+\key{ELSET} & optional & Elements treated as rigid. Their elastic and geometric stiffness is excluded, while mass and element loads remain active. \\
+\key{PIN NSET} & optional & Nodes whose translational motions are rigidly coupled. \\
+\key{TIE NSET} & optional & Nodes whose translations and available rotational DOFs are rigidly coupled. \\
+\key{NSET} & optional & Backward-compatible synonym for \key{TIE NSET}. \\
+\key{POSITION} & optional & \val{INPUT} (default) or \val{CENTER OF MASS}. \\
 \end{keywordparameters}
 
-The example rigidly constrains the nodes in \val{FLANGE_NODES} to the motion of RP. The full six-DOF kinematic coupling shown below represents the same intended rigid-body motion.
+For an \key{ELSET}, the element DOFs determine automatic membership:
+solid and truss elements define PIN nodes; shell and beam elements define TIE
+nodes. Mixed assignments default to TIE. Explicit PIN/TIE selections override
+the automatic classification. Explicit PIN and TIE sets must not overlap, and
+elements or slave nodes must not belong to multiple rigid bodies.
+
+\key{POSITION=CENTER OF MASS} moves the reference node to the physical
+mass-weighted center of the selected elements, including auxiliary point
+masses attached to rigid-body nodes. If no positive mass is available, an
+error is raised rather than falling back to a geometric centroid. The
+CalculiX-specific \key{ROT NODE} is not supported.
+
+The existing linear kinematic coupling equations impose the rigid
+translation and rotational compatibility in the reference configuration.
+They are not finite-rotation constraints in geometrically nonlinear analyses.
 
 \exampleheading
-
 \begin{inputdeck}
-*RIGID BODY, NSET=FLANGE_NODES, REF NODE=RP
+*RIGID BODY, REF NODE=RP, ELSET=RIGID_ELEMENTS,
+ PIN NSET=HINGE, TIE NSET=FLANGE, POSITION=INPUT
 \end{inputdeck}
 
-\paragraph*{Equivalent kinematic coupling}
-
+\paragraph*{Legacy syntax}
 \begin{inputdeck}
-*COUPLING, REF NODE=RP, SURFACE=FLANGE_NODES
-*KINEMATIC
-1, 6
+*RIGID BODY, REF NODE=RP, NSET=FLANGE_NODES
 \end{inputdeck}
 
 \keywordpage{TIE}
