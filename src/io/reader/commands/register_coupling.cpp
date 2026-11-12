@@ -54,12 +54,18 @@
 #include "register_functions.h"
 #include "../../dsl/registry.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <map>
+#include <set>
+#include <vector>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "../../../constraints/types/coupling.h"
+#include "../../../model/element/element_structural.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -240,24 +246,182 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         );
     });
 
-    // CalculiX-style rigid body: a full kinematic coupling on an NSET.
-    // ROT NODE cannot be mapped to FEMaster reference-node rotations and is rejected.
+
+    // Use the Abaqus rigid-body region selectors. Legacy NSET silently aliases
+    // TIE NSET, retaining compatibility with existing FEMaster decks.
     registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
-        command.doc("Rigidly couple a node set to one reference node.");
+        command.doc("Define a rigid body from element and/or PIN/TIE node sets.");
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NSET").required().doc("Slave node set")
-                .key("REFNODE").required().doc("Reference node or one-node set")
-                .key("ROTNODE").optional().doc("Unsupported CalculiX rotation node; rejected if supplied")
+                .key("REFNODE").required().doc("Reference node or one-node node set")
+                .key("ELSET").optional().doc("Rigid elements")
+                .key("PINNSET").optional().doc("Translation-only nodes")
+                .key("TIENSET").alternative("NSET").optional().doc("Translation and rotation nodes")
+                .key("POSITION").optional("INPUT").allowed({"INPUT", "CENTER OF MASS"})
+                .key("ROTNODE").optional().doc("CalculiX rotation node (unsupported)")
         );
-        command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
-            logging::error(!keys.has("ROTNODE"),
-                "RIGIDBODY: ROT NODE is not supported");
-            resolve(keys.raw("REFNODE"), keys.raw("NSET"), true);
-            emit(Dofs{true, true, true, true, true, true},
-                 constraint::CouplingType::KINEMATIC);
+
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
+            logging::error(!keys.has("ROTNODE"), "RIGIDBODY: ROT NODE is not supported");
+            logging::error(model._data->compiled, "RIGIDBODY: model must be compiled");
+            logging::error(keys.has("ELSET") || keys.has("PINNSET") || keys.has("TIENSET"),
+                "RIGIDBODY: ELSET, PIN NSET or TIE NSET must be supplied");
+
+            const std::string ref = keys.raw("REFNODE");
+            model::NodeRegion::Ptr master_region;
+            ID master = -1;
+            if (model._data->node_sets.has(ref)) {
+                master_region = model._data->node_sets.get(ref);
+                logging::error(master_region && master_region->size() == 1,
+                    "RIGIDBODY: REF NODE set must contain one node: ", ref);
+                master = master_region->first();
+            } else {
+                master = model.compiled_node_id(ref);
+            }
+
+            model::RigidBody body;
+            body.reference_node = master;
+            body.center_of_mass = keys.raw("POSITION") == "CENTER OF MASS";
+
+            // ELSET members contribute their mass and element loads, but not
+            // their elastic stiffness. Translational elements imply PIN and
+            // elements with rotational DOFs (shell/beam) imply TIE.
+            std::map<ID, bool> node_is_tie;
+            if (keys.has("ELSET")) {
+                const std::string name = keys.raw("ELSET");
+                logging::error(model._data->elem_sets.has(name),
+                    "RIGIDBODY: unknown ELSET ", name);
+                auto region = model._data->elem_sets.get(name);
+                logging::error(region && region->size() > 0,
+                    "RIGIDBODY: empty ELSET ", name);
+                for (ID element_id : *region) {
+                    logging::error(element_id >= 0
+                        && static_cast<std::size_t>(element_id) < model._data->elements.size()
+                        && model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
+                        "RIGIDBODY: invalid element ", element_id);
+                    logging::error(!model._data->is_rigid_element(element_id),
+                        "RIGIDBODY: element in more than one rigid body: ", element_id);
+                    const auto& element = model._data->elements[static_cast<std::size_t>(element_id)];
+                    logging::error(element->as<model::StructuralElement>() != nullptr,
+                        "RIGIDBODY: non-structural element ", element_id);
+                    const auto dofs = element->dofs();
+                    const bool tie = dofs(0, 3) || dofs(0, 4) || dofs(0, 5);
+                    body.rigid_elements.push_back(element_id);
+                    for (ID node : *element) {
+                        auto [it, inserted] = node_is_tie.emplace(node, tie);
+                        if (!inserted) it->second = it->second || tie;
+                    }
+                }
+            }
+
+            std::set<ID> explicit_pin;
+            std::set<ID> explicit_tie;
+            auto resolve_set = [&](const char* key, std::set<ID>& ids) {
+                if (!keys.has(key)) return;
+                const std::string name = keys.raw(key);
+                logging::error(model._data->node_sets.has(name),
+                    "RIGIDBODY: unknown node set ", name);
+                auto region = model._data->node_sets.get(name);
+                logging::error(region && region->size() > 0,
+                    "RIGIDBODY: empty node set ", name);
+                for (ID node : *region) ids.insert(node);
+            };
+            resolve_set("PINNSET", explicit_pin);
+            resolve_set("TIENSET", explicit_tie);
+
+            // Explicit PIN/TIE assignments supersede ELSET-derived types.
+            for (ID node : explicit_pin) {
+                logging::error(explicit_tie.count(node) == 0,
+                    "RIGIDBODY: node occurs in both PIN NSET and TIE NSET: ", node);
+                node_is_tie[node] = false;
+            }
+            for (ID node : explicit_tie) node_is_tie[node] = true;
+
+            for (const auto& [node, tie] : node_is_tie) {
+                if (node == master) continue; // No self-coupling equation.
+                if (tie) body.tie_nodes.push_back(node);
+                else     body.pin_nodes.push_back(node);
+            }
+
+            for (const auto& previous : model._data->rigid_bodies) {
+                logging::error(previous.reference_node != master,
+                    "RIGIDBODY: reference node reused by another rigid body");
+                std::set<ID> used(previous.pin_nodes.begin(), previous.pin_nodes.end());
+                used.insert(previous.tie_nodes.begin(), previous.tie_nodes.end());
+                for (const auto& [node, tie] : node_is_tie) {
+                    (void) tie;
+                    logging::error(used.count(node) == 0,
+                        "RIGIDBODY: node in more than one rigid body: ", node);
+                }
+            }
+
+            if (body.center_of_mass) {
+                Precision total_mass = Precision(0);
+                Vec3 first_moment = Vec3::Zero();
+                auto integrate_mass = [&](const model::ElementPtr& element) {
+                    const auto* structural = element->as<model::StructuralElement>();
+                    if (!structural) return;
+                    // Element integration operations are currently non-const.
+                    auto* mutable_structural = element->as<model::StructuralElement>();
+                    const Precision mass = mutable_structural->integrate_scalar_field(
+                        true, [](const Vec3&) { return Precision(1); });
+                    logging::error(std::isfinite(mass) && mass >= Precision(0),
+                        "RIGIDBODY: non-finite or negative rigid mass");
+                    total_mass += mass;
+                    first_moment += mutable_structural->integrate_vector_field(
+                        true, [](const Vec3& x) { return x; });
+                };
+
+                for (ID id : body.rigid_elements) {
+                    integrate_mass(model._data->elements[static_cast<std::size_t>(id)]);
+                }
+                for (const auto& point : model._data->point_elements) {
+                    if (point && point->n_nodes() == 1
+                        && node_is_tie.count(point->nodes()[0]) != 0) {
+                        integrate_mass(point);
+                    }
+                }
+                logging::error(total_mass > Precision(0)
+                    && std::isfinite(total_mass) && first_moment.allFinite(),
+                    "RIGIDBODY: CENTER OF MASS requires positive physical mass");
+                logging::error(model._data->positions != nullptr,
+                    "RIGIDBODY: nodal positions not initialized");
+                const Vec3 center = first_moment / total_mass;
+                for (Index d = 0; d < 3; ++d) {
+                    (*model._data->positions)(master, d) = center[d];
+                    if (model._data->positions_reference
+                        && model._data->positions_reference != model._data->positions) {
+                        (*model._data->positions_reference)(master, d) = center[d];
+                    }
+                }
+            }
+
+            // Retain a separate rigid body record; reuse the tested linear
+            // kinematic Coupling implementation for each resolved node type.
+            auto couple = [&](const std::vector<ID>& ids, const Dofs& dofs,
+                              const std::string& suffix) {
+                if (ids.empty()) return;
+                auto region = std::make_shared<model::NodeRegion>(
+                    "RIGIDBODY_" + suffix + "_" + std::to_string(master));
+                for (ID id : ids) region->add(id);
+                constraint::Coupling coupling{master, region, dofs,
+                    constraint::CouplingType::KINEMATIC};
+                coupling.master_region = master_region;
+                model._data->couplings.emplace_back(std::move(coupling));
+            };
+            couple(body.pin_nodes, Dofs{true, true, true, false, false, false}, "PIN");
+            couple(body.tie_nodes, Dofs{true, true, true, true, true, true}, "TIE");
+
+            if (model._data->rigid_element_mask.size() < model._data->elements.size()) {
+                model._data->rigid_element_mask.resize(model._data->elements.size(), 0);
+            }
+            for (ID id : body.rigid_elements) {
+                model._data->rigid_element_mask[static_cast<std::size_t>(id)] = 1;
+            }
+            model._data->rigid_bodies.push_back(std::move(body));
         });
+
         command.variant(fem::io::dsl::Variant::make());
     });
 
