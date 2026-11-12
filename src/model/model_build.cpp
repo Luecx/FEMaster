@@ -555,6 +555,7 @@ SparseMatrix Model::build_stiffness_matrix(
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
 
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
+        if (_data->is_rigid_element(element->elem_id)) return MapMatrix{storage, 0, 0};
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->evaluate(
                 storage, nullptr, nullptr,
@@ -644,7 +645,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
                       Precision*        local_matrix_storage,
                       NodeData&         local_nodal_forces) -> MapMatrix {
         auto* structural = element->as<StructuralElement>();
-        if (!structural) {
+        if (!structural || _data->is_rigid_element(element->elem_id)) {
             MapMatrix matrix{local_matrix_storage, 0, 0};
             return matrix;
         }
@@ -791,6 +792,7 @@ void Model::build_internal_force(
                     : _data->point_elements[element_index - regular_count];
 
             if (!element) return;
+            if (element_index < regular_count && _data->is_rigid_element(element->elem_id)) return;
 
             auto* structural = element->as<StructuralElement>();
             if (!structural) return;
@@ -864,6 +866,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     const Field*  stiffness_scalar
 ) {
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
+        if (_data->is_rigid_element(element->elem_id)) return MapMatrix{storage, 0, 0};
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix geometric_stiffness = structural->evaluate(
                 nullptr,
