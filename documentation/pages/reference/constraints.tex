@@ -183,8 +183,10 @@ elements or slave nodes must not belong to multiple rigid bodies.
 
 \key{POSITION=CENTER OF MASS} moves the reference node to the physical
 mass-weighted center of the selected elements, including auxiliary point
-masses attached to rigid-body nodes. If no positive mass is available, an
-error is raised rather than falling back to a geometric centroid. The
+masses attached to rigid-body nodes. Point masses directly at REF NODE are
+excluded from repositioning; when they provide the only mass, REF NODE keeps
+its input position. If no positive mass is available anywhere, an error is
+raised rather than falling back to a geometric centroid. The
 CalculiX-specific \key{ROT NODE} is not supported.
 
 The existing linear kinematic coupling equations impose the rigid
