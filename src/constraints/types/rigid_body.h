@@ -8,6 +8,7 @@
 #include "equation.h"
 #include "../../data/region.h"
 
+#include <utility>
 #include <vector>
 
 namespace fem::model { struct ModelData; }
