@@ -175,6 +175,11 @@ must be present; these selectors can be combined. The legacy FEMaster
 \key{POSITION} & optional & \val{INPUT} (default) or \val{CENTER OF MASS}. \\
 \end{keywordparameters}
 
+The internal \texttt{constraint::RigidBody} retains the supplied element,
+PIN and TIE regions and prepares its effective kinematic node sets once
+during model construction. It generates its own equations rather than adding
+synthetic \cmd{COUPLING} objects to the model.
+
 For an \key{ELSET}, the element DOFs determine automatic membership:
 solid and truss elements define PIN nodes; shell and beam elements define TIE
 nodes. Mixed assignments default to TIE. Explicit PIN/TIE selections override
