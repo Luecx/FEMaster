@@ -18,6 +18,10 @@
 #include "../src/model/element/point.h"
 #include "../src/section/section_point_mass.h"
 #include "../src/model/solid/c3d8.h"
+#include "../src/model/geometry/surface/surface3.h"
+#include "../src/model/geometry/surface/surface4.h"
+#include "../src/model/geometry/surface/surface6.h"
+#include "../src/model/geometry/surface/surface8.h"
 #include "../src/section/section_solid.h"
 
 #include <gtest/gtest.h>
@@ -621,4 +625,96 @@ TEST(BC_Loads, FollowerPressureRequiresExternalTangentAtZeroLoadFactor) {
             bc::ConditionState{}, target, Precision(0), Precision(0),
             &indices, &K_external)
     );
+}
+
+
+// Finite differences are used only as an independent regression oracle.
+// Production pressure forces and tangents are integrated analytically.
+TEST(BC_Loads, AnalyticalPressureTangentMatchesFiniteDifferences) {
+    const auto check = [](const model::SurfaceInterface& surface) {
+        const Index count = surface.n_nodes;
+        const DynamicMatrix local = surface.node_coords_natural();
+        model::Field positions("PRESSURE_POSITIONS", model::FieldDomain::NODE, count, 6);
+        positions.set_zero();
+        for (Index i = 0; i < count; ++i) {
+            const Precision r = local(i, 0), s = local(i, 1);
+            positions(i, 0) = Precision(1.1) * r + Precision(0.07) * s + Precision(0.06) * r * s;
+            positions(i, 1) = Precision(0.13) * r + Precision(0.9) * s + Precision(0.04) * r * r;
+            positions(i, 2) = Precision(0.21) * r - Precision(0.11) * s +
+                              Precision(0.12) * r * s + Precision(0.05) * s * s;
+        }
+        SystemDofIds indices(count, 6);
+        indices.setConstant(-1);
+        for (Index i = 0; i < count; ++i)
+            for (Index k = 0; k < 3; ++k) indices(i, k) = 3 * i + k;
+        const Precision pressure = Precision(2.3);
+        model::Field forces("PRESSURE_FORCES", model::FieldDomain::NODE, count, 6);
+        forces.set_zero();
+        TripletList triplets;
+        surface.integrate_pressure(positions, forces, pressure, indices, triplets);
+        SparseMatrix tangent(3 * count, 3 * count);
+        tangent.setFromTriplets(triplets.begin(), triplets.end());
+
+        SystemDofIds no_indices;
+        for (Index j = 0; j < count; ++j) {
+            for (Index d = 0; d < 3; ++d) {
+                const Precision original = positions(j, d);
+                const Precision h = Precision(1e-6);
+                model::Field plus("PLUS", model::FieldDomain::NODE, count, 6);
+                model::Field minus("MINUS", model::FieldDomain::NODE, count, 6);
+                plus.set_zero();
+                minus.set_zero();
+                TripletList unused;
+                positions(j, d) = original + h;
+                surface.integrate_pressure(positions, plus, pressure, no_indices, unused);
+                positions(j, d) = original - h;
+                surface.integrate_pressure(positions, minus, pressure, no_indices, unused);
+                positions(j, d) = original;
+                EXPECT_TRUE(unused.empty());
+                for (Index i = 0; i < count; ++i) {
+                    for (Index k = 0; k < 3; ++k) {
+                        const Precision numerical = (plus(i, k) - minus(i, k)) / (Precision(2) * h);
+                        EXPECT_NEAR(tangent.coeff(3 * i + k, 3 * j + d), numerical, 2e-6);
+                    }
+                }
+            }
+        }
+    };
+
+    check(model::Surface3({0, 1, 2}));
+    check(model::Surface4({0, 1, 2, 3}));
+    check(model::Surface6({0, 1, 2, 3, 4, 5}));
+    check(model::Surface8({0, 1, 2, 3, 4, 5, 6, 7}));
+}
+
+TEST(BC_Loads, StructuralCouplingMasterInSlaveHasZeroForceAndTangentRows) {
+    model::Model mdl;
+    mdl.set_node(0, 0.0, 0.0, 0.0);
+    mdl.set_node(1, 1.0, 0.0, 0.0);
+    mdl.set_node(2, 0.0, 1.0, 0.0);
+    mdl.set_node(3, 0.0, 0.0, 1.0);
+    mdl.compile();
+
+    auto slaves = std::make_shared<model::NodeRegion>("ALL");
+    for (ID node = 0; node < 4; ++node) slaves->add(node);
+    Dofs coupled;
+    coupled.setConstant(true);
+    constraint::Coupling coupling(0, slaves, coupled, constraint::CouplingType::STRUCTURAL);
+    SystemDofIds indices(4, 6);
+    for (Index node = 0; node < 4; ++node)
+        for (Index d = 0; d < 6; ++d) indices(node, d) = 6 * node + d;
+
+    model::Field loads("LOADS", model::FieldDomain::NODE, 4, 6);
+    loads.set_zero();
+    for (Index d = 0; d < 6; ++d) loads(0, d) = Precision(d + 1);
+    SparseMatrix K(24, 24);
+    TripletList triplets{{indices(0, 0), indices(1, 0), Precision(7)}};
+    K.setFromTriplets(triplets.begin(), triplets.end());
+    coupling.apply_loads(*mdl._data, loads, &indices, &K);
+
+    for (Index d = 0; d < 6; ++d) {
+        EXPECT_DOUBLE_EQ(loads(0, d), Precision(0));
+        for (Index col = 0; col < 24; ++col)
+            EXPECT_DOUBLE_EQ(K.coeff(indices(0, d), col), Precision(0));
+    }
 }

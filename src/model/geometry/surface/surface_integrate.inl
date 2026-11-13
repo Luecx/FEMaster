@@ -14,6 +14,7 @@
 #pragma once
 
 #include "surface.h"
+#include "../../../math/vec_util.h"
 
 #include <cmath>
 #include <functional>
@@ -245,6 +246,74 @@ void Surface<N>::integrate_vector_field(
             for (Dim dof = 0; dof < 3; ++dof) {
                 target(nodeIds[local_id], dof) +=
                     shape[local_id] * value[dof] * weighted_area;
+            }
+        }
+    }
+}
+
+/**
+ * Integrates a normal pressure into the consistent nodal forces and its exact
+ * geometric tangent. The oriented area vector n dA equals (x_r x x_s) dr ds,
+ * so no normal normalization, inverse projection or finite differences occur.
+ *
+ * df_i/dx_j = p integral N_i (N_j,r [x_s]x - N_j,s [x_r]x) dr ds.
+ * The tangent is the derivative of the external force (not the Newton sign).
+ */
+template<Index N>
+void Surface<N>::integrate_pressure(
+    const Field& node_coords,
+    Field& target,
+    Precision pressure,
+    const SystemDofIds& dof_ids,
+    TripletList& tangent
+) const {
+    const auto coordinates = node_coords_global(node_coords);
+    const auto& scheme = integration_scheme();
+    const bool with_tangent = dof_ids.size() != 0;
+    StaticMatrix<3 * N, 3 * N> local_tangent =
+        StaticMatrix<3 * N, 3 * N>::Zero();
+
+    for (Index q = 0; q < scheme.count(); ++q) {
+        const auto point = scheme.get_point(q);
+        const auto shape = shape_function(point.r, point.s);
+        const auto derivatives = shape_derivative(point.r, point.s);
+        const auto jac = coordinates.transpose() * derivatives;
+        const Vec3 a = jac.col(0);
+        const Vec3 b = jac.col(1);
+        const Vec3 force = -pressure * point.w * a.cross(b);
+
+        for (Index i = 0; i < N; ++i) {
+            for (Index k = 0; k < 3; ++k) {
+                target(nodeIds[i], k) += shape[i] * force[k];
+            }
+        }
+
+        if (!with_tangent) continue;
+
+        const Mat3 skew_a = math::skew(a);
+        const Mat3 skew_b = math::skew(b);
+        for (Index j = 0; j < N; ++j) {
+            const Mat3 derivative = pressure * point.w *
+                (derivatives(j, 0) * skew_b - derivatives(j, 1) * skew_a);
+            for (Index i = 0; i < N; ++i) {
+                local_tangent.template block<3, 3>(3 * i, 3 * j) +=
+                    shape[i] * derivative;
+            }
+        }
+    }
+
+    if (!with_tangent) return;
+    for (Index i = 0; i < N; ++i) {
+        for (Index k = 0; k < 3; ++k) {
+            const Index row = dof_ids(nodeIds[i], k);
+            if (row < 0) continue;
+            for (Index j = 0; j < N; ++j) {
+                for (Index d = 0; d < 3; ++d) {
+                    const Index column = dof_ids(nodeIds[j], d);
+                    if (column < 0) continue;
+                    const Precision value = local_tangent(3 * i + k, 3 * j + d);
+                    if (value != Precision(0)) tangent.emplace_back(row, column, value);
+                }
             }
         }
     }

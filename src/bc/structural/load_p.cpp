@@ -29,9 +29,7 @@
 #include "../../core/logging.h"
 #include "../../model/model_data.h"
 
-#include <algorithm>
 #include <cmath>
-#include <limits>
 #include <sstream>
 
 namespace fem::bc {
@@ -79,107 +77,17 @@ void PLoad::apply(
 
     if (pressure == Precision(0)) return;
 
-    // Convert the scalar pressure into a consistent nodal force for each
-    // selected surface:
-    //
-    //     f_i += -sum_q N_i(x_q) * p * n(x_q) * J_s(x_q) * w_q
-    //
-    // The surface integrator supplies the shape functions N_i, quadrature
-    // weights w_q and physical area Jacobian J_s. The callback returns only
-    // the pressure traction -p * n(x_q), using the normal of the provided
-    // nodal geometry. Recovering local coordinates is necessary to evaluate
-    // the geometric normal at the integration point.
+    // Consistent normal traction on the reference or current geometry.
+    // The surface routine computes the oriented area vector and its exact
+    // displacement derivative in a single quadrature pass.
     const auto& positions = follower_
         ? *model_data.positions : *model_data.positions_reference;
-
+    const SystemDofIds empty_ids;
+    const auto& tangent_ids = follower_ ? system_dof_ids : empty_ids;
     for (ID surface_id : *region_) {
         const auto& surface = model_data.surfaces[surface_id];
         if (!surface) continue;
-
-        surface->integrate_vector_field(
-            positions,
-            rhs,
-            [&](const Vec3& position) -> Vec3 {
-                const Vec2 local  = surface->global_to_local(position, positions);
-                const Vec3 normal = surface->normal(positions, local);
-
-                return -pressure * normal;
-            }
-        );
-
-        // Evaluate the pressure tangent on an isolated surface-sized geometry.
-        // The general surface interface addresses a Field through its node IDs,
-        // so remap a copied surface rather than copying whole-model fields for
-        // each perturbation. All temporary storage is O(n_surface_nodes).
-        if (!follower_ || system_dof_ids.size() == 0) continue;
-
-        const Index n_nodes = surface->n_nodes;
-        auto local_surface = surface->copy();
-
-        model::Field geometry{
-            "PRESSURE_LOCAL_GEOMETRY", model::FieldDomain::NODE, n_nodes, 6
-        };
-        model::Field plus{
-            "PRESSURE_LOCAL_PLUS", model::FieldDomain::NODE, n_nodes, 6
-        };
-        model::Field minus{
-            "PRESSURE_LOCAL_MINUS", model::FieldDomain::NODE, n_nodes, 6
-        };
-
-        for (Index i = 0; i < n_nodes; ++i) {
-            const ID global_node = surface->nodes()[i];
-            for (Index d = 0; d < 6; ++d) {
-                geometry(i, d) = positions(global_node, d);
-            }
-            local_surface->nodes()[i] = i;
-        }
-
-        // The local integration writes only to the compact output field.
-        // Reusing it also avoids repeated global zero-fills for every column.
-        const auto integrate = [&](model::Field& output) {
-            output.set_zero();
-            local_surface->integrate_vector_field(
-                geometry, output,
-                [&](const Vec3& position) -> Vec3 {
-                    const Vec2 local = local_surface->global_to_local(position, geometry);
-                    return -pressure * local_surface->normal(geometry, local);
-                }
-            );
-        };
-
-        // Central differences differentiate both surface normals and area.
-        // Columns with inactive DOFs are skipped entirely.
-        for (Index j = 0; j < n_nodes; ++j) {
-            const ID global_j = surface->nodes()[j];
-            for (Index d = 0; d < 3; ++d) {
-                const Index column = system_dof_ids(global_j, d);
-                if (column < 0) continue;
-
-                const Precision x = geometry(j, d);
-                const Precision h = std::cbrt(std::numeric_limits<Precision>::epsilon())
-                    * std::max(Precision(1), std::abs(x));
-
-                geometry(j, d) = x + h;
-                integrate(plus);
-                geometry(j, d) = x - h;
-                integrate(minus);
-                geometry(j, d) = x;
-
-                for (Index i = 0; i < n_nodes; ++i) {
-                    const ID global_i = surface->nodes()[i];
-                    for (Index k = 0; k < 3; ++k) {
-                        const Index row = system_dof_ids(global_i, k);
-                        if (row < 0) continue;
-
-                        const Precision derivative =
-                            (plus(i, k) - minus(i, k)) / (Precision(2) * h);
-                        if (derivative != Precision(0)) {
-                            matrix.emplace_back(row, column, derivative);
-                        }
-                    }
-                }
-            }
-        }
+        surface->integrate_pressure(positions, rhs, pressure, tangent_ids, matrix);
     }
 }
 

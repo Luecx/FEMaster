@@ -246,13 +246,12 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    // Nonlinear load evaluations supply a tangent even for residual-only passes.
+    // Residual-only evaluations do not assemble an unused external tangent.
     auto build_nonlinear_load = [&](Precision time, Precision progress,
                                     SparseMatrix* tangent = nullptr) {
-        SparseMatrix discarded_tangent;
         return model->build_load_matrix(
             initial_conditions, target_conditions, time, progress,
-            &active_dof_idx_mat, tangent ? tangent : &discarded_tangent);
+            &active_dof_idx_mat, tangent);
     };
 
     // A fixed Riks load direction is not valid for follower loading.

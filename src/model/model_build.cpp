@@ -350,7 +350,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
 
     constraint::Equations equations{};
     SystemDofIds          empty_indices{};
-    const SystemDofIds&  system_dof_ids = indices ? *indices : empty_indices;
+    const SystemDofIds&  system_dof_ids = (K_external && indices) ? *indices : empty_indices;
     TripletList           matrix{};
 
     logging::error(K_external == nullptr || indices != nullptr,
@@ -374,8 +374,8 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale     = continued
                 ? Precision(1) : Precision(1) - step_progress;
 
-            logging::error(!condition->is_follower() || K_external != nullptr,
-                "LOADS: FOLLOWER requires an external load tangent");
+            logging::error(!condition->is_follower() || indices != nullptr,
+                "LOADS: FOLLOWER requires an active nonlinear load context");
             condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
 
@@ -388,8 +388,8 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale = condition->amplitude_
                 ? condition->amplitude_->evaluate(time) : step_progress;
 
-            logging::error(!condition->is_follower() || K_external != nullptr,
-                "LOADS: FOLLOWER requires an external load tangent");
+            logging::error(!condition->is_follower() || indices != nullptr,
+                "LOADS: FOLLOWER requires an active nonlinear load context");
             condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
     }
