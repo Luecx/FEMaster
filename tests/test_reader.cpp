@@ -174,6 +174,44 @@ TEST(Reader_Parser, AbaqusRigidBodyCenterOfMassRejectsMasslessNodes) {
     std::filesystem::remove(path);
 }
 
+TEST(Reader_Parser, AbaqusRigidBodyCenterOfMassUsesMassWeightedRegion) {
+    const std::string path = "tests/TMP_RIGID_BODY_CENTER_OF_MASS.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n"
+            << "1, 0, 0, 0\n2, 4, 0, 0\n10, 10, 0, 0\n"
+            << "*NSET, NAME=SLAVES\n1, 2\n"
+            << "*NSET, NAME=MASSES_A\n1\n"
+            << "*NSET, NAME=MASSES_B\n2\n"
+            << "*NSET, NAME=REFERENCE\n10\n"
+            << "*POINTMASS, NSET=MASSES_A\n1\n"
+            << "*POINTMASS, NSET=MASSES_B\n3\n"
+            << "*POINTMASS, NSET=REFERENCE\n100\n"
+            << "*RIGID BODY, REF NODE=10, NSET=SLAVES, POSITION=CENTER OF MASS\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File input(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(input);
+    deck.root().execute_children("NODE");
+    deck.root().execute_children("NSET");
+    parser.model().compile();
+    deck.root().execute_children("POINTMASS");
+    deck.root().execute_children("RIGIDBODY");
+
+    const auto& data = *parser.model()._data;
+    ASSERT_EQ(data.rigid_bodies.size(), 1u);
+    EXPECT_EQ(data.rigid_bodies.front().position,
+              constraint::RigidBody::Position::CenterOfMass);
+    const ID rp = parser.model().compiled_node_id(10);
+    EXPECT_NEAR((*data.positions)(rp, 0), Precision(3), 1e-12);
+    EXPECT_NEAR((*data.positions)(rp, 1), Precision(0), 1e-12);
+
+    std::filesystem::remove(path);
+}
+
 TEST(Reader_Parser, RegistersRbmCommand) {
     io::reader::Parser parser;
     EXPECT_NE(parser.registry().find("RBM"), nullptr);
