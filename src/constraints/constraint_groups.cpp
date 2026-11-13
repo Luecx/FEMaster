@@ -37,6 +37,7 @@ Equations ConstraintGroups::flatten() const {
     all.insert(all.end(), connectors.begin(), connectors.end());
     all.insert(all.end(), mpcs      .begin(), mpcs      .end());
     all.insert(all.end(), couplings .begin(), couplings .end());
+    all.insert(all.end(), rigid_bodies.begin(), rigid_bodies.end());
     all.insert(all.end(), ties      .begin(), ties      .end());
     all.insert(all.end(), rbms      .begin(), rbms      .end());
     all.insert(all.end(), others    .begin(), others    .end());
@@ -96,6 +97,7 @@ void ConstraintGroups::report() const {
         {"Connectors", connectors},
         {"MPCs",       mpcs},
         {"Couplings",  couplings},
+        {"RigidBodies", rigid_bodies},
         {"Ties",       ties},
         {"RBMs",       rbms},
         {"Other",      others}
