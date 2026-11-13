@@ -33,6 +33,7 @@
 #include "../constraints/types/equation.h"
 #include "../constraints/types/mpc.h"
 #include "../constraints/types/rbm.h"
+#include "../constraints/types/rigid_body.h"
 #include "../constraints/types/tie.h"
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
@@ -56,14 +57,6 @@ namespace fem::model {
 
 struct Part;
 struct Instance;
-
-struct RigidBody {
-    ID reference_node = -1;
-    std::vector<ID> rigid_elements;
-    std::vector<ID> pin_nodes;
-    std::vector<ID> tie_nodes;
-    bool center_of_mass = false;
-};
 
 /**
  * @brief Shared semantic, assembly and solver-facing storage of a FEM model.
@@ -173,7 +166,7 @@ struct ModelData {
     std::vector<constraint::Connector> connectors;
     std::vector<constraint::Mpc>       mpcs;
     std::vector<constraint::Coupling>  couplings;
-    std::vector<RigidBody>            rigid_bodies;
+    std::vector<constraint::RigidBody> rigid_bodies;
     std::vector<std::uint8_t>         rigid_element_mask;
 
     bool is_rigid_element(ID id) const {
