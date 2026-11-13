@@ -105,6 +105,10 @@ struct Model {
     // enumeration. The operation may be called exactly once.
     void compile();
 
+    // Add an assembly rigid body. The constraint resolves its own three regions
+    // and supplies the element mask and reference-node positioning.
+    void add_rigid_body(constraint::RigidBody rigid_body);
+
     // Resolution of semantic local identifiers after compilation. The typed
     // overloads address a specified Instance map. String overloads accept
     // either `ID` or `INSTANCE.ID` and use the implicit identity Instance for

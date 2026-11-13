@@ -48,6 +48,170 @@
 
 using namespace fem;
 
+
+TEST(Reader_Parser, AbaqusRigidBodyOwnsPinTieAndLegacyRegions) {
+    const std::string path = "tests/TMP_RIGID_BODY_NSETS.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n"
+            << "1, 0, 0, 0\n2, 1, 0, 0\n3, 0, 1, 0\n"
+            << "10, 0, 0, 1\n20, 0, 0, 2\n"
+            << "*NSET, NAME=PIN_NODES\n1\n"
+            << "*NSET, NAME=TIE_NODES\n2\n"
+            << "*NSET, NAME=LEGACY_NODES\n3\n"
+            << "*RIGID BODY, REF NODE=10, PIN NSET=PIN_NODES, TIE NSET=TIE_NODES\n"
+            << "*RIGID BODY, REF NODE=20, NSET=LEGACY_NODES\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File input(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(input);
+    deck.root().execute_children("NODE");
+    deck.root().execute_children("NSET");
+    parser.model().compile();
+    deck.root().execute_children("RIGIDBODY");
+
+    const auto& data = *parser.model()._data;
+    ASSERT_EQ(data.rigid_bodies.size(), 2u);
+    EXPECT_TRUE(data.couplings.empty()); // Rigid bodies are no longer parser-made Couplings.
+
+    const auto& a = data.rigid_bodies[0];
+    EXPECT_EQ(a.reference_node, parser.model().compiled_node_id(10));
+    ASSERT_NE(a.pin_region, nullptr);
+    ASSERT_NE(a.tie_region, nullptr);
+    EXPECT_EQ(a.pin_region->name, "PIN_NODES");
+    EXPECT_EQ(a.tie_region->name, "TIE_NODES");
+    ASSERT_NE(a.pin_nodes(), nullptr);
+    ASSERT_NE(a.tie_nodes(), nullptr);
+    ASSERT_EQ(a.pin_nodes()->size(), 1u);
+    ASSERT_EQ(a.tie_nodes()->size(), 1u);
+    EXPECT_EQ(a.pin_nodes()->at(0), parser.model().compiled_node_id(1));
+    EXPECT_EQ(a.tie_nodes()->at(0), parser.model().compiled_node_id(2));
+
+    const auto& b = data.rigid_bodies[1];
+    EXPECT_EQ(b.pin_region, nullptr);
+    ASSERT_NE(b.tie_region, nullptr);
+    EXPECT_EQ(b.tie_region->name, "LEGACY_NODES");
+    EXPECT_EQ(b.pin_nodes()->size(), 0u);
+    ASSERT_EQ(b.tie_nodes()->size(), 1u);
+    EXPECT_EQ(b.tie_nodes()->at(0), parser.model().compiled_node_id(3));
+
+    // Equation generation belongs to RigidBody and uses its effective regions.
+    SystemDofIds dofs(data.positions->rows, 6);
+    dofs.fill(-1);
+    for (Index node = 0; node < data.positions->rows; ++node) {
+        for (Index d = 0; d < 6; ++d) dofs(node, d) = 6 * node + d;
+    }
+    EXPECT_EQ(a.get_equations(dofs, *parser.model()._data).size(), 9u);
+    EXPECT_EQ(b.get_equations(dofs, *parser.model()._data).size(), 6u);
+
+    std::filesystem::remove(path);
+}
+
+TEST(Reader_Parser, AbaqusRigidBodyElsetClassifiesAndOverrides) {
+    const std::string path = "tests/TMP_RIGID_BODY_ELSET.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n"
+            << "1, 0, 0, 0\n2, 1, 0, 0\n3, 1, 1, 0\n4, 0, 1, 0\n"
+            << "10, 0, 0, 1\n"
+            << "*ELEMENT, TYPE=T3D2, ELSET=RIGID_PART\n1, 1, 2\n"
+            << "*ELEMENT, TYPE=S3, ELSET=RIGID_PART\n2, 2, 3, 4\n"
+            << "*NSET, NAME=PIN_OVERRIDE\n2\n"
+            << "*RIGID BODY, REF NODE=10, ELSET=RIGID_PART, PIN NSET=PIN_OVERRIDE\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File input(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(input);
+    deck.root().execute_children("NODE");
+    deck.root().execute_children("ELEMENT");
+    deck.root().execute_children("NSET");
+    parser.model().compile();
+    deck.root().execute_children("RIGIDBODY");
+
+    const auto& data = *parser.model()._data;
+    ASSERT_EQ(data.rigid_bodies.size(), 1u);
+    const auto& body = data.rigid_bodies.front();
+    ASSERT_NE(body.element_region, nullptr);
+    ASSERT_EQ(body.rigid_elements().size(), 2u);
+    EXPECT_TRUE(data.is_rigid_element(parser.model().compiled_element_id(1)));
+    EXPECT_TRUE(data.is_rigid_element(parser.model().compiled_element_id(2)));
+    ASSERT_NE(body.pin_nodes(), nullptr);
+    ASSERT_NE(body.tie_nodes(), nullptr);
+    ASSERT_EQ(body.pin_nodes()->size(), 2u);
+    ASSERT_EQ(body.tie_nodes()->size(), 2u);
+    EXPECT_EQ(body.pin_nodes()->at(0), parser.model().compiled_node_id(1));
+    EXPECT_EQ(body.pin_nodes()->at(1), parser.model().compiled_node_id(2));
+    EXPECT_EQ(body.tie_nodes()->at(0), parser.model().compiled_node_id(3));
+    EXPECT_EQ(body.tie_nodes()->at(1), parser.model().compiled_node_id(4));
+
+    std::filesystem::remove(path);
+}
+
+TEST(Reader_Parser, AbaqusRigidBodyCenterOfMassRejectsMasslessNodes) {
+    const std::string path = "tests/TMP_RIGID_BODY_MASSLESS.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n1, 0, 0, 0\n10, 0, 0, 1\n"
+            << "*NSET, NAME=SLAVE\n1\n"
+            << "*RIGID BODY, REF NODE=10, PIN NSET=SLAVE, POSITION=CENTER OF MASS\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File input(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(input);
+    deck.root().execute_children("NODE");
+    deck.root().execute_children("NSET");
+    parser.model().compile();
+    EXPECT_THROW(deck.root().execute_children("RIGIDBODY"), std::exception);
+    std::filesystem::remove(path);
+}
+
+TEST(Reader_Parser, AbaqusRigidBodyCenterOfMassUsesMassWeightedRegion) {
+    const std::string path = "tests/TMP_RIGID_BODY_CENTER_OF_MASS.INP";
+    {
+        std::ofstream out(path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n"
+            << "1, 0, 0, 0\n2, 4, 0, 0\n10, 10, 0, 0\n"
+            << "*NSET, NAME=SLAVES\n1, 2\n"
+            << "*NSET, NAME=MASSES_A\n1\n"
+            << "*NSET, NAME=MASSES_B\n2\n"
+            << "*NSET, NAME=REFERENCE\n10\n"
+            << "*POINTMASS, NSET=MASSES_A\n1\n"
+            << "*POINTMASS, NSET=MASSES_B\n3\n"
+            << "*POINTMASS, NSET=REFERENCE\n100\n"
+            << "*RIGID BODY, REF NODE=10, NSET=SLAVES, POSITION=CENTER OF MASS\n";
+    }
+
+    io::reader::Parser parser;
+    io::dsl::File input(path);
+    io::dsl::DeckParser deck_parser(parser.registry());
+    const auto deck = deck_parser.parse(input);
+    deck.root().execute_children("NODE");
+    deck.root().execute_children("NSET");
+    parser.model().compile();
+    deck.root().execute_children("POINTMASS");
+    deck.root().execute_children("RIGIDBODY");
+
+    const auto& data = *parser.model()._data;
+    ASSERT_EQ(data.rigid_bodies.size(), 1u);
+    EXPECT_EQ(data.rigid_bodies.front().position,
+              constraint::RigidBody::Position::CenterOfMass);
+    const ID rp = parser.model().compiled_node_id(10);
+    EXPECT_NEAR((*data.positions)(rp, 0), Precision(3), 1e-12);
+    EXPECT_NEAR((*data.positions)(rp, 1), Precision(0), 1e-12);
+
+    std::filesystem::remove(path);
+}
+
 TEST(Reader_Parser, RegistersRbmCommand) {
     io::reader::Parser parser;
     EXPECT_NE(parser.registry().find("RBM"), nullptr);

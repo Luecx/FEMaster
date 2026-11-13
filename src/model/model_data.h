@@ -33,6 +33,7 @@
 #include "../constraints/types/equation.h"
 #include "../constraints/types/mpc.h"
 #include "../constraints/types/rbm.h"
+#include "../constraints/types/rigid_body.h"
 #include "../constraints/types/tie.h"
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
@@ -46,6 +47,7 @@
 #include "../section/section.h"
 #include "instance.h"
 
+#include <cstdint>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -164,6 +166,14 @@ struct ModelData {
     std::vector<constraint::Connector> connectors;
     std::vector<constraint::Mpc>       mpcs;
     std::vector<constraint::Coupling>  couplings;
+    std::vector<constraint::RigidBody> rigid_bodies;
+    std::vector<std::uint8_t>         rigid_element_mask;
+
+    bool is_rigid_element(ID id) const {
+        return id >= 0
+            && static_cast<std::size_t>(id) < rigid_element_mask.size()
+            && rigid_element_mask[static_cast<std::size_t>(id)] != 0;
+    }
     std::vector<constraint::Tie>       ties;
     std::vector<constraint::Contact>   contacts;
     std::vector<constraint::Rbm>       rbms;

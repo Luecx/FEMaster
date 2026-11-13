@@ -43,6 +43,7 @@ struct ConstraintGroups {
     Equations connectors;
     Equations mpcs;
     Equations couplings;
+    Equations rigid_bodies;
     Equations ties;
     Equations rbms;
     Equations others;

@@ -47,6 +47,19 @@ namespace fem {
 namespace model {
 
 /**
+ * Adds one rigid-body constraint after compiling its assembly regions.
+ *
+ * Region classification, mass-center calculation and the stiffness exclusion
+ * mask are managed by the rigid body itself. The Model merely owns the result.
+ */
+void Model::add_rigid_body(constraint::RigidBody body) {
+    logging::error(_data != nullptr && _data->compiled,
+        "Model: rigid bodies require a compiled model");
+    body.prepare(*_data);
+    _data->rigid_bodies.emplace_back(std::move(body));
+}
+
+/**
  * Binds every compiled section assignment to its target elements.
  *
  * Section regions already contain dense assembly element identifiers. Each
@@ -293,6 +306,16 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         }
     }
 
+    // Rigid bodies use the same linearized kinematics but own their regions
+    // and equations independently of ordinary COUPLING definitions.
+    for (auto& rigid_body : _data->rigid_bodies) {
+        const ID master = rigid_body.reference_node;
+        const auto required = rigid_body.master_dofs(mask, *_data);
+        for (ID dof = 0; dof < 6; ++dof) {
+            mask(master, dof) |= required(0, dof);
+        }
+    }
+
     // Activate constrained components at both nodes of every connector
     for (auto& connector : _data->connectors) {
         const ID node1_id = connector.node_1();
@@ -515,6 +538,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
     collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
     collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
+    collect(_data->rigid_bodies,                Source::RigidBody, groups.rigid_bodies, get_equations);
     collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
     collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
 
@@ -555,6 +579,7 @@ SparseMatrix Model::build_stiffness_matrix(
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
 
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
+        if (_data->is_rigid_element(element->elem_id)) return MapMatrix{storage, 0, 0};
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->evaluate(
                 storage, nullptr, nullptr,
@@ -644,7 +669,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
                       Precision*        local_matrix_storage,
                       NodeData&         local_nodal_forces) -> MapMatrix {
         auto* structural = element->as<StructuralElement>();
-        if (!structural) {
+        if (!structural || _data->is_rigid_element(element->elem_id)) {
             MapMatrix matrix{local_matrix_storage, 0, 0};
             return matrix;
         }
@@ -791,6 +816,7 @@ void Model::build_internal_force(
                     : _data->point_elements[element_index - regular_count];
 
             if (!element) return;
+            if (element_index < regular_count && _data->is_rigid_element(element->elem_id)) return;
 
             auto* structural = element->as<StructuralElement>();
             if (!structural) return;
@@ -864,6 +890,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     const Field*  stiffness_scalar
 ) {
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
+        if (_data->is_rigid_element(element->elem_id)) return MapMatrix{storage, 0, 0};
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix geometric_stiffness = structural->evaluate(
                 nullptr,

@@ -240,23 +240,64 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         );
     });
 
-    // CalculiX-style rigid body: a full kinematic coupling on an NSET.
-    // ROT NODE cannot be mapped to FEMaster reference-node rotations and is rejected.
+
+    // Only resolve input keywords to compiled regions. RigidBody owns the
+    // ELSET classification, PIN/TIE precedence, mass center and equations.
     registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
-        command.doc("Rigidly couple a node set to one reference node.");
+        command.doc("Define a rigid body from element and/or PIN/TIE node sets.");
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NSET").required().doc("Slave node set")
-                .key("REFNODE").required().doc("Reference node or one-node set")
-                .key("ROTNODE").optional().doc("Unsupported CalculiX rotation node; rejected if supplied")
+                .key("REFNODE").required().doc("Reference node or one-node node set")
+                .key("ELSET").optional().doc("Rigid element region")
+                .key("PINNSET").optional().doc("Translation-only node region")
+                .key("TIENSET").alternative("NSET").optional().doc("Translation and rotation node region")
+                .key("POSITION").optional("INPUT").allowed({"INPUT", "CENTER OF MASS"})
+                .key("ROTNODE").optional().doc("CalculiX rotation node (unsupported)")
         );
-        command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
-            logging::error(!keys.has("ROTNODE"),
-                "RIGIDBODY: ROT NODE is not supported");
-            resolve(keys.raw("REFNODE"), keys.raw("NSET"), true);
-            emit(Dofs{true, true, true, true, true, true},
-                 constraint::CouplingType::KINEMATIC);
+
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
+            logging::error(!keys.has("ROTNODE"), "RIGIDBODY: ROT NODE is not supported");
+            logging::error(model._data->compiled, "RIGIDBODY: model must be compiled");
+
+            const std::string ref = keys.raw("REFNODE");
+            ID reference_node = -1;
+            if (model._data->node_sets.has(ref)) {
+                const auto region = model._data->node_sets.get(ref);
+                logging::error(region && region->size() == 1,
+                    "RIGIDBODY: REF NODE set must contain exactly one node: ", ref);
+                reference_node = region->first();
+            } else {
+                reference_node = model.compiled_node_id(ref);
+            }
+
+            model::ElementRegion::Ptr elements;
+            model::NodeRegion::Ptr pin, tie;
+            if (keys.has("ELSET")) {
+                const auto name = keys.raw("ELSET");
+                logging::error(model._data->elem_sets.has(name),
+                    "RIGIDBODY: unknown ELSET ", name);
+                elements = model._data->elem_sets.get(name);
+            }
+            if (keys.has("PINNSET")) {
+                const auto name = keys.raw("PINNSET");
+                logging::error(model._data->node_sets.has(name),
+                    "RIGIDBODY: unknown PIN NSET ", name);
+                pin = model._data->node_sets.get(name);
+            }
+            if (keys.has("TIENSET")) {
+                const auto name = keys.raw("TIENSET");
+                logging::error(model._data->node_sets.has(name),
+                    "RIGIDBODY: unknown TIE NSET ", name);
+                tie = model._data->node_sets.get(name);
+            }
+
+            const auto position = keys.raw("POSITION") == "CENTER OF MASS"
+                ? constraint::RigidBody::Position::CenterOfMass
+                : constraint::RigidBody::Position::Input;
+            model.add_rigid_body(constraint::RigidBody{
+                reference_node, std::move(elements), std::move(pin),
+                std::move(tie), position});
         });
         command.variant(fem::io::dsl::Variant::make());
     });
