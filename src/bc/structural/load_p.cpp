@@ -55,8 +55,8 @@ namespace fem::bc {
  * @param model_data Nodal geometry and compiled surface storage.
  * @param rhs Global nodal force field modified in place.
  * @param equations Constraint equations left unchanged.
- * @param system_dof_ids Global DOF numbering left unchanged.
- * @param matrix Sparse matrix triplets left unchanged.
+ * @param system_dof_ids Global DOF numbering for optional follower tangent.
+ * @param matrix Receives the analytical follower tangent triplets when requested.
  */
 void PLoad::apply(
     model::ModelData&      model_data,

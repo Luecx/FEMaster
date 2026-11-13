@@ -270,8 +270,9 @@ void Surface<N>::integrate_pressure(
     const auto coordinates = node_coords_global(node_coords);
     const auto& scheme = integration_scheme();
     const bool with_tangent = dof_ids.size() != 0;
-    StaticMatrix<3 * N, 3 * N> local_tangent =
-        StaticMatrix<3 * N, 3 * N>::Zero();
+    // Do not zero or assemble a tangent during residual-only evaluations.
+    StaticMatrix<3 * N, 3 * N> local_tangent;
+    if (with_tangent) local_tangent.setZero();
 
     for (Index q = 0; q < scheme.count(); ++q) {
         const auto point = scheme.get_point(q);

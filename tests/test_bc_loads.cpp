@@ -625,6 +625,14 @@ TEST(BC_Loads, FollowerPressureRequiresExternalTangentAtZeroLoadFactor) {
             bc::ConditionState{}, target, Precision(0), Precision(0),
             &indices, &K_external)
     );
+
+    // A nonlinear residual-only pass provides its context but does not
+    // request or compute an external tangent.
+    EXPECT_NO_THROW(
+        mdl.build_load_matrix(
+            bc::ConditionState{}, target, Precision(0), Precision(0),
+            &indices, nullptr)
+    );
 }
 
 
