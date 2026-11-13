@@ -88,17 +88,13 @@ void RigidBody::prepare(model::ModelData& data) {
             if (node == reference_node) continue;
             logging::error(node != previous.reference_node,
                 "RIGIDBODY: node is the reference of another rigid body: ", node);
-            const bool shared_pin = previous.pin_nodes()
-                && previous.pin_nodes()->contains(node);
-            const bool shared_tie = previous.tie_nodes()
-                && previous.tie_nodes()->contains(node);
+            const bool shared_pin = (previous.pin_nodes() && std::find(previous.pin_nodes()->begin(), previous.pin_nodes()->end(), node) != previous.pin_nodes()->end());
+            const bool shared_tie = (previous.tie_nodes() && std::find(previous.tie_nodes()->begin(), previous.tie_nodes()->end(), node) != previous.tie_nodes()->end());
             logging::error(!shared_pin && !shared_tie,
                 "RIGIDBODY: slave node belongs to multiple rigid bodies: ", node);
         }
-        const bool ref_is_pin = previous.pin_nodes()
-            && previous.pin_nodes()->contains(reference_node);
-        const bool ref_is_tie = previous.tie_nodes()
-            && previous.tie_nodes()->contains(reference_node);
+        const bool ref_is_pin = (previous.pin_nodes() && std::find(previous.pin_nodes()->begin(), previous.pin_nodes()->end(), reference_node) != previous.pin_nodes()->end());
+        const bool ref_is_tie = (previous.tie_nodes() && std::find(previous.tie_nodes()->begin(), previous.tie_nodes()->end(), reference_node) != previous.tie_nodes()->end());
         logging::error(!ref_is_pin && !ref_is_tie,
             "RIGIDBODY: reference node belongs to another rigid body");
     }
