@@ -125,7 +125,15 @@ class Coupling : public fem::Printable {
      * @note Use this also when you conceptually "apply a load to a reference
      *       point" but want the structure to carry it through a patch of nodes.
      */
-    void apply_loads(model::ModelData& model_data, model::Field& load_matrix);
+    // Optionally differentiate the complete redistributed load, including
+    // geometry-dependent distribution and the incoming master-load tangent.
+    // Both pointers must be provided together; null retains RHS-only behavior.
+    void apply_loads(
+        model::ModelData& model_data,
+        model::Field& load_matrix,
+        const SystemDofIds* indices = nullptr,
+        SparseMatrix* K_external = nullptr
+    );
 
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.

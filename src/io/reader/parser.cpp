@@ -906,14 +906,6 @@ void Parser::select_collector_condition(bc::ConditionFamily family, bc::Conditio
     logging::error(condition != nullptr,
         "Cannot select a null condition");
 
-    // Named load definitions may have been parsed outside any analysis. Reject
-    // implicit follower pressure when it is actually selected for a nonlinear
-    // solve, regardless of the input keyword or collector's stored family.
-    if (active_loadcase_ && active_loadcase_->type_name() == "NONLINEARSTATIC") {
-        logging::error(dynamic_cast<bc::PLoad*>(condition.get()) == nullptr,
-            "LOADS: follower pressure is not supported in nonlinear steps");
-    }
-
     const auto selected = std::make_pair(family, condition);
     if (std::find(selected_conditions_.begin(), selected_conditions_.end(), selected)
         == selected_conditions_.end()) {

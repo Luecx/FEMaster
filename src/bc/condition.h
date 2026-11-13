@@ -78,6 +78,9 @@ struct Condition : Printable {
         Precision              scale = Precision(1)
     ) = 0;
 
+    // Indicates whether this load requires a geometric external tangent.
+    virtual bool is_follower() const { return false; }
+
     // Diagnostics
     std::string str() const override = 0;
 };

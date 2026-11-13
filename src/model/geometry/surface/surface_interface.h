@@ -68,6 +68,9 @@ struct SurfaceInterface {
     virtual void integrate_scalar_field(const Field& node_coords, Field& target, const ScalarField& field) const = 0;
     virtual Vec3 integrate_vector_field(const Field& node_coords, const VecField& field) const = 0;
     virtual void integrate_vector_field(const Field& node_coords, Field& target, const VecField& field) const = 0;
+    // Assemble a consistent pressure force and, when DOFs are supplied, its analytical tangent.
+    virtual void integrate_pressure(const Field& node_coords, Field& target, Precision pressure,
+                                    const SystemDofIds& dof_ids, TripletList& tangent) const = 0;
     virtual Mat3 integrate_tensor_field(const Field& node_coords, const TenField& field) const = 0;
 
     // Scalar boundary operators such as convection require the consistent local

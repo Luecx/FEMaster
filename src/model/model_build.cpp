@@ -341,14 +341,20 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
-                               Precision time, Precision step_progress) {
+                               Precision time, Precision step_progress,
+                               const SystemDofIds* indices,
+                               SparseMatrix* K_external) {
     // Initialize global generalized forces and the unused common outputs
     Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
     load_matrix.set_zero();
 
     constraint::Equations equations{};
-    SystemDofIds          system_dof_ids{};
+    SystemDofIds          empty_indices{};
+    const SystemDofIds&  system_dof_ids = (K_external && indices) ? *indices : empty_indices;
     TripletList           matrix{};
+
+    logging::error(K_external == nullptr || indices != nullptr,
+        "LOADS: external tangent requires active DOF indices");
 
     // Partition each family by pointer identity without creating new load
     // objects. A shared pointer represents the same physical definition in
@@ -368,6 +374,8 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale     = continued
                 ? Precision(1) : Precision(1) - step_progress;
 
+            logging::error(!condition->is_follower() || indices != nullptr,
+                "LOADS: FOLLOWER requires an active nonlinear load context");
             condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
 
@@ -380,13 +388,21 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale = condition->amplitude_
                 ? condition->amplitude_->evaluate(time) : step_progress;
 
+            logging::error(!condition->is_follower() || indices != nullptr,
+                "LOADS: FOLLOWER requires an active nonlinear load context");
             condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
         }
     }
 
+    if (K_external) {
+        const Index n = static_cast<Index>(system_dof_ids.maxCoeff()) + 1;
+        K_external->resize(n, n);
+        K_external->setFromTriplets(matrix.begin(), matrix.end());
+    }
+
     // Preserve the resultant while transferring loads through coupling kinematics
     for (auto& coupling : _data->couplings) {
-        coupling.apply_loads(*_data, load_matrix);
+        coupling.apply_loads(*_data, load_matrix, indices, K_external);
     }
 
     return load_matrix;

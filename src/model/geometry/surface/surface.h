@@ -124,6 +124,8 @@ struct Surface : public SurfaceInterface {
         const Field&    node_coords,
               Field&    target,
         const VecField& field) const override;
+    void integrate_pressure(const Field& node_coords, Field& target, Precision pressure,
+                            const SystemDofIds& dof_ids, TripletList& tangent) const override;
     Mat3 integrate_tensor_field(
         const Field&    node_coords,
         const TenField& field) const override;

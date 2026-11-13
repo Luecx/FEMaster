@@ -61,6 +61,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
         // An explicit NAME selects reusable definition storage. Unnamed analysis
         // rows update direct history and never inherit a prior insertion target.
         auto collector = std::make_shared<bc::LoadCollector::Ptr>(nullptr);
+        auto follower = std::make_shared<bool>(false);
 
         command.keyword(
             dsl::KeywordSpec::make()
@@ -68,15 +69,11 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                 .key("NAME").alternative("LOAD_COLLECTOR").alternative("LOADCOLLECTOR")
                     .optional().doc("Collector name; optional inside LOADCASE")
                 .key("AMPLITUDE").optional().doc("Amplitude scaling the load")
+                .key("FOLLOWER").optional("NO").allowed({"YES", "NO"})
         );
-        command.on_enter([&parser, amplitude, collector](const dsl::Keys& keys) {
+        command.on_enter([&parser, amplitude, collector, follower](const dsl::Keys& keys) {
+            *follower = keys.raw("FOLLOWER") == "YES";
             auto& model = parser.model();
-
-            // Scalar pressure follows the deformed surface normal. Until its
-            // load stiffness is implemented, reject direct nonlinear usage.
-            const auto* loadcase = parser.active_loadcase();
-            logging::error(loadcase == nullptr || loadcase->type_name() != "NONLINEARSTATIC",
-                "PLOAD: follower pressure is not supported in nonlinear steps");
 
             amplitude->reset();
 
@@ -113,7 +110,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                         .on_missing(Precision{0})
                         .on_empty  (Precision{0})
                 )
-                .bind([&parser, amplitude, collector](const std::string& target, Precision value) {
+                .bind([&parser, amplitude, collector, follower](const std::string& target, Precision value) {
                     auto& model = parser.model();
 
                     // Resolve the target through the model and retain nominal values
@@ -121,6 +118,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                     auto load = std::make_shared<bc::PLoad>();
                     load->region_    = model.resolve_surface_region(target);
                     load->pressure_  = value;
+                    load->follower_  = *follower;
                     load->amplitude_ = *amplitude;
 
                     // Named definitions and direct history are mutually exclusive targets

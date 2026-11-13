@@ -55,15 +55,15 @@ namespace fem::bc {
  * @param model_data Nodal geometry and compiled surface storage.
  * @param rhs Global nodal force field modified in place.
  * @param equations Constraint equations left unchanged.
- * @param system_dof_ids Global DOF numbering left unchanged.
- * @param matrix Sparse matrix triplets left unchanged.
+ * @param system_dof_ids Global DOF numbering for optional follower tangent.
+ * @param matrix Receives the analytical follower tangent triplets when requested.
  */
 void PLoad::apply(
     model::ModelData&      model_data,
     model::Field&          rhs,
     constraint::Equations&,
-    const SystemDofIds&,
-    TripletList&,
+    const SystemDofIds&    system_dof_ids,
+    TripletList&           matrix,
     Precision              scale
 ) {
     logging::error(model_data.positions != nullptr,
@@ -77,32 +77,17 @@ void PLoad::apply(
 
     if (pressure == Precision(0)) return;
 
-    // Convert the scalar pressure into a consistent nodal force for each
-    // selected surface:
-    //
-    //     f_i += -sum_q N_i(x_q) * p * n(x_q) * J_s(x_q) * w_q
-    //
-    // The surface integrator supplies the shape functions N_i, quadrature
-    // weights w_q and physical area Jacobian J_s. The callback returns only
-    // the pressure traction -p * n(x_q), using the normal of the provided
-    // nodal geometry. Recovering local coordinates is necessary to evaluate
-    // the geometric normal at the integration point.
-    const auto& positions = *model_data.positions;
-
+    // Consistent normal traction on the reference or current geometry.
+    // The surface routine computes the oriented area vector and its exact
+    // displacement derivative in a single quadrature pass.
+    const auto& positions = follower_
+        ? *model_data.positions : *model_data.positions_reference;
+    const SystemDofIds empty_ids;
+    const auto& tangent_ids = follower_ ? system_dof_ids : empty_ids;
     for (ID surface_id : *region_) {
         const auto& surface = model_data.surfaces[surface_id];
         if (!surface) continue;
-
-        surface->integrate_vector_field(
-            positions,
-            rhs,
-            [&](const Vec3& position) -> Vec3 {
-                const Vec2 local  = surface->global_to_local(position, positions);
-                const Vec3 normal = surface->normal(positions, local);
-
-                return -pressure * normal;
-            }
-        );
+        surface->integrate_pressure(positions, rhs, pressure, tangent_ids, matrix);
     }
 }
 

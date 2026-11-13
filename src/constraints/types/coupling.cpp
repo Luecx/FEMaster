@@ -15,6 +15,9 @@
 
 #include "../../math/vec_util.h"
 #include "../../model/model_data.h"
+#include <algorithm>
+#include <cmath>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 
@@ -144,101 +147,188 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
 }
 
 
-void Coupling::apply_loads(model::ModelData& model_data, model::Field& load_matrix) {
-    // Only act for distributing/structural coupling
-    if (type != CouplingType::STRUCTURAL) {
-        return;
+/**
+ * @brief Distributes a generalized master load and optionally its tangent.
+ *
+ * The structural coupling does not introduce constraint equations: it maps
+ * the master force/moment to translational slave forces. In nonlinear assembly
+ * the derivative must include changes of the incoming master force and the
+ * geometry-dependent distribution map itself.
+ */
+void Coupling::apply_loads(
+    model::ModelData& model_data,
+    model::Field& load_matrix,
+    const SystemDofIds* indices,
+    SparseMatrix* K_external
+) {
+    if (type != CouplingType::STRUCTURAL) return;
+
+    logging::error(K_external == nullptr || indices != nullptr,
+        "STRUCTURAL COUPLING: external tangent requires DOF numbering");
+
+    std::vector<ID> ids;
+    if (slave_nodes) {
+        for (ID node : *slave_nodes) ids.push_back(node);
+    } else if (slave_surfaces) {
+        for (ID surface : *slave_surfaces) {
+            for (ID node : *model_data.surfaces[surface]) ids.push_back(node);
+        }
+    }
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if (ids.empty()) return;
+
+    Vec6 master_load;
+    for (Index k = 0; k < 6; ++k) master_load[k] = load_matrix(master_node, k);
+    if (!K_external && master_load.isZero()) return;
+
+    logging::error(model_data.positions != nullptr,
+        "STRUCTURAL COUPLING: current positions are unavailable");
+    const auto& positions = *model_data.positions;
+    const Vec3 center = positions.row_vec3(master_node);
+    const Index n_slaves = static_cast<Index>(ids.size());
+
+    // [resultant force; resultant moment] = A * slave forces.
+    // The regularized minimum-norm distribution is A^T G^-1 master_load.
+    DynamicMatrix A = DynamicMatrix::Zero(6, 3 * n_slaves);
+    std::vector<Vec3> arms;
+    arms.reserve(ids.size());
+    for (Index i = 0; i < n_slaves; ++i) {
+        const Vec3 r = positions.row_vec3(ids[static_cast<std::size_t>(i)]) - center;
+        arms.push_back(r);
+        A.block<3, 3>(0, 3 * i).setIdentity();
+        A.block<3, 3>(3, 3 * i) = math::skew(r);
     }
 
-    // Gather slave node IDs (deduplicated)
-    std::vector<ID> ids;
-    ids.reserve(64);
-    if (slave_nodes != nullptr) {
-        for (ID node_id : *slave_nodes) ids.push_back(node_id);
-    } else if (slave_surfaces != nullptr) {
-        for (ID surface_id : *slave_surfaces) {
-            for (ID node_id : *model_data.surfaces[surface_id]) {
-                ids.push_back(node_id);
+    Mat6 gram = (A * A.transpose()).template selfadjointView<Eigen::Lower>();
+    const Precision raw_eps = Precision(1e-12) * (gram.trace() + Precision(1));
+    const Precision eps = std::max(Precision(1e-12), raw_eps);
+    const Precision eps_slope = raw_eps > Precision(1e-12)
+        ? Precision(1e-12) : Precision(0);
+    gram.diagonal().array() += eps;
+
+    Eigen::LDLT<Mat6> ldlt(gram);
+    if (ldlt.info() != Eigen::Success) {
+        gram.diagonal().array() += Precision(1e-9);
+        ldlt.compute(gram);
+    }
+    logging::error(ldlt.info() == Eigen::Success,
+        "STRUCTURAL COUPLING: failed to factor distribution matrix");
+
+    const Vec6 lambda = ldlt.solve(master_load);
+    const DynamicVector slave_load = A.transpose() * lambda;
+
+    for (Index i = 0; i < n_slaves; ++i) {
+        for (Index d = 0; d < 3; ++d) {
+            load_matrix(ids[static_cast<std::size_t>(i)], d) += slave_load[3 * i + d];
+        }
+    }
+    // A consumed master load has zero force and therefore zero tangent rows.
+    // This also applies when the master is part of the slave region.
+    for (Index d = 0; d < 6; ++d) load_matrix(master_node, d) = Precision(0);
+
+    if (!K_external) return;
+
+    TripletList triplets;
+    triplets.reserve(static_cast<std::size_t>(K_external->nonZeros())
+                     + static_cast<std::size_t>(n_slaves * 18));
+    std::map<Index, Vec6> master_derivatives;
+
+    // Retain unrelated external rows; consume master rows and transfer their
+    // derivatives via D db/du, where D = A^T G^-1.
+    for (Index outer = 0; outer < K_external->outerSize(); ++outer) {
+        for (SparseMatrix::InnerIterator entry(*K_external, outer); entry; ++entry) {
+            Index master_component = -1;
+            for (Index d = 0; d < 6; ++d) {
+                if ((*indices)(master_node, d) >= 0
+                    && entry.row() == (*indices)(master_node, d)) {
+                    master_component = d;
+                    break;
+                }
+            }
+            if (master_component < 0) {
+                triplets.emplace_back(entry.row(), entry.col(), entry.value());
+                continue;
+            }
+            auto [it, inserted] =
+                master_derivatives.try_emplace(entry.col(), Vec6::Zero());
+            it->second[master_component] += entry.value();
+        }
+    }
+
+    const DynamicMatrix D = A.transpose() * ldlt.solve(Mat6::Identity());
+    for (const auto& [column, derivative] : master_derivatives) {
+        const DynamicVector distributed = D * derivative;
+        for (Index i = 0; i < n_slaves; ++i) {
+            const ID slave = ids[static_cast<std::size_t>(i)];
+            if (slave == master_node) continue;
+            for (Index d = 0; d < 3; ++d) {
+                const Index row = (*indices)(slave, d);
+                if (row >= 0 && distributed[3 * i + d] != Precision(0))
+                    triplets.emplace_back(row, column, distributed[3 * i + d]);
             }
         }
     }
-    // Deduplicate to avoid over-weighting shared nodes
-    {
-        std::sort(ids.begin(), ids.end());
-        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+
+    // Analytical geometry derivative with fixed incoming master load:
+    // df = (dA)^T lambda - A^T G^-1 [(dA) A^T lambda
+    //                              + A (dA)^T lambda + (d eps) lambda].
+    // Each coordinate changes r_i by (+1 for its slave, -1 for the master).
+    // The same LDLT factorization is reused for every column.
+    if (!master_load.isZero()) {
+        std::vector<ID> participants = ids;
+        participants.push_back(master_node);
+        std::sort(participants.begin(), participants.end());
+        participants.erase(std::unique(participants.begin(), participants.end()),
+                           participants.end());
+
+        DynamicVector direct(3 * n_slaves);
+        const Vec3 moment_multiplier = lambda.tail<3>();
+        for (ID node : participants) {
+            for (Index d = 0; d < 3; ++d) {
+                const Index column = (*indices)(node, d);
+                if (column < 0) continue;
+
+                direct.setZero();
+                Vec3 delta_A_f = Vec3::Zero();
+                Precision delta_eps = Precision(0);
+                for (Index i = 0; i < n_slaves; ++i) {
+                    const Precision coefficient =
+                        Precision(ids[static_cast<std::size_t>(i)] == node)
+                        - Precision(master_node == node);
+                    if (coefficient == Precision(0)) continue;
+                    Vec3 dr = Vec3::Zero();
+                    dr[d] = coefficient;
+
+                    direct.segment<3>(3 * i) =
+                        math::skew(dr).transpose() * moment_multiplier;
+                    const Vec3 f_i = slave_load.segment<3>(3 * i);
+                    delta_A_f += dr.cross(f_i);
+                    delta_eps += Precision(4) * eps_slope * arms[static_cast<std::size_t>(i)].dot(dr);
+                }
+
+                Vec6 delta_G_lambda = A * direct;
+                delta_G_lambda.tail<3>() += delta_A_f;
+                delta_G_lambda += delta_eps * lambda;
+                const Vec6 delta_lambda = -ldlt.solve(delta_G_lambda);
+                const DynamicVector derivative = direct + A.transpose() * delta_lambda;
+
+                for (Index i = 0; i < n_slaves; ++i) {
+                    const ID slave = ids[static_cast<std::size_t>(i)];
+                    if (slave == master_node) continue;
+                    for (Index k = 0; k < 3; ++k) {
+                        const Index row = (*indices)(slave, k);
+                        if (row >= 0 && derivative[3 * i + k] != Precision(0))
+                            triplets.emplace_back(row, column, derivative[3 * i + k]);
+                    }
+                }
+            }
+        }
     }
 
-    const std::size_t n = ids.size();
-    if (n == 0) return;
-
-    // Read master generalized load: [Fx, Fy, Fz, Mx, My, Mz]
-    Eigen::Matrix<Precision, 6, 1> b;
-    b << load_matrix(master_node, 0), load_matrix(master_node, 1), load_matrix(master_node, 2),
-         load_matrix(master_node, 3), load_matrix(master_node, 4), load_matrix(master_node, 5);
-
-    // Nothing to distribute?
-    if (b.cwiseAbs().maxCoeff() == Precision(0)) return;
-
-    // Coordinates
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
-    const auto& X = *model_data.positions;
-    const Index master_idx = static_cast<Index>(master_node);
-    const Vec3 master_pos = X.row_vec3(master_idx);
-
-    // Build A (6 x 3n): [ I I ... ; [r1]x [r2]x ... ], and (optional) weights
-    Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic> A(6, 3 * (Eigen::Index)n);
-    A.setZero();
-
-    // (Uniform) weights: w_i = 1  -> W^{-1} = I   (easy to extend later)
-    // If you add weights, prefer scaling A's 3-column blocks by 1/sqrt(w_i) and
-    // then build G = As * As^T for improved conditioning.
-
-    for (std::size_t k = 0; k < n; ++k) {
-        const ID i = ids[k];
-        const Index row = static_cast<Index>(i);
-        const Vec3 r = X.row_vec3(row) - master_pos;
-
-        // Top block: ... I3 ...
-        A.block<3,3>(0, 3 * (Eigen::Index)k).setIdentity();
-        // Bottom block: ... [r_i]_x ...
-        A.block<3,3>(3, 3 * (Eigen::Index)k) = math::skew(r);
-    }
-
-    // Build Gram matrix G = A * W^{-1} * A^T; here W^{-1}=I -> G = A*A^T (6x6)
-    Eigen::Matrix<Precision, 6, 6> G = (A * A.transpose()).template selfadjointView<Eigen::Lower>();
-    // Small Tikhonov in case geometry is rank-deficient
-    const Precision eps = std::max(Precision(1e-12), Precision(1e-12) * (G.trace() + Precision(1)));
-    G.diagonal().array() += eps;
-
-    // Solve G * lambda = b
-    Eigen::LDLT<Eigen::Matrix<Precision, 6, 6>> ldlt(G);
-    if (ldlt.info() != Eigen::Success) {
-        // As a fallback, increase damping a bit and retry once
-        Eigen::Matrix<Precision, 6, 6> Gd = G;
-        Gd.diagonal().array() += Precision(1e-9);
-        ldlt.compute(Gd);
-    }
-    Eigen::Matrix<Precision, 6, 1> lambda = ldlt.solve(b);
-
-    // f = W^{-1} * A^T * lambda; with W^{-1}=I -> f = A^T * lambda  (size 3n)
-    Eigen::Matrix<Precision, Eigen::Dynamic, 1> f = A.transpose() * lambda;
-
-    // Scatter to slave nodes: add only translational components (Fx,Fy,Fz)
-    for (std::size_t k = 0; k < n; ++k) {
-        const ID i = ids[k];
-        const Eigen::Index j = 3 * (Eigen::Index)k;
-        load_matrix(i, 0) += f(j + 0);
-        load_matrix(i, 1) += f(j + 1);
-        load_matrix(i, 2) += f(j + 2);
-        // No nodal moments added here: moment resultant is produced via r x f
-    }
-
-    // Consume the master load (it is now represented on slaves)
-    for (int c = 0; c < 6; ++c) {
-        load_matrix(master_node, c) = Precision(0);
-    }
+    K_external->setZero();
+    K_external->setFromTriplets(triplets.begin(), triplets.end());
 }
-
 
 /**
  * @brief Computes the necessary DOFs for the master node based on the coupling.

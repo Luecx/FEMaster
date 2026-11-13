@@ -122,7 +122,7 @@ Precision calculate_relative_force_residual(
  * factor; affine prescribed displacements retain their existing constraints.
  * Incremental load control or arc-length control solves the reduced residual
  * using updated structural tangents and the established contact contributions.
- * Condition matrix outputs do not introduce follower-load tangents here.
+ * Follower-load tangents are subtracted from the structural tangent.
  *
  * Trial material state is separate from condition history and is accepted only
  * with a converged increment. Global fields and requested output are recovered
@@ -246,14 +246,34 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
+    // Residual-only evaluations do not assemble an unused external tangent.
+    auto build_nonlinear_load = [&](Precision time, Precision progress,
+                                    SparseMatrix* tangent = nullptr) {
+        return model->build_load_matrix(
+            initial_conditions, target_conditions, time, progress,
+            &active_dof_idx_mat, tangent);
+    };
+
+    // A fixed Riks load direction is not valid for follower loading.
+    if (control == NonlinearControl::ArcLength) {
+        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+            for (const auto& condition : initial_conditions.get(family))
+                logging::error(!condition->is_follower(),
+                    "NONLINEARSTATIC RIKS: follower loads are not supported");
+            for (const auto& condition : target_conditions.get(family))
+                logging::error(!condition->is_follower(),
+                    "NONLINEARSTATIC RIKS: follower loads are not supported");
+        }
+    }
+
     // Form an endpoint secant for the load-factor predictor. A carried-over
     // force already acts at lambda=0, so the direction is the difference
     // between final and initial loading. For a nonlinear amplitude this is
     // not the instantaneous derivative: load control still evaluates the
     // actual external force at each Newton trial, while Riks disallows
     // newly amplitude-driven loads to retain a proportional load direction.
-    const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0));
-    const auto global_load_total = build_step_load_matrix(step_period, Precision(1));
+    const auto global_load_start = build_nonlinear_load(Precision(0), Precision(0));
+    const auto global_load_total = build_nonlinear_load(step_period, Precision(1));
     auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
 
     const DynamicVector f_total = mattools::reduce_mat_to_vec(
@@ -390,9 +410,27 @@ void NonlinearStatic::run() {
     // indefinite near compression, limit points or buckling, so SPD is not assumed.
     // Arc length uses a nonsymmetric augmented system and contact may also be
     // nonsymmetric, so those paths keep the general solver.
+    // A follower pressure or geometry-dependent structural load redistribution
+    // can produce nonsymmetric stiffness, even in load-controlled solves.
+    bool has_follower = false;
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        for (const auto& condition : initial_conditions.get(family))
+            has_follower |= condition->is_follower();
+        for (const auto& condition : target_conditions.get(family))
+            has_follower |= condition->is_follower();
+    }
+
+    bool has_structural_coupling = false;
+    for (const auto& coupling : model->_data->couplings) {
+        has_structural_coupling |=
+            coupling.type == constraint::CouplingType::STRUCTURAL;
+    }
+
     const auto matrix_type =
         control == NonlinearControl::LoadControl
         && model->_data->contacts.empty()
+        && !has_follower
+        && !has_structural_coupling
             ? solver::DirectSolverMatrixType::Symmetric
             : solver::DirectSolverMatrixType::General;
 
@@ -470,7 +508,10 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
+        SparseMatrix K_external;
+        const auto external_mat = build_nonlinear_load(
+            lambda * step_period, lambda, &K_external);
+        Kt -= K_external;
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -549,7 +590,7 @@ void NonlinearStatic::run() {
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
-        const auto external_mat = build_step_load_matrix(lambda * step_period, lambda);
+        const auto external_mat = build_nonlinear_load(lambda * step_period, lambda);
         const DynamicVector external_force =
             mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
         const DynamicVector full_residual = external_force - internal_force;
@@ -786,7 +827,7 @@ void NonlinearStatic::run() {
             &active_dof_idx_mat
         );
 
-        auto increment_external = build_step_load_matrix(lambda * step_period, lambda);
+        auto increment_external = build_nonlinear_load(lambda * step_period, lambda);
 
         auto increment_reaction_full = subtract_field(
             increment_internal,
@@ -1031,7 +1072,7 @@ void NonlinearStatic::run() {
     }
 
     // Preserve the accepted path time, not merely the nominal step limit.
-    auto global_load_final = build_step_load_matrix(load_factor * step_period, load_factor);
+    auto global_load_final = build_nonlinear_load(load_factor * step_period, load_factor);
     committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,
