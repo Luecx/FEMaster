@@ -3,7 +3,7 @@
  * @brief Registers persistent scalar thermal boundary-condition histories.
  *
  * TEMPERATURE defines structural target-temperature fields. HEATFLUX and
- * CONVECTION, DSFLUX and SFILM form thermal histories for heat-transfer analyses.
+ * CONVECTION, CFLUX, DSFLUX and SFILM form thermal histories for heat-transfer analyses.
  * OP=NEW on TEMPERATURE resets only the current step's target field.
  *
  * Thermal boundary conditions are distinct from structural predefined fields.
@@ -20,6 +20,7 @@
 #include "../parser.h"
 #include "../../dsl/registry.h"
 #include "../../../bc/thermal/convection.h"
+#include "../../../bc/thermal/concentrated_heat_flux.h"
 #include "../../../bc/thermal/heat_flux.h"
 #include "../../../core/logging.h"
 #include "../../../model/model.h"
@@ -32,16 +33,66 @@
 namespace fem::io::reader::commands {
 
 /**
- * Registers the three independent thermal input-history families.
+ * Registers structural temperatures and independent thermal input histories.
  *
- * TEMPERATURE writes nodal structural target fields. HEATFLUX and CONVECTION
- * remain separate thermal condition histories for heat-transfer steps.
+ * TEMPERATURE writes nodal structural target fields. Surface heat flux,
+ * concentrated nodal power and convection retain separate thermal histories.
  *
  * @param registry Registry receiving the thermal command grammar.
  * @param parser Parser exposing the authoritative model state.
  */
 void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parser) {
     namespace dsl = fem::io::dsl;
+
+    // Concentrated nodal power has independent OP=NEW/MOD history so changing
+    // surface fluxes cannot remove or replace concentrated heat input.
+    registry.command("CFLUX", [&](dsl::Command& command) {
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "HEATTRANSFER"}));
+        command.doc("Prescribe concentrated nodal heat flow: TARGET, 11, POWER; positive into the body.");
+        auto amplitude = std::make_shared<bc::Amplitude::Ptr>(nullptr);
+        command.keyword(dsl::KeywordSpec::make()
+            .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+            .key("AMPLITUDE").optional()
+        );
+        command.on_enter([&parser, amplitude](const dsl::Keys& keys) {
+            // Resolve shared history before updating the active CFLUX family
+            const auto* active = parser.active_loadcase();
+            const auto& data   = *parser.model()._data;
+            const auto  name   = keys.raw("AMPLITUDE");
+            logging::error(active == nullptr || active->type_name() == "STEADYHEATTRANSFER",
+                "CFLUX: requires a heat-transfer analysis");
+            logging::error(name.empty() || data.amplitudes.has(name),
+                "CFLUX: amplitude ", name, " does not exist");
+            *amplitude = name.empty() ? nullptr : data.amplitudes.get(name);
+            if (keys.raw("OP") == "NEW") parser.clear_conditions(bc::CFLUX);
+        });
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
+                    .one<std::string>().name("TARGET").desc("Node or compiled node set")
+                    .one<int>().name("DOF").desc("Temperature degree of freedom 11")
+                    .one<Precision>().name("POWER").desc("Power per target node")
+                )
+                .bind([&parser, amplitude](const std::string& target, int dof, Precision power) {
+                    // Preserve target identity for replacement across steps
+                    logging::error(dof == 11,
+                        "CFLUX: only temperature DOF 11 is supported");
+                    logging::error(std::isfinite(power),
+                        "CFLUX: prescribed power must be finite");
+                    auto& model = parser.model();
+                    auto  flux  = std::make_shared<bc::ConcentratedHeatFlux>();
+                    flux->region_    = model.resolve_node_region(target);
+                    flux->power_     = power;
+                    flux->amplitude_ = *amplitude;
+                    const std::string identifier =
+                        (model._data->node_sets.has(target) ? "NSET:" : "NODE:") + target;
+                    parser.modify_conditions(bc::CFLUX, identifier, {std::move(flux)});
+                })
+            )
+        );
+        command.variant(dsl::Variant::make().when(dsl::Condition::key_equals("OP", "NEW")));
+    });
 
     // Predefined temperatures are structural field values, not constraints on
     // thermal DOFs. Heat-transfer Dirichlet conditions remain separate.
