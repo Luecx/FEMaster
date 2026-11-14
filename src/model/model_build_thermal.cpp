@@ -199,7 +199,7 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
 /**
  * Assembles the current scalar thermal source field.
  *
- * Direct HEAT_FLUX and CONVECTION history and collector-activated thermal conditions
+ * Surface heat flux, concentrated nodal power, convection and collector conditions
  * superimpose prescribed heat flow in a one-component NODE field. Convection
  * supplies q_h = integral_Gamma h T_inf N^T dGamma through the common apply
  * interface. Its simultaneous matrix contribution is discarded here because the
@@ -228,13 +228,13 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
 
     // Heat flux and convection occupy separate active history families;
     // the parser has already selected any applicable collector definitions.
-    for (const auto family : {bc::HEAT_FLUX, bc::CONVECTION}) {
+    for (const auto family : {bc::HEAT_FLUX, bc::CONVECTION, bc::CFLUX}) {
         for (const auto& condition : target.get(family)) {
             // Thermal fluxes retain the previous ramp when no amplitude is assigned;
             // convection coefficients remain nominal unless explicitly modulated.
             const Precision scale = condition->amplitude_
                 ? condition->amplitude_->evaluate(time)
-                : (family == bc::HEAT_FLUX ? step_progress : Precision(1));
+                : (family == bc::CONVECTION ? Precision(1) : step_progress);
             condition->apply(*_data, rhs, equations, system_dof_ids, matrix, scale);
         }
     }
