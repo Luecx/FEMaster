@@ -66,7 +66,7 @@ struct DLoad : Condition {
     ~DLoad() override = default;
 
     // Integrate the prescribed traction over every surface in region_ and
-    // accumulate its consistent equivalent nodal forces in the global RHS.
+    // accumulate its consistent equivalent nodal forces in load.
     //
     // Each step evaluates this nominal traction or force density with its
     // initial or target amplitude factor; the load itself remains unchanged.
@@ -75,15 +75,19 @@ struct DLoad : Condition {
     // local traction vector is transformed at each integration point because
     // the coordinate-system axes may vary across the surface.
     //
-    // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Dead tractions act per unit reference area. Follower tractions act per
+    // unit current area and add df/du to load_tangent using the equation
+    // indices of system_dof_ids. Constraints and the system matrix remain
+    // unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

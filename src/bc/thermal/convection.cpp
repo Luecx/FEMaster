@@ -82,22 +82,23 @@ Precision Convection::effective_film_coefficient(Precision scale) const {
  * operator. Equations remain unchanged.
  *
  * @param model_data Compiled surfaces and reference nodal positions.
- * @param rhs Scalar thermal RHS modified in place.
- * @param equations Constraint equations left unchanged.
+ * @param load Scalar thermal load modified in place.
  * @param system_dof_ids Active temperature DOF numbering used for K_h.
- * @param matrix Sparse matrix triplets receiving the convection operator.
+ * @param system_matrix Sparse system-matrix triplets receiving K_h.
+ * @param scale Common multiplier of h and the ambient source.
  */
 void Convection::apply(
     model::ModelData&      model_data,
-    model::Field&          rhs,
+    model::Field&          load,
+    TripletList*,
     constraint::Equations&,
     const SystemDofIds&    system_dof_ids,
-    TripletList&           matrix,
+    TripletList&           system_matrix,
     Precision              scale
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
-    apply_rhs(model_data, rhs, scale);
-    apply_matrix(model_data, system_dof_ids, matrix, scale);
+    apply_rhs(model_data, load, scale);
+    apply_matrix(model_data, system_dof_ids, system_matrix, scale);
 }
 
 /**

@@ -21,6 +21,11 @@
 
 #include "cylindrical_system.h"
 
+#include "../core/logging.h"
+
+#include <algorithm>
+#include <cmath>
+
 #include <Eigen/Geometry>
 
 namespace fem {
@@ -128,6 +133,50 @@ Basis CylindricalSystem::get_axes(const Vec3& local_point) const {
     axes.col(1) = tangential.normalized();
     axes.col(2) = z_axis_;
     return axes;
+}
+
+/**
+ * @brief Evaluates the spatial gradient of a vector with fixed cylindrical components.
+ *
+ * A vector with fixed local components v = (v_r, v_theta, v_z) is expressed in
+ * global coordinates as
+ *
+ *     w(x) = v_r e_r(theta) + v_theta e_theta(theta) + v_z e_z.
+ *
+ * Only the azimuth theta = atan2(a, b) depends on the position, where
+ * b = (x - x_0) . r_axis_ and a = (x - x_0) . theta_axis_. With
+ * de_r/dtheta = e_theta and de_theta/dtheta = -e_r, the chain rule gives
+ *
+ *     dw/dx = (v_r e_theta - v_theta e_r) (dtheta/dx)^T,
+ *     dtheta/dx = (b theta_axis_ - a r_axis_) / (a^2 + b^2).
+ *
+ * The azimuth is undefined on the cylinder axis. A position-dependent load
+ * evaluated there has no derivative, so this case is reported as an error.
+ *
+ * @param global_point Global Cartesian evaluation point.
+ * @param local_components Fixed radial, tangential and axial components.
+ * @return Gradient d(B(x) v)/dx in global Cartesian coordinates.
+ */
+Mat3 CylindricalSystem::get_axes_gradient(const Vec3& global_point, const Vec3& local_components) const {
+    // Resolve the transverse projections that define the azimuth
+    const Vec3      relative = global_point - base_point_;
+    const Precision b        = relative.dot(r_axis_);
+    const Precision a        = relative.dot(theta_axis_);
+    const Precision rho_sq   = a * a + b * b;
+
+    logging::error(rho_sq > Precision(1e-24) * std::max(Precision(1), relative.squaredNorm()),
+        "CYLINDRICAL: basis gradient is undefined on the axis of system ", name);
+
+    // Derivative of the azimuth with respect to the global position
+    const Vec3 dtheta_dx = (b * theta_axis_ - a * r_axis_) / rho_sq;
+
+    // Derivative of the rotated transverse components with respect to theta
+    const Precision theta      = std::atan2(a, b);
+    const Vec3      radial     =  std::cos(theta) * r_axis_ + std::sin(theta) * theta_axis_;
+    const Vec3      tangential = -std::sin(theta) * r_axis_ + std::cos(theta) * theta_axis_;
+    const Vec3      dw_dtheta  = local_components(0) * tangential - local_components(1) * radial;
+
+    return dw_dtheta * dtheta_dx.transpose();
 }
 
 /**

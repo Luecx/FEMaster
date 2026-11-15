@@ -8,7 +8,9 @@
  * row so every material call follows the same explicit state interface.
  *
  * The remaining routines integrate scalar, vector and tensor fields over the
- * current solid volume, optionally including material density.
+ * reference solid volume, optionally including material density. Body and
+ * inertia loads therefore act as dead loads and the integrated mass is
+ * independent of the deformation.
  *
  * @see SolidElement
  *
@@ -21,21 +23,21 @@
 namespace fem::model {
 
 /**
- * Integrates a scalar field over the current model volume.
+ * Integrates a scalar field over the reference model volume.
  *
  * The topology volume rule evaluates the field at interpolated global positions
- * and multiplies by the signed current Jacobian determinant. Optional density
+ * and multiplies by the signed reference Jacobian determinant. Optional density
  * scaling requires an assigned material density. Constitutive history is not
  * evaluated or modified.
  *
  * @param scale_by_density Multiply the volume measure by material density.
- * @param field Callback evaluated at global current coordinates.
+ * @param field Callback evaluated at global reference coordinates.
  * @return Volume integral of the supplied field.
  */
 template<Index N>
 Precision SolidElement<N>::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
-    // Gather current geometry for physical volume integration
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
+    // Gather reference geometry so the measure conserves mass and volume
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
 
     // Apply material density only when requested by the caller
     Precision rho = 1.0;
@@ -60,7 +62,7 @@ Precision SolidElement<N>::integrate_scalar_field(bool scale_by_density, const S
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
         const Precision detJ       = J.determinant();
 
-        // Interpolate the global sample position using current nodal coordinates
+        // Interpolate the global sample position using reference nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
@@ -70,21 +72,21 @@ Precision SolidElement<N>::integrate_scalar_field(bool scale_by_density, const S
 }
 
 /**
- * Integrates a vector field over the current model volume.
+ * Integrates a vector field over the reference model volume.
  *
  * The topology volume rule evaluates the field at interpolated global positions
- * and multiplies by the signed current Jacobian determinant. Optional density
+ * and multiplies by the signed reference Jacobian determinant. Optional density
  * scaling requires an assigned material density. Constitutive history is not
  * evaluated or modified.
  *
  * @param scale_by_density Multiply the volume measure by material density.
- * @param field Callback evaluated at global current coordinates.
+ * @param field Callback evaluated at global reference coordinates.
  * @return Volume integral of the supplied field.
  */
 template<Index N>
 Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecField& field) {
-    // Gather current geometry for physical volume integration
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
+    // Gather reference geometry so the measure conserves mass and volume
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
 
     // Apply material density only when requested by the caller
     Precision rho = 1.0;
@@ -109,7 +111,7 @@ Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecFie
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
         const Precision detJ       = J.determinant();
 
-        // Interpolate the global sample position using current nodal coordinates
+        // Interpolate the global sample position using reference nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
@@ -122,7 +124,7 @@ Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecFie
  * Integrates a distributed vector field into consistent nodal forces.
  *
  * The topology volume rule evaluates the field at interpolated global positions
- * and multiplies by the signed current Jacobian determinant. Optional density
+ * and multiplies by the signed reference Jacobian determinant. Optional density
  * scaling requires an assigned material density. Constitutive history is not
  * evaluated or modified.
  * Shape-function weights distribute each quadrature contribution to the global
@@ -130,12 +132,12 @@ Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecFie
  *
  * @param node_loads Global nodal force accumulator.
  * @param scale_by_density Multiply the volume measure by material density.
- * @param field Callback evaluated at global current coordinates.
+ * @param field Callback evaluated at global reference coordinates.
  */
 template<Index N>
 void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_density, const VecField& field) {
-    // Gather current geometry for physical volume integration
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
+    // Gather reference geometry so the measure conserves mass and volume
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
 
     // Apply material density only when requested by the caller
     Precision rho = 1.0;
@@ -159,7 +161,7 @@ void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_de
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
         const Precision detJ       = J.determinant();
 
-        // Interpolate the global sample position using current nodal coordinates
+        // Interpolate the global sample position using reference nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 
@@ -176,21 +178,21 @@ void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_de
 }
 
 /**
- * Integrates a tensor field over the current model volume.
+ * Integrates a tensor field over the reference model volume.
  *
  * The topology volume rule evaluates the field at interpolated global positions
- * and multiplies by the signed current Jacobian determinant. Optional density
+ * and multiplies by the signed reference Jacobian determinant. Optional density
  * scaling requires an assigned material density. Constitutive history is not
  * evaluated or modified.
  *
  * @param scale_by_density Multiply the volume measure by material density.
- * @param field Callback evaluated at global current coordinates.
+ * @param field Callback evaluated at global reference coordinates.
  * @return Volume integral of the supplied field.
  */
 template<Index N>
 Mat3 SolidElement<N>::integrate_tensor_field(bool scale_by_density, const TenField& field) {
-    // Gather current geometry for physical volume integration
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
+    // Gather reference geometry so the measure conserves mass and volume
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
 
     // Apply material density only when requested by the caller
     Precision rho = 1.0;
@@ -215,7 +217,7 @@ Mat3 SolidElement<N>::integrate_tensor_field(bool scale_by_density, const TenFie
         const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
         const Precision detJ       = J.determinant();
 
-        // Interpolate the global sample position using current nodal coordinates
+        // Interpolate the global sample position using reference nodal coordinates
         Vec3 x_ip = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
 

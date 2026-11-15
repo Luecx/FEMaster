@@ -76,6 +76,28 @@ struct SurfaceInterface {
         const Field& node_coords,
         const ScalarField& field) const = 0;
 
+    // Consistent nodal forces of surface loads in the configuration given by
+    // node_coords. Results use surface-connectivity ordering with the three
+    // translational components of each node, f(3 i + d). The optional tangent
+    // receives the analytic derivative df/dx with respect to the nodal positions
+    // of the same configuration, evaluated with the same quadrature as f.
+    //
+    // A pressure acts against the unnormalized geometric normal x_,r cross x_,s
+    // and therefore follows both the orientation and the area of the surface.
+    // A traction is a force per unit area of the supplied configuration; its
+    // optional gradient dt/dx accounts for a position-dependent load direction.
+    virtual void integrate_pressure(
+        const Field&   node_coords,
+        Precision      pressure,
+        DynamicVector& force,
+        DynamicMatrix* tangent) const = 0;
+    virtual void integrate_traction(
+        const Field&    node_coords,
+        const VecField& traction,
+        const TenField* traction_gradient,
+        DynamicVector&  force,
+        DynamicMatrix*  tangent) const = 0;
+
     virtual void integrate_triangular(
         const Field& node_coords,
         const Polygon& polygon,

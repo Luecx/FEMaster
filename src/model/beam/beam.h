@@ -95,6 +95,12 @@ struct BeamElement : StructuralElement {
     Precision length();
     Precision volume() override;
 
+    // Centerline length and nodal midpoint of the reference configuration.
+    // Field integration uses this measure so body and inertia loads act as
+    // dead loads and the integrated mass is independent of the deformation.
+    Precision length_reference();
+    Vec3      midpoint_reference();
+
     // Local section frames. The base frame follows the beam axis and supplied
     // n1 direction. The principal frame additionally rotates its local y-z
     // basis according to the section inertia tensor. `rotation_matrix()` keeps

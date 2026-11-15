@@ -51,51 +51,83 @@ namespace fem::bc {
  *
  * before it is accumulated in the corresponding global generalized DOFs.
  *
- * @param model_data Global nodal geometry used for coordinate transformation.
- * @param rhs Generalized nodal RHS field modified in place.
- * @param equations Constraint-equation output left unchanged by this structural condition.
- * @param system_dof_ids Active equation numbering reserved for condition matrix terms.
- * @param matrix Sparse condition matrix output left unchanged by this structural condition.
+ * A dead load evaluates the basis at the reference position. A follower load
+ * evaluates it at the current position and contributes the analytic tangent
+ *
+ *     dF_i/dx_i = d(A(x) F_local)/dx,   dM_i/dx_i = d(A(x) M_local)/dx.
+ *
+ * Without an orientation the global direction is constant, so a follower
+ * load has a vanishing tangent. A follower load without a requested load
+ * tangent is reported as an error in either case.
+ *
+ * @param model_data Reference and current nodal geometry.
+ * @param load Generalized nodal load field modified in place.
+ * @param load_tangent Optional load-tangent triplets receiving df/du.
+ * @param system_dof_ids Global equation numbering of the load tangent.
+ * @param scale Multiplier of the nominal load components.
  */
 void CLoad::apply(
     model::ModelData&      model_data,
-    model::Field&          rhs,
+    model::Field&          load,
+    TripletList*           load_tangent,
     constraint::Equations&,
-    const SystemDofIds&,
+    const SystemDofIds&    system_dof_ids,
     TripletList&,
     Precision              scale
 ) {
-    logging::error(model_data.positions != nullptr,
-        "CLOAD: positions field is not initialized");
+    // Validate the definition and the configuration required by the flag
     logging::error(region_ != nullptr,
         "CLOAD: target node region is not initialized");
+    logging::error(model_data.positions != nullptr && model_data.positions_reference != nullptr,
+        "CLOAD: positions fields are not initialized");
+    logging::error(!follower_ || load_tangent != nullptr,
+        "CLOAD: follower load requires a load tangent and is only supported in nonlinear analyses");
 
-    // Omitted generalized components contribute no nodal forces or moments.
+    // Omitted generalized components contribute no nodal forces or moments
     Vec6 values = Vec6::Zero();
     for (Dim i = 0; i < 6; ++i) {
         if (std::isfinite(values_[i])) values[i] = scale * values_[i];
     }
 
-    // if no components are active, return early
     if (values.isZero()) return;
 
-    // Add the load to every target node. If an orientation is assigned,
-    // transform the force and moment blocks into global coordinates.
+    // Dead loads use the reference basis, follower loads the current one
+    const auto& positions = follower_ ? *model_data.positions : *model_data.positions_reference;
+
+    const Vec3 force  = values.head<3>();
+    const Vec3 moment = values.tail<3>();
+
     for (ID node_id : *region_) {
-        Vec6 global = values;
-
-        if (orientation_) {
-            const Vec3 position    = model_data.positions->row_vec3(node_id);
-            const Vec3 local_point = orientation_->to_local(position);
-            const auto axes        = orientation_->get_axes(local_point);
-
-            global.head<3>() = axes * values.head<3>();
-            global.tail<3>() = axes * values.tail<3>();
+        // Without an orientation, the global components are constant
+        if (!orientation_) {
+            for (Dim i = 0; i < 6; ++i) {
+                load(node_id, i) += values[i];
+            }
+            continue;
         }
 
-        for (Dim i = 0; i < 6; ++i) {
-            rhs(node_id, i) += global[i];
+        // Transform the force and moment blocks into global coordinates at the
+        // position of the node in the selected configuration
+        const Vec3 position    = positions.row_vec3(node_id);
+        const Vec3 local_point = orientation_->to_local(position);
+        const auto axes        = orientation_->get_axes(local_point);
+
+        const Vec3 global_force  = axes * force;
+        const Vec3 global_moment = axes * moment;
+
+        for (Dim i = 0; i < 3; ++i) {
+            load(node_id, i    ) += global_force [i];
+            load(node_id, i + 3) += global_moment[i];
         }
+
+        if (!follower_) continue;
+
+        // The rotating basis couples both blocks to the nodal translation
+        const Mat3 force_gradient  = orientation_->get_axes_gradient(position, force);
+        const Mat3 moment_gradient = orientation_->get_axes_gradient(position, moment);
+
+        add_load_tangent_block(*load_tangent, system_dof_ids, node_id, 0, node_id, force_gradient);
+        add_load_tangent_block(*load_tangent, system_dof_ids, node_id, 3, node_id, moment_gradient);
     }
 }
 

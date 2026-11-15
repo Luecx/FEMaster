@@ -61,6 +61,7 @@ public:
     Vec3 to_global(const Vec3& local_point) const override;
     // Constant global basis columns; the local evaluation point is ignored.
     Basis get_axes(const Vec3& local_point) const override;
+    Mat3  get_axes_gradient(const Vec3& global_point, const Vec3& local_components) const override;
 
     // Create an independent rotated orientation; translation is ignored.
     Ptr transformed(const Mat3& rotation, const Vec3& translation) const override;

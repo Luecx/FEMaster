@@ -222,7 +222,7 @@ QSPT::MassMatrix QSPT::mass_impl() {
     }
 
     const Precision thickness = this->get_section()->thickness_;
-    const NodeCoords coords = this->node_coords_global();
+    const NodeCoords coords = this->node_coords_reference();
 
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
         const auto p = integration_scheme_.get_point(ip);
@@ -340,7 +340,7 @@ bool QSPT::compute_shear_flow(Field& shear_flow,
 }
 
 Precision QSPT::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
-    const NodeCoords coords = this->node_coords_global();
+    const NodeCoords coords = this->node_coords_reference();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
     const Precision thickness = this->get_section()->thickness_;
 
@@ -362,7 +362,7 @@ Precision QSPT::integrate_scalar_field(bool scale_by_density, const ScalarField&
 }
 
 Vec3 QSPT::integrate_vector_field(bool scale_by_density, const VecField& field) {
-    const NodeCoords coords = this->node_coords_global();
+    const NodeCoords coords = this->node_coords_reference();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
     const Precision thickness = this->get_section()->thickness_;
 
@@ -386,7 +386,7 @@ Vec3 QSPT::integrate_vector_field(bool scale_by_density, const VecField& field) 
 void QSPT::integrate_vector_field(Field& node_loads,
                                   bool scale_by_density,
                                   const VecField& field) {
-    const NodeCoords coords = this->node_coords_global();
+    const NodeCoords coords = this->node_coords_reference();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
     const Precision thickness = this->get_section()->thickness_;
 
@@ -412,7 +412,7 @@ void QSPT::integrate_vector_field(Field& node_loads,
 }
 
 Mat3 QSPT::integrate_tensor_field(bool scale_by_density, const TenField& field) {
-    const NodeCoords coords = this->node_coords_global();
+    const NodeCoords coords = this->node_coords_reference();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
     const Precision thickness = this->get_section()->thickness_;
 

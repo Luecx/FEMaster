@@ -98,8 +98,9 @@ auto SolidElement<N>::node_coords_reference() -> StaticMatrix<N, D> {
 /**
  * Gathers current nodal positions in element connectivity order.
  *
- * The model must provide the current-position field. Volume, mass and distributed
- * loads use this model configuration rather than a supplied trial displacement.
+ * The model must provide the current-position field. The signed volume uses this
+ * model configuration rather than a supplied trial displacement; mass and
+ * distributed loads are integrated in the reference configuration.
  *
  * @return One global current XYZ coordinate row per element node.
  */
@@ -531,7 +532,7 @@ MapMatrix SolidElement<N>::capacity(Precision* buffer) {
 }
 
 /**
- * Integrates the consistent translational mass matrix in current model geometry.
+ * Integrates the consistent translational mass matrix in the reference geometry.
  *
  * The assigned material must provide density. Volume quadrature integrates the
  * scalar nodal products rho N_a N_b and expands them independently into the three
@@ -550,8 +551,9 @@ MapMatrix SolidElement<N>::mass(Precision* buffer) {
 
     Precision density = material()->get_density();
 
-    // Integrate nodal shape products in the current model configuration
-    StaticMatrix<N, D> node_coords = this->node_coords_current();
+    // Integrate nodal shape products in the reference configuration so the
+    // mass matrix is independent of the deformation
+    StaticMatrix<N, D> node_coords = this->node_coords_reference();
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, node_coords, density](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {

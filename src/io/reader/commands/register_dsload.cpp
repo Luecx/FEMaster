@@ -11,8 +11,9 @@
  * Amplitudes follow native FEMaster evaluation during load assembly rather than
  * the Abaqus reader's procedure-dependent step scaling.
  *
- * Follower pressure is rejected in nonlinear procedures because a consistent
- * load stiffness is unavailable. Complex-valued loading is rejected.
+ * FOLLOWER=YES makes the pressure follow the current normal and area. It
+ * requires a nonlinear analysis, which assembles the analytic load tangent.
+ * Complex-valued loading is rejected.
  *
  * @author Finn Eggers
  * @date 07.10.2026
@@ -48,8 +49,8 @@ namespace fem::io::reader::commands {
  * Entry resolves modifiers and the named definition target or direct history.
  * OP=NEW clears only direct DSLOAD history; MOD replaces matching surface targets.
  * Native amplitude semantics remain in the load objects. As in the existing
- * Abaqus registration, imaginary loads are rejected, nonlinear pressure is not
- * supported and TRVEC is rejected. This registration does not implement
+ * Abaqus registration, imaginary loads are rejected and TRVEC is rejected.
+ * FOLLOWER defaults to NO, so pressure acts on the reference surface. This registration does not implement
  * the full Abaqus load-label or load-history parameter catalogue.
  *
  * @param registry Registry receiving the grammar and callbacks.
@@ -63,6 +64,7 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
 
         auto amplitude   = std::make_shared<bc::Amplitude::Ptr>(nullptr);
         auto orientation = std::make_shared<cos::CoordinateSystem::Ptr>(nullptr);
+        auto follower    = std::make_shared<bool>(false);
 
         // An explicit NAME selects reusable definition storage. Unnamed analysis
         // rows update direct history and never inherit a prior insertion target.
@@ -75,16 +77,19 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
                     .optional().doc("Collector name; optional inside LOADCASE")
                 .key("AMPLITUDE").optional()
                 .key("ORIENTATION").optional()
-                .key("FOLLOWER").optional("NO").allowed({"NO"})
+                .key("FOLLOWER").optional("NO").allowed({"YES", "NO"})
+                    .doc("Follow the current surface normal and area (nonlinear analyses only)")
                 .flag("REAL")
                 .flag("IMAGINARY")
         );
-        command.on_enter([&parser, amplitude, orientation, collector](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&parser, amplitude, orientation, follower, collector](const fem::io::dsl::Keys& keys) {
             auto& model = parser.model();
 
             orientation->reset();
             amplitude  ->reset();
             collector  ->reset();
+
+            *follower = keys.get<bool>("FOLLOWER");
 
             const std::string orientation_name = keys.raw("ORIENTATION");
             const std::string amplitude_name   = keys.raw("AMPLITUDE");
@@ -128,7 +133,7 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
                         .on_missing(std::numeric_limits<Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
-                .bind([&parser, amplitude, collector](
+                .bind([&parser, amplitude, follower, collector](
                     const std::string&              surface,
                     const std::string&              type,
                     Precision                       magnitude,
@@ -138,19 +143,16 @@ void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
                         "DSLOAD: TRVEC is not supported");
                     logging::error(type == "P",
                         "DSLOAD: only P is supported");
-
-                    const auto* loadcase = parser.active_loadcase();
-                    logging::error(loadcase == nullptr || loadcase->type_name() != "NONLINEARSTATIC",
-                        "DSLOAD: follower pressure is not supported in nonlinear steps");
                     logging::error(std::isnan(direction[0]) && std::isnan(direction[1]) && std::isnan(direction[2]),
                         "DSLOAD: P accepts no direction components");
 
-                    // Pressure follows the surface normal. Its current formulation
-                    // supports linear analyses only, including named definitions.
+                    // Pressure acts against the surface normal of the reference
+                    // or, for FOLLOWER=YES, the current configuration
                     auto load = std::make_shared<bc::PLoad>();
                     load->region_    = parser.model().resolve_surface_region(surface);
                     load->pressure_  = magnitude;
                     load->amplitude_ = *amplitude;
+                    load->follower_  = *follower;
                     if (*collector) {
                         (*collector)->add(std::move(load));
                     } else {

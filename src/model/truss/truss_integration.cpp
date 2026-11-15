@@ -2,9 +2,10 @@
  * @file truss_integration.cpp
  * @brief Implements T3 mass, spatial integration and thermal load hooks.
  *
- * Mechanical stiffness is formulated on the reference measure A0 L0, whereas
- * generic spatial field integration uses the current geometric measure A0 l.
- * Keeping these operations separate makes that distinction explicit.
+ * Mechanical stiffness, mass and generic spatial field integration all use the
+ * reference measure A0 L0. Body and inertia loads integrated through these
+ * routines therefore act as dead loads in the reference configuration;
+ * follower contributions are added by the loads themselves.
  *
  * @see T3
  *
@@ -19,25 +20,25 @@ namespace model {
 namespace {
 
 /**
- * Returns the midpoint of the current truss axis,
+ * Returns the midpoint of the reference truss axis,
  *
- *     x_m = 1/2 (x1 + x2).
+ *     X_m = 1/2 (X1 + X2).
  *
  * Distributed scalar, vector and tensor fields are sampled at this point. For
- * the current one-point truss integration this is the only spatial quadrature
+ * the one-point truss integration this is the only spatial quadrature
  * location required.
  */
 Vec3 midpoint(T3& element) {
     return Precision(0.5) *
-        (element.node_position_current(0)
-       + element.node_position_current(1));
+        (element.node_position_reference(0)
+       + element.node_position_reference(1));
 }
 
 /**
  * Returns the optional density multiplier used by generic field integration.
  *
  * Pure geometric integration uses one. Mass-weighted integration multiplies the
- * current volume measure by the assigned density rho.
+ * reference volume measure by the assigned density rho.
  */
 Precision density_scale(T3& element, bool scale_by_density) {
     if (!scale_by_density)
@@ -91,50 +92,50 @@ MapMatrix T3::mass(Precision* buffer) {
 }
 
 /**
- * Integrates a scalar field over the current truss volume.
+ * Integrates a scalar field over the reference truss volume.
  *
  * With one midpoint sample the spatial integral is approximated by
  *
- *     integral_V f(x) dV ~= f(x_m) A0 l.
+ *     integral_V f(x) dV ~= f(X_m) A0 L0.
  *
  * If density scaling is requested, the integrand is multiplied by rho:
  *
- *     integral_V rho f(x) dV ~= rho f(x_m) A0 l.
+ *     integral_V rho f(x) dV ~= rho f(X_m) A0 L0.
  */
 Precision T3::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
     const Precision A0 = get_section()->area_;
-    const Precision l  = length_current();
+    const Precision L0 = length_reference();
 
-    if (A0 <= Precision(0) || l <= Precision(0)) {
+    if (A0 <= Precision(0) || L0 <= Precision(0)) {
         return Precision(0);
     }
 
     return field(midpoint(*this))
          * density_scale(*this, scale_by_density)
          * A0
-         * l;
+         * L0;
 }
 
 /**
- * Integrates a vector field over the current truss volume,
+ * Integrates a vector field over the reference truss volume,
  *
- *     integral_V f(x) dV ~= f(x_m) A0 l.
+ *     integral_V f(x) dV ~= f(X_m) A0 L0.
  *
  * Density scaling uses the same optional factor rho as the scalar integration
  * path.
  */
 Vec3 T3::integrate_vector_field(bool scale_by_density, const VecField& field) {
     const Precision A0 = get_section()->area_;
-    const Precision l  = length_current();
+    const Precision L0 = length_reference();
 
-    if (A0 <= Precision(0) || l <= Precision(0)) {
+    if (A0 <= Precision(0) || L0 <= Precision(0)) {
         return Vec3::Zero();
     }
 
     return field(midpoint(*this))
          * density_scale(*this, scale_by_density)
          * A0
-         * l;
+         * L0;
 }
 
 /**
@@ -143,7 +144,7 @@ Vec3 T3::integrate_vector_field(bool scale_by_density, const VecField& field) {
  *
  * The midpoint rule first forms
  *
- *     F = f(x_m) A0 l,
+ *     F = f(X_m) A0 L0,
  *
  * optionally multiplied by rho. The two-node linear interpolation has equal
  * shape functions at the midpoint,
@@ -158,16 +159,16 @@ void T3::integrate_vector_field(
     const VecField& field
 ) {
     const Precision A0 = get_section()->area_;
-    const Precision l  = length_current();
+    const Precision L0 = length_reference();
 
-    if (A0 <= Precision(0) || l <= Precision(0)) {
+    if (A0 <= Precision(0) || L0 <= Precision(0)) {
         return;
     }
 
     const Vec3 force = field(midpoint(*this))
                      * density_scale(*this, scale_by_density)
                      * A0
-                     * l;
+                     * L0;
 
     for (Index local_node = 0; local_node < N; ++local_node) {
         const Index node = static_cast<Index>(node_ids[local_node]);
@@ -179,22 +180,22 @@ void T3::integrate_vector_field(
 }
 
 /**
- * Integrates a second-order tensor field over the current truss volume,
+ * Integrates a second-order tensor field over the reference truss volume,
  *
- *     integral_V T(x) dV ~= T(x_m) A0 l.
+ *     integral_V T(x) dV ~= T(X_m) A0 L0.
  */
 Mat3 T3::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     const Precision A0 = get_section()->area_;
-    const Precision l  = length_current();
+    const Precision L0 = length_reference();
 
-    if (A0 <= Precision(0) || l <= Precision(0)) {
+    if (A0 <= Precision(0) || L0 <= Precision(0)) {
         return Mat3::Zero();
     }
 
     return field(midpoint(*this))
          * density_scale(*this, scale_by_density)
          * A0
-         * l;
+         * L0;
 }
 
 

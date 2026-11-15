@@ -80,6 +80,51 @@ Precision BeamElement<N>::length() {
     return l;
 }
 
+/**
+ * Accumulates the centerline length over consecutive reference nodes.
+ *
+ * @return Reference centerline length L0.
+ */
+template<Index N>
+Precision BeamElement<N>::length_reference() {
+    logging::error(this->_model_data != nullptr && this->_model_data->positions_reference != nullptr,
+        "Beam element ", this->elem_id, ": reference positions are not initialized");
+
+    // Sum the straight segment lengths of the undeformed centerline
+    const auto& reference = *this->_model_data->positions_reference;
+
+    Precision l = 0;
+    for (Index i = 0; i < N - 1; ++i) {
+        const Vec3 x0 = reference.row_vec3(static_cast<Index>(node_ids[i]));
+        const Vec3 x1 = reference.row_vec3(static_cast<Index>(node_ids[i + 1]));
+        l += (x0 - x1).norm();
+    }
+    return l;
+}
+
+/**
+ * Computes the arithmetic mean of the reference nodal positions.
+ *
+ * The one-point field integration of beams samples distributed fields at this
+ * point and distributes the resultant equally to the nodes.
+ *
+ * @return Reference nodal midpoint X_m.
+ */
+template<Index N>
+Vec3 BeamElement<N>::midpoint_reference() {
+    logging::error(this->_model_data != nullptr && this->_model_data->positions_reference != nullptr,
+        "Beam element ", this->elem_id, ": reference positions are not initialized");
+
+    // Average the undeformed nodal positions
+    const auto& reference = *this->_model_data->positions_reference;
+
+    Vec3 x_mid = Vec3::Zero();
+    for (Index i = 0; i < N; ++i) {
+        x_mid += reference.row_vec3(static_cast<Index>(node_ids[i]));
+    }
+    return x_mid / static_cast<Precision>(N);
+}
+
 template<Index N>
 Precision BeamElement<N>::volume() {
     return get_profile()->area_ * length();
@@ -466,13 +511,12 @@ bool BeamElement<N>::compute_beam_section_forces(
 
 template<Index N>
 Precision BeamElement<N>::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
-    const Precision L = length();
+    const Precision L = length_reference();
     const Precision A = get_profile()->area_;
     if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
 
-    Vec3 x_mid = Vec3::Zero();
-    for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-    x_mid /= static_cast<Precision>(N);
+    // Sample the field on the reference axis so the integral is a dead load
+    const Vec3 x_mid = midpoint_reference();
 
     Precision rho = Precision(1);
     if (scale_by_density) {
@@ -486,13 +530,12 @@ Precision BeamElement<N>::integrate_scalar_field(bool scale_by_density, const Sc
 
 template<Index N>
 Vec3 BeamElement<N>::integrate_vector_field(bool scale_by_density, const VecField& field) {
-    const Precision L = length();
+    const Precision L = length_reference();
     const Precision A = get_profile()->area_;
     if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
 
-    Vec3 x_mid = Vec3::Zero();
-    for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-    x_mid /= static_cast<Precision>(N);
+    // Sample the field on the reference axis so the integral is a dead load
+    const Vec3 x_mid = midpoint_reference();
 
     Precision rho = Precision(1);
     if (scale_by_density) {
@@ -510,13 +553,12 @@ void BeamElement<N>::integrate_vector_field(
     bool            scale_by_density,
     const VecField& field
 ) {
-    const Precision L = length();
+    const Precision L = length_reference();
     const Precision A = get_profile()->area_;
     if (L <= Precision(0) || A <= Precision(0)) return;
 
-    Vec3 x_mid = Vec3::Zero();
-    for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-    x_mid /= static_cast<Precision>(N);
+    // Sample the field on the reference axis so the integral is a dead load
+    const Vec3 x_mid = midpoint_reference();
 
     Precision rho = Precision(1);
     if (scale_by_density) {
@@ -538,13 +580,12 @@ void BeamElement<N>::integrate_vector_field(
 
 template<Index N>
 Mat3 BeamElement<N>::integrate_tensor_field(bool scale_by_density, const TenField& field) {
-    const Precision L = length();
+    const Precision L = length_reference();
     const Precision A = get_profile()->area_;
     if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
 
-    Vec3 x_mid = Vec3::Zero();
-    for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-    x_mid /= static_cast<Precision>(N);
+    // Sample the field on the reference axis so the integral is a dead load
+    const Vec3 x_mid = midpoint_reference();
 
     Precision rho = Precision(1);
     if (scale_by_density) {

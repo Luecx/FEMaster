@@ -235,7 +235,7 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
             const Precision scale = condition->amplitude_
                 ? condition->amplitude_->evaluate(time)
                 : (family == bc::CONVECTION ? Precision(1) : step_progress);
-            condition->apply(*_data, rhs, equations, system_dof_ids, matrix, scale);
+            condition->apply(*_data, rhs, nullptr, equations, system_dof_ids, matrix, scale);
         }
     }
 
@@ -279,7 +279,7 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof
     for (const auto& condition : target.get(bc::CONVECTION)) {
         const Precision scale = condition->amplitude_
             ? condition->amplitude_->evaluate(time) : Precision(1);
-        condition->apply(*_data, rhs, equations, system_dof_ids, triplets, scale);
+        condition->apply(*_data, rhs, nullptr, equations, system_dof_ids, triplets, scale);
     }
 
     // Sum duplicate boundary entries into the global active thermal operator
@@ -314,7 +314,7 @@ constraint::Equations Model::collect_thermal_constraints(const bc::ConditionStat
 
     // Initial and analysis-local temperatures share the same persistent history
     for (const auto& condition : target.get(bc::TEMPERATURE)) {
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
+        condition->apply(*_data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     }
 
     return equations;

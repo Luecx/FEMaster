@@ -59,21 +59,16 @@ namespace fem::bc {
  * No RHS load, stiffness contribution or system numbering is modified.
  *
  * @param model_data Compiled nodal, element and surface connectivity.
- * @param rhs Scalar thermal RHS left unchanged.
- * @param equations Receives one prescribed-temperature row per unique node.
- * @param system_dof_ids Thermal DOF numbering left unchanged.
- * @param matrix Sparse matrix triplets left unchanged.
- * @param time Unused by this absolute-temperature prescription.
- * @param ignore_amplitude Unused by this condition.
- * @param step_progress Unused; no temperature history is interpolated.
+ * @param constraints Receives one prescribed-temperature row per unique node.
  */
 void Temperature::apply(
     model::ModelData&      model_data,
     model::Field&,
-    constraint::Equations& equations,
+    TripletList*,
+    constraint::Equations& constraints,
     const SystemDofIds&,
     TripletList&,
-    Precision              /*scale*/
+    Precision
 ) {
     // Exactly one semantic target is permitted. The resulting node indices
     // must refer to the compiled geometry used by the thermal system.
@@ -243,7 +238,7 @@ void Temperature::apply(
         }
     }
 
-    equations.reserve(equations.size() + selected_count);
+    constraints.reserve(constraints.size() + selected_count);
 
     // Emit the prescribed temperature equation [1] * T_i = T_bar.
     // Serial emission guarantees stable node-ID ordering despite parallel
@@ -258,7 +253,7 @@ void Temperature::apply(
             Dim(0),
             Precision(1)
         };
-        equations.emplace_back(
+        constraints.emplace_back(
             std::initializer_list<constraint::EquationEntry>{entry},
             temperature_
         );
