@@ -48,7 +48,7 @@ struct HeatFlux : Condition {
     Precision heat_flux_ = Precision(0);
 
     // Integrate the prescribed scalar heat flux over every surface in region_
-    // and accumulate equivalent nodal heat-flow contributions in rhs.
+    // and accumulate equivalent nodal heat-flow contributions in load.
     //
     // Initial and target step states scale the nominal heat flux independently.
     //
@@ -56,15 +56,17 @@ struct HeatFlux : Condition {
     // configuration, including its shape functions and physical area Jacobian.
     // Positive flux adds heat to the scalar thermal balance.
     //
-    // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Only load is modified; the load tangent, constraints and system matrix
+    // are unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

@@ -59,6 +59,7 @@ public:
     Vec3  to_global(const Vec3& local_point ) const override;
     // Position-dependent radial, tangential and axial columns in global coordinates.
     Basis get_axes (const Vec3& local_point ) const override;
+    Mat3  get_axes_gradient(const Vec3& global_point, const Vec3& local_components) const override;
 
     // Rotate the reference directions and rotate/translate the spatial origin.
     Ptr transformed(const Mat3& rotation, const Vec3& translation) const override;

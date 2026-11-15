@@ -80,6 +80,12 @@ struct CoordinateSystem : fem::Namable {
     // cylindrical radial/tangential directions depend on the supplied azimuth.
     virtual Basis get_axes(const Vec3& local_point) const = 0;
 
+    // Spatial gradient of a vector with fixed local components, d(B(x) v)/dx,
+    // evaluated at a global Cartesian point. Follower loads defined in a
+    // position-dependent basis use this derivative for their analytic load
+    // tangent. Bases that do not depend on the position return zero.
+    virtual Mat3 get_axes_gradient(const Vec3& global_point, const Vec3& local_components) const = 0;
+
     // Create an independent definition under the rigid instance placement
     // x' = rotation * x + translation, retaining the name and leaving this object
     // unchanged. rotation must be proper orthonormal. Unit directions rotate;

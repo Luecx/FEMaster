@@ -9,6 +9,9 @@
  * integration and amplitude evaluation during assembly. Nodal TRANSFORM does
  * not define the basis of distributed loads.
  *
+ * FOLLOWER=YES makes the pressure follow the current normal and area. It
+ * requires a nonlinear analysis, which assembles the analytic load tangent.
+ *
  * @see bc::PLoad
  * @see Parser::activate_load_collector
  * @see model::Model::resolve_surface_region
@@ -57,6 +60,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
 
         // Resolved modifiers are reset on entry and shared by this occurrence's rows.
         auto amplitude   = std::make_shared<bc::Amplitude::Ptr>(nullptr);
+        auto follower    = std::make_shared<bool>(false);
 
         // An explicit NAME selects reusable definition storage. Unnamed analysis
         // rows update direct history and never inherit a prior insertion target.
@@ -68,17 +72,15 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                 .key("NAME").alternative("LOAD_COLLECTOR").alternative("LOADCOLLECTOR")
                     .optional().doc("Collector name; optional inside LOADCASE")
                 .key("AMPLITUDE").optional().doc("Amplitude scaling the load")
+                .key("FOLLOWER").optional("NO").allowed({"YES", "NO"})
+                    .doc("Follow the current surface normal and area (nonlinear analyses only)")
         );
-        command.on_enter([&parser, amplitude, collector](const dsl::Keys& keys) {
+        command.on_enter([&parser, amplitude, follower, collector](const dsl::Keys& keys) {
             auto& model = parser.model();
 
-            // Scalar pressure follows the deformed surface normal. Until its
-            // load stiffness is implemented, reject direct nonlinear usage.
-            const auto* loadcase = parser.active_loadcase();
-            logging::error(loadcase == nullptr || loadcase->type_name() != "NONLINEARSTATIC",
-                "PLOAD: follower pressure is not supported in nonlinear steps");
-
             amplitude->reset();
+
+            *follower = keys.get<bool>("FOLLOWER");
 
             // Resolve reusable model definitions before changing the active collector.
             const std::string amplitude_name = keys.raw("AMPLITUDE");
@@ -113,7 +115,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                         .on_missing(Precision{0})
                         .on_empty  (Precision{0})
                 )
-                .bind([&parser, amplitude, collector](const std::string& target, Precision value) {
+                .bind([&parser, amplitude, follower, collector](const std::string& target, Precision value) {
                     auto& model = parser.model();
 
                     // Resolve the target through the model and retain nominal values
@@ -122,6 +124,7 @@ void register_pload(dsl::Registry& registry, Parser& parser) {
                     load->region_    = model.resolve_surface_region(target);
                     load->pressure_  = value;
                     load->amplitude_ = *amplitude;
+                    load->follower_  = *follower;
 
                     // Named definitions and direct history are mutually exclusive targets
                     if (*collector) {

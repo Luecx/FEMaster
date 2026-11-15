@@ -9,14 +9,29 @@
  *
  * Every condition receives the complete set of solver-facing assembly outputs:
  *
- *     f   : nodal right-hand-side field,
- *     C,d : algebraic constraint equations,
- *     K_c : condition-dependent matrix contribution.
+ *     f     : nodal external load field,
+ *     K_L   : optional load tangent df/du,
+ *     C,d   : algebraic constraint equations,
+ *     K_c   : condition-dependent system-matrix contribution.
  *
  * A concrete condition modifies only the outputs required by its physical
  * definition and leaves the remaining outputs unchanged. This keeps the common
  * interface general without introducing separate Dirichlet, Neumann, Mixed or
  * load-capability hierarchies.
+ *
+ * The system matrix K_c and the load tangent K_L are deliberately separate.
+ * K_c is part of the system operator in every analysis, for example the
+ * convection film operator. K_L is the analytic derivative of a follower load
+ * with respect to the nodal displacements in the current configuration and
+ * only enters the Newton linearization of a nonlinear analysis:
+ *
+ *     K_eff = K_t + K_c - K_L.
+ *
+ * A condition always writes the true derivative df/du into K_L; the calling
+ * analysis subtracts it. Dead loads are evaluated in the reference
+ * configuration and never contribute to K_L. A follower load requires a load
+ * tangent and reports an error when the caller does not request one, because
+ * its residual would otherwise be linearized inconsistently.
  *
  * Condition history remains independent of assembly. The load case owns independent initial and target condition states, while
  * the reader resolves original identifiers and semantic replacement rules.
@@ -65,21 +80,54 @@ struct Condition : Printable {
     // Optional reusable amplitude sampled by the calling assembly.
     Amplitude::Ptr amplitude_ = nullptr;
 
+    // Configuration in which the condition is evaluated. A follower load reads
+    // the current positions and contributes an analytic load tangent; a dead
+    // load reads the reference positions and is independent of the displacement.
+    bool follower_ = false;
+
     // Polymorphic lifetime shared between active storage and named collectors
     ~Condition() override = default;
 
-    // Assemble into rhs, constraints or matrix using the caller's multiplier.
+    // Assemble into the external load, its optional tangent, the constraints or
+    // the system matrix using the caller's multiplier. Load tangent triplets use
+    // the global equation indices of system_dof_ids and contain df/du with the
+    // same multiplier as the load. A null load_tangent requests no linearization.
     virtual void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) = 0;
 
     // Diagnostics
     std::string str() const override = 0;
+
+protected:
+    // Adds the 3x3 load-tangent block df(row_node, row_dof + i) / dx(col_node, j)
+    // to the triplets. Nodal positions only change through the translational
+    // DOFs, so the columns always address components 0..2. Components without
+    // an active equation do not exist in the system and are skipped.
+    static void add_load_tangent_block(TripletList&        load_tangent,
+                                       const SystemDofIds& system_dof_ids,
+                                       ID                  row_node,
+                                       Dim                 row_dof,
+                                       ID                  col_node,
+                                       const Mat3&         block) {
+        for (Dim i = 0; i < 3; ++i) {
+            const int row = system_dof_ids(row_node, row_dof + i);
+            if (row < 0) continue;
+
+            for (Dim j = 0; j < 3; ++j) {
+                const int col = system_dof_ids(col_node, j);
+                if (col < 0 || block(i, j) == Precision(0)) continue;
+
+                load_tangent.emplace_back(row, col, block(i, j));
+            }
+        }
+    }
 };
 
 } // namespace fem::bc

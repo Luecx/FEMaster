@@ -24,13 +24,14 @@ namespace fem::bc {
  * thermal equation are rejected so prescribed power cannot be silently lost.
  * Constraint equations and sparse matrix contributions remain unchanged.
  *
- * @param rhs Nodal scalar heat-flow field modified in place.
+ * @param load Nodal scalar heat-flow field modified in place.
  * @param system_dof_ids Scalar thermal numbering used to validate targets.
  * @param scale Amplitude or step multiplier evaluated by the analysis.
  */
 void ConcentratedHeatFlux::apply(
     model::ModelData&,
-    model::Field&          rhs,
+    model::Field&          load,
+    TripletList*,
     constraint::Equations&,
     const SystemDofIds&    system_dof_ids,
     TripletList&,
@@ -40,20 +41,20 @@ void ConcentratedHeatFlux::apply(
     const Precision power = scale * power_;
     logging::error(region_ != nullptr,
         "CFLUX: target node region is not set");
-    logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components == 1,
+    logging::error(load.domain == model::FieldDomain::NODE && load.components == 1,
         "CFLUX: target field must be a scalar NODE field");
-    logging::error(static_cast<Index>(system_dof_ids.rows()) == rhs.rows && system_dof_ids.cols() == 1,
+    logging::error(static_cast<Index>(system_dof_ids.rows()) == load.rows && system_dof_ids.cols() == 1,
         "CFLUX: thermal DOF numbering must match the scalar nodal domain");
     logging::error(std::isfinite(power_) && std::isfinite(power),
         "CFLUX: prescribed and scaled power must be finite");
 
     // Concentrated power is already a nodal load and needs no geometric measure
     for (const ID node : region_->data()) {
-        logging::error(node >= 0 && static_cast<Index>(node) < rhs.rows,
+        logging::error(node >= 0 && static_cast<Index>(node) < load.rows,
             "CFLUX: node is outside the thermal RHS domain: ", node);
         logging::error(system_dof_ids(node, 0) >= 0,
             "CFLUX: node has no active temperature DOF: ", node);
-        rhs(node, 0) += power;
+        load(node, 0) += power;
     }
 }
 

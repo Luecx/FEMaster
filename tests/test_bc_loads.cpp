@@ -96,7 +96,7 @@ TEST(BC_Loads, StaticHistoryUsesAmplitudeOnlyForNewLoads) {
     target.add(bc::CLOAD, new_load);
 
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
     };
 
     // Replacement: old load ramps down linearly, new load follows A(t).
@@ -150,7 +150,7 @@ TEST(BC_Loads, StaticIntersectionCombinesContinuedRemovedAndAddedLoads) {
 
     // f(t) = 100 + (1 - lambda) * 80 + A(t) * 60.
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(180), 1e-12);
     EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(155), 1e-12);
@@ -181,7 +181,7 @@ TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
     const auto at = [&](Precision time) {
         // The final flag matches transient/harmonic build_target_load_matrix().
         return mdl.build_load_matrix(
-            bc::ConditionState{}, target, time, Precision(1))(0, 0);
+            bc::ConditionState{}, target, time, Precision(1), SystemDofIds{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
     EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
@@ -211,11 +211,11 @@ TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
     target.add(bc::CLOAD, new_load);
 
     const auto start = mdl.build_load_matrix(
-        initial, target, Precision(0), Precision(0));
+        initial, target, Precision(0), Precision(0), SystemDofIds{}, nullptr);
     const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(0.5), Precision(0.5));
+        initial, target, Precision(0.5), Precision(0.5), SystemDofIds{}, nullptr);
     const auto end = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1));
+        initial, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
 
     EXPECT_NEAR(start(0, 0), 100, 1e-12);
     EXPECT_NEAR(middle(0, 0), 150, 1e-12);
@@ -285,7 +285,7 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
         target.add(bc::CLOAD, condition);
     }
     const model::Field bc = mdl.build_load_matrix(
-        bc::ConditionState{}, target, Precision(1), Precision(1));
+        bc::ConditionState{}, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -329,7 +329,7 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -383,7 +383,7 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, Precision(0.5));
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(0.5));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -394,7 +394,7 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     EXPECT_NEAR(total_x, 7.0, 1e-12);
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
@@ -434,12 +434,12 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);

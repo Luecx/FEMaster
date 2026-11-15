@@ -134,6 +134,22 @@ Basis RectangularSystem::get_axes(const Vec3& local_point) const {
 }
 
 /**
+ * @brief Returns the vanishing spatial gradient of a rotated constant vector.
+ *
+ * The rectangular basis B does not depend on the position, so a vector with
+ * fixed local components satisfies d(B v)/dx = 0.
+ *
+ * @param global_point Unused; the basis is position-independent.
+ * @param local_components Unused; every constant vector has zero gradient.
+ * @return Zero 3x3 matrix.
+ */
+Mat3 RectangularSystem::get_axes_gradient(const Vec3& global_point, const Vec3& local_components) const {
+    (void)global_point;
+    (void)local_components;
+    return Mat3::Zero();
+}
+
+/**
  * @brief Creates an independently owned orientation under rigid placement.
  *
  * Rotate all stored unit directions and reconstruct the Cartesian definition.

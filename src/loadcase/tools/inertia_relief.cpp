@@ -664,16 +664,17 @@ void apply_inertia_relief(model::ModelData& model_data,
     // The InertialLoad implementation owns the established FEMaster sign
     // convention. The resulting field therefore already contains the signed
     // balancing inertia forces.
-    constraint::Equations equations{};
-    SystemDofIds           system_dof_ids{};
-    TripletList            matrix{};
+    constraint::Equations constraints{};
+    SystemDofIds          system_dof_ids{};
+    TripletList           system_matrix{};
 
     inertia_load.apply(
         model_data,
         inertial_loads,
-        equations,
+        nullptr,
+        constraints,
         system_dof_ids,
-        matrix,
+        system_matrix,
         Precision(0)
     );
 

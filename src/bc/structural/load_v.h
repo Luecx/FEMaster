@@ -64,25 +64,27 @@ struct VLoad : Condition {
     ~VLoad() override = default;
 
     // Integrate the prescribed body-force density over every structural element
-    // in region_ and accumulate the consistent equivalent forces in the RHS.
+    // in region_ and accumulate the consistent equivalent forces in load.
     //
     // Each step evaluates this nominal force density using its initial or
     // target amplitude factor, without modifying the physical definition.
     //
     // NaN target components are omitted. An optional local coordinate system
     // is transformed to global coordinates at each integration point.
-    // Integration uses the physical volume measure without material-density
-    // scaling because this load is already a force per unit volume.
+    // Integration uses the reference volume measure without material-density
+    // scaling because this load is already a force per unit volume. Body
+    // forces are always dead loads and never contribute a load tangent.
     //
-    // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Only load is modified; constraints and the system matrix are unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

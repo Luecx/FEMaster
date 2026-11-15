@@ -79,6 +79,11 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
         auto orientation = std::make_shared<cos::CoordinateSystem::Ptr>(nullptr);
         auto amplitude   = std::make_shared<bc::Amplitude::Ptr        >(nullptr);
 
+        // Follower loads evaluate their orientation basis at the current nodal
+        // position and contribute an analytic load tangent. Dead loads use the
+        // reference position.
+        auto follower = std::make_shared<bool>(false);
+
         // ---------------------------------------------------------------------
         // Select the collector and resolve command-wide modifiers
         // ---------------------------------------------------------------------
@@ -96,17 +101,20 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                     .doc("Collector name; optional inside LOADCASE")
                 .key("ORIENTATION").optional().doc("Default coordinate system for the load components")
                 .key("AMPLITUDE"  ).optional().doc("Amplitude scaling the complete generalized load")
-                .flag("FOLLOWER")
+                .key("FOLLOWER"   ).optional("NO").allowed({"YES", "NO"})
+                    .doc("Evaluate the orientation at the current position (nonlinear analyses only)")
                 .flag("REAL")
                 .flag("IMAGINARY")
         );
 
-        command.on_enter([&parser, orientation, amplitude, collector](const dsl::Keys& keys) {
+        command.on_enter([&parser, orientation, amplitude, follower, collector](const dsl::Keys& keys) {
             auto& model = parser.model();
 
             orientation->reset();
             amplitude  ->reset();
             collector  ->reset();
+
+            *follower = keys.get<bool>("FOLLOWER");
 
 
             const std::string orientation_name = keys.raw("ORIENTATION");
@@ -116,8 +124,6 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
             const auto* loadcase = parser.active_loadcase();
             logging::error(loadcase == nullptr || loadcase->type_name() != "EIGENFREQ",
                 "CLOAD: not supported in a FREQUENCY step");
-            logging::error(!keys.has("FOLLOWER"),
-                "CLOAD: FOLLOWER is not supported");
             logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
                 "CLOAD: REAL and IMAGINARY are mutually exclusive");
             logging::error(!keys.has("IMAGINARY"),
@@ -145,7 +151,7 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
         // Materialize one logical source/DOF definition across all orientations
         // ---------------------------------------------------------------------
 
-        const auto add_load = [&parser, orientation, amplitude, collector](
+        const auto add_load = [&parser, orientation, amplitude, follower, collector](
             const std::string& target,
             const Vec6&        values,
             bool               persistent
@@ -163,6 +169,7 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                     load->region_      = std::move(load_region);
                     load->orientation_ = std::move(load_orientation);
                     load->amplitude_   = *amplitude;
+                    load->follower_    = *follower;
                     load->values_      = values;
                     if (*collector) {
                         (*collector)->add(std::move(load));
@@ -179,6 +186,7 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                     load->region_      = load_region;
                     load->orientation_ = load_orientation;
                     load->amplitude_   = *amplitude;
+                    load->follower_    = *follower;
                     load->values_[dof] = values[dof];
                     replacements.push_back(std::move(load));
                 }

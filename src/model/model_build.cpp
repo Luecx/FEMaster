@@ -328,27 +328,35 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * named step-time amplitude (or a linear ramp when none is assigned). Dynamic
  * callers provide an empty initial state and evaluate target amplitudes at time.
  *
- * Current structural loads write only the six-component RHS. Empty equation,
- * numbering and triplet outputs satisfy the common Condition::apply interface;
- * no follower-load tangent is assembled. Couplings redistribute the complete
- * generalized master-node loads only after all contributions have been summed.
+ * Structural loads write the six-component load field. If the caller requests
+ * a load tangent, every load appends its analytic derivative df/du with the
+ * same multiplier as its load contribution; dead loads contribute nothing.
+ * Follower loads require the tangent and report an error without it.
  *
- * @param time Evaluation time supplied to load amplitudes.
- * @param step_progress Normalized progress for a static load transition.
+ * Couplings redistribute the complete generalized master-node loads only after
+ * all contributions have been summed. They transform the accumulated load
+ * tangent consistently, including the derivative of the distribution itself.
+ *
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
+ * @param time Evaluation time supplied to load amplitudes.
+ * @param step_progress Normalized progress for a static load transition.
+ * @param system_dof_ids Global equation numbering of the load tangent.
+ * @param load_tangent Optional triplets receiving df/du; null requests none.
  * @return Six-component global nodal load field for the current model state.
  */
 Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
-                               Precision time, Precision step_progress) {
-    // Initialize global generalized forces and the unused common outputs
-    Field load_matrix = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
-    load_matrix.set_zero();
+                               Precision                 time,
+                               Precision                 step_progress,
+                               const SystemDofIds&       system_dof_ids,
+                               TripletList*              load_tangent) {
+    // Initialize global generalized forces and the outputs unused by loads
+    Field load = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
+    load.set_zero();
 
-    constraint::Equations equations{};
-    SystemDofIds          system_dof_ids{};
-    TripletList           matrix{};
+    constraint::Equations constraints{};
+    TripletList           system_matrix{};
 
     // Partition each family by pointer identity without creating new load
     // objects. A shared pointer represents the same physical definition in
@@ -368,7 +376,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale     = continued
                 ? Precision(1) : Precision(1) - step_progress;
 
-            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
+            condition->apply(*_data, load, load_tangent, constraints, system_dof_ids, system_matrix, scale);
         }
 
         // Target-only definitions are newly activated. Their own amplitude
@@ -380,16 +388,17 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
             const Precision scale = condition->amplitude_
                 ? condition->amplitude_->evaluate(time) : step_progress;
 
-            condition->apply(*_data, load_matrix, equations, system_dof_ids, matrix, scale);
+            condition->apply(*_data, load, load_tangent, constraints, system_dof_ids, system_matrix, scale);
         }
     }
 
-    // Preserve the resultant while transferring loads through coupling kinematics
+    // Preserve the resultant while transferring loads and their tangent
+    // through coupling kinematics
     for (auto& coupling : _data->couplings) {
-        coupling.apply_loads(*_data, load_matrix);
+        coupling.apply_loads(*_data, load, load_tangent, system_dof_ids);
     }
 
-    return load_matrix;
+    return load;
 }
 
 /**
@@ -411,9 +420,9 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
 std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const bc::ConditionState& target) {
     // Prepare the numerical spatial bases and outputs unused by structural loads
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
-    constraint::Equations equations{};
+    constraint::Equations constraints{};
     SystemDofIds          system_dof_ids{};
-    TripletList           matrix{};
+    TripletList           system_matrix{};
 
     // Reuse one field for each shared scalar amplitude, including the null history
     auto add_condition = [&](const bc::Condition::Ptr& condition) {
@@ -427,8 +436,10 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
             entry = std::prev(basis.end());
         }
 
-        // Retain nominal magnitudes; the transient solver evaluates time scaling
-        condition->apply(*_data, entry->second, equations, system_dof_ids, matrix);
+        // Retain nominal magnitudes; the transient solver evaluates time scaling.
+        // Linear dynamics requests no load tangent, so follower loads report
+        // an error here.
+        condition->apply(*_data, entry->second, nullptr, constraints, system_dof_ids, system_matrix, Precision(1));
     };
 
     // Use the same independent structural input families as direct RHS assembly
@@ -442,7 +453,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     // Redistribute every spatial basis before later scalar time multiplication
     for (auto& entry : basis) {
         for (auto& coupling : _data->couplings) {
-            coupling.apply_loads(*_data, entry.second);
+            coupling.apply_loads(*_data, entry.second, nullptr, system_dof_ids);
         }
     }
 
@@ -468,8 +479,8 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
                                                            const bc::ConditionState& target) {
     // Prepare grouped equations and temporary data required by support prescriptions
     constraint::ConstraintGroups groups{};
-    Field                       rhs{};
-    TripletList                 matrix{};
+    Field                       load{};
+    TripletList                 system_matrix{};
 
     // Collect equations from a sequence of constraint objects. Each generated
     // equation retains the source type and index of its originating object.
@@ -499,11 +510,11 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
     };
 
     // Expand prescribed supports into equations using the condition interface.
-    // The temporary right-hand side and matrix are required by apply(), while
+    // The temporary load and system matrix are required by apply(), while
     // the generated equations are returned for grouping.
     auto get_supports = [&](const bc::Condition::Ptr& condition) {
         constraint::Equations equations{};
-        condition->apply(*_data, rhs, equations, system_dof_ids, matrix);
+        condition->apply(*_data, load, nullptr, equations, system_dof_ids, system_matrix, Precision(1));
         return equations;
     };
 

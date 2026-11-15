@@ -156,7 +156,7 @@ void LinearBuckling::run() {
 
     // (3) Global load matrix (node x 6) -> keep for reporting if you like
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(Precision(1), Precision(1)); },
+        [&]() { return build_step_load_matrix(Precision(1), Precision(1), SystemDofIds{}, nullptr); },
         "building global load matrix"
     );
 

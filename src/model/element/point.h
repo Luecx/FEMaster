@@ -97,6 +97,9 @@ struct PointElement : StructuralElement {
         bool            scale_by_density,
         const TenField& field
     ) override;
+
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
 };
 
 } // namespace fem::model

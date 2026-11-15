@@ -75,6 +75,9 @@ struct QSPT : ShellElement<4> {
                                      const VecField& field) override;
     Mat3      integrate_tensor_field(bool scale_by_density, const TenField& field) override;
 
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
+
     void compute_compliance(Field& displacement, Field& result) override;
 
 private:

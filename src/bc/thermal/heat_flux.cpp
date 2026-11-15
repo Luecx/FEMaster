@@ -51,14 +51,13 @@ namespace fem::bc {
  * surfaces may share nodes, so OpenMP scattering uses atomic accumulation.
  *
  * @param model_data Compiled surfaces and reference nodal positions.
- * @param rhs Scalar nodal thermal RHS modified in place.
- * @param equations Constraint equations left unchanged.
- * @param system_dof_ids Global thermal DOF numbering left unchanged.
- * @param matrix Sparse matrix triplets left unchanged.
+ * @param load Scalar nodal thermal load modified in place.
+ * @param scale Amplitude or step multiplier evaluated by the analysis.
  */
 void HeatFlux::apply(
     model::ModelData&      model_data,
-    model::Field&          rhs,
+    model::Field&          load,
+    TripletList*,
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
@@ -68,7 +67,7 @@ void HeatFlux::apply(
         "HEATFLUX: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "HEATFLUX: reference positions are not initialized");
-    logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components == 1,
+    logging::error(load.domain == model::FieldDomain::NODE && load.components == 1,
         "HEATFLUX: target field must be a NODE field with exactly one component");
     logging::error(std::isfinite(heat_flux_),
         "HEATFLUX: prescribed heat flux must be finite");
@@ -84,8 +83,8 @@ void HeatFlux::apply(
     // atomically when the surface traversal runs in parallel.
     const auto& surface_ids   = region_->data();
     const Index surface_count = static_cast<Index>(surface_ids.size());
-    const Index node_count    = rhs.rows;
-    Precision*  rhs_data      = rhs.data();
+    const Index node_count    = load.rows;
+    Precision*  rhs_data      = load.data();
 
 #ifdef _OPENMP
     const int worker_count = std::max(

@@ -81,7 +81,7 @@ struct InertialLoad : Condition {
     ~InertialLoad() override = default;
 
     // Assemble the equivalent nodal inertia forces and moments associated
-    // with the prescribed rigid-body acceleration field into the global RHS.
+    // with the prescribed rigid-body acceleration field into load.
     //
     // Distributed mass contributes -integral(rho N^T a dOmega). Compiled
     // PointElements contribute concentrated translational forces and, where
@@ -91,15 +91,19 @@ struct InertialLoad : Condition {
     // Initial and target step instances evaluate their complete inertia forces
     // independently. The temporal multiplier scales the final contributions.
     //
-    // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // Dead loads evaluate the acceleration field at the reference positions.
+    // Follower loads evaluate it at the current positions and add the exact
+    // derivative df/du to load_tangent. Constraints and the system matrix
+    // remain unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics
