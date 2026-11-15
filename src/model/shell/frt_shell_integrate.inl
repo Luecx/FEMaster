@@ -222,6 +222,33 @@ void FRTShell<N>::integrate_vector_field(
 }
 
 /**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The operator uses the reference quadrature points, shape functions, measure
+ * `h dA0` and optional density of the nodal integrate_vector_field overload:
+ *
+ *     M(i,j) = sum_q rho h w_q detJ_q N_i(q) N_j(q).
+ *
+ * @param scale_by_density Multiply the measure by the material density.
+ * @return Symmetric N x N operator in element node ordering.
+ */
+template<Index N>
+DynamicMatrix FRTShell<N>::integrate_shape_products(bool scale_by_density) {
+    const Precision h   = this->get_section()->thickness_;
+    const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
+
+    // Accumulate the weighted shape-function products at the reference points
+    DynamicMatrix products = DynamicMatrix::Zero(num_nodes, num_nodes);
+
+    for (const ReferencePoint& point : reference_data().ip_points) {
+        const Precision weighted_volume = rho * h * point.w * point.detJ;
+        products.noalias() += weighted_volume * (point.shape * point.shape.transpose());
+    }
+
+    return products;
+}
+
+/**
  * Integrates a second-order tensor field through the shell reference volume.
  *
  * @param scale_by_density Multiply the integrand by the current material density.

@@ -411,6 +411,37 @@ void QSPT::integrate_vector_field(Field& node_loads,
     }
 }
 
+/**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The operator uses the reference quadrature, shape functions, area measure,
+ * thickness and optional density of the nodal integrate_vector_field overload:
+ *
+ *     M(i,j) = sum_q rho t w_q dA_q N_i(q) N_j(q).
+ *
+ * @param scale_by_density Multiply the measure by the effective density.
+ * @return Symmetric 4 x 4 operator in element node ordering.
+ */
+DynamicMatrix QSPT::integrate_shape_products(bool scale_by_density) {
+    const NodeCoords coords        = this->node_coords_reference();
+    const Precision  density_scale = scale_by_density ? effective_density() : Precision(1);
+    const Precision  thickness     = this->get_section()->thickness_;
+
+    // Accumulate the weighted shape-function products at the load quadrature points
+    DynamicMatrix products = DynamicMatrix::Zero(4, 4);
+
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        const auto          p  = integration_scheme_.get_point(ip);
+        const ShapeFunction N  = geometry.shape_function(p.r, p.s);
+        const auto          J  = geometry.jacobian(coords, p.r, p.s);
+        const Precision     dA = J.col(0).cross(J.col(1)).norm();
+
+        products.noalias() += (density_scale * thickness * p.w * dA) * (N * N.transpose());
+    }
+
+    return products;
+}
+
 Mat3 QSPT::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     const NodeCoords coords = this->node_coords_reference();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);

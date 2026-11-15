@@ -578,6 +578,40 @@ void BeamElement<N>::integrate_vector_field(
     }
 }
 
+/**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The beam field integration samples the field at the reference nodal midpoint,
+ * whose interpolation weights are 1/N, and distributes the resultant equally
+ * to the N nodes. The consistent operator is therefore constant,
+ *
+ *     M(i,j) = rho A L0 / N^2.
+ *
+ * Degenerate beams without length or area contribute a zero operator, matching
+ * the vanishing field integral.
+ *
+ * @param scale_by_density Multiply the measure by the material density.
+ * @return Constant N x N operator in element node ordering.
+ */
+template<Index N>
+DynamicMatrix BeamElement<N>::integrate_shape_products(bool scale_by_density) {
+    const Precision L = length_reference();
+    const Precision A = get_profile()->area_;
+    if (L <= Precision(0) || A <= Precision(0)) return DynamicMatrix::Zero(N, N);
+
+    Precision rho = Precision(1);
+    if (scale_by_density) {
+        auto mat = get_material();
+        logging::error(mat && mat->has_density(),
+            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    // Equal interpolation and distribution weights of the one-point rule
+    const Precision share = Precision(1) / static_cast<Precision>(N);
+    return DynamicMatrix::Constant(N, N, rho * A * L * share * share);
+}
+
 template<Index N>
 Mat3 BeamElement<N>::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     const Precision L = length_reference();

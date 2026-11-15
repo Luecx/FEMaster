@@ -180,6 +180,29 @@ void T3::integrate_vector_field(
 }
 
 /**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The midpoint rule evaluates the field at X_m with N1 = N2 = 1/2 and
+ * distributes the resultant with the same weights, hence
+ *
+ *     M(i,j) = rho A0 L0 / 4.
+ *
+ * This operator differs from the lumped mass matrix, which places half of the
+ * mass at each node without coupling them.
+ */
+DynamicMatrix T3::integrate_shape_products(bool scale_by_density) {
+    const Precision A0 = get_section()->area_;
+    const Precision L0 = length_reference();
+
+    if (A0 <= Precision(0) || L0 <= Precision(0)) {
+        return DynamicMatrix::Zero(N, N);
+    }
+
+    const Precision measure = density_scale(*this, scale_by_density) * A0 * L0;
+    return DynamicMatrix::Constant(N, N, Precision(0.25) * measure);
+}
+
+/**
  * Integrates a second-order tensor field over the reference truss volume,
  *
  *     integral_V T(x) dV ~= T(X_m) A0 L0.

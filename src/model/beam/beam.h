@@ -193,6 +193,9 @@ struct BeamElement : StructuralElement {
         const TenField& field
     ) override;
 
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
+
 protected:
     // Linear beam operators accept either an implicit reference state or an
     // explicit base field with exactly zero translations and rotations at this

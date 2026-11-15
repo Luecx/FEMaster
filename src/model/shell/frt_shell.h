@@ -613,8 +613,8 @@ struct FRTShell : ShellElement<N> {
     // These callbacks integrate user-supplied scalar, vector and tensor fields
     // through the shell reference volume. Vector fields can either be returned
     // as one element resultant or consistently distributed to nodal load
-    // entries. The fields are evaluated on the current midsurface while the
-    // integration measure remains the reference volume measure.
+    // entries. The fields are evaluated on the reference midsurface with the
+    // reference volume measure.
     Precision integrate_scalar_field(bool               scale_by_density,
                                      const ScalarField& field) override;
     Vec3      integrate_vector_field(bool            scale_by_density,
@@ -624,6 +624,9 @@ struct FRTShell : ShellElement<N> {
                                      const VecField& field) override;
     Mat3      integrate_tensor_field(bool            scale_by_density,
                                      const TenField& field) override;
+
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
 
     // Result and compatibility callbacks from the structural interface.
     // Recovery remains independent of local resultants used during matrix

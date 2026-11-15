@@ -45,7 +45,6 @@
 #include <Eigen/Geometry>
 
 #include <sstream>
-#include <vector>
 
 namespace fem::bc {
 
@@ -72,10 +71,12 @@ namespace fem::bc {
  *
  * the follower load of distributed mass is exactly
  *
- *     f = f_dead + K_L u,   K_L(i,j) = -s M0_ij D,
+ *     f = f_dead + K_L u,   K_L(i,j) = -s M_ij D,
  *
- * where M0_ij is the translational 3x3 block of the reference element mass
- * matrix. The analytic load tangent df/du is therefore K_L itself. Point
+ * where M_ij is the density-scaled shape-function product operator of the
+ * element field integration. It uses the same quadrature and nodal weighting
+ * as f_dead, so the sum is the acceleration field integrated at the current
+ * positions. The analytic load tangent df/du is therefore K_L itself. Point
  * masses evaluate a(x) directly at the current position with the tangent
  * -s m D. Rotary inertia moments do not depend on the position.
  *
@@ -168,31 +169,23 @@ void InertialLoad::apply(
         }
     };
 
-    // Add the follower part K_L u of distributed mass. The element mass matrix
-    // is integrated in the reference configuration; only its translational
-    // blocks couple the nodal accelerations to the nodal forces.
-    std::vector<Precision> mass_buffer;
-
+    // Add the follower part K_L u of distributed mass. The shape-function
+    // products use the same reference quadrature and nodal weighting as the
+    // dead field integration, so both parts form one consistent integral.
     const auto apply_follower_mass = [&](model::StructuralElement& element) {
-        const Index n_nodes = static_cast<Index>(element.n_nodes());
-        const ID*   nodes   = element.nodes();
+        const Index         n_nodes  = static_cast<Index>(element.n_nodes());
+        const ID*           nodes    = element.nodes();
+        const DynamicMatrix products = element.integrate_shape_products(true);
 
-        mass_buffer.resize(static_cast<std::size_t>(36 * n_nodes * n_nodes));
-        const MapMatrix mass = element.mass(mass_buffer.data());
-
-        logging::error(mass.rows() % n_nodes == 0 && mass.rows() / n_nodes >= 3,
-            "INERTIAL: element ", element.elem_id, " has an unsupported mass-matrix layout");
-
-        const Index dofs_per_node = mass.rows() / n_nodes;
+        logging::error(products.rows() == n_nodes && products.cols() == n_nodes,
+            "INERTIAL: element ", element.elem_id, " returned an invalid shape-product operator");
 
         for (Index i = 0; i < n_nodes; ++i) {
             for (Index j = 0; j < n_nodes; ++j) {
-                // Translational mass coupling between both nodes
-                const Mat3 mass_block = mass.block<3, 3>(dofs_per_node * i, dofs_per_node * j);
-                if (mass_block.isZero()) continue;
+                if (products(i, j) == Precision(0)) continue;
 
                 // Exact follower increment and its derivative
-                const Mat3 stiffness    = mass_block * acceleration_gradient;
+                const Mat3 stiffness    = products(i, j) * acceleration_gradient;
                 const Vec3 displacement = positions.row_vec3(nodes[j]) - reference.row_vec3(nodes[j]);
                 const Vec3 force        = stiffness * displacement;
 

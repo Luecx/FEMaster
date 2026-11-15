@@ -765,11 +765,6 @@ static bool same_condition_target(const bc::Condition& current, const bc::Condit
     // The concrete type is deliberately resolved here in the input layer;
     // assembly never needs to know these keyword replacement rules.
     const auto same_target = [&](const bc::Condition& current, const bc::Condition& replacement) {
-        // Dead and follower loads are evaluated in different configurations.
-        // A change of the flag therefore ramps the old load down and the new
-        // load up instead of continuing one definition.
-        if (current.follower_ != replacement.follower_) return false;
-
         if (const auto* a = dynamic_cast<const bc::CLoad*>(&current)) {
             const auto* b = dynamic_cast<const bc::CLoad*>(&replacement);
             if (!b) return false;

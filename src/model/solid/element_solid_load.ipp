@@ -178,6 +178,47 @@ void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_de
 }
 
 /**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The operator uses the same reference volume quadrature, interpolation and
+ * optional density scaling as the nodal integrate_vector_field overload:
+ *
+ *     M(i,j) = sum_q rho w_q det(J0_q) N_i(q) N_j(q).
+ *
+ * @param scale_by_density Multiply the volume measure by material density.
+ * @return Symmetric N x N operator in element node ordering.
+ */
+template<Index N>
+DynamicMatrix SolidElement<N>::integrate_shape_products(bool scale_by_density) {
+    // Gather the reference geometry used by the field integration
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_reference();
+
+    // Apply material density only when requested by the caller
+    Precision rho = 1.0;
+    if (scale_by_density) {
+        auto mat = this->material();
+        logging::error(mat != nullptr && mat->has_density(),
+            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    // Accumulate the weighted shape-function products at the load quadrature points
+    StaticMatrix<N, N> products = StaticMatrix<N, N>::Zero();
+
+    const auto& scheme = this->integration_scheme();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto pt = scheme.get_point(ip);
+
+        const StaticMatrix<N, 1> Nvals = this->shape_function(pt.r, pt.s, pt.t);
+        const StaticMatrix<D, D> J     = this->jacobian(node_coords_glob, pt.r, pt.s, pt.t);
+
+        products.noalias() += (rho * pt.w * J.determinant()) * (Nvals * Nvals.transpose());
+    }
+
+    return products;
+}
+
+/**
  * Integrates a tensor field over the reference model volume.
  *
  * The topology volume rule evaluates the field at interpolated global positions
