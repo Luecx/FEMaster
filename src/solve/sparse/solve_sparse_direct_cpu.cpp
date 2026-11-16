@@ -130,6 +130,9 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
     mat.makeCompressed();
 
     Eigen::AccelerateLDLT<SparseMatrix> solver{};
+    // METIS nested dissection keeps the factor fill-in far below the AMD
+    // default for large 3D models, matching the PARDISO behavior on MKL builds
+    solver.setOrder(SparseOrderMetis);
     solver.compute(mat);
 
     if (solver.info() == Eigen::Success) {
