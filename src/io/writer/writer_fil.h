@@ -13,7 +13,9 @@
  * as one Fortran unformatted sequential record (4-byte length markers before
  * and after the 4096 data bytes). Records may cross block boundaries.
  *
- * Every increment starts with record 2000 and ends with record 2001. Record
+ * Every increment starts with record 2000 and ends with record 2001. Total
+ * time accumulates the durations of completed general steps; linear
+ * perturbation steps (frequency, buckling) do not advance it. Record
  * 2001 is padded with zero words so that the next increment starts on a new
  * block, as required by Abaqus' FILE utilities.
  *
@@ -104,11 +106,19 @@ class FilWriter {
     std::array<std::uint64_t, kBlockWords> block_{};
     Index                                  block_fill_ = 0;
 
-    // Writer state
+    // Modal metadata for the next eigenfrequency frame (record 1980)
+    bool      modal_pending_     = false;
+    Precision modal_eigenvalue_  = 0;
+    Precision modal_mass_        = 0;
+    Vec6      modal_projection_  = Vec6::Zero();
+
+    // Writer state; total time accumulates completed general-step durations
     bool           model_data_written_ = false;
     bool           increment_open_     = false;
     int            current_step_       = 1;
     int            current_frame_      = -1;
+    double         completed_time_     = 0;
+    double         step_time_          = 0;
     WriterStepType current_step_type_  = WriterStepType::Static;
 
     public:
@@ -123,7 +133,10 @@ class FilWriter {
     void close();
 
     // Analysis-step metadata
-    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void add_loadcase  (int id, WriterStepType step_type = WriterStepType::Static);
+    void set_modal_data(Precision eigenvalue,
+                        Precision generalized_mass,
+                        const Vec6& mass_projection);
 
     // Mesh and result output
     void write_model_data(const model::ModelData& model_data,

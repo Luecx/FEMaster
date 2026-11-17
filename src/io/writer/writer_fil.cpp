@@ -62,6 +62,9 @@ void FilWriter::open(const std::string& filename) {
     increment_open_     = false;
     current_step_       = 1;
     current_frame_      = -1;
+    completed_time_     = 0;
+    step_time_          = 0;
+    modal_pending_      = false;
     current_step_type_  = WriterStepType::Static;
 }
 
@@ -97,6 +100,27 @@ void FilWriter::add_loadcase(int id, WriterStepType step_type) {
     current_step_      = id > 0 ? id : 1;
     current_step_type_ = step_type;
     current_frame_     = -1;
+    completed_time_   += step_time_;
+    step_time_         = 0;
+    modal_pending_     = false;
+}
+
+/**
+ * Supplies record 1980 data for the next eigenfrequency frame.
+ *
+ * @param eigenvalue       Eigenvalue omega^2.
+ * @param generalized_mass Generalized mass phi^T M phi.
+ * @param mass_projection  phi^T M r for the six rigid directions. Abaqus'
+ *                         participation factor is projection / mass and the
+ *                         effective mass projection^2 / mass.
+ */
+void FilWriter::set_modal_data(Precision   eigenvalue,
+                               Precision   generalized_mass,
+                               const Vec6& mass_projection) {
+    modal_pending_    = true;
+    modal_eigenvalue_ = eigenvalue;
+    modal_mass_       = generalized_mass;
+    modal_projection_ = mass_projection;
 }
 
 /**
@@ -322,7 +346,11 @@ void FilWriter::write_dofs(const SystemDofs& structural_dofs) {
 
 /**
  * Opens an increment with record 2000. Eigenfrequency and buckling frames
- * additionally carry their eigenvalue in record 1980.
+ * additionally carry their eigenvalue in record 1980. For frequency frames the
+ * generalized mass, participation factors and effective masses are written
+ * only when supplied through set_modal_data(); otherwise the record carries
+ * the eigenvalue alone, as for buckling, instead of fabricated zeros.
+ * Composite damping is zero because FEMaster defines no composite damping.
  *
  * Procedure keys: 1 static, 12 implicit dynamic, 41 frequency, 42 buckle.
  */
@@ -330,20 +358,25 @@ void FilWriter::begin_increment(int frame, Precision frame_value) {
     const bool   eigen        = current_step_type_ == WriterStepType::Eigenfrequency;
     const bool   buckle       = current_step_type_ == WriterStepType::Buckling;
     const double value        = std::isfinite(frame_value) ? frame_value : static_cast<double>(frame);
-    const double time         = eigen || buckle ? 0.0 : value;
+    const bool   perturbation = eigen || buckle;
+    const double time         = perturbation ? 0.0 : value;
     const int    procedure    = eigen  ? 41
                               : buckle ? 42
                               : current_step_type_ == WriterStepType::Dynamic ? 12 : 1;
 
+    if (!perturbation) {
+        step_time_ = std::max(step_time_, time);
+    }
+
     begin_record(2000);
-    put_real(time);
+    put_real(completed_time_ + time);
     put_real(time);
     put_real(0.0);
     put_real(0.0);
     put_int (procedure);
     put_int (current_step_);
     put_int (frame);
-    put_int (eigen || buckle ? 1 : 0);
+    put_int (perturbation ? 1 : 0);
     put_real(0.0);
     put_real(eigen ? value : 0.0);
     put_real(0.0);
@@ -351,16 +384,24 @@ void FilWriter::begin_increment(int frame, Precision frame_value) {
     end_record();
 
     // Eigenvalue record: omega^2 for frequency steps, load factor for buckling
-    if (eigen || buckle) {
-        const double omega = 2.0 * math::pi * value;
+    if (perturbation) {
+        const double omega  = 2.0 * math::pi * value;
+        const bool   modal  = eigen && modal_pending_ && modal_mass_ > Precision(0);
 
         begin_record(1980);
         put_int (frame);
-        put_real(eigen ? omega * omega : value);
-        if (eigen) {
-            for (int i = 0; i < 2 + 12; ++i) put_real(0.0);
+        put_real(!eigen ? value : modal_pending_ ? modal_eigenvalue_ : omega * omega);
+        if (modal) {
+            put_real(modal_mass_);
+            put_real(0.0);
+            for (Index d = 0; d < 6; ++d) {
+                put_real(modal_projection_(d) / modal_mass_);
+                put_real(modal_projection_(d) * modal_projection_(d) / modal_mass_);
+            }
         }
         end_record();
+
+        modal_pending_ = false;
     }
 
     increment_open_ = true;

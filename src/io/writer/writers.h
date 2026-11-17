@@ -51,6 +51,9 @@ class ResultWriters {
 
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
 
+    // Record-1980 data for the next eigenfrequency frame (FIL only)
+    void set_modal_data(Precision eigenvalue, Precision generalized_mass, const Vec6& mass_projection);
+
     void write_field(const model::Field& field,
                      const std::string& field_name,
                      const model::ModelData* model_data = nullptr,

@@ -102,6 +102,10 @@ void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
     }
 }
 
+void ResultWriters::set_modal_data(Precision eigenvalue, Precision generalized_mass, const Vec6& mass_projection) {
+    if (fil_writer) fil_writer->set_modal_data(eigenvalue, generalized_mass, mass_projection);
+}
+
 void ResultWriters::write_field(const model::Field& field,
                                 const std::string& field_name,
                                 const model::ModelData* model_data,
