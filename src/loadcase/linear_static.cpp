@@ -126,7 +126,7 @@ void LinearStatic::run() {
 
     // Assemble step initial/target conditions and selected collectors
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(step_period, Precision(1)); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1), SystemDofIds{}, nullptr); },
         "constructing load matrix (node x 6)");
 
     if (inertia_relief) {

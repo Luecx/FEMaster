@@ -6,7 +6,11 @@
  * region as TARGET, tx, ty, tz. Abaqus-compatible rows address elements and
  * dispatch by load label: BX/BY/BZ create volume force densities, GRAV creates
  * a density-scaled gravity load, and P<n> creates normal pressure. TRVEC<n>
- * and follower modes are currently rejected by the input reader.
+ * is currently rejected by the input reader.
+ *
+ * FOLLOWER=YES evaluates tractions, pressures and gravity in the current
+ * configuration and requires a nonlinear analysis, which assembles their
+ * analytic load tangent. Body force densities BX/BY/BZ are always dead loads.
  *
  * Named definitions select an explicit collector through Parser. Native
  * unnamed tractions are step-local; Abaqus-format DLOAD rows update source history.
@@ -77,8 +81,8 @@ namespace dsl = fem::io::dsl;
  * NAME identifies reusable collector storage and is required outside an analysis.
  * Unnamed analysis rows replace matching DLOAD targets; OP=NEW first clears only
  * that family. Complex-valued loading
- * is rejected. TRVEC is not currently supported, and pressure remains
- * prohibited in nonlinear analyses without load-stiffness support.
+ * is rejected. TRVEC is not currently supported. FOLLOWER defaults to NO and
+ * is rejected for BX/BY/BZ body forces.
  *
  * @param registry Registry receiving the command grammar and callbacks.
  * @param parser Parser supplying the compiled model and active analysis.
@@ -96,6 +100,10 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
         auto orientation = std::make_shared<cos::CoordinateSystem::Ptr>(nullptr);
         auto amplitude   = std::make_shared<bc::Amplitude::Ptr        >(nullptr);
 
+        // Follower loads are evaluated in the current configuration and
+        // contribute an analytic load tangent; dead loads use the reference.
+        auto follower = std::make_shared<bool>(false);
+
         // NAME is the FEMaster collector extension. The remaining options are
         // shared by native and supported Abaqus-compatible distributed loads.
         // An explicit NAME selects reusable definition storage. Unnamed analysis
@@ -109,16 +117,19 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                     .optional().doc("Collector name; optional inside LOADCASE")
                 .key("ORIENTATION").optional().doc("Coordinate system for traction components")
                 .key("AMPLITUDE"  ).optional().doc("Amplitude scaling the complete load")
-                .key("FOLLOWER"   ).optional("NO").allowed({"NO"})
+                .key("FOLLOWER"   ).optional("NO").allowed({"YES", "NO"})
+                    .doc("Evaluate the load in the current configuration (nonlinear analyses only)")
                 .flag("REAL")
                 .flag("IMAGINARY")
         );
 
-        command.on_enter([&parser, orientation, amplitude, collector](const dsl::Keys& keys) {
+        command.on_enter([&parser, orientation, amplitude, follower, collector](const dsl::Keys& keys) {
             auto& model = parser.model();
 
             orientation->reset();
             amplitude  ->reset();
+
+            *follower = keys.get<bool>("FOLLOWER");
 
             const std::string orientation_name = keys.raw("ORIENTATION");
             const std::string amplitude_name   = keys.raw("AMPLITUDE");
@@ -238,7 +249,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         .on_missing(Precision{0})
                         .on_empty  (Precision{0})
                 )
-                .bind([&parser, orientation, amplitude, collector](
+                .bind([&parser, orientation, amplitude, follower, collector](
                     const std::string&              target,
                     const std::array<Precision, 3>& values
                 ) {
@@ -250,6 +261,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                     load->values_      = Vec3{values[0], values[1], values[2]};
                     load->orientation_ = *orientation;
                     load->amplitude_   = *amplitude;
+                    load->follower_    = *follower;
                     // Named definitions and direct history are mutually exclusive targets
                     if (*collector) {
                         (*collector)->add(std::move(load));
@@ -276,7 +288,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         .on_missing(std::numeric_limits<Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
-                .bind([&parser, orientation, amplitude, parse_face_id, materialize_face_region, collector](
+                .bind([&parser, orientation, amplitude, follower, parse_face_id, materialize_face_region, collector](
                     const std::string&              target,
                     const std::string&              type,
                     Precision                       magnitude,
@@ -304,6 +316,8 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                     if (type == "BX" || type == "BY" || type == "BZ") {
                         logging::error(direction_omitted,
                             "DLOAD: ", type, " accepts no direction components");
+                        logging::error(!*follower,
+                            "DLOAD: ", type, " body forces do not support FOLLOWER=YES");
 
                         // Preserve the DLOAD component as history identity.
                         // NaN marks axes not prescribed by this BX/BY/BZ entry;
@@ -346,6 +360,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         load->omega_                 = Vec3::Zero();
                         load->alpha_                 = Vec3::Zero();
                         load->amplitude_             = *amplitude;
+                        load->follower_              = *follower;
                         load->consider_point_masses_ = all_elements;
                         // Named definitions and direct history are mutually exclusive targets
                         if (*collector) {
@@ -356,17 +371,12 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         return;
                     }
 
-                    const auto* loadcase  = parser.active_loadcase();
-                    const bool nonlinear = loadcase != nullptr && loadcase->type_name() == "NONLINEARSTATIC";
-
-                    // P<n> addresses face n of every target element. Pressure is
-                    // follower loading in Abaqus; the current PLoad does not
-                    // provide the nonlinear load-stiffness contribution.
+                    // P<n> addresses face n of every target element. Follower
+                    // pressure follows the current normal and area and requires
+                    // the load tangent of a nonlinear analysis.
                     if (type.size() > 1 && type[0] == 'P') {
                         logging::error(direction_omitted,
                             "DLOAD: ", type, " accepts no direction components");
-                        logging::error(!nonlinear,
-                            "DLOAD: follower pressure is not supported in nonlinear steps");
 
                         const ID face_id = parse_face_id(type, "P");
 
@@ -374,6 +384,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         load->region_    = materialize_face_region(element_target, face_id);
                         load->pressure_  = magnitude;
                         load->amplitude_ = *amplitude;
+                        load->follower_  = *follower;
                         // Named definitions and direct history are mutually exclusive targets
                         if (*collector) {
                             (*collector)->add(std::move(load));

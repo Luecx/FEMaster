@@ -116,12 +116,14 @@ public:
     // Expand the active region and append one scalar constraint equation for
     // every finite prescribed generalized component at every resolved node.
 
-    void apply(model::ModelData&      model_data,
-               model::Field&          rhs,
-               constraint::Equations& equations,
-               const SystemDofIds&    system_dof_ids,
-               TripletList&           matrix,
-        Precision              scale = Precision(1)
+    void apply(
+        model::ModelData&      model_data,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
+        const SystemDofIds&    system_dof_ids,
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

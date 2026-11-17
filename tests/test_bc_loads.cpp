@@ -4,11 +4,15 @@
  */
 
 #include "../src/bc/structural/load_c.h"
+#include "../src/model/geometry/surface/surface8.h"
+#include "../src/model/geometry/surface/surface6.h"
+#include "../src/model/geometry/surface/surface4.h"
+#include "../src/model/geometry/surface/surface3.h"
+#include "../src/constraints/types/coupling.h"
 #include "../src/bc/structural/load_p.h"
 #include "../src/bc/structural/load_inertial.h"
 #include "../src/bc/structural/load_v.h"
 #include "../src/constraints/types/equation.h"
-#include "../src/constraints/types/coupling.h"
 #include "../src/core/types_eig.h"
 #include "../src/loadcase/tools/inertia_relief.h"
 #include "../src/io/reader/parser.h"
@@ -18,10 +22,6 @@
 #include "../src/model/element/point.h"
 #include "../src/section/section_point_mass.h"
 #include "../src/model/solid/c3d8.h"
-#include "../src/model/geometry/surface/surface3.h"
-#include "../src/model/geometry/surface/surface4.h"
-#include "../src/model/geometry/surface/surface6.h"
-#include "../src/model/geometry/surface/surface8.h"
 #include "../src/section/section_solid.h"
 
 #include <gtest/gtest.h>
@@ -102,7 +102,7 @@ TEST(BC_Loads, StaticHistoryUsesAmplitudeOnlyForNewLoads) {
     target.add(bc::CLOAD, new_load);
 
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
     };
 
     // Replacement: old load ramps down linearly, new load follows A(t).
@@ -156,7 +156,7 @@ TEST(BC_Loads, StaticIntersectionCombinesContinuedRemovedAndAddedLoads) {
 
     // f(t) = 100 + (1 - lambda) * 80 + A(t) * 60.
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(180), 1e-12);
     EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(155), 1e-12);
@@ -187,7 +187,7 @@ TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
     const auto at = [&](Precision time) {
         // The final flag matches transient/harmonic build_target_load_matrix().
         return mdl.build_load_matrix(
-            bc::ConditionState{}, target, time, Precision(1))(0, 0);
+            bc::ConditionState{}, target, time, Precision(1), SystemDofIds{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
     EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
@@ -217,11 +217,11 @@ TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
     target.add(bc::CLOAD, new_load);
 
     const auto start = mdl.build_load_matrix(
-        initial, target, Precision(0), Precision(0));
+        initial, target, Precision(0), Precision(0), SystemDofIds{}, nullptr);
     const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(0.5), Precision(0.5));
+        initial, target, Precision(0.5), Precision(0.5), SystemDofIds{}, nullptr);
     const auto end = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1));
+        initial, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
 
     EXPECT_NEAR(start(0, 0), 100, 1e-12);
     EXPECT_NEAR(middle(0, 0), 150, 1e-12);
@@ -291,7 +291,7 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
         target.add(bc::CLOAD, condition);
     }
     const model::Field bc = mdl.build_load_matrix(
-        bc::ConditionState{}, target, Precision(1), Precision(1));
+        bc::ConditionState{}, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -335,7 +335,7 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -389,7 +389,7 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     TripletList            matrix{};
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix, Precision(0.5));
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(0.5));
 
     Precision total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
@@ -400,7 +400,7 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     EXPECT_NEAR(total_x, 7.0, 1e-12);
 
     rhs.set_zero();
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     total_x = 0.0;
     for (Index node = 0; node < 8; ++node) {
         total_x += rhs(node, 0);
@@ -440,12 +440,12 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, equations, system_dof_ids, matrix);
+    load.apply(*mdl._data, rhs, nullptr, equations, system_dof_ids, matrix, Precision(1));
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);
@@ -519,7 +519,10 @@ TEST(BC_Loads, StructuralCouplingDifferentiatesDistributedForce) {
     triplets.emplace_back(indices(0, 0), column, load_derivative);
     K.setFromTriplets(triplets.begin(), triplets.end());
 
-    coupling.apply_loads(*mdl._data, loads, &indices, &K);
+    TripletList redistributed_tangent = triplets;
+    coupling.apply_loads(*mdl._data, loads, &redistributed_tangent, indices);
+    K.setZero();
+    K.setFromTriplets(redistributed_tangent.begin(), redistributed_tangent.end());
 
     // A structural coupling consumes master forces and their tangent rows.
     for (Index d = 0; d < 6; ++d) {
@@ -538,7 +541,8 @@ TEST(BC_Loads, StructuralCouplingDifferentiatesDistributedForce) {
         result.set_zero();
         for (Index d = 0; d < 6; ++d) result(0, d) = original[d];
         result(0, 0) += load_derivative * delta;
-        coupling.apply_loads(*mdl._data, result);
+        const SystemDofIds empty_indices;
+        coupling.apply_loads(*mdl._data, result, nullptr, empty_indices);
         return result;
     };
 
@@ -585,7 +589,10 @@ TEST(BC_Loads, StructuralCouplingTransfersTangentAtZeroMasterForce) {
     triplets.emplace_back(indices(0, 0), indices(1, 0), Precision(12));
     K.setFromTriplets(triplets.begin(), triplets.end());
 
-    coupling.apply_loads(*mdl._data, loads, &indices, &K);
+    TripletList redistributed_tangent = triplets;
+    coupling.apply_loads(*mdl._data, loads, &redistributed_tangent, indices);
+    K.setZero();
+    K.setFromTriplets(redistributed_tangent.begin(), redistributed_tangent.end());
 
     EXPECT_DOUBLE_EQ(K.coeff(indices(0, 0), indices(1, 0)), Precision(0));
     Precision transferred = 0;
@@ -594,45 +601,31 @@ TEST(BC_Loads, StructuralCouplingTransfersTangentAtZeroMasterForce) {
     EXPECT_NEAR(transferred, 12.0, 1e-8);
 }
 
-
-TEST(BC_Loads, FollowerPressureRequiresExternalTangentAtZeroLoadFactor) {
+TEST(BC_Loads, FollowerPressureRequiresLoadTangentAtZeroLoadFactor) {
     model::Model mdl;
     mdl.set_node(0, 0., 0., 0.);
     mdl.compile();
 
-    // The check must occur before pressure integration, even for a zero
-    // load factor. An empty valid surface region isolates this contract.
+    // Validate even at zero scale, before integrating an empty region.
     auto follower = std::make_shared<bc::PLoad>();
     follower->pressure_ = Precision(1);
     follower->follower_ = true;
     follower->region_ = std::make_shared<model::SurfaceRegion>("EMPTY");
-
     bc::ConditionState target;
     target.add(bc::PLOAD, follower);
 
-    EXPECT_THROW(
-        mdl.build_load_matrix(
-            bc::ConditionState{}, target, Precision(0), Precision(0)),
-        std::runtime_error
-    );
-
-    // Nonlinear assembly explicitly supplies numbering and K_external.
     SystemDofIds indices(1, 6);
     indices.setConstant(-1);
-    SparseMatrix K_external;
-    EXPECT_NO_THROW(
-        mdl.build_load_matrix(
-            bc::ConditionState{}, target, Precision(0), Precision(0),
-            &indices, &K_external)
-    );
+    EXPECT_THROW(
+        mdl.build_load_matrix(bc::ConditionState{}, target,
+                              Precision(0), Precision(0), indices, nullptr),
+        std::runtime_error);
 
-    // A nonlinear residual-only pass provides its context but does not
-    // request or compute an external tangent.
+    TripletList load_tangent;
     EXPECT_NO_THROW(
-        mdl.build_load_matrix(
-            bc::ConditionState{}, target, Precision(0), Precision(0),
-            &indices, nullptr)
-    );
+        mdl.build_load_matrix(bc::ConditionState{}, target,
+                              Precision(0), Precision(0), indices, &load_tangent));
+    EXPECT_TRUE(load_tangent.empty());
 }
 
 TEST(BC_Loads, FollowerPressureIsRejectedByTransientLoadBasis) {
@@ -660,6 +653,9 @@ TEST(BC_Loads, FollowerPressureIsRejectedByTransientLoadBasis) {
 
 // Finite differences are used only as an independent regression oracle.
 // Production pressure forces and tangents are integrated analytically.
+
+// Use finite differences only as an independent oracle for the analytic
+// local pressure tangent; production integration never differences forces.
 TEST(BC_Loads, AnalyticalPressureTangentMatchesFiniteDifferences) {
     const auto check = [](const model::SurfaceInterface& surface) {
         const Index count = surface.n_nodes;
@@ -673,38 +669,27 @@ TEST(BC_Loads, AnalyticalPressureTangentMatchesFiniteDifferences) {
             positions(i, 2) = Precision(0.21) * r - Precision(0.11) * s +
                               Precision(0.12) * r * s + Precision(0.05) * s * s;
         }
-        SystemDofIds indices(count, 6);
-        indices.setConstant(-1);
-        for (Index i = 0; i < count; ++i)
-            for (Index k = 0; k < 3; ++k) indices(i, k) = 3 * i + k;
-        const Precision pressure = Precision(2.3);
-        model::Field forces("PRESSURE_FORCES", model::FieldDomain::NODE, count, 6);
-        forces.set_zero();
-        TripletList triplets;
-        surface.integrate_pressure(positions, forces, pressure, indices, triplets);
-        SparseMatrix tangent(3 * count, 3 * count);
-        tangent.setFromTriplets(triplets.begin(), triplets.end());
 
-        SystemDofIds no_indices;
+        const Precision pressure = Precision(2.3);
+        DynamicVector forces;
+        DynamicMatrix tangent;
+        surface.integrate_pressure(positions, pressure, forces, &tangent);
+
         for (Index j = 0; j < count; ++j) {
             for (Index d = 0; d < 3; ++d) {
                 const Precision original = positions(j, d);
                 const Precision h = Precision(1e-6);
-                model::Field plus("PLUS", model::FieldDomain::NODE, count, 6);
-                model::Field minus("MINUS", model::FieldDomain::NODE, count, 6);
-                plus.set_zero();
-                minus.set_zero();
-                TripletList unused;
+                DynamicVector plus, minus;
                 positions(j, d) = original + h;
-                surface.integrate_pressure(positions, plus, pressure, no_indices, unused);
+                surface.integrate_pressure(positions, pressure, plus, nullptr);
                 positions(j, d) = original - h;
-                surface.integrate_pressure(positions, minus, pressure, no_indices, unused);
+                surface.integrate_pressure(positions, pressure, minus, nullptr);
                 positions(j, d) = original;
-                EXPECT_TRUE(unused.empty());
                 for (Index i = 0; i < count; ++i) {
                     for (Index k = 0; k < 3; ++k) {
-                        const Precision numerical = (plus(i, k) - minus(i, k)) / (Precision(2) * h);
-                        EXPECT_NEAR(tangent.coeff(3 * i + k, 3 * j + d), numerical, 2e-6);
+                        const Precision numerical =
+                            (plus(3 * i + k) - minus(3 * i + k)) / (Precision(2) * h);
+                        EXPECT_NEAR(tangent(3 * i + k, 3 * j + d), numerical, 2e-6);
                     }
                 }
             }
@@ -740,7 +725,10 @@ TEST(BC_Loads, StructuralCouplingMasterInSlaveHasZeroForceAndTangentRows) {
     SparseMatrix K(24, 24);
     TripletList triplets{{indices(0, 0), indices(1, 0), Precision(7)}};
     K.setFromTriplets(triplets.begin(), triplets.end());
-    coupling.apply_loads(*mdl._data, loads, &indices, &K);
+    TripletList redistributed_tangent = triplets;
+    coupling.apply_loads(*mdl._data, loads, &redistributed_tangent, indices);
+    K.setZero();
+    K.setFromTriplets(redistributed_tangent.begin(), redistributed_tangent.end());
 
     for (Index d = 0; d < 6; ++d) {
         EXPECT_DOUBLE_EQ(loads(0, d), Precision(0));

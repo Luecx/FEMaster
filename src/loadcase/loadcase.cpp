@@ -67,11 +67,19 @@ void LoadCase::commit_state(const model::Field& displacement) const {
  * Shared definitions retain their nominal magnitude. Removed definitions ramp
  * down linearly; added definitions follow their step-time amplitude, or ramp
  * linearly by default. The same assembly handles all structural load families.
+ *
+ * Linear analyses pass no load tangent, so follower loads report an error.
+ * Nonlinear analyses request the analytic follower-load tangent df/du in the
+ * equation numbering of system_dof_ids.
  */
-model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress) const {
+model::Field LoadCase::build_step_load_matrix(Precision           time,
+                                              Precision           progress,
+                                              const SystemDofIds& system_dof_ids,
+                                              TripletList*        load_tangent) const {
     return model->build_load_matrix(
         initial_conditions, target_conditions,
-        time, progress);
+        time, progress,
+        system_dof_ids, load_tangent);
 }
 
 /**
@@ -79,12 +87,14 @@ model::Field LoadCase::build_step_load_matrix(Precision time, Precision progress
  *
  * Transient and frequency-domain analyses do not perform static load ramps.
  * With an empty initial state, the target conditions use their time-dependent
- * amplitude or the unit progress factor.
+ * amplitude or the unit progress factor. These analyses are linear and
+ * request no load tangent.
  */
 model::Field LoadCase::build_target_load_matrix(Precision time) const {
     return model->build_load_matrix(
         bc::ConditionState{}, target_conditions,
-        time, Precision(1));
+        time, Precision(1),
+        SystemDofIds{}, nullptr);
 }
 
 /**

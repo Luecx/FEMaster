@@ -43,6 +43,8 @@ namespace fem::io::reader::commands {
  * Center, translational acceleration, angular velocity and angular acceleration
  * retain their global-coordinate convention; nodal TRANSFORM is not applied.
  * The created load evaluates mass and consistent inertial forces during assembly.
+ * FOLLOWER=YES evaluates the acceleration field at the current positions and
+ * requires a nonlinear analysis, which assembles the analytic load tangent.
  *
  * @param registry Registry receiving the grammar and callbacks.
  * @param parser Parser supplying the compiled model and active analysis.
@@ -57,6 +59,7 @@ void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
         );
 
         auto consider_point_masses = std::make_shared<bool>(false);
+        auto follower              = std::make_shared<bool>(false);
         // An explicit NAME selects reusable definition storage. Unnamed analysis
         // rows update direct history and never inherit a prior insertion target.
         auto collector = std::make_shared<bc::LoadCollector::Ptr>(nullptr);
@@ -67,11 +70,14 @@ void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
                 .key("NAME").alternative("LOAD_COLLECTOR").alternative("LOADCOLLECTOR")
                     .optional().doc("Collector name; optional inside LOADCASE")
                 .key("CONSIDER_POINT_MASSES").optional("0")
+                .key("FOLLOWER").optional("NO").allowed({"YES", "NO"})
+                    .doc("Evaluate the acceleration at the current positions (nonlinear analyses only)")
         );
-        command.on_enter([&parser, consider_point_masses, collector](const fem::io::dsl::Keys& keys) {
-            // Resolve mass participation and the definition destination once
+        command.on_enter([&parser, consider_point_masses, follower, collector](const fem::io::dsl::Keys& keys) {
+            // Resolve mass participation, configuration and the definition destination once
             auto& model = parser.model();
             *consider_point_masses = keys.get<bool>("CONSIDER_POINT_MASSES");
+            *follower              = keys.get<bool>("FOLLOWER");
             // NAME denotes a named definition, while an unnamed row in an
             // analysis changes only the current model history.
             const std::string collector_name = keys.raw("NAME");
@@ -96,7 +102,7 @@ void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
                     .fixed<fem::Precision, 3>().name("OMEGA"     )
                     .fixed<fem::Precision, 3>().name("ALPHA"     )
                 )
-                .bind([&parser, consider_point_masses, collector](
+                .bind([&parser, consider_point_masses, follower, collector](
                     const std::string&                  target,
                     const std::array<fem::Precision, 3>& center,
                     const std::array<fem::Precision, 3>& center_acc,
@@ -114,6 +120,7 @@ void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
                     load->omega_                 = Vec3{omega     [0], omega     [1], omega     [2]};
                     load->alpha_                 = Vec3{alpha     [0], alpha     [1], alpha     [2]};
                     load->consider_point_masses_ = *consider_point_masses;
+                    load->follower_              = *follower;
 
                     // Named definitions and direct history are mutually exclusive targets
                     if (*collector) {

@@ -63,8 +63,8 @@ struct Convection : Condition {
     //     K_h = integral_Gamma h N N^T dGamma
     //     q_h = integral_Gamma h T_inf N^T dGamma
     //
-    // The ambient source q_h is accumulated in rhs, while K_h is assembled
-    // into matrix using system_dof_ids. The surface integrals use the reference
+    // The ambient source q_h is accumulated in load, while K_h is assembled
+    // into system_matrix using system_dof_ids. The surface integrals use the reference
     // geometry and consistent finite-element shape functions.
     //
     // The caller's scale multiplies h and its ambient source consistently.
@@ -72,11 +72,12 @@ struct Convection : Condition {
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Assemble only the ambient heat source integral q_h into the scalar RHS.

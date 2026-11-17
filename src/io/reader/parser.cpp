@@ -40,6 +40,7 @@
 #include "../../bc/thermal/temperature.h"
 #include "../../bc/thermal/heat_flux.h"
 #include "../../bc/thermal/convection.h"
+#include "../../bc/thermal/concentrated_heat_flux.h"
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
 #include "../../loadcase/linear_static.h"
@@ -340,7 +341,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         return name == "BOUNDARY" || name == "SUPPORT" || name == "CLOAD" || name == "DLOAD"
             || name == "DSLOAD" || name == "PLOAD" || name == "VLOAD"
             || name == "INERTIALOAD" || name == "TEMPERATURE"
-            || name == "HEATFLUX" || name == "CONVECTION"
+            || name == "HEATFLUX" || name == "CONVECTION" || name == "CFLUX"
             || name == "DSFLUX" || name == "SFILM";
     };
 
@@ -813,6 +814,10 @@ static bool same_condition_target(const bc::Condition& current, const bc::Condit
                 && (same_region(a->node_region_,    b->node_region_)
                  || same_region(a->element_region_, b->element_region_)
                  || same_region(a->surface_region_, b->surface_region_));
+        }
+        if (const auto* a = dynamic_cast<const bc::ConcentratedHeatFlux*>(&current)) {
+            const auto* b = dynamic_cast<const bc::ConcentratedHeatFlux*>(&replacement);
+            return b && same_region(a->region_, b->region_);
         }
         if (const auto* a = dynamic_cast<const bc::HeatFlux*>(&current)) {
             const auto* b = dynamic_cast<const bc::HeatFlux*>(&replacement);

@@ -157,6 +157,9 @@ struct T3 : StructuralElement {
         const TenField& field
     ) override;
 
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
+
     // Recover axial strain and physical stress at requested output positions.
     // Linear recovery uses infinitesimal axial strain and Cauchy stress. Finite-
     // strain recovery evaluates Green-Lagrange strain and PK2 stress and pushes

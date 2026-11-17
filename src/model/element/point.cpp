@@ -422,6 +422,31 @@ void PointElement::integrate_vector_field(
 }
 
 /**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The single node carries the complete concentrated mass, M = [m]. Without
+ * density scaling a point has no geometric measure, matching the vanishing
+ * field integral.
+ *
+ * @param scale_by_density Whether the concentrated mass measure is requested.
+ * @return 1 x 1 operator.
+ */
+DynamicMatrix PointElement::integrate_shape_products(bool scale_by_density) {
+    if (!scale_by_density) {
+        return DynamicMatrix::Zero(1, 1);
+    }
+
+    const PointMassSection* section = nullptr;
+
+    logging::error(_section != nullptr,
+        "PointElement: no section assigned to element ", elem_id);
+    logging::error((section = _section->as<PointMassSection>()) != nullptr,
+        "PointElement: section is not a PointMassSection for element ", elem_id);
+
+    return DynamicMatrix::Constant(1, 1, section->mass_);
+}
+
+/**
  * Integrates a tensor field over the point element.
  *
  * A zero-dimensional element has no unscaled geometric integration measure.

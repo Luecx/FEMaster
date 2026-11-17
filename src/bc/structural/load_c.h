@@ -65,25 +65,26 @@ struct CLoad : Condition {
     ~CLoad() override = default;
 
     // Assemble the generalized nodal loads defined by this condition into
-    // the global RHS field. Each target node receives the prescribed force
+    // the global load field. Each target node receives the prescribed force
     // and moment components [Fx, Fy, Fz, Mx, My, Mz].
     //
     // Initial and target step states scale this nominal load independently.
     //
     // Components marked as NaN are omitted. If a local coordinate system is
     // assigned, forces and moments are transformed into global coordinates
-    // at each node before being accumulated in rhs.
-    //
-    // Structural loads contribute only to rhs. The equation collection,
-    // system DOF indices and matrix remain unchanged.
+    // at each node before being accumulated in load. Dead loads evaluate the
+    // basis at the reference position; follower loads evaluate it at the
+    // current position and add the derivative of the rotating basis to
+    // load_tangent. Constraints and the system matrix remain unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

@@ -7,8 +7,9 @@
  * every quadrature point. The rotational inertia projector follows the
  * pointwise normalized reference director instead of one planar element normal.
  *
- * Distributed fields are evaluated at the current midsurface position while
- * the integration measure remains the Total-Lagrangian reference volume.
+ * Distributed fields are evaluated at the reference midsurface position with
+ * the Total-Lagrangian reference volume as integration measure. Body and
+ * inertia loads therefore act as dead loads in the reference configuration.
  *
  * @see FRTShell
  *
@@ -103,7 +104,7 @@ MapMatrix FRTShell<N>::mass(Precision* buffer) {
  * Integrates a scalar field through the shell reference volume.
  *
  * Current nodal positions are gathered once and reused at every integration
- * point. The field is evaluated at the current midsurface position, while the
+ * point. The field is evaluated at the reference midsurface position, and the
  * integration measure is `h dA0` and may optionally include material density.
  *
  * @param scale_by_density Multiply the integrand by the current material density.
@@ -117,15 +118,15 @@ Precision FRTShell<N>::integrate_scalar_field(
 ) {
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
-    const MatN6 positions = node_coords_current_6();
+    const MatN3& positions = reference_data().X;
 
     Precision result = Precision(0);
 
     for (const ReferencePoint& point : reference_data().ip_points) {
         Vec3 position = Vec3::Zero();
 
-        // Interpolate the current physical evaluation position from the nodal
-        // translations already gathered before the quadrature loop
+        // Interpolate the reference evaluation position from the nodal
+        // coordinates already gathered before the quadrature loop
         for (Index node = 0; node < num_nodes; ++node) {
             position += point.shape(node)
                       * positions.template block<1, 3>(node, 0).transpose();
@@ -153,7 +154,7 @@ Vec3 FRTShell<N>::integrate_vector_field(
 ) {
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
-    const MatN6 positions = node_coords_current_6();
+    const MatN3& positions = reference_data().X;
 
     Vec3 result = Vec3::Zero();
 
@@ -177,7 +178,7 @@ Vec3 FRTShell<N>::integrate_vector_field(
 /**
  * Integrates a distributed vector field and scatters its consistent nodal load.
  *
- * The current physical field value is multiplied by `N_i h dA0` and optional
+ * The reference field value is multiplied by `N_i h dA0` and optional
  * density before being added to every translational nodal degree of freedom.
  *
  * @param node_loads Global nodal load field to increment.
@@ -192,12 +193,12 @@ void FRTShell<N>::integrate_vector_field(
 ) {
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
-    const MatN6 positions = node_coords_current_6();
+    const MatN3& positions = reference_data().X;
 
     for (const ReferencePoint& point : reference_data().ip_points) {
         Vec3 position = Vec3::Zero();
 
-        // Evaluate the current global point associated with this quadrature
+        // Evaluate the reference global point associated with this quadrature
         // coordinate
         for (Index node = 0; node < num_nodes; ++node) {
             position += point.shape(node)
@@ -221,6 +222,33 @@ void FRTShell<N>::integrate_vector_field(
 }
 
 /**
+ * Integrates the scalar shape-function product operator of the field integration.
+ *
+ * The operator uses the reference quadrature points, shape functions, measure
+ * `h dA0` and optional density of the nodal integrate_vector_field overload:
+ *
+ *     M(i,j) = sum_q rho h w_q detJ_q N_i(q) N_j(q).
+ *
+ * @param scale_by_density Multiply the measure by the material density.
+ * @return Symmetric N x N operator in element node ordering.
+ */
+template<Index N>
+DynamicMatrix FRTShell<N>::integrate_shape_products(bool scale_by_density) {
+    const Precision h   = this->get_section()->thickness_;
+    const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
+
+    // Accumulate the weighted shape-function products at the reference points
+    DynamicMatrix products = DynamicMatrix::Zero(num_nodes, num_nodes);
+
+    for (const ReferencePoint& point : reference_data().ip_points) {
+        const Precision weighted_volume = rho * h * point.w * point.detJ;
+        products.noalias() += weighted_volume * (point.shape * point.shape.transpose());
+    }
+
+    return products;
+}
+
+/**
  * Integrates a second-order tensor field through the shell reference volume.
  *
  * @param scale_by_density Multiply the integrand by the current material density.
@@ -234,7 +262,7 @@ Mat3 FRTShell<N>::integrate_tensor_field(
 ) {
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
-    const MatN6 positions = node_coords_current_6();
+    const MatN3& positions = reference_data().X;
 
     Mat3 result = Mat3::Zero();
 

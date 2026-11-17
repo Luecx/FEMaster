@@ -40,6 +40,7 @@ enum ConditionFamily : std::size_t {
     TEMPERATURE,
     HEAT_FLUX,
     CONVECTION,
+    CFLUX,
     N_CONDITION_FAMILIES
 };
 

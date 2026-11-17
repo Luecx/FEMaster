@@ -195,12 +195,15 @@ struct Model {
 
     // Structural loads shared by both states remain constant; removed loads
     // ramp down and newly activated loads follow their amplitude or a linear
-    // ramp. Supports are assembled from the target state only.
+    // ramp. Supports are assembled from the target state only. A non-null
+    // load_tangent receives the analytic follower-load derivative df/du in the
+    // equation numbering of system_dof_ids, including coupling redistribution.
     Field build_load_matrix(const bc::ConditionState& initial,
                             const bc::ConditionState& target,
-                            Precision time, Precision step_progress,
-                            const SystemDofIds* indices = nullptr,
-                            SparseMatrix* K_external = nullptr);
+                            Precision                 time,
+                            Precision                 step_progress,
+                            const SystemDofIds&       system_dof_ids,
+                            TripletList*              load_tangent);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);

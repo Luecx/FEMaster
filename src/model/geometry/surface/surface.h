@@ -124,8 +124,6 @@ struct Surface : public SurfaceInterface {
         const Field&    node_coords,
               Field&    target,
         const VecField& field) const override;
-    void integrate_pressure(const Field& node_coords, Field& target, Precision pressure,
-                            const SystemDofIds& dof_ids, TripletList& tangent) const override;
     Mat3 integrate_tensor_field(
         const Field&    node_coords,
         const TenField& field) const override;
@@ -134,6 +132,21 @@ struct Surface : public SurfaceInterface {
     DynamicMatrix integrate_scalar_shape_matrix(
         const Field&       node_coords,
         const ScalarField& field) const override;
+
+    // Surface loads with their analytic derivative with respect to the nodal
+    // positions. The tangent is the exact derivative of the quadrature-based
+    // force, so Newton iterations remain consistent with the residual.
+    void integrate_pressure(
+        const Field&   node_coords,
+        Precision      pressure,
+        DynamicVector& force,
+        DynamicMatrix* tangent) const override;
+    void integrate_traction(
+        const Field&    node_coords,
+        const VecField& traction,
+        const TenField* traction_gradient,
+        DynamicVector&  force,
+        DynamicMatrix*  tangent) const override;
 
     void integrate_triangular(
         const Field&                                                    node_coords,
@@ -149,3 +162,4 @@ struct Surface : public SurfaceInterface {
 #include "surface_projection.inl"
 #include "surface_integrate.inl"
 #include "surface_shape_matrix.inl"
+#include "surface_load.inl"

@@ -2,9 +2,9 @@
  * @file load_p.h
  * @brief Defines scalar pressure loads acting normal to finite-element surfaces.
  *
- * `PLoad` converts a scalar pressure into a traction aligned with the current
- * geometric surface normal and delegates consistent finite-element integration
- * to the selected surfaces.
+ * `PLoad` converts a scalar pressure into a traction aligned with the geometric
+ * surface normal and delegates consistent finite-element integration, including
+ * the analytic follower-load tangent, to the selected surfaces.
  *
  * @see Condition
  * @see model::SurfaceInterface
@@ -42,6 +42,11 @@ namespace fem::bc {
  * The optional amplitude scales the scalar pressure before integration. The
  * direction is always determined geometrically from the surface normal, so a
  * separate coordinate-system orientation is not used by this load type.
+ *
+ * A dead pressure is integrated over the reference configuration and does not
+ * depend on the displacement. A follower pressure is integrated over the
+ * current configuration, so both the normal and the area measure follow the
+ * deformation, and contributes the analytic load tangent df/du.
  */
 struct PLoad : Condition {
     // Types
@@ -49,10 +54,6 @@ struct PLoad : Condition {
 
     // Nominal pressure per unit surface area, positive against the normal
     Precision pressure_ = NAN;
-
-    // Reference pressure by default; opt in to current-geometry pressure.
-    bool follower_ = false;
-    bool is_follower() const override { return follower_; }
 
     // Target finite-element surfaces over which the pressure is integrated
     model::SurfaceRegion::Ptr region_ = nullptr;
@@ -62,24 +63,19 @@ struct PLoad : Condition {
     ~PLoad() override = default;
 
     // Integrate the pressure traction over every surface in region_ and
-    // accumulate the consistent equivalent nodal forces in the global RHS.
-    //
-    // The initial and target step states contribute independent weighted
-    // pressure tractions, preserving each definition and its geometry.
-    //
-    // The traction at each integration point is t(x) = -p * n(x), where n(x)
-    // is the unit normal evaluated from the supplied nodal geometry. The
-    // surface integrator handles interpolation and the physical area measure.
-    //
-    // Only rhs is modified; equations, system_dof_ids and matrix are unchanged.
+    // accumulate the consistent equivalent nodal forces in load. Follower
+    // pressures use the current positions and add df/du to load_tangent using
+    // the equation indices of system_dof_ids; dead pressures use the reference
+    // positions. Constraints and the system matrix remain unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics

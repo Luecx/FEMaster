@@ -213,6 +213,9 @@ public:
         bool            scale_by_density,
         const TenField& field) override;
 
+    // Shape-function products consistent with the nodal field integration
+    DynamicMatrix integrate_shape_products(bool scale_by_density) override;
+
     // Convert the current model temperature into equivalent forces or scalar
     // nodal free strain. The material owns the stress-free zero temperature.
 

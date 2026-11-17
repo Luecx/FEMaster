@@ -179,6 +179,15 @@ struct StructuralElement : ElementInterface {
     virtual Mat3      integrate_tensor_field(bool            scale_by_density,
                                              const TenField& field) = 0;
 
+    // Scalar shape-function product operator M(i,j) = sum_q w_q N_i(q) N_j(q)
+    // in element node ordering, built with exactly the quadrature, evaluation
+    // points, nodal distribution and density scaling of the nodal
+    // integrate_vector_field overload. For an affine field g(x) = g(X) + G u,
+    // the nodal integral at the current positions is therefore exactly
+    // f_i = f_i[g(X)] + sum_j M(i,j) G u_j, which follower inertia loads use for
+    // their residual increment and their analytic load tangent.
+    virtual DynamicMatrix integrate_shape_products(bool scale_by_density) = 0;
+
 
     // Recovers physical stress and strain for this element at the requested
     // element-nodal recovery locations.

@@ -162,13 +162,13 @@ TEST(Reader_Parser, LinearStaticUsesNamedAmplitudeAtStepTime) {
 
         const auto at_start = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            Precision(0), Precision(0));
+            Precision(0), Precision(0), SystemDofIds{}, nullptr);
         const auto at_middle = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            linear->step_period / Precision(2), Precision(0.5));
+            linear->step_period / Precision(2), Precision(0.5), SystemDofIds{}, nullptr);
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            linear->step_period, Precision(1));
+            linear->step_period, Precision(1), SystemDofIds{}, nullptr);
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
@@ -472,34 +472,29 @@ TEST(Reader_Conditions, RejectsUnsupportedFollowerLoads) {
         std::filesystem::remove(output_path);
     };
 
-    // Explicit FOLLOWER=YES is invalid even outside a nonlinear step.
-    rejects("*DLOAD, NAME=TEST, FOLLOWER=YES\nMISSING, TRVEC1, 1., 1., 0., 0.\n",
-            "FOLLOWER");
-    rejects("*DSLOAD, NAME=TEST, FOLLOWER=YES\nMISSING, TRVEC, 1., 1., 0., 0.\n",
-            "FOLLOWER");
+    // Body force densities are always dead loads in the reference configuration.
+    rejects("*DLOAD, NAME=TEST, FOLLOWER=YES\nMISSING, BX, 1.\n",
+            "FOLLOWER=YES");
 
     // TRVEC is rejected for all procedures, including collector definitions.
     rejects("*DLOAD, NAME=TEST\nMISSING, TRVEC1, 1., 1., 0., 0.\n",
             "TRVEC is not supported");
     rejects("*DSLOAD, NAME=TEST\nMISSING, TRVEC, 1., 1., 0., 0.\n",
             "TRVEC is not supported");
-
 }
 
 TEST(Reader_Conditions, AcceptsCollectorPressureInNonlinearStep) {
     io::reader::Parser parser;
     parser.begin_loadcase(std::make_unique<loadcase::NonlinearStatic>());
 
-    // Pressure definitions, including follower pressure, are selectable in a
-    // nonlinear step. The analysis supplies K_external during assembly.
+    // Pressure provides its analytic load tangent and is selectable in
+    // nonlinear analyses, both as dead and as follower load.
     auto pressure = std::make_shared<bc::PLoad>();
-    EXPECT_NO_THROW(parser.select_collector_condition(bc::PLOAD, pressure));
+    pressure->follower_ = true;
+    EXPECT_NO_THROW(parser.select_collector_condition(bc::CLOAD, pressure));
 
-    auto follower = std::make_shared<bc::PLoad>();
-    follower->follower_ = true;
-    EXPECT_NO_THROW(parser.select_collector_condition(bc::PLOAD, follower));
-
-    // Fixed-direction tractions retain the same collector lifecycle.
+    // Fixed-direction loads remain selectable (the normal collector lifecycle
+    // is unchanged).
     auto traction = std::make_shared<bc::CLoad>();
     EXPECT_NO_THROW(parser.select_collector_condition(bc::CLOAD, traction));
 }
@@ -551,7 +546,7 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
         constraint::Equations equations;
         SystemDofIds dof_ids;
         TripletList triplets;
-        support->apply(model_data, rhs, equations, dof_ids, triplets);
+        support->apply(model_data, rhs, nullptr, equations, dof_ids, triplets, Precision(1));
         ASSERT_EQ(equations.size(), 1u);
 
         const bool local_x = std::isfinite(support->values()[0]);

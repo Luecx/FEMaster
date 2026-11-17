@@ -7,9 +7,10 @@
  *
  *     f_e = integral_Omega_e N^T b dOmega.
  *
- * The structural element owns interpolation, quadrature and the physical volume
- * Jacobian. This implementation supplies the vector field `b(x)`, including
- * caller-provided scaling and local-to-global transformation.
+ * The structural element owns interpolation, quadrature and the reference
+ * volume Jacobian. This implementation supplies the vector field `b(x)`,
+ * including caller-provided scaling and local-to-global transformation. Body
+ * forces are dead loads in the reference configuration.
  *
  * The stored vector already has units of force per volume. Consequently the
  * element integration is called with density scaling disabled; multiplying by
@@ -51,24 +52,29 @@ namespace fem::bc {
  * coordinate-system basis A(x). Density scaling is disabled because b already
  * represents force per unit volume, rather than acceleration.
  *
+ * The elements integrate over their reference volume, so a body force is
+ * always a dead load. The reader does not offer a follower option for this
+ * load type; a follower definition is therefore an internal error.
+ *
  * @param model_data Compiled structural elements and nodal geometry.
- * @param rhs Global nodal force field modified in place.
- * @param equations Constraint equations left unchanged.
- * @param system_dof_ids Global DOF numbering left unchanged.
- * @param matrix Sparse matrix triplets left unchanged.
+ * @param load Global nodal force field modified in place.
+ * @param scale Multiplier of the nominal body-force density.
  */
 void VLoad::apply(
     model::ModelData&      model_data,
-    model::Field&          rhs,
+    model::Field&          load,
+    TripletList*,
     constraint::Equations&,
     const SystemDofIds&,
     TripletList&,
     Precision              scale
 ) {
-    logging::error(model_data.positions != nullptr,
-        "VLOAD: positions field is not initialized");
+    logging::error(model_data.positions_reference != nullptr,
+        "VLOAD: reference positions field is not initialized");
     logging::error(region_ != nullptr,
         "VLOAD: target element region is not initialized");
+    logging::error(!follower_,
+        "VLOAD: follower body forces are not supported");
 
     // Density-independent body-force components are prescribed in local axes.
     Vec3 body_force = Vec3::Zero();
@@ -99,7 +105,7 @@ void VLoad::apply(
         if (!structural) continue;
 
         structural->integrate_vector_field(
-            rhs,
+            load,
             false,
             [&](const Vec3& position) -> Vec3 {
                 if (!orientation_) return body_force;

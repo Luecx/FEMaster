@@ -108,24 +108,22 @@ Support::Support(SurfaceRegionPtr          surface_region,
  * rows. Detection or elimination of redundant equations belongs to the global
  * constraint-processing stage rather than to semantic region expansion.
  *
- * The structural RHS, active equation numbering, sparse condition matrix and
- * analysis time remain unchanged because a support contributes only algebraic
- * equations.
+ * The structural load, load tangent, active equation numbering and system
+ * matrix remain unchanged because a support contributes only algebraic
+ * equations. Absolute prescriptions ignore the caller's multiplier.
  *
  * @param model_data Compiled model topology and nodal geometry.
- * @param rhs Generalized RHS field left unchanged by structural supports.
- * @param equations Constraint collection receiving the generated rows.
- * @param system_dof_ids Active equation numbering left unchanged by supports.
- * @param matrix Sparse condition matrix left unchanged by supports.
- * @param time Analysis time unused by the current support formulation.
- * @param ignore_amplitude Amplitude bypass flag unused by the current support formulation.
+ * @param constraints Constraint collection receiving the generated rows.
  */
-void Support::apply(model::ModelData& model_data,
-                    model::Field&,
-                    constraint::Equations& equations,
-                    const SystemDofIds&,
-                    TripletList&,
-                    Precision) {
+void Support::apply(
+    model::ModelData&      model_data,
+    model::Field&,
+    TripletList*,
+    constraint::Equations& constraints,
+    const SystemDofIds&,
+    TripletList&,
+    Precision
+) {
     // Validate the semantic target before traversing compiled topology
     const int active_regions = static_cast<int>(node_region_    != nullptr)
                              + static_cast<int>(element_region_ != nullptr)
@@ -137,7 +135,7 @@ void Support::apply(model::ModelData& model_data,
     // A direct node target requires no topological expansion
     if (node_region_) {
         for (ID node_id : *node_region_) {
-            apply_to_node(model_data, equations, node_id);
+            apply_to_node(model_data, constraints, node_id);
         }
         return;
     }
@@ -155,7 +153,7 @@ void Support::apply(model::ModelData& model_data,
                 "SUPPORT: element ", element_id, " is not initialized");
 
             for (ID node_id : *element) {
-                apply_to_node(model_data, equations, node_id);
+                apply_to_node(model_data, constraints, node_id);
             }
         }
         return;
@@ -172,7 +170,7 @@ void Support::apply(model::ModelData& model_data,
             "SUPPORT: surface ", surface_id, " is not initialized");
 
         for (ID node_id : *surface) {
-            apply_to_node(model_data, equations, node_id);
+            apply_to_node(model_data, constraints, node_id);
         }
     }
 }

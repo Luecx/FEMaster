@@ -92,15 +92,17 @@ struct Temperature : Condition {
     // This condition prescribes an absolute temperature, not a thermal load.
     // It does not interpolate temperature histories or scale prescribed values.
     //
-    // Only equations is modified; rhs, system_dof_ids and matrix are unchanged.
+    // Only constraints is modified; load, load tangent and system matrix are
+    // unchanged.
 
     void apply(
         model::ModelData&      model_data,
-        model::Field&          rhs,
-        constraint::Equations& equations,
+        model::Field&          load,
+        TripletList*           load_tangent,
+        constraint::Equations& constraints,
         const SystemDofIds&    system_dof_ids,
-        TripletList&           matrix,
-        Precision              scale = Precision(1)
+        TripletList&           system_matrix,
+        Precision              scale
     ) override;
 
     // Diagnostics
