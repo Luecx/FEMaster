@@ -635,6 +635,28 @@ TEST(BC_Loads, FollowerPressureRequiresExternalTangentAtZeroLoadFactor) {
     );
 }
 
+TEST(BC_Loads, FollowerPressureIsRejectedByTransientLoadBasis) {
+    model::Model mdl;
+    mdl.set_node(0, 0., 0., 0.);
+    mdl.compile();
+
+    // An empty surface isolates load validation from pressure integration.
+    auto pressure = std::make_shared<bc::PLoad>();
+    pressure->pressure_ = Precision(1);
+    pressure->region_ = std::make_shared<model::SurfaceRegion>("EMPTY");
+
+    bc::ConditionState target;
+    target.add(bc::PLOAD, pressure);
+
+    // Standard pressure can be preassembled as a time-invariant load basis.
+    EXPECT_EQ(mdl.build_load_basis(target).size(), 1u);
+
+    // Follower pressure must not be silently frozen by GPU Newmark's
+    // load-basis path (even if no surfaces are present).
+    pressure->follower_ = true;
+    EXPECT_THROW(mdl.build_load_basis(target), std::runtime_error);
+}
+
 
 // Finite differences are used only as an independent regression oracle.
 // Production pressure forces and tangents are integrated analytically.
