@@ -431,6 +431,16 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     SystemDofIds          system_dof_ids{};
     TripletList           matrix{};
 
+    // A transient load basis assumes a displacement-independent load direction.
+    // Reject follower loads before evaluating any condition; otherwise GPU
+    // Newmark would silently treat them as fixed-direction pressures.
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        for (const auto& condition : target.get(family)) {
+            logging::error(!condition->is_follower(),
+                "LOADS: FOLLOWER requires an active nonlinear load context");
+        }
+    }
+
     // Reuse one field for each shared scalar amplitude, including the null history
     auto add_condition = [&](const bc::Condition::Ptr& condition) {
         auto entry = std::find_if(basis.begin(), basis.end(), [&](const auto& candidate) {
