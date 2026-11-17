@@ -54,6 +54,8 @@ void FilWriter::open(const std::string& filename) {
     node_ids_.clear();
     element_ids_.clear();
     element_types_.clear();
+    beam_elements_.clear();
+    beam_nodes_.clear();
     record_.clear();
     active_dofs_.fill(0);
 
@@ -154,6 +156,8 @@ void FilWriter::write_model_data(const model::ModelData& model_data,
 
     element_ids_  .assign(model_data.element_mapping.size(), 0);
     element_types_.assign(model_data.element_mapping.size(), std::string{});
+    beam_elements_.assign(model_data.element_mapping.size(), false);
+    beam_nodes_   .assign(node_ids_.size(), false);
 
     std::string omitted;
     for (std::size_t i = 0; i < element_ids_.size(); ++i) {
@@ -166,6 +170,11 @@ void FilWriter::write_model_data(const model::ModelData& model_data,
         element_types_[i]      = abaqus_type(name);
         if (element_types_[i].empty() && omitted.find(" " + name + " ") == std::string::npos) {
             omitted += " " + name + " ";
+        }
+
+        beam_elements_[i] = element_types_[i] == "B31" || element_types_[i] == "B33";
+        if (beam_elements_[i]) {
+            for (ID node : *model_data.elements[i]) beam_nodes_[static_cast<std::size_t>(node)] = true;
         }
     }
 
@@ -206,12 +215,15 @@ void FilWriter::write_field(const model::Field&     field,
 
     if (key == 0) return;
 
-    const bool tensor = key == 11 || key == 21;
-    const bool nodal  = field.domain == model::FieldDomain::NODE;
+    const bool tensor  = key == 11 || key == 21;
+    const bool section = key == 13;
+    const bool element = tensor || section;
+    const bool nodal   = field.domain == model::FieldDomain::NODE;
 
-    if (!tensor && !nodal) return;
-    if ( tensor && field.components != 6) return;
-    if ( tensor && !nodal && field.domain != model::FieldDomain::ELEMENT_NODAL) return;
+    if (!element && !nodal) return;
+    if ( element && field.components != 6) return;
+    if ( tensor  && !nodal && field.domain != model::FieldDomain::ELEMENT_NODAL) return;
+    if ( section && field.domain != model::FieldDomain::ELEMENT_NODAL) return;
 
     logging::error(model_data_written_,
         "FilWriter: field '", field_name, "' written before the model definition");
@@ -225,12 +237,12 @@ void FilWriter::write_field(const model::Field&     field,
 
     // Output request definition: 1 = nodal output, 0 = element output
     begin_record(1911);
-    put_int (tensor ? 0 : 1);
+    put_int (element ? 0 : 1);
     put_text("");
     put_text("");
     end_record();
 
-    if (tensor) {
+    if (element) {
         logging::error(model_data != nullptr,
             "FilWriter: element field '", field_name, "' requires model data");
         write_element_field(field, key, *model_data);
@@ -455,16 +467,18 @@ void FilWriter::write_nodal_field(const model::Field& field,
 }
 
 /**
- * Writes a tensor field as element output. NODE fields become values averaged
- * at nodes (location 4), ELEMENT_NODAL fields element-node values (location 2)
- * for every element present in the mesh.
+ * Writes element output. NODE tensor fields become values averaged at nodes
+ * (location 4), ELEMENT_NODAL fields element-node values (location 2).
+ * Tensors skip beams and beam-connected nodes; section forces are written for
+ * beams only.
  */
 void FilWriter::write_element_field(const model::Field&     field,
                                     int                     key,
                                     const model::ModelData& model_data) {
     if (field.domain == model::FieldDomain::NODE) {
         for (Index row = 0; row < field.rows; ++row) {
-            write_tensor_row(field, row, key, node_ids_[row], 0, 4);
+            if (beam_nodes_[row]) continue;
+            write_element_row(field, row, key, node_ids_[row], 0, 4);
         }
         return;
     }
@@ -477,20 +491,22 @@ void FilWriter::write_element_field(const model::Field&     field,
     for (std::size_t i = 0; i < model_data.elements.size(); ++i) {
         const auto& element = model_data.elements[i];
         if (!element || element_types_[i].empty()) continue;
+        if (beam_elements_[i] != (key == 13)) continue;
 
         const Index offset = static_cast<Index>((*offsets)(i, 0));
         for (Index local = 0; local < element->n_nodes(); ++local) {
             const std::int64_t node = node_ids_[static_cast<std::size_t>(element->nodes()[local])];
-            write_tensor_row(field, offset + local, key, element_ids_[i], node, 2);
+            write_element_row(field, offset + local, key, element_ids_[i], node, 2);
         }
     }
 }
 
 /**
- * Writes the element header record 1 followed by one tensor data record in
- * Abaqus component order [11, 22, 33, 12, 13, 23].
+ * Writes the element header record 1 followed by one data record. Tensors use
+ * Abaqus order [11, 22, 33, 12, 13, 23] (NDI = NSHR = 3); beam section forces
+ * use [SF1, SF2, SF3, SM1, SM2, SM3] (NSFC = 6).
  */
-void FilWriter::write_tensor_row(const model::Field& field,
+void FilWriter::write_element_row(const model::Field& field,
                                  Index               row,
                                  int                 key,
                                  std::int64_t        label,
@@ -498,21 +514,26 @@ void FilWriter::write_tensor_row(const model::Field& field,
                                  int                 location) {
     if (!field.has_valid_row(row)) return;
 
+    const bool section = key == 13;
+
     begin_record(1);
     put_int (label);
     put_int (point);
     put_int (0);
     put_int (location);
     put_text("");
-    put_int (3);
-    put_int (3);
+    put_int (section ? 0 : 3);
+    put_int (section ? 0 : 3);
     put_int (0);
-    put_int (0);
+    put_int (section ? 6 : 0);
     end_record();
 
+    static constexpr Index tensor_order [6] = {0, 1, 2, 5, 4, 3};
+    static constexpr Index section_order[6] = {0, 2, 1, 4, 5, 3};
+
     begin_record(key);
-    for (Index c : {0, 1, 2, 5, 4, 3}) {
-        put_real(field(row, c));
+    for (Index c = 0; c < 6; ++c) {
+        put_real(field(row, section ? section_order[c] : tensor_order[c]));
     }
     end_record();
 }
@@ -540,14 +561,15 @@ std::string FilWriter::abaqus_type(const std::string& type_name) {
 int FilWriter::record_key(const std::string& base_name) {
     if (base_name == "DISPLACEMENT"
      || base_name == "MODE_SHAPE"
-     || base_name == "BUCKLING_MODE")   return 101;
-    if (base_name == "VELOCITY")        return 102;
-    if (base_name == "ACCELERATION")    return 103;
-    if (base_name == "REACTION_FORCES") return 104;
-    if (base_name == "EXTERNAL_FORCES") return 106;
-    if (base_name == "TEMPERATURE")     return 201;
-    if (base_name == "STRESS")          return 11;
-    if (base_name == "STRAIN")          return 21;
+     || base_name == "BUCKLING_MODE")        return 101;
+    if (base_name == "VELOCITY")             return 102;
+    if (base_name == "ACCELERATION")         return 103;
+    if (base_name == "REACTION_FORCES")      return 104;
+    if (base_name == "EXTERNAL_FORCES")      return 106;
+    if (base_name == "TEMPERATURE")          return 201;
+    if (base_name == "STRESS")               return 11;
+    if (base_name == "STRAIN")               return 21;
+    if (base_name == "LOCAL_SECTION_FORCES") return 13;
     return 0;
 }
 

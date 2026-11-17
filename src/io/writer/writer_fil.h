@@ -76,6 +76,7 @@ namespace writer {
  *  | TEMPERATURE                             | 201 | NT     |
  *  | STRESS                                  |  11 | S      |
  *  | STRAIN                                  |  21 | E      |
+ *  | LOCAL_SECTION_FORCES (beams only)       |  13 | SF/SM  |
  *
  * Nodal records contain the active degrees of freedom announced in record
  * 1902. The 1902 mask is the column-wise union of the complete structural DOF
@@ -87,6 +88,15 @@ namespace writer {
  * (location 2). Integration-point output is not written. FEMaster's Voigt order
  * [xx, yy, zz, yz, zx, xy] is permuted to Abaqus' [11, 22, 33, 12, 13, 23];
  * both use engineering shear strains.
+ *
+ * Beam elements (B31, B33) store generalized section quantities in their
+ * STRESS/STRAIN rows, so they never contribute S or E: their element-nodal
+ * rows are skipped, and averaged S/E is skipped at every node connected to a
+ * beam. Beams are exported only through record 13 from LOCAL_SECTION_FORCES
+ * at element nodes, permuted from FEMaster's section frame
+ * [Fx, Fy, Fz, Mx, My, Mz] (x = beam axis, y = n1, z = t x n1) to Abaqus'
+ * [SF1, SF2, SF3, SM1, SM2, SM3] = [Fx, Fz, Fy, My, Mz, Mx]. Section strains
+ * (record 29) are not written.
  */
 class FilWriter {
     private:
@@ -99,6 +109,8 @@ class FilWriter {
     std::vector<std::int64_t> node_ids_;
     std::vector<std::int64_t> element_ids_;
     std::vector<std::string>  element_types_;
+    std::vector<bool>         beam_elements_;
+    std::vector<bool>         beam_nodes_;
     std::array<int, 6>        active_dofs_{};
 
     // Word stream: record under construction and the pending 512-word block
@@ -163,7 +175,7 @@ class FilWriter {
     void write_element_field(const model::Field&     field,
                              int                     key,
                              const model::ModelData& model_data);
-    void write_tensor_row   (const model::Field&     field,
+    void write_element_row  (const model::Field&     field,
                              Index                   row,
                              int                     key,
                              std::int64_t            label,
