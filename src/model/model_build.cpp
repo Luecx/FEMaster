@@ -424,6 +424,16 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     SystemDofIds          system_dof_ids{};
     TripletList           system_matrix{};
 
+    // Transient load bases are assembled once and reused over time. A follower
+    // load changes with displacement, so it must be rejected before any load
+    // integration (also for zero scaling or an empty surface region).
+    for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+        for (const auto& condition : target.get(family)) {
+            logging::error(!condition->follower_,
+                "LOADS: FOLLOWER requires a nonlinear load tangent; transient load bases are unsupported");
+        }
+    }
+
     // Reuse one field for each shared scalar amplitude, including the null history
     auto add_condition = [&](const bc::Condition::Ptr& condition) {
         auto entry = std::find_if(basis.begin(), basis.end(), [&](const auto& candidate) {

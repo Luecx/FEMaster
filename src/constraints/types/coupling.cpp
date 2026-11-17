@@ -308,6 +308,9 @@ void Coupling::apply_loads(model::ModelData&   model_data,
 
         for (const auto& [component, col, value] : master_rows) {
             for (Index k = 0; k < n; ++k) {
+                // The consumed master has no outgoing load-tangent rows,
+                // even when it is also part of the slave region.
+                if (ids[k] == master_node) continue;
                 for (Dim d = 0; d < 3; ++d) {
                     const int       row          = system_dof_ids(ids[k], d);
                     const Precision contribution = R(3 * k + d, component) * value;
@@ -352,6 +355,7 @@ void Coupling::apply_loads(model::ModelData&   model_data,
     // Scatter the slave-slave blocks and the master columns, which follow
     // from df/dx_m = -sum_k df/dx_k because only lever arms depend on x_m
     for (Index j = 0; j < n; ++j) {
+        if (ids[j] == master_node) continue;
         for (Dim d = 0; d < 3; ++d) {
             const int row = system_dof_ids(ids[j], d);
             if (row < 0) continue;
