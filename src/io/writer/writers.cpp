@@ -26,6 +26,10 @@ ResultWriters::ResultWriters(const std::string& job_base_name,
     if (options.femr) {
         femr_writer.reset(new FemrWriter(job_base_name + ".femr"));
     }
+
+    if (options.fil) {
+        fil_writer.reset(new FilWriter(job_base_name + ".fil"));
+    }
 }
 
 ResultWriters::~ResultWriters() {
@@ -35,7 +39,8 @@ ResultWriters::~ResultWriters() {
 ResultWriters::ResultWriters(ResultWriters&& other) noexcept
     : res_writer(std::move(other.res_writer)),
       frd_writer(std::move(other.frd_writer)),
-      femr_writer(std::move(other.femr_writer)) {}
+      femr_writer(std::move(other.femr_writer)),
+      fil_writer(std::move(other.fil_writer)) {}
 
 ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
     if (this != &other) {
@@ -44,6 +49,7 @@ ResultWriters& ResultWriters::operator=(ResultWriters&& other) noexcept {
         res_writer = std::move(other.res_writer);
         frd_writer = std::move(other.frd_writer);
         femr_writer = std::move(other.femr_writer);
+        fil_writer = std::move(other.fil_writer);
     }
 
     return *this;
@@ -61,6 +67,10 @@ void ResultWriters::close() {
     if (femr_writer) {
         femr_writer->close();
     }
+
+    if (fil_writer) {
+        fil_writer->close();
+    }
 }
 
 void ResultWriters::write_model_data(const model::ModelData& model_data) {
@@ -69,6 +79,9 @@ void ResultWriters::write_model_data(const model::ModelData& model_data) {
     }
     if (femr_writer) {
         femr_writer->write_model_data(model_data);
+    }
+    if (fil_writer) {
+        fil_writer->write_model_data(model_data);
     }
 }
 
@@ -82,6 +95,9 @@ void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
     }
     if (femr_writer) {
         femr_writer->add_loadcase(id, step_type);
+    }
+    if (fil_writer) {
+        fil_writer->add_loadcase(id, step_type);
     }
 }
 
@@ -98,6 +114,9 @@ void ResultWriters::write_field(const model::Field& field,
     }
     if (femr_writer) {
         femr_writer->write_field(field, field_name, model_data, frame_value);
+    }
+    if (fil_writer) {
+        fil_writer->write_field(field, field_name, model_data, frame_value);
     }
 }
 

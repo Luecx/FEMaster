@@ -2,6 +2,7 @@
 
 #include "writer_frd.h"
 #include "writer_femr.h"
+#include "writer_fil.h"
 #include "writer_res.h"
 #include "writer_file_formats.h"
 #include "writer_step_type.h"
@@ -29,6 +30,7 @@ class ResultWriters {
     std::unique_ptr<ResWriter> res_writer;
     std::unique_ptr<FrdWriter> frd_writer;
     std::unique_ptr<FemrWriter> femr_writer;
+    std::unique_ptr<FilWriter>  fil_writer;
 
     public:
     ResultWriters(const std::string& job_base_name,

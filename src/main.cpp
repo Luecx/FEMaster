@@ -72,8 +72,8 @@ int main(int argc, char** argv) {
 
     program.add_argument("--output-format")
         .nargs(argparse::nargs_pattern::at_least_one)
-        .choices("res", "frd", "femr")
-        .help("Result formats to write (default: res frd).");
+        .choices("res", "frd", "femr", "fil")
+        .help("Result formats to write (default: res frd; also femr, fil).");
 
     // ---- Documentation mode flags (flat, no nested parser) ----
     program.add_argument("--document")
@@ -138,6 +138,7 @@ int main(int argc, char** argv) {
             writer_formats.res  = writer_formats.res  || output_format == "res";
             writer_formats.frd  = writer_formats.frd  || output_format == "frd";
             writer_formats.femr = writer_formats.femr || output_format == "femr";
+            writer_formats.fil  = writer_formats.fil  || output_format == "fil";
         }
     }
 
@@ -249,6 +250,7 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
     fem::logging::info(true, "Write .femr: ", writer_formats.femr ? "yes" : "no");
+    fem::logging::info(true, "Write .fil : ", writer_formats.fil ? "yes" : "no");
     fem::logging::info(true, "");
 
     // Both format aliases use the same native/Abaqus-compatible grammar.
