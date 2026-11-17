@@ -23,6 +23,10 @@
  *
  * so FRD and FIL output of the same job reference identical entities.
  *
+ * Element types are translated explicitly to Abaqus library names. Elements
+ * without an Abaqus equivalent (C3D5, C3D13, QSPT, point elements) are omitted
+ * from the mesh and from element output, and reported once as a warning.
+ *
  * Unsupported fields (step summaries, topology optimization fields, ...) are
  * ignored intentionally.
  *
@@ -72,9 +76,13 @@ namespace writer {
  *  | STRAIN                                  |  21 | E      |
  *
  * Nodal records contain the active degrees of freedom announced in record
- * 1902. Tensor fields are written as element output (record 1 header followed
- * by the data record) at NODE (location 4, averaged at nodes), ELEMENT_NODAL
- * (location 2) or ELEMENT_IP (location 0). FEMaster's Voigt order
+ * 1902. The 1902 mask is the column-wise union of the complete structural DOF
+ * activation (`Model::build_structural_dof_mask()`), so rotations activated by
+ * couplings, connectors, equations or point elements are retained.
+ *
+ * Tensor fields are written as element output (record 1 header followed by the
+ * data record) at NODE (location 4, averaged at nodes) or ELEMENT_NODAL
+ * (location 2). Integration-point output is not written. FEMaster's Voigt order
  * [xx, yy, zz, yz, zx, xy] is permuted to Abaqus' [11, 22, 33, 12, 13, 23];
  * both use engineering shear strains.
  */
@@ -84,11 +92,12 @@ class FilWriter {
 
     std::ofstream file_;
 
-    // Dense ids -> external labels, active-DOF positions (0 = inactive)
+    // Dense ids -> external labels and Abaqus type names (empty = omitted),
+    // active-DOF positions (0 = inactive)
     std::vector<std::int64_t> node_ids_;
     std::vector<std::int64_t> element_ids_;
+    std::vector<std::string>  element_types_;
     std::array<int, 6>        active_dofs_{};
-    int                       active_count_ = 0;
 
     // Word stream: record under construction and the pending 512-word block
     std::vector<std::uint64_t>             record_;
@@ -117,7 +126,8 @@ class FilWriter {
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
 
     // Mesh and result output
-    void write_model_data(const model::ModelData& model_data);
+    void write_model_data(const model::ModelData& model_data,
+                          const SystemDofs&       structural_dofs);
     void write_field     (const model::Field&     field,
                           const std::string&      field_name,
                           const model::ModelData* model_data  = nullptr,
@@ -128,7 +138,7 @@ class FilWriter {
     void write_header  (const model::ModelData& model_data);
     void write_nodes   (const model::ModelData& model_data);
     void write_elements(const model::ModelData& model_data);
-    void write_dofs    (const model::ModelData& model_data);
+    void write_dofs    (const SystemDofs&       structural_dofs);
 
     // Increment records 2000, 1980, 2001
     void begin_increment(int frame, Precision frame_value);
@@ -147,9 +157,10 @@ class FilWriter {
                              std::int64_t            point,
                              int                     location);
 
-    // FEMaster field name -> record key (0 if unsupported) and frame number
-    static int record_key  (const std::string& base_name);
-    static int frame_number(const std::string& field_name, std::string& base_name);
+    // FEMaster type -> Abaqus type, field name -> record key and frame number
+    static std::string abaqus_type (const std::string& type_name);
+    static int         record_key  (const std::string& base_name);
+    static int         frame_number(const std::string& field_name, std::string& base_name);
 
     // Record assembly and blocked word output
     void begin_record(int key);

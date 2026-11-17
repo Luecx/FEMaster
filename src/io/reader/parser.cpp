@@ -413,7 +413,7 @@ void Parser::initialize_writers(const std::string&                    input_path
     }
 
     writer_ = io::writer::ResultWriters(writer_base, writer_formats);
-    writer_.write_model_data(*model_->_data);
+    writer_.write_model_data(*model_->_data, model_->build_structural_dof_mask());
 }
 
 /**

@@ -231,11 +231,10 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  * a nonzero coefficient, including components of nodes without elements. These
  * components must remain in the algebraic system until constraint reduction;
  * dropping them would change the equations into unintended supports.
- * The final boolean mask is converted to contiguous zero-based system indices.
  *
- * @return Node-by-six matrix of global unconstrained system DOF identifiers.
+ * @return Node-by-six boolean mask of active structural DOFs.
  */
-SystemDofIds Model::build_structural_dof_index_matrix() {
+SystemDofs Model::build_structural_dof_mask() {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
@@ -315,7 +314,16 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         }
     }
 
-    return mattools::numerate_dofs(mask);
+    return mask;
+}
+
+/**
+ * Converts the structural DOF mask to contiguous zero-based system indices.
+ *
+ * @return Node-by-six matrix of global unconstrained system DOF identifiers.
+ */
+SystemDofIds Model::build_structural_dof_index_matrix() {
+    return mattools::numerate_dofs(build_structural_dof_mask());
 }
 
 /**

@@ -53,10 +53,10 @@ void FilWriter::open(const std::string& filename) {
 
     node_ids_.clear();
     element_ids_.clear();
+    element_types_.clear();
     record_.clear();
     active_dofs_.fill(0);
 
-    active_count_       = 0;
     block_fill_         = 0;
     model_data_written_ = false;
     increment_open_     = false;
@@ -100,9 +100,13 @@ void FilWriter::add_loadcase(int id, WriterStepType step_type) {
 }
 
 /**
- * Builds the persistent external numbering and writes the model definition.
+ * Builds the persistent external numbering and Abaqus type names and writes
+ * the model definition.
+ *
+ * @param structural_dofs Complete node-by-six structural DOF activation mask.
  */
-void FilWriter::write_model_data(const model::ModelData& model_data) {
+void FilWriter::write_model_data(const model::ModelData& model_data,
+                                 const SystemDofs&       structural_dofs) {
     logging::error(file_.is_open(),
         "FilWriter: cannot write model data: file is not open");
     logging::error(model_data.positions != nullptr,
@@ -124,18 +128,30 @@ void FilWriter::write_model_data(const model::ModelData& model_data) {
         node_ids_[i] = std::int64_t(100000000) * instance->instance_id + static_cast<std::int64_t>(local_id);
     }
 
-    element_ids_.assign(model_data.element_mapping.size(), 0);
+    element_ids_  .assign(model_data.element_mapping.size(), 0);
+    element_types_.assign(model_data.element_mapping.size(), std::string{});
+
+    std::string omitted;
     for (std::size_t i = 0; i < element_ids_.size(); ++i) {
         if (!model_data.elements[i]) continue;
         const auto& [instance, local_id] = model_data.element_mapping[i];
         logging::error(instance != nullptr, "FilWriter: dense element ", i, " has no source instance");
         element_ids_[i] = std::int64_t(100000000) * instance->instance_id + static_cast<std::int64_t>(local_id);
+
+        const std::string name = model_data.elements[i]->type_name();
+        element_types_[i]      = abaqus_type(name);
+        if (element_types_[i].empty() && omitted.find(" " + name + " ") == std::string::npos) {
+            omitted += " " + name + " ";
+        }
     }
+
+    logging::warning(omitted.empty(),
+        "FilWriter: element types without Abaqus equivalent are omitted from the .fil mesh:", omitted);
 
     write_header  (model_data);
     write_elements(model_data);
     write_nodes   (model_data);
-    write_dofs    (model_data);
+    write_dofs    (structural_dofs);
 
     model_data_written_ = true;
 }
@@ -171,15 +187,10 @@ void FilWriter::write_field(const model::Field&     field,
 
     if (!tensor && !nodal) return;
     if ( tensor && field.components != 6) return;
-    if ( tensor && !nodal
-                && field.domain != model::FieldDomain::ELEMENT_NODAL
-                && field.domain != model::FieldDomain::ELEMENT_IP) return;
+    if ( tensor && !nodal && field.domain != model::FieldDomain::ELEMENT_NODAL) return;
 
-    if (!model_data_written_) {
-        logging::error(model_data != nullptr,
-            "FilWriter: field '", field_name, "' requires model data");
-        write_model_data(*model_data);
-    }
+    logging::error(model_data_written_,
+        "FilWriter: field '", field_name, "' written before the model definition");
 
     if (!increment_open_ || frame != current_frame_) {
         if (increment_open_) {
@@ -210,10 +221,9 @@ void FilWriter::write_field(const model::Field&     field,
 void FilWriter::write_header(const model::ModelData& model_data) {
     const auto& positions = *model_data.positions;
 
-    Index element_count = 0;
-    for (const auto& element : model_data.elements) {
-        if (element && !element->type_name().empty()) ++element_count;
-    }
+    const Index element_count = static_cast<Index>(
+        std::count_if(element_types_.begin(), element_types_.end(),
+                      [](const std::string& type) { return !type.empty(); }));
 
     // Typical element length estimated from the bounding box
     double diagonal = 0;
@@ -265,20 +275,18 @@ void FilWriter::write_nodes(const model::ModelData& model_data) {
 }
 
 /**
- * Writes one 1900 record per element with an Abaqus type name. FEMaster keeps
- * the Abaqus/CalculiX input node order, so connectivity is written unchanged.
+ * Writes one 1900 record per element with an Abaqus equivalent. Every mapped
+ * FEMaster element stores its nodes in the Abaqus input order of that type,
+ * so connectivity is written unchanged.
  */
 void FilWriter::write_elements(const model::ModelData& model_data) {
     for (std::size_t i = 0; i < model_data.elements.size(); ++i) {
         const auto& element = model_data.elements[i];
-        if (!element) continue;
-
-        const std::string type = element->type_name();
-        if (type.empty()) continue;
+        if (!element || element_types_[i].empty()) continue;
 
         begin_record(1900);
         put_int (element_ids_[i]);
-        put_text(type);
+        put_text(element_types_[i]);
         for (ID node : *element) {
             put_int(node_ids_[static_cast<std::size_t>(node)]);
         }
@@ -287,21 +295,22 @@ void FilWriter::write_elements(const model::ModelData& model_data) {
 }
 
 /**
- * Writes record 1902 from the union of all element DOFs. Active DOFs are
- * numbered consecutively; inactive DOFs are marked with zero.
+ * Writes record 1902 from the complete structural DOF activation. A DOF is
+ * active if any node activates it; active DOFs are numbered consecutively and
+ * inactive DOFs are marked with zero. Purely thermal models fall back to the
+ * three translations.
  */
-void FilWriter::write_dofs(const model::ModelData& model_data) {
-    ElDofs active = ElDofs::Constant(false);
-    for (const auto& element : model_data.elements) {
-        if (element) active = active.array() || element->dofs().array();
-    }
-    if (!active.any()) {
-        active << true, true, true, false, false, false;
-    }
+void FilWriter::write_dofs(const SystemDofs& structural_dofs) {
+    logging::error(structural_dofs.rows() == static_cast<Eigen::Index>(node_ids_.size())
+                && structural_dofs.cols() == 6,
+        "FilWriter: structural DOF mask does not match the compiled nodes");
 
-    active_count_ = 0;
+    const bool any = structural_dofs.any();
+
+    int count = 0;
     for (int d = 0; d < 6; ++d) {
-        active_dofs_[d] = active(d) ? ++active_count_ : 0;
+        const bool active = any ? structural_dofs.col(d).any() : d < 3;
+        active_dofs_[d]   = active ? ++count : 0;
     }
 
     begin_record(1902);
@@ -407,7 +416,7 @@ void FilWriter::write_nodal_field(const model::Field& field,
 /**
  * Writes a tensor field as element output. NODE fields become values averaged
  * at nodes (location 4), ELEMENT_NODAL fields element-node values (location 2)
- * and ELEMENT_IP fields integration-point values (location 0).
+ * for every element present in the mesh.
  */
 void FilWriter::write_element_field(const model::Field&     field,
                                     int                     key,
@@ -419,24 +428,19 @@ void FilWriter::write_element_field(const model::Field&     field,
         return;
     }
 
-    const bool  nodal   = field.domain == model::FieldDomain::ELEMENT_NODAL;
-    const auto& offsets = nodal ? model_data.element_nodal_offsets : model_data.element_ip_offsets;
+    const auto& offsets = model_data.element_nodal_offsets;
 
     logging::error(offsets != nullptr,
-        "FilWriter: element offsets are not initialized");
+        "FilWriter: element-nodal offsets are not initialized");
 
     for (std::size_t i = 0; i < model_data.elements.size(); ++i) {
         const auto& element = model_data.elements[i];
-        if (!element || element->type_name().empty()) continue;
+        if (!element || element_types_[i].empty()) continue;
 
         const Index offset = static_cast<Index>((*offsets)(i, 0));
-        const Index count  = nodal ? element->n_nodes() : element->num_ip();
-
-        for (Index local = 0; local < count; ++local) {
-            const std::int64_t point = nodal
-                ? node_ids_[static_cast<std::size_t>(element->nodes()[local])]
-                : static_cast<std::int64_t>(local + 1);
-            write_tensor_row(field, offset + local, key, element_ids_[i], point, nodal ? 2 : 0);
+        for (Index local = 0; local < element->n_nodes(); ++local) {
+            const std::int64_t node = node_ids_[static_cast<std::size_t>(element->nodes()[local])];
+            write_tensor_row(field, offset + local, key, element_ids_[i], node, 2);
         }
     }
 }
@@ -470,6 +474,23 @@ void FilWriter::write_tensor_row(const model::Field& field,
         put_real(field(row, c));
     }
     end_record();
+}
+
+/**
+ * Maps a FEMaster element type name to its Abaqus element library name.
+ * Returns an empty string for types without an Abaqus equivalent.
+ */
+std::string FilWriter::abaqus_type(const std::string& type_name) {
+    if (type_name == "C3D4"   || type_name == "C3D6"  || type_name == "C3D8"
+     || type_name == "C3D8R"  || type_name == "C3D8I" || type_name == "C3D10"
+     || type_name == "C3D15"  || type_name == "C3D20" || type_name == "C3D20R"
+     || type_name == "B31"    || type_name == "B33")  return type_name;
+    if (type_name == "T3")                            return "T3D2";
+    if (type_name == "MITC3FRT")                      return "S3";
+    if (type_name == "MITC4FRT")                      return "S4";
+    if (type_name == "MITC6FRT")                      return "STRI65";
+    if (type_name == "MITC8FRT")                      return "S8R";
+    return {};
 }
 
 /**

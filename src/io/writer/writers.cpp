@@ -73,7 +73,8 @@ void ResultWriters::close() {
     }
 }
 
-void ResultWriters::write_model_data(const model::ModelData& model_data) {
+void ResultWriters::write_model_data(const model::ModelData& model_data,
+                                     const SystemDofs&       structural_dofs) {
     if (frd_writer) {
         frd_writer->write_model_data(model_data);
     }
@@ -81,7 +82,7 @@ void ResultWriters::write_model_data(const model::ModelData& model_data) {
         femr_writer->write_model_data(model_data);
     }
     if (fil_writer) {
-        fil_writer->write_model_data(model_data);
+        fil_writer->write_model_data(model_data, structural_dofs);
     }
 }
 
