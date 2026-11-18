@@ -248,9 +248,8 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    // Detect configuration-dependent external loads. Follower loads and the
-    // redistribution of structural couplings both depend on the current
-    // positions; their analytic load tangent is generally nonsymmetric.
+    // Only follower loads require a configuration-dependent external tangent.
+    // Distributing couplings are enforced by the fixed linear MPC map.
     bool has_follower_load = false;
     for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
         for (const auto* state : {&initial_conditions, &target_conditions}) {
@@ -260,13 +259,7 @@ void NonlinearStatic::run() {
         }
     }
 
-    bool has_structural_coupling = false;
-    for (const auto& coupling : model->_data->couplings) {
-        has_structural_coupling = has_structural_coupling
-            || coupling.type == constraint::CouplingType::STRUCTURAL;
-    }
-
-    const bool has_load_tangent = has_follower_load || has_structural_coupling;
+    const bool has_load_tangent = has_follower_load;
 
     // Riks uses one constant reduced load direction for the bordered system.
     // A follower load changes this direction with the displacement, so its

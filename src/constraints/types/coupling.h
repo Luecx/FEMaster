@@ -22,8 +22,6 @@
 #include "../../core/printable.h"
 #include <string>
 
-namespace fem { namespace model { struct Field; } }
-
 namespace fem {
 namespace constraint {
 
@@ -31,12 +29,12 @@ namespace constraint {
  * @enum CouplingType
  * @brief Defines the available types of _couplings in FEM.
  *
- * Currently, only kinematic coupling is supported, but additional types can be
- * added in the future.
+ * Kinematic coupling enforces nodewise rigid motion; structural/distributing
+ * coupling imposes averaged reference motion constraints.
  */
 enum class CouplingType {
     KINEMATIC,    ///< Kinematic coupling between master and slave nodes
-    STRUCTURAL,   ///< Structural distribution coupling
+    STRUCTURAL,   ///< Work-conjugate distributing MPC coupling
 };
 
 /**
@@ -87,17 +85,6 @@ class Coupling : public fem::Printable {
      * @return TripletList A list of triplets representing the coupling equations.
      */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
-
-    // Distribute the generalized master load of a structural coupling to its
-    // slave nodes so that the resultant force and moment about the master are
-    // preserved. The distribution uses the positions of model_data. A requested
-    // load tangent is transformed consistently: master rows are redistributed
-    // and the derivative of the distribution with respect to the slave and
-    // master positions is added using the equation indices of system_dof_ids.
-    void apply_loads(model::ModelData&   model_data,
-                     model::Field&       load,
-                     TripletList*        load_tangent,
-                     const SystemDofIds& system_dof_ids);
 
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.
