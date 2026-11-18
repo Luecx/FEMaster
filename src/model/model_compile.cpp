@@ -683,6 +683,9 @@ void Model::compile() {
 
             logging::error(section != nullptr,
                 "Model: unsupported section type in part ", source->name);
+
+            // Instance copies keep the id of their source definition
+            section->id_ = source_section->id_;
             _data->sections.push_back(std::move(section));
         }
     }
