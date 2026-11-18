@@ -20,6 +20,8 @@
 #include "../src/section/profile.h"
 #include "../src/section/section_beam.h"
 #include "../src/model/model.h"
+#include "../src/model/beam/b33.h"
+#include "../src/material/isotropic_elasticity.h"
 
 #include <cmath>
 #include <filesystem>
@@ -99,6 +101,55 @@ TEST(BeamSectionProfiles, AngleUsesCentroidReferenceAndSeparateShearPoint) {
     EXPECT_DOUBLE_EQ(second->reference_z_, 0);
     EXPECT_NEAR(second->offset_y_, 6.0 - cy2, 1e-12);
     EXPECT_NEAR(second->offset_z_, 1.5 - cz2, 1e-12);
+}
+
+TEST(BeamSectionProfiles, B33KeepsCentroidalAxialAndMassTermsWithShearOffsets) {
+    model::Model model;
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 100.0, 0.0, 0.0);
+    model.set_element<model::B33>(0, 0, 1);
+
+    auto material = std::make_shared<material::Material>("MAT");
+    material->set_elasticity<material::IsotropicElasticity>(210000.0, 0.3);
+    material->set_density(7.85e-9);
+    model.add_material(material);
+
+    auto profile = Profile::Angle(60, 80, 8, 6);
+    model.add_profile(profile);
+
+    auto section = std::make_shared<BeamSection>();
+    section->material_ = material;
+    section->profile_ = profile;
+    section->direction_ = Vec3(0.0, 1.0, 0.0);
+    section->region_ = model._data->parts.get()->elem_sets.get(SET_ELEM_ALL);
+    model.add_section(section);
+    model.compile();
+
+    auto* element = model._data->elements[0]->as<model::B33>();
+    ASSERT_NE(element, nullptr);
+
+    // With the reference at the centroid, a shear-point shift affects
+    // bending/torsion coupling, but cannot move the mass or the axial line.
+    const auto K_offset = element->stiffness_impl().eval();
+    const auto M_offset = element->mass_impl().eval();
+
+    profile->offset_y_ = 0;
+    profile->offset_z_ = 0;
+    const auto K_coincident = element->stiffness_impl().eval();
+    const auto M_coincident = element->mass_impl().eval();
+
+    EXPECT_TRUE(M_offset.isApprox(M_coincident, 1e-12));
+    EXPECT_GT((K_offset - K_coincident).norm(), Precision(1e-3));
+
+    // Pure axial displacement at the centroid must not induce a moment.
+    for (Index node = 0; node < 2; ++node) {
+        for (Index rotation = 3; rotation < 6; ++rotation) {
+            EXPECT_NEAR(K_offset(0, 6 * node + rotation), 0, 1e-9);
+            EXPECT_NEAR(K_offset(6, 6 * node + rotation), 0, 1e-9);
+        }
+    }
+    EXPECT_NEAR(K_offset(0, 0), K_coincident(0, 0), 1e-9);
+    EXPECT_NEAR(K_offset(0, 6), K_coincident(0, 6), 1e-9);
 }
 
 TEST(BeamSectionProfiles, ISectionAlsoSupportsAbaqusTSections) {
