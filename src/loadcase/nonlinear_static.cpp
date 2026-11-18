@@ -248,9 +248,8 @@ void NonlinearStatic::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    // Detect configuration-dependent external loads. Follower loads and the
-    // redistribution of structural couplings both depend on the current
-    // positions; their analytic load tangent is generally nonsymmetric.
+    // Detect configuration-dependent external loads. Follower loads depend on
+    // the current positions; their analytic load tangent is generally nonsymmetric.
     bool has_follower_load = false;
     for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
         for (const auto* state : {&initial_conditions, &target_conditions}) {
@@ -259,14 +258,6 @@ void NonlinearStatic::run() {
             }
         }
     }
-
-    bool has_structural_coupling = false;
-    for (const auto& coupling : model->_data->couplings) {
-        has_structural_coupling = has_structural_coupling
-            || coupling.type == constraint::CouplingType::STRUCTURAL;
-    }
-
-    const bool has_load_tangent = has_follower_load || has_structural_coupling;
 
     // Riks uses one constant reduced load direction for the bordered system.
     // A follower load changes this direction with the displacement, so its
@@ -423,12 +414,12 @@ void NonlinearStatic::run() {
     // indefinite near compression, limit points or buckling, so SPD is not assumed.
     // Arc length uses a nonsymmetric augmented system and contact may also be
     // nonsymmetric, so those paths keep the general solver. The analytic load
-    // tangent of follower loads and coupling redistribution is nonsymmetric as
-    // well and is never symmetrized, so it also selects the general solver.
+    // tangent of follower loads is nonsymmetric as well and is never
+    // symmetrized, so it also selects the general solver.
     const auto matrix_type =
         control == NonlinearControl::LoadControl
         && model->_data->contacts.empty()
-        && !has_load_tangent
+        && !has_follower_load
             ? solver::DirectSolverMatrixType::Symmetric
             : solver::DirectSolverMatrixType::General;
 

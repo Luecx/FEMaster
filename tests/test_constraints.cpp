@@ -18,6 +18,8 @@
 #include "../src/constraints/transformer/constraint_system.h"
 #include "../src/constraints/transformer/null_space.h"
 #include "../src/constraints/types/connector.h"
+#include "../src/constraints/types/coupling.h"
+#include "../src/math/vec_util.h"
 #include "../src/model/model.h"
 #include "../src/cos/rectangular_system.h"
 
@@ -102,4 +104,93 @@ TEST(Constraints_NullSpace, BuildAndTransforms) {
     DynamicVector y(rep.dofs); y.setOnes();
     DynamicVector z = map.project(y);
     EXPECT_EQ(z.size(), map.n_master());
+}
+
+// Reference node 0 with an asymmetric, non-coplanar cloud of four slave nodes
+static constraint::Coupling distributing_coupling(model::Model& mdl, bool master_in_cloud = false) {
+    mdl.set_node(0, 0.1, 0.2, 0.3);
+    mdl.set_node(1, 1.0, 0.0, 0.0);
+    mdl.set_node(2, 0.0, 2.0, 0.0);
+    mdl.set_node(3, 0.0, 0.0, 1.5);
+    mdl.set_node(4, 1.0, 1.0, 1.0);
+    mdl.compile();
+
+    auto slaves = std::make_shared<model::NodeRegion>("CLOUD");
+    for (ID node = master_in_cloud ? 0 : 1; node <= 4; ++node) slaves->add(node);
+
+    Dofs coupled;
+    coupled.setConstant(true);
+    return constraint::Coupling(0, slaves, coupled, constraint::CouplingType::STRUCTURAL);
+}
+
+static SystemDofIds all_dofs_active(Index nodes) {
+    SystemDofIds ids(nodes, 6);
+    for (Index node = 0; node < nodes; ++node)
+        for (Index d = 0; d < 6; ++d) ids(node, d) = static_cast<int>(6 * node + d);
+    return ids;
+}
+
+TEST(Constraints_Coupling, DistributingReproducesRigidBodyMotion) {
+    model::Model mdl;
+    auto         coupling = distributing_coupling(mdl);
+    auto         ids      = all_dofs_active(5);
+    auto         eqs      = coupling.get_equations(ids, *mdl._data);
+    ASSERT_EQ(eqs.size(), 6u);
+
+    // Rigid motion u_k = t + w x r_k of the cloud must yield q_m = [t; w]
+    const Vec3 t(0.3, -0.7, 1.1);
+    const Vec3 w(0.2, 0.5, -0.4);
+    const auto& x = *mdl._data->positions_reference;
+
+    DynamicMatrix q(5, 6);
+    for (Index node = 0; node < 5; ++node) {
+        const Vec3 u = t + w.cross(x.row_vec3(node) - x.row_vec3(0));
+        q.row(node) << u(0), u(1), u(2), 0, 0, 0;
+    }
+    q.row(0) << t(0), t(1), t(2), w(0), w(1), w(2);
+
+    for (const auto& eq : eqs) {
+        Precision residual = 0;
+        for (const auto& e : eq.entries) residual += e.coeff * q(e.node_id, e.dof);
+        EXPECT_NEAR(residual, 0.0, 1e-9);
+    }
+}
+
+TEST(Constraints_Coupling, DistributingTransfersMasterLoadResultant) {
+    model::Model mdl;
+    auto         coupling = distributing_coupling(mdl);
+    auto         ids      = all_dofs_active(5);
+    auto         eqs      = coupling.get_equations(ids, *mdl._data);
+    ASSERT_EQ(eqs.size(), 6u);
+
+    // Eliminating q_m = B u maps a master load b onto the slaves as f = B^T b
+    const Vec6 b(3.0, 5.0, 7.0, 2.0, 4.0, 6.0);
+    DynamicMatrix f = DynamicMatrix::Zero(5, 3);
+    for (Index c = 0; c < 6; ++c) {
+        const auto& eq = eqs[static_cast<std::size_t>(c)];
+        ASSERT_EQ(static_cast<Index>(eq.entries.front().node_id), 0);
+        ASSERT_EQ(static_cast<Index>(eq.entries.front().dof),     c);
+        for (std::size_t i = 1; i < eq.entries.size(); ++i)
+            f(eq.entries[i].node_id, eq.entries[i].dof) -= eq.entries[i].coeff * b(c);
+    }
+
+    const auto& x = *mdl._data->positions_reference;
+    Vec3 force  = Vec3::Zero();
+    Vec3 moment = Vec3::Zero();
+    for (Index node = 1; node < 5; ++node) {
+        const Vec3 f_k = f.row(node).transpose();
+        force  += f_k;
+        moment += (x.row_vec3(node) - x.row_vec3(0)).cross(f_k);
+    }
+    for (Index d = 0; d < 3; ++d) {
+        EXPECT_NEAR(force(d),  b(d),     1e-9);
+        EXPECT_NEAR(moment(d), b(d + 3), 1e-9);
+    }
+}
+
+TEST(Constraints_Coupling, DistributingRejectsMasterInsideCloud) {
+    model::Model mdl;
+    auto         coupling = distributing_coupling(mdl, true);
+    auto         ids      = all_dofs_active(5);
+    EXPECT_THROW(coupling.get_equations(ids, *mdl._data), std::runtime_error);
 }

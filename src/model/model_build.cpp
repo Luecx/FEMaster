@@ -333,10 +333,6 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
  * same multiplier as its load contribution; dead loads contribute nothing.
  * Follower loads require the tangent and report an error without it.
  *
- * Couplings redistribute the complete generalized master-node loads only after
- * all contributions have been summed. They transform the accumulated load
- * tangent consistently, including the derivative of the distribution itself.
- *
  * @param initial Frozen initial condition state.
  * @param target Prescribed target condition state.
  * @param time Evaluation time supplied to load amplitudes.
@@ -392,12 +388,6 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
         }
     }
 
-    // Preserve the resultant while transferring loads and their tangent
-    // through coupling kinematics
-    for (auto& coupling : _data->couplings) {
-        coupling.apply_loads(*_data, load, load_tangent, system_dof_ids);
-    }
-
     return load;
 }
 
@@ -412,8 +402,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
  * scalar time history without repeating geometric integration.
  *
  * These fields are derived numerical data for the running analysis. They retain
- * no condition definitions or condition activations. Coupling redistribution is
- * applied independently to every completed spatial basis.
+ * no condition definitions or condition activations.
  *
  * @return Amplitude pointers paired with unscaled global nodal load fields.
  */
@@ -457,13 +446,6 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
         for (const auto& condition : target.get(family)) {
             add_condition(condition);
-        }
-    }
-
-    // Redistribute every spatial basis before later scalar time multiplication
-    for (auto& entry : basis) {
-        for (auto& coupling : _data->couplings) {
-            coupling.apply_loads(*_data, entry.second, nullptr, system_dof_ids);
         }
     }
 
