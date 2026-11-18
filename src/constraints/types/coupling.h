@@ -21,8 +21,7 @@
 #include "equation.h"
 #include "../../core/printable.h"
 #include <string>
-
-namespace fem { namespace model { struct Field; } }
+#include <vector>
 
 namespace fem {
 namespace constraint {
@@ -31,12 +30,13 @@ namespace constraint {
  * @enum CouplingType
  * @brief Defines the available types of _couplings in FEM.
  *
- * Currently, only kinematic coupling is supported, but additional types can be
- * added in the future.
+ * Kinematic couplings move every slave node rigidly with the master node.
+ * Structural (distributing) couplings tie the master node to the averaged
+ * rigid-body motion of the slave nodes.
  */
 enum class CouplingType {
     KINEMATIC,    ///< Kinematic coupling between master and slave nodes
-    STRUCTURAL,   ///< Structural distribution coupling
+    STRUCTURAL,   ///< Distributing coupling between master and slave nodes
 };
 
 /**
@@ -88,17 +88,6 @@ class Coupling : public fem::Printable {
      */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 
-    // Distribute the generalized master load of a structural coupling to its
-    // slave nodes so that the resultant force and moment about the master are
-    // preserved. The distribution uses the positions of model_data. A requested
-    // load tangent is transformed consistently: master rows are redistributed
-    // and the derivative of the distribution with respect to the slave and
-    // master positions is added using the equation indices of system_dof_ids.
-    void apply_loads(model::ModelData&   model_data,
-                     model::Field&       load,
-                     TripletList*        load_tangent,
-                     const SystemDofIds& system_dof_ids);
-
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.
      *
@@ -117,6 +106,11 @@ class Coupling : public fem::Printable {
      * whether it is a node or surface set, and the coupled DOFs.
      */
     std::string str() const override;
+
+    private:
+    std::vector<ID> slave_node_ids        (model::ModelData& model_data) const;
+    Equations       kinematic_equations   (SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+    Equations       distributing_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 };
 }    // namespace constraint
 }    // namespace fem

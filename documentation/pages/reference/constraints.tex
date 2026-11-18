@@ -27,6 +27,8 @@ The scoped form is shared by the native and Abaqus readers. If \key{TYPE} is omi
 
 For a surface target, the distribution is based on the selected surface geometry. For a node-set target, the supplied node region itself defines the coupled region. A reference-point load combined with a distributing coupling represents a definite resultant force or moment independently of surface mesh density, whereas applying identical concentrated loads at every surface node changes the total load under mesh refinement.
 
+The distributing coupling is enforced by one linear constraint equation per selected reference DOF. With lever arms \(\mathbf r_k=\mathbf x_k-\mathbf x_{\mathrm{ref}}\) in the reference configuration, the operator \(\mathbf A=[\,\mathbf I\;\cdots\;\mathbf I;\;[\mathbf r_1]_\times\;\cdots\;[\mathbf r_n]_\times]\) maps slave forces to their resultant about the reference node, and the reference motion follows as \(\mathbf q_{\mathrm{ref}}=(\mathbf A\mathbf A^T)^{-1}\mathbf A\,\mathbf u\). This relation reproduces rigid-body motion of the slaves exactly. Eliminating it distributes a reference load as the minimum-norm slave forces with the same resultant force and moment, and lets displacements or rotations be prescribed at the reference node. Only slave translations enter the relation, and the coefficients are not updated with the deformed geometry. The reference node must not belong to its own slave region.
+
 The Abaqus reader supports the scoped \cmd{COUPLING}/\cmd{KINEMATIC}/\cmd{DISTRIBUTING} subset documented here. This does not imply support for every Abaqus coupling option; parameters outside the documented subset are not part of the FEMaster compatibility contract.
 
 \begin{keywordparameters}

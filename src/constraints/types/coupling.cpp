@@ -2,9 +2,8 @@
  * @file coupling.cpp
  * @brief Implements the Coupling class for handling kinematic _couplings in FEM.
  *
- * This file contains the implementation of the `get_equations` and `master_dofs`
- * methods, which generate the coupling equations and determine the necessary DOFs
- * for master nodes.
+ * Generates the kinematic and distributing coupling equations and determines
+ * the DOFs required at the master node.
  *
  * @see coupling.h
  * @author Finn Eggers
@@ -19,7 +18,6 @@
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
-#include <tuple>
 #include <vector>
 
 namespace fem {
@@ -50,29 +48,22 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
 /**
  * @brief Generates the coupling equations for the specified DOFs.
  *
- * This method computes the coupling equations between the master and slave nodes,
- * handling both translations and rotations. The equations are returned as a list
- * of triplets, which are used to populate the sparse global system matrix.
- *
- * For translational DOFs, the coupling is more complex and involves the rotational
- * DOFs of the master node.
- *
  * @param system_nodal_dofs The global DOF IDs for all nodes in the system.
- * @param node_coords The coordinates of all nodes in the system.
- * @param row_offset The row offset for inserting the equations into the global system.
- * @return TripletList A list of triplets representing the coupling equations.
+ * @param model_data Model data holding positions and surfaces.
+ * @return Equations The constraint equations of this coupling.
  */
 Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    Equations equations {};
-
-    // dont create equations if not kinematic coupling
-    if (type != CouplingType::KINEMATIC) {
-        return equations;
+    switch (type) {
+        case CouplingType::KINEMATIC : return kinematic_equations   (system_nodal_dofs, model_data);
+        case CouplingType::STRUCTURAL: return distributing_equations(system_nodal_dofs, model_data);
     }
+    return {};
+}
 
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
-    const auto& node_coords = *model_data.positions;
-
+/**
+ * @brief Collects the slave nodes of the coupling, sorted and without duplicates.
+ */
+std::vector<ID> Coupling::slave_node_ids(model::ModelData& model_data) const {
     std::vector<ID> ids{};
     if (slave_nodes != nullptr) {
         for (ID node_id : *slave_nodes) {
@@ -85,10 +76,24 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
             }
         }
     }
-    {
-        std::sort(ids.begin(), ids.end());
-        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-    }
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
+}
+
+/**
+ * @brief Kinematic coupling: every slave node follows the rigid motion of the master.
+ *
+ * Rotational DOFs are equated directly. Translational DOFs couple with the
+ * master translations and rotations through the lever arm to the master.
+ */
+Equations Coupling::kinematic_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+    Equations equations {};
+
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_coords = *model_data.positions;
+
+    const std::vector<ID> ids = slave_node_ids(model_data);
 
     for (ID slave_node : ids) {
         for (Dim i = 0; i < 6; i++) {
@@ -149,239 +154,81 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
 
 
 /**
- * Distributes the generalized master load of a structural coupling to its
- * slave nodes and, if requested, linearizes the distribution.
+ * @brief Distributing coupling: the master follows the averaged rigid motion of the slaves.
  *
- * The master load b = [F; M] is replaced by translational slave forces that
- * reproduce its resultant force and moment about the master position. With
- * lever arms r_k = x_k - x_m and
+ * With lever arms r_k = x_k - x_m in the reference configuration, the operator
  *
  *     A = [ I       I      ...  I      ]
- *         [ [r_1]x  [r_2]x ...  [r_n]x ],
+ *         [ [r_1]x  [r_2]x ...  [r_n]x ]
  *
- * the minimum-norm distribution is
+ * maps slave forces f to their resultant force and moment about the master.
+ * The work-conjugate kinematic relation is
  *
- *     f = A^T lambda,   G lambda = b,   G = A A^T + eps I,
+ *     q_m = G^-1 A u,   G = A A^T + eps I,
  *
- * so every slave receives f_k = lambda_f + lambda_m x r_k. The small Tikhonov
- * term eps = 1e-12 (tr(A A^T) + 1) keeps rank-deficient slave patterns solvable.
+ * which reproduces any rigid-body motion of the slaves exactly. Eliminating
+ * these equations distributes a master load b = [F; M] onto the slaves as
+ * f = A^T G^-1 b, i.e. the minimum-norm forces with the same resultant.
  *
- * The distribution depends on the positions supplied by model_data. If a load
- * tangent is requested, it is transformed consistently with the load:
- *
- * 1. Master rows db/du of the incoming tangent are consumed together with b
- *    and redistributed through R = A^T G^-1 onto the slave rows.
- * 2. The derivative of the distribution itself with respect to the slave and
- *    master positions is added. For a slave position x_k,
- *
- *        dG/dx_k lambda = H_k,
- *        H_k = [ [lambda_m]x                                      ]
- *              [ -[f_k]x + [r_k]x [lambda_m]x                     ]
- *              + 4e-12 lambda r_k^T,
- *        df_j/dx_k = A_j^T (-G^-1 H_k) + delta_jk [lambda_m]x,
- *
- *    with A_j^T = [I, -[r_j]x]. Because only lever arms depend on the master
- *    position, df/dx_m = -sum_k df/dx_k.
- *
- * The geometric term couples all slave nodes of the coupling with each other
- * and is therefore dense in the slave nodes.
- *
- * @param model_data Positions and surfaces defining the slave pattern.
- * @param load Generalized nodal load field modified in place.
- * @param load_tangent Optional load-tangent triplets transformed in place.
- * @param system_dof_ids Global equation numbering of the load tangent.
+ * Only slave translations enter the relation. One equation is written per
+ * coupled master DOF. The coefficients use reference positions and remain
+ * constant during the analysis. The small trace-scaled eps keeps degenerate
+ * slave patterns (e.g. collinear nodes) solvable.
  */
-void Coupling::apply_loads(model::ModelData&   model_data,
-                           model::Field&       load,
-                           TripletList*        load_tangent,
-                           const SystemDofIds& system_dof_ids) {
-    // Only distributing couplings transfer loads
-    if (type != CouplingType::STRUCTURAL) {
-        return;
-    }
+Equations Coupling::distributing_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+    Equations equations {};
 
-    logging::error(model_data.positions != nullptr,
-        "COUPLING: positions field is not initialized");
+    logging::error(model_data.positions_reference != nullptr, "COUPLING: reference positions field not set");
+    const auto& positions = *model_data.positions_reference;
 
-    // Gather the slave nodes. Shared surface nodes are deduplicated so they
-    // receive a single share of the distributed load.
-    std::vector<ID> ids;
-    if (slave_nodes != nullptr) {
-        for (ID node_id : *slave_nodes) ids.push_back(node_id);
-    } else if (slave_surfaces != nullptr) {
-        for (ID surface_id : *slave_surfaces) {
-            for (ID node_id : *model_data.surfaces[surface_id]) {
-                ids.push_back(node_id);
-            }
-        }
-    }
-    std::sort(ids.begin(), ids.end());
-    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    const std::vector<ID> ids = slave_node_ids(model_data);
+    const Index           n   = static_cast<Index>(ids.size());
 
-    const Index n = static_cast<Index>(ids.size());
-    if (n == 0) return;
+    logging::error(n > 0, "COUPLING: distributing coupling has no slave nodes");
+    logging::error(!std::binary_search(ids.begin(), ids.end(), master_node),
+        "COUPLING: master node ", master_node, " must not be part of its distributing slave region");
 
-    // Read the generalized master load b = [F; M]
-    Vec6 b;
-    for (Dim c = 0; c < 6; ++c) {
-        b(c) = load(master_node, c);
-    }
-
-    // Extract the master rows db/du of the incoming load tangent. They are
-    // consumed together with b and redistributed onto the slave rows.
-    std::vector<std::tuple<Dim, int, Precision>> master_rows;
-
-    if (load_tangent != nullptr) {
-        TripletList remaining;
-        remaining.reserve(load_tangent->size());
-
-        for (const Triplet& entry : *load_tangent) {
-            Dim component = 6;
-            for (Dim c = 0; c < 6; ++c) {
-                if (system_dof_ids(master_node, c) >= 0 && entry.row() == system_dof_ids(master_node, c)) {
-                    component = c;
-                }
-            }
-
-            if (component < 6) {
-                master_rows.emplace_back(component, entry.col(), entry.value());
-            } else {
-                remaining.push_back(entry);
-            }
-        }
-
-        load_tangent->swap(remaining);
-    }
-
-    if (b.isZero() && master_rows.empty()) return;
-
-    // Lever arms and equilibrium operator A in the supplied configuration
-    const auto& positions  = *model_data.positions;
-    const Vec3  master_pos = positions.row_vec3(master_node);
-
-    std::vector<Vec3> lever(static_cast<std::size_t>(n));
-    DynamicMatrix     A = DynamicMatrix::Zero(6, 3 * n);
+    // Resultant operator A; inactive slave DOFs carry no force and get a zero column
+    const Vec3    master_pos = positions.row_vec3(master_node);
+    DynamicMatrix A          = DynamicMatrix::Zero(6, 3 * n);
 
     for (Index k = 0; k < n; ++k) {
-        lever[k] = positions.row_vec3(ids[k]) - master_pos;
-
-        A.block<3, 3>(0, 3 * k).setIdentity();
-        A.block<3, 3>(3, 3 * k) = math::skew(lever[k]);
+        const Mat3 lever = math::skew(positions.row_vec3(ids[k]) - master_pos);
+        for (Dim d = 0; d < 3; ++d) {
+            if (system_nodal_dofs(ids[k], d) < 0) continue;
+            A(d, 3 * k + d)             = Precision(1);
+            A.block<3, 1>(3, 3 * k + d) = lever.col(d);
+        }
     }
 
-    // Regularized Gram matrix G = A A^T + eps I. The regularization scales
-    // with the trace so that it remains negligible for well-posed patterns.
-    StaticMatrix<6, 6> G = A * A.transpose();
-
-    const Precision eps_trace = Precision(1e-12) * (G.trace() + Precision(1));
-    const Precision eps       = std::max(Precision(1e-12), eps_trace);
+    // Regularized Gram matrix and the averaging operator B = G^-1 A
+    StaticMatrix<6, 6> G   = A * A.transpose();
+    const Precision    eps = std::max(Precision(1e-12), Precision(1e-12) * (G.trace() + Precision(1)));
     G.diagonal().array() += eps;
 
-    Eigen::LDLT<StaticMatrix<6, 6>> ldlt(G);
-    if (ldlt.info() != Eigen::Success) {
-        // Retry once with additional constant damping
-        G.diagonal().array() += Precision(1e-9);
-        ldlt.compute(G);
-    }
+    const DynamicMatrix B = Eigen::LDLT<StaticMatrix<6, 6>>(G).solve(A);
+    logging::error(B.allFinite(), "COUPLING: distributing coupling coefficients are not finite");
 
-    // Minimum-norm slave forces f = A^T G^-1 b
-    const Vec6          lambda = ldlt.solve(b);
-    const DynamicVector f      = A.transpose() * lambda;
-
-    for (Index k = 0; k < n; ++k) {
-        for (Dim d = 0; d < 3; ++d) {
-            load(ids[k], d) += f(3 * k + d);
-        }
-    }
-
-    // Consume the master load; it is now represented on the slaves
+    // q_m(c) - sum_k B(c, k) u_k = 0 for every coupled master DOF c
     for (Dim c = 0; c < 6; ++c) {
-        load(master_node, c) = Precision(0);
-    }
+        if (!coupled_dofs(c)) continue;
 
-    if (load_tangent == nullptr) return;
-
-    // Redistribute the master rows db/du through R = A^T G^-1
-    if (!master_rows.empty()) {
-        const StaticMatrix<6, 6> G_inv = ldlt.solve(StaticMatrix<6, 6>::Identity());
-        const DynamicMatrix      R     = A.transpose() * G_inv;
-
-        for (const auto& [component, col, value] : master_rows) {
-            for (Index k = 0; k < n; ++k) {
-                // The consumed master has no outgoing load-tangent rows,
-                // even when it is also part of the slave region.
-                if (ids[k] == master_node) continue;
-                for (Dim d = 0; d < 3; ++d) {
-                    const int       row          = system_dof_ids(ids[k], d);
-                    const Precision contribution = R(3 * k + d, component) * value;
-                    if (row < 0 || contribution == Precision(0)) continue;
-
-                    load_tangent->emplace_back(row, col, contribution);
-                }
+        Equation equation {};
+        equation.entries.push_back(EquationEntry {master_node, c, Precision(1)});
+        for (Index k = 0; k < n; ++k) {
+            for (Dim d = 0; d < 3; ++d) {
+                const Precision coeff = B(c, 3 * k + d);
+                if (coeff == Precision(0)) continue;
+                equation.entries.push_back(EquationEntry {ids[k], d, -coeff});
             }
         }
+
+        logging::error(equation.entries.size() > 1,
+            "COUPLING: master DOF ", c + 1, " of node ", master_node, " is not controlled by the slave translations");
+        equations.push_back(std::move(equation));
     }
 
-    // The distribution itself does not change if there is no load to distribute
-    if (b.isZero()) return;
-
-    // Assemble H_k = dG/dx_k lambda for every slave position. The trace-scaled
-    // regularization contributes d(eps)/dx_k = 4e-12 r_k^T.
-    const Vec3 lambda_m = lambda.tail<3>();
-    const Mat3 skew_m   = math::skew(lambda_m);
-    const bool eps_var  = eps_trace >= Precision(1e-12);
-
-    DynamicMatrix H(6, 3 * n);
-
-    for (Index k = 0; k < n; ++k) {
-        const Vec3 f_k = f.segment<3>(3 * k);
-
-        H.block<3, 3>(0, 3 * k) = skew_m;
-        H.block<3, 3>(3, 3 * k) = -math::skew(f_k) + math::skew(lever[k]) * skew_m;
-
-        if (eps_var) {
-            H.block<6, 3>(0, 3 * k) += Precision(4e-12) * lambda * lever[k].transpose();
-        }
-    }
-
-    // Slave-position derivative df/dx = A^T (-G^-1 H) + blockdiag([lambda_m]x)
-    const DynamicMatrix G_inv_H = ldlt.solve(H);
-    DynamicMatrix       df_dx   = -(A.transpose() * G_inv_H);
-
-    for (Index k = 0; k < n; ++k) {
-        df_dx.block<3, 3>(3 * k, 3 * k) += skew_m;
-    }
-
-    // Scatter the slave-slave blocks and the master columns, which follow
-    // from df/dx_m = -sum_k df/dx_k because only lever arms depend on x_m
-    for (Index j = 0; j < n; ++j) {
-        if (ids[j] == master_node) continue;
-        for (Dim d = 0; d < 3; ++d) {
-            const int row = system_dof_ids(ids[j], d);
-            if (row < 0) continue;
-
-            Vec3 master_column = Vec3::Zero();
-
-            for (Index k = 0; k < n; ++k) {
-                for (Dim e = 0; e < 3; ++e) {
-                    const Precision value = df_dx(3 * j + d, 3 * k + e);
-                    master_column(e) -= value;
-
-                    const int col = system_dof_ids(ids[k], e);
-                    if (col < 0 || value == Precision(0)) continue;
-
-                    load_tangent->emplace_back(row, col, value);
-                }
-            }
-
-            for (Dim e = 0; e < 3; ++e) {
-                const int col = system_dof_ids(master_node, e);
-                if (col < 0 || master_column(e) == Precision(0)) continue;
-
-                load_tangent->emplace_back(row, col, master_column(e));
-            }
-        }
-    }
+    return equations;
 }
 
 
@@ -395,26 +242,13 @@ void Coupling::apply_loads(model::ModelData&   model_data,
  * @return Dofs A Dofs object indicating which DOFs are required for the master node.
  */
 Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data) {
-    Dofs slave_dofs = {false, false, false, false, false, false};
-
-    // no dofs except for kinematic
-    if (type != CouplingType::KINEMATIC) {
-        return slave_dofs;
+    // A distributing coupling drives exactly the coupled master DOFs
+    if (type == CouplingType::STRUCTURAL) {
+        return coupled_dofs;
     }
 
-    std::vector<ID> ids{};
-    if (slave_nodes != nullptr) {
-        for (ID node_id : *slave_nodes) {
-            ids.push_back(node_id);
-        }
-    } else {
-        for (ID surface_id : *slave_surfaces) {
-            for (ID node_id : *model_data.surfaces[surface_id]) {
-                ids.push_back(node_id);
-            }
-        }
-    }
-
+    Dofs                  slave_dofs = {false, false, false, false, false, false};
+    const std::vector<ID> ids        = slave_node_ids(model_data);
 
     // Determine which DOFs are active for the slave nodes
     for (ID slave_node : ids) {
