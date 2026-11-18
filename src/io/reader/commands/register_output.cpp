@@ -93,6 +93,14 @@ void request_tokens(Parser&                           parser,
             }
         }
 
+        // Abaqus S also covers the shell section points; report both faces too
+        if (*field == io::writer::OutputField::STRESS) {
+            loadcase->output.request(io::writer::OutputField::STRESS,     requested_domain);
+            loadcase->output.request(io::writer::OutputField::STRESS_TOP, requested_domain);
+            loadcase->output.request(io::writer::OutputField::STRESS_BOT, requested_domain);
+            continue;
+        }
+
         loadcase->output.request(*field, requested_domain);
     }
 }
