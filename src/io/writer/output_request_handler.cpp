@@ -408,10 +408,35 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
  * Writes the requested frame fields in their explicitly selected domains.
  *
  * The ELEMENT_NODAL name prefix preserves existing RES/FRD conventions.
- * A field in any other domain keeps its semantic base name.
+ * A field in any other domain keeps its semantic base name. In models with
+ * shell elements, a STRESS request also writes STRESS_TOP and STRESS_BOT in
+ * the same domain so S reports both thickness faces besides the mid-surface.
  */
 void OutputRequestHandler::write_frame(ResultWriters& writer, const model::ModelData* model_data) {
+    // Shell stress requests also report both thickness faces (Abaqus section points)
+    const bool has_shells = model_ != nullptr && std::any_of(
+        model_->_data->elements.begin(), model_->_data->elements.end(),
+        [](const model::ElementPtr& element) {
+            const auto structural = element ? element->as<model::StructuralElement>() : nullptr;
+            return structural != nullptr && structural->is_shell();
+        });
+
+    std::vector<OutputKey> keys;
+    const auto add_key = [&](OutputKey key) {
+        if (std::find_if(keys.begin(), keys.end(), [&](const OutputKey& k) {
+                return k.field == key.field && k.domain == key.domain; }) == keys.end()) {
+            keys.push_back(key);
+        }
+    };
     for (const OutputKey& key : requests_) {
+        add_key(key);
+        if (has_shells && key.field == OutputField::STRESS) {
+            add_key({OutputField::STRESS_TOP, key.domain});
+            add_key({OutputField::STRESS_BOT, key.domain});
+        }
+    }
+
+    for (const OutputKey& key : keys) {
         if (output_field_is_step_field(key.field)) continue;
 
         model::Field& value = compute(key.field, key.domain);
