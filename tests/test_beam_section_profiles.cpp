@@ -70,6 +70,37 @@ TEST(BeamSectionProfiles, BoxAndOpenSections) {
               angle->product_inertia_yz_ * angle->product_inertia_yz_, 0);
 }
 
+TEST(BeamSectionProfiles, AngleUsesCentroidReferenceAndSeparateShearPoint) {
+    // Asymmetric dimensions and wall thicknesses expose both offset signs.
+    const auto angle = Profile::Angle(60, 80, 8, 6);
+    const double bottom_area = 60.0 * 8.0;
+    const double side_area = 6.0 * (80.0 - 8.0);
+    const double area = bottom_area + side_area;
+    const double cy = (bottom_area * 30.0 + side_area * 3.0) / area;
+    const double cz = (bottom_area * 4.0 + side_area * 44.0) / area;
+
+    // The nodes lie on the centroid, independently of the shear point.
+    EXPECT_DOUBLE_EQ(angle->reference_y_, 0);
+    EXPECT_DOUBLE_EQ(angle->reference_z_, 0);
+
+    // Thin-wall shear center: intersection of leg mid-lines at (3, 4).
+    EXPECT_NEAR(angle->offset_y_, 3.0 - cy, 1e-12);
+    EXPECT_NEAR(angle->offset_z_, 4.0 - cz, 1e-12);
+    EXPECT_LT(angle->offset_y_, 0);
+    EXPECT_LT(angle->offset_z_, 0);
+
+    // The same convention must also hold for a very differently sized angle.
+    const auto second = Profile::Angle(100, 40, 3, 12);
+    const double a1 = 100.0 * 3.0;
+    const double a2 = 12.0 * (40.0 - 3.0);
+    const double cy2 = (a1 * 50.0 + a2 * 6.0) / (a1 + a2);
+    const double cz2 = (a1 * 1.5 + a2 * 21.5) / (a1 + a2);
+    EXPECT_DOUBLE_EQ(second->reference_y_, 0);
+    EXPECT_DOUBLE_EQ(second->reference_z_, 0);
+    EXPECT_NEAR(second->offset_y_, 6.0 - cy2, 1e-12);
+    EXPECT_NEAR(second->offset_z_, 1.5 - cz2, 1e-12);
+}
+
 TEST(BeamSectionProfiles, ISectionAlsoSupportsAbaqusTSections) {
     // Abaqus SECTION=I allows a T with either the lower or upper flange absent.
     const auto top = Profile::I(0, 100, 0, 60, 0, 10, 8);
