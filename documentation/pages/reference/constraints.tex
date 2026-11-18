@@ -23,11 +23,13 @@ The scoped form is shared by the native and Abaqus readers. If \key{TYPE} is omi
 
 \cmd{KINEMATIC} creates a kinematic coupling. The selected slave degrees of freedom follow the rigid kinematics induced by the reference node. This represents an idealized rigid flange, load-introduction point, or boundary where deformation of the coupled patch is suppressed in the selected directions.
 
-\cmd{DISTRIBUTING} creates FEMaster's structural load-distribution coupling. The optional \key{COUPLING=CONTINUUM} and \key{COUPLING=STRUCTURAL} spellings are both accepted and deliberately map to the same internal \val{STRUCTURAL} coupling implementation. This transfers generalized loads and motions between the reference point and distributed region without making the complete target region rigid in the same sense as a kinematic coupling.
+\cmd{DISTRIBUTING} creates FEMaster's structural distributing coupling. It relates the selected reference-node degrees of freedom to the mean rigid-body motion represented by the coupled node cloud, while allowing deformation within that cloud. The optional \key{COUPLING=CONTINUUM} and \key{COUPLING=STRUCTURAL} spellings both select this \val{STRUCTURAL} formulation.
 
-For a surface target, the coupled node cloud consists of the unique nodes of the selected surface facets; for a node-set target, it consists of the nodes in that set. The reference node is excluded from the cloud and must not be a member of it. Only available translational degrees of freedom of the coupled nodes enter the distributing relation. Slave-node rotations are not coupled directly. The distribution does not use surface-area weights: each available slave translation contributes through its nodal position.
+For a surface target, the coupled node cloud consists of the unique nodes of the selected surface facets; for a node-set target, it consists of the nodes in that set. The reference node must not be a member of the coupled node cloud. Only available translational degrees of freedom of the coupled nodes enter the distributing relation. Slave-node rotations are not coupled directly. The distribution does not use surface-area weights: each available slave translation contributes through its nodal position.
 
-The structural distributing coupling constrains the selected generalized reference-node degrees of freedom to the least-squares rigid-body motion represented by the slave translations. Let \(\boldsymbol r_k=\boldsymbol x_k-\boldsymbol x_{\mathrm{ref}}\) be the lever arm of slave node \(k\) in the reference configuration, and let \(\boldsymbol u_s\) contain the stacked slave translations. The resultant operator and the averaging operator are
+The mean kinematic condition identifies the rigid-body translation and rotation that best represent the available slave-node translations in a least-squares sense. For slave node \(k\), let \(\boldsymbol r_k=\boldsymbol x_k-\boldsymbol x_{\mathrm{ref}}\) be its lever arm in the reference configuration. The represented displacement is \(\boldsymbol t+\boldsymbol\theta\times\boldsymbol r_k\). The coupled reference-node motion is the regularized least-squares fit of these represented displacements to the available components of \(\boldsymbol u_k\).
+
+With \(\boldsymbol u_s\) denoting the stacked slave translations, the resulting mapping is
 \[
 \mathbf A=
 \begin{bmatrix}
@@ -47,11 +49,11 @@ B_{c,\,3(k-1)+d}\,u_{k,d}=0,
 \]
 where \(\boldsymbol q_{\mathrm{ref}}=(U_x,U_y,U_z,R_x,R_y,R_z)^{\mathsf T}\) and \(\mathcal C\) is the set of selected reference degrees of freedom. Exactly those reference degrees of freedom are activated by the distributing coupling. The remaining slave deformation is not constrained to a single rigid-body motion.
 
-A force or moment applied to the selected reference-node degrees of freedom is transferred through the same constraint equations. By virtual work, the equivalent slave translational forces satisfy
+Forces and moments on selected reference-node degrees of freedom act through the same kinematic equations. The corresponding slave translational forces follow from virtual work:
 \[
 \boldsymbol f_s=\mathbf B^{\mathsf T}\boldsymbol b_{\mathrm{ref}},
 \]
-with zero entries in \(\boldsymbol b_{\mathrm{ref}}\) for unselected reference components. Without regularization, this is the minimum-Euclidean-norm force distribution for a full-row-rank resultant operator. The implemented regularization introduces a small deviation from the exact resultant relation. Prescribed reference-node displacements and rotations likewise constrain the corresponding averaged motion rather than the motion of each slave node separately.
+where \(\boldsymbol b_{\mathrm{ref}}\) contains the loads acting on the selected reference components. The load transfer is a consequence of the kinematic constraint, rather than a separate surface load prescription. Prescribed reference-node displacements and rotations constrain the same averaged motion; individual slave-node translations are not set equal to the reference-node values.
 
 The coefficients are calculated from reference coordinates and remain constant during the analysis. A distributing definition with no slave nodes, with the reference node inside the slave region, or with a selected reference degree of freedom that cannot be represented by any active slave translation is rejected.
 
