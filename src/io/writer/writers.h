@@ -2,6 +2,7 @@
 
 #include "writer_frd.h"
 #include "writer_femr.h"
+#include "writer_fil.h"
 #include "writer_res.h"
 #include "writer_file_formats.h"
 #include "writer_step_type.h"
@@ -29,6 +30,7 @@ class ResultWriters {
     std::unique_ptr<ResWriter> res_writer;
     std::unique_ptr<FrdWriter> frd_writer;
     std::unique_ptr<FemrWriter> femr_writer;
+    std::unique_ptr<FilWriter>  fil_writer;
 
     public:
     ResultWriters(const std::string& job_base_name,
@@ -44,9 +46,13 @@ class ResultWriters {
 
     void close();
 
-    void write_model_data(const model::ModelData& model_data);
+    void write_model_data(const model::ModelData& model_data,
+                          const SystemDofs&       structural_dofs);
 
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+
+    // Record-1980 data for the next eigenfrequency frame (FIL only)
+    void set_modal_data(Precision eigenvalue, Precision generalized_mass, const Vec6& mass_projection);
 
     void write_field(const model::Field& field,
                      const std::string& field_name,

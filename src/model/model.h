@@ -182,6 +182,7 @@ struct Model {
     // collect prescribed loads and constraints, and assemble structural tangent,
     // geometric, mass and internal-force contributions in global coordinates.
     // Optional stiffness-scaling fields act per element.
+    SystemDofs   build_structural_dof_mask();
     SystemDofIds build_structural_dof_index_matrix();
     SystemDofIds build_thermal_dof_index_matrix();
     SparseMatrix build_thermal_conductivity_matrix(

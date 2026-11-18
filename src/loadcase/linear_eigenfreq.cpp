@@ -86,6 +86,7 @@ constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
  * - q_mode: eigenvector in reduced coordinates (size = n_master).
  * - mode_mat: full mode in node x 6 layout, suitable for writer output.
  * - participation: mass-weighted projections onto rigid motions (x,y,z,rx,ry,rz).
+ * - generalized_mass: phi^T M phi of the recovered full mode.
  */
 struct ModalMode {
     Precision     lambda;        // eigenvalue (omega^2)
@@ -93,6 +94,7 @@ struct ModalMode {
     DynamicVector q_mode;        // reduced coordinates (q-space)
     model::Field  mode_mat;      // expanded node x 6 for writer
     Vec6          participation; // simple modal participation (x,y,z,rx,ry,rz)
+    Precision     generalized_mass = 0; // phi^T M phi of the recovered mode
 
     explicit ModalMode(Precision lam, DynamicVector q)
         : lambda(lam),
@@ -278,6 +280,7 @@ static void write_results(std::vector<ModalMode>& modes,
             participation(i, j) = modes[index].participation(j);
         }
 
+        writer->set_modal_data(modes[index].lambda, modes[index].generalized_mass, modes[index].participation);
         output.begin_frame(
             modes[index].freq,
             "_" + std::to_string(i + 1)
@@ -481,9 +484,11 @@ void LinearEigenfrequency::run() {
     );
 
     // Project all mass-normalized modes onto the six rigid-body directions
-    const DynamicMatrix P = Phi.transpose() * MR;
+    const DynamicMatrix P  = Phi.transpose() * MR;
+    const DynamicMatrix MP = M * Phi;
     for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
-        modes[static_cast<std::size_t>(i)].participation = P.row(i).transpose();
+        modes[static_cast<std::size_t>(i)].participation    = P.row(i).transpose();
+        modes[static_cast<std::size_t>(i)].generalized_mass = Phi.col(i).dot(MP.col(i));
     }
 
     // (9) Print + write

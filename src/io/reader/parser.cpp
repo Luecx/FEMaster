@@ -403,7 +403,8 @@ void Parser::initialize_writers(const std::string&                    input_path
                                 const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
     for (const std::string& ext : { std::string(".res"),  std::string(".frd"),
-                                    std::string(".femr"), std::string(".inp")}) {
+                                    std::string(".femr"), std::string(".fil"),
+                                    std::string(".inp")}) {
         if (writer_base.size() >= ext.size()
          && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
             writer_base.resize (writer_base.size() - ext.size());
@@ -412,7 +413,7 @@ void Parser::initialize_writers(const std::string&                    input_path
     }
 
     writer_ = io::writer::ResultWriters(writer_base, writer_formats);
-    writer_.write_model_data(*model_->_data);
+    writer_.write_model_data(*model_->_data, model_->build_structural_dof_mask());
 }
 
 /**
