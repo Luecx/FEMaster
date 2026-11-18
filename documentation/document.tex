@@ -4,8 +4,10 @@
 \input{styles/input-reference.sty}
 
 \title{FEMaster User Manual}
+\IfFileExists{version.tex}{\input{version.tex}}{\newcommand{\FEMasterVersion}{dev}}
+
 \author{Finn Eggers}
-\date{Version 2.9.67, 17 October 2026}
+\date{Version \FEMasterVersion, \today}
 
 \begin{document}
 
@@ -23,8 +25,8 @@
   \vspace{0.4cm}
   {\large Finite Elements in Mechanical Analysis and Simulation for Technical Engineering Research\par}
   \vfill
-  {\large Version 2.9.67\par}
-  {\large 17 October 2026\par}
+  {\large Version \FEMasterVersion\par}
+  {\large \today\par}
 \end{titlepage}
 
 \tableofcontents

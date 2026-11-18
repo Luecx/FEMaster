@@ -73,9 +73,42 @@ jobs:
             echo "create_release=true" >> "$GITHUB_OUTPUT"
           fi
 
+  documentation:
+    name: Build documentation
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LaTeX
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            latexmk lmodern \
+            texlive-latex-base texlive-latex-recommended \
+            texlive-latex-extra texlive-fonts-recommended
+
+      - name: Compile documentation
+        shell: bash
+        run: |
+          bash documentation/compile_documentation.sh
+          cp documentation/document.pdf FEMaster-documentation.pdf
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: FEMaster-documentation.pdf
+          path: FEMaster-documentation.pdf
+          retention-days: 3
+
   build:
     name: Build ${{ matrix.name }}
-    needs: prepare
+    needs:
+      - prepare
+      - documentation
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -106,6 +139,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download documentation
+        uses: actions/download-artifact@v4
+        with:
+          name: FEMaster-documentation.pdf
 
       - name: Install Intel oneAPI MKL Linux
         if: runner.os == 'Linux'
@@ -227,7 +265,7 @@ jobs:
           cp LICENSE.txt package/ || true
           cp THIRD_PARTY_NOTICES.txt package/ || true
           cp -r licenses package/ || true
-          cp documentation.pdf package/ || true
+          cp FEMaster-documentation.pdf package/
 
           tar -czf "${{ matrix.archive }}" -C package .
 
@@ -242,7 +280,7 @@ jobs:
           Copy-Item "LICENSE.txt" package/ -ErrorAction SilentlyContinue
           Copy-Item "THIRD_PARTY_NOTICES.txt" package/ -ErrorAction SilentlyContinue
           Copy-Item "licenses" package/licenses -Recurse -ErrorAction SilentlyContinue
-          Copy-Item "documentation.pdf" package/ -ErrorAction SilentlyContinue
+          Copy-Item "FEMaster-documentation.pdf" package/
 
           Compress-Archive -Path package/* -DestinationPath "${{ matrix.archive }}"
 
@@ -259,7 +297,7 @@ jobs:
           cp LICENSE.txt package/ || true
           cp THIRD_PARTY_NOTICES.txt package/ || true
           cp -r licenses package/ || true
-          cp documentation.pdf package/ || true
+          cp FEMaster-documentation.pdf package/
 
           libomp_ref="$(otool -L package/FEMaster | awk '/libomp\.dylib/{print $1; exit}')"
           if [[ -n "${libomp_ref}" ]]; then
@@ -285,6 +323,7 @@ jobs:
     name: Create GitHub release
     needs:
       - prepare
+      - documentation
       - build
 
     if: needs.prepare.outputs.create_release == 'true'

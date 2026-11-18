@@ -37,7 +37,24 @@ if [[ ! -f "$MAIN_TEX" ]]; then
   exit 1
 fi
 
+write_version_file() {
+  local header="../src/core/version.h"
+  local major minor patch
+
+  major="$(sed -nE 's/^[[:space:]]*#[[:space:]]*define[[:space:]]+VERSION_MAJOR[[:space:]]+([0-9]+).*/\1/p' "$header")"
+  minor="$(sed -nE 's/^[[:space:]]*#[[:space:]]*define[[:space:]]+VERSION_MINOR[[:space:]]+([0-9]+).*/\1/p' "$header")"
+  patch="$(sed -nE 's/^[[:space:]]*#[[:space:]]*define[[:space:]]+VERSION_PATCH[[:space:]]+([0-9]+).*/\1/p' "$header")"
+
+  if [[ -z "$major" || -z "$minor" || -z "$patch" ]]; then
+    echo "error: could not read version from $header" >&2
+    exit 1
+  fi
+
+  printf '\\newcommand{\\FEMasterVersion}{%s.%s.%s}\n' "$major" "$minor" "$patch" > version.tex
+}
+
 cleanup_temp_files "$JOB_NAME"
+write_version_file
 
 if command -v latexmk >/dev/null 2>&1; then
   latexmk -pdf -interaction=nonstopmode -halt-on-error "$MAIN_TEX"
