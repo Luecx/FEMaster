@@ -86,6 +86,17 @@ class Coupling : public fem::Printable {
      */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 
+    // Distribute the generalized master load of a structural coupling to its
+    // slave nodes so that the resultant force and moment about the master are
+    // preserved. The distribution uses the positions of model_data. A requested
+    // load tangent is transformed consistently: master rows are redistributed
+    // and the derivative of the distribution with respect to the slave and
+    // master positions is added using the equation indices of system_dof_ids.
+    void apply_loads(model::ModelData&   model_data,
+                     model::Field&       load,
+                     TripletList*        load_tangent,
+                     const SystemDofIds& system_dof_ids);
+
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.
      *
