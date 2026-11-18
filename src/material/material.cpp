@@ -26,9 +26,6 @@ namespace material {
 Material::Material(std::string name)
     : fem::Namable(std::move(name)) {}
 
-/**
- * @copydoc Material::create_id
- */
 ID Material::create_id() {
     static ID next_id = 0;
     return ++next_id;

@@ -36,15 +36,14 @@ namespace fem {
 struct Section : public fem::Printable, public Castable {
     using Ptr = std::shared_ptr<Section>; ///< Shared pointer alias for section ownership.
 
-    material::Material::Ptr  material_ = nullptr;       ///< Material associated with the section.
-    model::ElementRegion::Ptr region_  = nullptr;       ///< Element region associated with the section.
-    ID                        id_      = create_id();   ///< Positive section id, e.g. for FRD export.
+    material::Material::Ptr  material_ = nullptr; ///< Material associated with the section.
+    model::ElementRegion::Ptr region_  = nullptr; ///< Element region associated with the section.
 
-    /**
-     * @brief Creates a new unique positive section id.
-     *
-     * @return ID Next section id, starting at 1.
-     */
+    // Positive section id. It is created once per section definition and kept
+    // by instance copies during model compilation, e.g. for the FRD group field.
+    ID id_ = create_id();
+
+    // Creates a new unique positive section id, starting at 1
     static ID create_id() {
         static ID next_id = 0;
         return ++next_id;

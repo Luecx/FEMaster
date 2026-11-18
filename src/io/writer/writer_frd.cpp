@@ -672,10 +672,10 @@ void append_element_block_header(std::string& buffer,
  * id. Both are zero when the element has no section or material.
  */
 void append_element_header_line(std::string& buffer,
-                                ID element_id,
-                                int type,
-                                ID group_id,
-                                ID material_id) {
+                                ID           element_id,
+                                int          type,
+                                ID           group_id,
+                                ID           material_id) {
     buffer.append(" -1");
     append_integer(buffer, element_id, 10);
     append_integer(buffer, type, 5);
@@ -1183,23 +1183,15 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
         return;
     }
 
-    // Warn once per section if its ids do not fit the five-column FRD fields
+    // Warn once per section about ids exceeding the five-column FRD fields.
+    // Such ids are exported as 0 to keep the element records readable.
     for (const auto& section : model_data.sections) {
         if (!section) {
             continue;
         }
 
-        logging::warning(section->id_ <= 99999,
-            "FrdWriter: section id ", section->id_,
-            " exceeds the FRD field width and is written as 0");
-
-        if (section->material_) {
-            const ID material_id = section->material_->id();
-            logging::warning(material_id <= 99999,
-                "FrdWriter: material id ", material_id,
-                " of material ", section->material_->name,
-                " exceeds the FRD field width and is written as 0");
-        }
+        logging::warning(section->id_ <= 99999, "FrdWriter: section id ", section->id_, " exceeds the FRD field width and is written as 0");
+        logging::warning(!section->material_ || section->material_->id() <= 99999, "FrdWriter: material id ", section->material_ ? section->material_->id() : 0, " exceeds the FRD field width and is written as 0");
     }
 
     // Write the element block header before the parallel element data
@@ -1234,14 +1226,22 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                     continue;
                 }
 
-                // Export section and material ids so post-processors can split nodal averaging
+                // Export the section as FRD group and its material so post-processors
+                // can respect section and material boundaries during nodal averaging.
+                // Ids exceeding the five-column FRD fields are written as 0.
                 const auto& section     = element->_section;
-                const ID    section_id  = section                       ? section->id_            : 0;
+                const ID    section_id  = section                       ? section->id_             : 0;
                 const ID    mat_id      = section && section->material_ ? section->material_->id() : 0;
                 const ID    group_id    = section_id <= 99999 ? section_id : 0;
                 const ID    material_id = mat_id     <= 99999 ? mat_id     : 0;
 
-                append_element_header_line(buffer, element_ids[static_cast<std::size_t>(elem_row)], type, group_id, material_id);
+                append_element_header_line(
+                    buffer,
+                    element_ids[static_cast<std::size_t>(elem_row)],
+                    type,
+                    group_id,
+                    material_id
+                );
 
                 // Copy connectivity so FRD-specific high-order permutations remain local
                 std::vector<ID> connectivity;
