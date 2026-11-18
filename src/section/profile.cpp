@@ -450,7 +450,15 @@ Profile::Ptr Profile::Angle(Precision width, Precision height,
     const Precision j2  = side_height * std::pow(side_thickness, 3) / 3;
     const Precision j   = j1 + j2;
 
-    return std::make_shared<Profile>("L", area, iy, iz, j, iyz, 0, 0, -cy, -cz);
+    // For a thin-walled angle the shear point lies at the intersection of
+    // the two wall mid-lines. The beam reference line instead passes through
+    // the centroid, which is the origin of the stored section properties.
+    const Precision shear_center_y = side_thickness / Precision(2);
+    const Precision shear_center_z = bottom_thickness / Precision(2);
+
+    return std::make_shared<Profile>("L", area, iy, iz, j, iyz,
+                                     shear_center_y - cy, shear_center_z - cz,
+                                     0, 0);
 }
 
 void Profile::info() {
