@@ -9,7 +9,7 @@ These settings can strongly affect robustness and computational cost, but they d
 
 \cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases and the supported Abaqus \cmd{STEP} procedures. In Abaqus input, it is a FEMaster extension and must appear after the procedure keyword has created the active analysis; it is not an Abaqus-native solver-selection card. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
 
-A direct method factorizes the sparse equation matrix and then solves by substitutions. Its convergence does not depend on an iterative stopping process, while its factorization memory can become substantial for large three-dimensional models.
+A direct method factorizes the sparse equation matrix and then solves by substitutions. Its convergence does not depend on an iterative stopping process, while its factorization memory can become substantial for large three-dimensional models. In Apple Accelerate builds, the direct LDLT factorization uses METIS nested-dissection ordering to limit fill-in.
 
 An indirect method solves the linear system iteratively. For a system
 \[
@@ -33,7 +33,7 @@ C&0
 \]
 which requires a linear solver that can handle indefinite matrices and is therefore restricted to supported direct configurations.
 
-The registration applies to linear static, nonlinear static, linear buckling, topology-static, linear transient, and linear harmonic analyses. The eigenfrequency loadcase does not currently implement this \cmd{SOLVER} setting. The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
+The registration applies to linear static, nonlinear static, linear buckling, topology-static, linear transient, linear harmonic, and steady-state heat-transfer analyses. The eigenfrequency loadcase does not currently implement this \cmd{SOLVER} setting. The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
 
 The default CPU/direct configuration avoids iterative convergence and backend-specific GPU requirements. Indirect or GPU configurations exchange this baseline for different memory, scaling, and hardware characteristics; their numerical behaviour still depends on the physical model and constraint system.
 
@@ -70,7 +70,7 @@ when used inside an Abaqus-compatible \cmd{STEP}.
 \[
 Cu=d
 \]
-are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Linear static and topology-static analyses default to \val{ELIMINATION}; nonlinear and harmonic analyses retain \val{NULLSPACE} and currently support only that method.
+are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Linear static, topology-static and steady-state heat-transfer analyses default to \val{ELIMINATION}; nonlinear and harmonic analyses retain \val{NULLSPACE} and currently support only that method. In heat transfer, the equations constrain the scalar nodal temperatures.
 
 \paragraph*{Nullspace projection}
 
@@ -436,6 +436,30 @@ TIP, 3, -100.
 *END STEP
 \end{inputdeck}
 
+\keywordnestedpage{MODALBASIS}
+
+\cmd{MODALBASIS} selects the modal-reduced solution of a native \val{LINEARHARMONIC} loadcase. The card has no parameters and no data lines; it only enables the reduction, while the basis itself is built when the loadcase runs.
+
+The Ritz basis contains all eigenmodes of the constrained system whose natural frequency lies below twice the highest excitation frequency of the sweep. It is enriched by the static responses \(K^{-1}f\) of the harmonic load patterns, made mass-orthogonal to the selected modes. Zero-stiffness (rigid-body) modes remain in the dynamic basis but are projected out of the static residual problem. With the mass-orthonormal basis \(\Phi\), every frequency solves
+\[
+\left(\Phi^TK\Phi-\omega^2\Phi^TM\Phi+i\omega\Phi^TC\Phi\right)\hat q=\Phi^T\hat f,
+\qquad \hat u=\Phi\hat q.
+\]
+Because the residual vectors are not eigenmodes, the reduced matrices are kept as full matrices. If no eigenmode lies below the cutoff, FEMaster falls back to the direct full-system solution. Results are written as for the direct method.
+
+\exampleheading
+\begin{inputdeck}
+*LOADCASE, TYPE=LINEARHARMONIC
+*SUPPORTS
+BC
+*LOADS
+HARMONIC
+*FREQUENCIES
+10., 1000., 100
+*MODALBASIS
+*END
+\end{inputdeck}
+
 \keywordnestedpage{NUMEIGENVALUES}
 
 \cmd{NUMEIGENVALUES} sets the number of requested eigenpairs for \val{EIGENFREQ} or \val{LINEARBUCKLING}. The data value must be a positive integer.
@@ -483,7 +507,7 @@ A\phi=\lambda(-B)\phi,
 \]
 with elastic stiffness \(A\) and geometric stiffness contribution \(B\), shift-invert methods become most effective when the shift is placed near, but appropriately below, the eigenvalue range of interest.
 
-\val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates a scale from the pre-buckling solution where possible and falls back to conservative stiffness/geometric-stiffness estimates if necessary. A manual shift directly targets a known approximate spectral range.
+\val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates the lowest buckling factor with a Rayleigh--Ritz approximation built from rigid and quadratic displacement fields in the independent constrained coordinates, using the elastic energy as metric. If this estimate is not valid, a conservative fallback shift is used. A manual shift directly targets a known approximate spectral range.
 
 In a linear-buckling loadcase, \val{PRELOAD} defines the reference
 loading and \val{BC} defines the supports. The example requests five

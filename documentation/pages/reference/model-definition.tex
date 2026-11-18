@@ -195,6 +195,45 @@ These three records create independent user node IDs, even though the coordinate
 20, 50., 0., 0.
 \end{inputdeck}
 
+\keywordpage{IMPERFECTION}
+
+\cmd{IMPERFECTION} modifies the reference coordinates of the compiled model to introduce geometric imperfections, for example for a nonlinear postbuckling analysis seeded with buckling modes. The keyword is only allowed at root level. It is applied after the model has been compiled and before shell normals and other geometry-dependent data are prepared. The offset changes the stress-free reference geometry and the initial current geometry equally, so the displacement unknowns start at zero and no stress is introduced.
+
+Without \key{FILE}, each row adds a direct offset \((\Delta x,\Delta y,\Delta z)\) in the global Cartesian system to one node. With \key{FILE}, each row selects a written displacement frame of an existing FEMaster result and its scale factor; the imperfection is the sum of the scaled frames:
+\[
+\Delta\boldsymbol x=\sum_j s_j\,\boldsymbol u_j.
+\]
+Only the three translational components are used. \key{STEP} selects the result step (the \val{LC} number in \file{.res}, the step number of the \val{1PSTEP} records in \file{.frd}); the default is \val{1}. Frames are one based. In \file{.res} files, the displacement-type fields \val{DISPLACEMENT}, \val{BUCKLING_MODE}, and \val{MODE_SHAPE} are considered, and fields with the same numerical suffix belong to the same frame. In \file{.frd} files, the first \val{DISP} block of the selected step and frame is used, and nodes are matched through the FRD node numbering described in Section~\ref{sec:output-results}.
+
+A relative \key{FILE} path is resolved relative to the input deck. The file extension must be \file{.res} or \file{.frd}. Several rows or keyword occurrences accumulate their offsets; the same frame listed twice adds its scale factors.
+
+\begin{keywordparameters}
+\key{FILE} & optional & FEMaster \file{.res} or \file{.frd} result containing the displacement frames. \\
+\key{STEP} & optional & Positive result step; default \val{1}; requires \key{FILE}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{node, dx, dy, dz} & Without \key{FILE}: node and global offset. \\
+\val{frame, scale} & With \key{FILE}: one-based frame number and scale factor. \\
+\end{keyworddata}
+
+The first buckling mode of a previous analysis is scaled to an amplitude of 0.5, and a second mode is added with 0.1.
+
+\exampleheading
+
+\begin{inputdeck}
+*IMPERFECTION, FILE=buckling.res, STEP=1
+1, 0.5
+2, 0.1
+\end{inputdeck}
+
+\paragraph*{Direct nodal offsets}
+\begin{inputdeck}
+*IMPERFECTION
+10, 0., 0., 0.2
+20, 0., 0., 0.4
+\end{inputdeck}
+
 \keywordpage{ELEMENT}
 
 \cmd{ELEMENT} defines element topology and connectivity. Each data

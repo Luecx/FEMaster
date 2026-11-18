@@ -210,6 +210,45 @@ For eigenfrequency, inertia, and transient analyses, this value enters the mass 
 7.85e-9
 \end{inputdeck}
 
+\keywordnestedpage{CONDUCTIVITY}
+
+\cmd{CONDUCTIVITY} assigns a constant isotropic thermal conductivity \(k\) to the current material. It is required for every material used by solid elements in a steady-state heat-transfer analysis, where it enters Fourier's law
+\[
+\boldsymbol q=-k\,\nabla T
+\]
+and the conduction matrix \(K_\mathrm{cond}=\int_\Omega \nabla N^T k\,\nabla N\,\mathrm d\Omega\). The same \(k\) is used for the recovered heat flux \val{HFL}.
+
+Exactly one positive data value is accepted. \key{TYPE} accepts \val{ISO} or \val{ISOTROPIC}; anisotropic and temperature-dependent tables are not supported. Structural analyses do not use the conductivity.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{k} & Constant positive isotropic conductivity. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{inputdeck}
+*MATERIAL, NAME=STEEL
+*CONDUCTIVITY
+50.
+\end{inputdeck}
+
+\keywordnestedpage{SPECIFIC HEAT}
+
+\cmd{SPECIFIC HEAT} assigns a constant specific heat \(c_p\) to the current material. Exactly one positive value is accepted; temperature-dependent tables are not supported. The value is stored with the material but is not used by the currently available analyses, since steady-state heat transfer has no heat capacity.
+
+\begin{keyworddata}
+\val{c_p} & Constant positive specific heat. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{inputdeck}
+*MATERIAL, NAME=STEEL
+*SPECIFIC HEAT
+4.6e8
+\end{inputdeck}
+
 \keywordnestedpage{EXPANSION}
 
 \cmd{EXPANSION} defines one constant isotropic coefficient of thermal expansion \(\alpha\) in both FEMaster and Abaqus input. The coefficient describes the free thermal strain produced by a temperature change. In the isotropic case,

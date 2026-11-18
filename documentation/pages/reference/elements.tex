@@ -19,16 +19,16 @@ FEMaster implementation rather than distinct numerical elements.
 \textbf{Element type and aliases} & \textbf{Nodes} & \textbf{Formulation} \\
 \midrule
 \endhead
-\val{C3D4} & 4 & Linear tetrahedral solid. \\
+\val{C3D4}, \val{DC3D4} & 4 & Linear tetrahedral solid. \\
 \val{C3D5} & 5 & Five-node pyramid represented by a degenerated hexahedral topology. \\
-\val{C3D6} & 6 & Linear wedge solid. \\
-\val{C3D8} & 8 & Fully integrated linear hexahedral solid. \\
+\val{C3D6}, \val{DC3D6} & 6 & Linear wedge solid. \\
+\val{C3D8}, \val{DC3D8} & 8 & Fully integrated linear hexahedral solid. \\
 \val{C3D8I} & 8 & Incompatible-mode hexahedral solid with condensed enhanced modes. \\
-\val{C3D8R} & 8 & Reduced-integration hexahedral solid with hourglass stabilization. \\
-\val{C3D10} & 10 & Quadratic tetrahedral solid. \\
+\val{C3D8R}, \val{DC3D8R} & 8 & Reduced-integration hexahedral solid with hourglass stabilization. \\
+\val{C3D10}, \val{DC3D10} & 10 & Quadratic tetrahedral solid. \\
 \val{C3D13} & 13 & Quadratic pyramid solid with rational interpolation. \\
 \val{C3D15} & 15 & Quadratic wedge solid. \\
-\val{C3D20} & 20 & Fully integrated quadratic hexahedral solid. \\
+\val{C3D20}, \val{DC3D20} & 20 & Fully integrated quadratic hexahedral solid. \\
 \val{C3D20R} & 20 & Reduced-integration quadratic hexahedral solid. \\
 \val{MITC3FRT}, \val{S3}, \val{S3R} & 3 & Finite-rotation triangular shell. \\
 \val{MITC4FRT}, \val{S4}, \val{S4R}, \val{MITC4} & 4 & Finite-rotation quadrilateral MITC shell. \\
@@ -49,6 +49,14 @@ with the corresponding elements in other finite-element solvers.
 In particular, the \val{R} suffix of imported shell names such as
 \val{S4R} does not select a separate reduced-integration
 formulation in FEMaster.
+
+The Abaqus heat-transfer names \val{DC3D4}, \val{DC3D6}, \val{DC3D8},
+\val{DC3D8R}, \val{DC3D10}, and \val{DC3D20} are aliases of the
+corresponding solid elements. All solid elements provide the scalar
+conduction operator and heat-flux recovery used by steady-state heat
+transfer, so the same mesh can be used for thermal and structural
+steps. Shell, beam, truss, and point elements do not take part in
+heat conduction.
 
 \clearpage
 \subsubsection{Solid elements}

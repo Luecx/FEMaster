@@ -10,7 +10,14 @@ ones. For step-local native definitions, the supplied values apply
 to the current analysis; \key{OP=NEW} also clears any inherited direct
 entries of that family. Named collector definitions are reusable
 between analyses. Thermal prescriptions maintain separate temperature,
-heat-flux, and convection histories.
+heat-flux, concentrated heat-flow, and convection histories.
+
+Structural loads are dead loads by default and act in the reference
+configuration. \cmd{CLOAD}, \cmd{DLOAD}, \cmd{DSLOAD}, \cmd{PLOAD}, and
+\cmd{INERTIALOAD} accept \key{FOLLOWER=YES} to evaluate the load in the
+current configuration. Such follower loads require a nonlinear static
+analysis with load control, which assembles their analytic load
+tangent; all other analyses, including Riks, reject them.
 
 Throughout this section, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
 
@@ -103,7 +110,7 @@ GUIDE, 2, 3, 0.
 
 \keywordpage{BOUNDARY}
 
-\cmd{BOUNDARY} is the supported Abaqus displacement/rotation constraint keyword. \key{TYPE} currently supports \val{DISPLACEMENT} and defaults to that form.
+\cmd{BOUNDARY} is the supported Abaqus displacement/rotation constraint keyword. It also prescribes temperatures in heat-transfer analyses. \key{TYPE} currently supports \val{DISPLACEMENT} and defaults to that form.
 
 Each data row contains a target, a first degree of freedom, an optional last degree of freedom, and an optional prescribed value. Abaqus structural DOF numbers are one based:
 \[
@@ -116,7 +123,9 @@ Each data row contains a target, a first degree of freedom, an optional last deg
 \]
 If the last DOF is omitted, only the first is constrained. If the value is omitted it defaults to zero.
 
-If the target nodes have an Abaqus \cmd{TRANSFORM}, the boundary components are interpreted in that local nodal basis. Nonzero prescribed values are currently supported for the documented static procedures. Amplitude-dependent prescribed values are subject to the restrictions described for the corresponding analysis procedure.
+DOF 11 prescribes the absolute nodal temperature in a \cmd{HEAT TRANSFER} step or \val{STEADYHEATTRANSFER} loadcase. It must be given alone (\val{target, 11, 11, value}) and creates a separate temperature-constraint history; structural DOFs 1--6 are rejected in heat-transfer steps and DOF 11 in structural steps. Outside any analysis, both families may be initialized. \key{OP=NEW} resets only the family of the current procedure.
+
+If the target nodes have an Abaqus \cmd{TRANSFORM}, the boundary components are interpreted in that local nodal basis. Nonzero prescribed values are currently supported for the documented static and heat-transfer procedures; \key{AMPLITUDE} is supported for linear static and heat-transfer steps. Amplitude-dependent prescribed values are subject to the restrictions described for the corresponding analysis procedure.
 
 Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus \cmd{BOUNDARY} uses DOF ranges, so the same constraint can require several rows.
 
@@ -127,7 +136,7 @@ Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus 
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{target, first_dof, last_dof, value} & DOF range 1--6; last DOF defaults to first and value defaults to zero. \\
+\val{target, first_dof, last_dof, value} & DOF range 1--6, or 11 for temperature; last DOF defaults to first and value defaults to zero. \\
 \end{keyworddata}
 
 The boundary condition data use numbered DOFs, with inclusive ranges. In this example one displacement is prescribed and two other components are fixed.
@@ -156,7 +165,7 @@ Missing components default to zero.
 
 The target may be an individual node or a node set. When a node set is used, the specified vector is applied to \emph{every} node in the set. It is not divided by the number of nodes. A reference node with a structural/distributing \cmd{COUPLING} instead transfers one definite resultant force or moment to a surface.
 
-\key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading.
+\key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading. With \key{FOLLOWER=YES}, the orientation basis is evaluated at the current nodal position, so the load direction follows the motion of the node in a curvilinear system; a load in the global basis is unaffected.
 
 Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The default and \key{REAL} forms both apply real-valued, fixed-direction concentrated loading.
 
@@ -170,6 +179,7 @@ When a concentrated nodal load represents a physically distributed load, the ide
 \key{ORIENTATION} & native optional & Named local load basis. \\
 \key{AMPLITUDE} & optional & Named amplitude where supported. \\
 \key{REAL} & optional flag & Real-valued, fixed-direction concentrated loading. \\
+\key{FOLLOWER} & optional & \val{NO} (default) or \val{YES}; orientation at the current position, nonlinear only. \\
 \end{keywordparameters}
 
 A concentrated load can be expressed by DOF number or by a generalized force vector. When a node set is targeted, the specified force is applied separately to every node in the set.
@@ -223,12 +233,15 @@ Abaqus-compatible command is \cmd{DSLOAD, P}.
 
 Traction has units of force per unit area. Its total resultant equals the surface integral and therefore coincides numerically with the traction magnitude only when the loaded area is one in the chosen unit system.
 
+\key{FOLLOWER=YES} evaluates tractions, element-face pressures, and \val{GRAV} loads in the current configuration; pressure then follows the current normal and area. Body-force densities \val{BX}/\val{BY}/\val{BZ} are always dead loads and reject \key{FOLLOWER=YES}. \val{TRVEC} labels are not supported.
+
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{OP} & optional & \val{MOD} (default) or \val{NEW} for direct load history. \\
 \key{ORIENTATION} & native optional & Local traction basis. \\
 \key{AMPLITUDE} & optional & Named time scaling where supported. \\
 \key{REAL} & optional flag & Real-valued distributed loading. \\
+\key{FOLLOWER} & optional & \val{NO} (default) or \val{YES}; current configuration, nonlinear only. \\
 \end{keywordparameters}
 
 \paragraph*{Gravity acceleration}
@@ -268,7 +281,7 @@ For pressure \(p\) and oriented unit normal \(\boldsymbol n\), the surface tract
 \]
 The resulting nodal forces are obtained by surface integration. The load is therefore independent of how many nodes happen to lie on the surface, provided the discretization converges to the same geometry.
 
-\key{AMPLITUDE} may scale the pressure where supported. Abaqus input expresses the corresponding supported pressure through \cmd{DSLOAD} with type \val{P}.
+\key{AMPLITUDE} may scale the pressure where supported. By default the pressure acts on the reference surface, also in nonlinear analyses. \key{FOLLOWER=YES} makes it follow the current surface normal and area. Abaqus input expresses the corresponding supported pressure through \cmd{DSLOAD} with type \val{P}.
 
 The surface side and element connectivity determine the pressure direction. Reversing the load sign can compensate numerically for an opposite orientation, but the same orientation continues to govern contact and shell-result conventions.
 
@@ -276,6 +289,7 @@ The surface side and element connectivity determine the pressure direction. Reve
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct pload entries. \\
 \key{AMPLITUDE} & optional & Named pressure scaling function. \\
+\key{FOLLOWER} & optional & \val{NO} (default) or \val{YES}; current normal and area, nonlinear only. \\
 \end{keywordparameters}
 
 The named surface must already exist. PLOAD applies a scalar pressure along its surface normal, whereas DSLOAD expresses the supported pressure through the P load label.
@@ -301,14 +315,16 @@ record specifies a surface, the label \val{P}, and a pressure
 magnitude. The surface normal determines the load direction.
 
 \key{FOLLOWER=NO} selects the fixed reference-surface-normal
-pressure definition and is also the default. \key{AMPLITUDE} may
+pressure definition and is also the default. \key{FOLLOWER=YES}
+makes the pressure follow the current surface normal and area in a
+nonlinear analysis. \key{AMPLITUDE} may
 provide time scaling. For a prescribed surface traction vector,
 use the three-component \cmd{DLOAD} form.
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{AMPLITUDE} & optional & Named amplitude for time scaling. \\
-\key{FOLLOWER} & optional & \val{NO} (default) for fixed-reference-surface pressure. \\
+\key{FOLLOWER} & optional & \val{NO} (default) for fixed-reference-surface pressure; \val{YES} for follower pressure. \\
 \key{OP} & optional & \val{MOD} or \val{NEW} for load history. \\
 \end{keywordparameters}
 
@@ -390,12 +406,15 @@ Regular \val{TYPE=MASS} point elements are part of normal element topology. If s
 
 Density, concentrated masses, geometry, angular velocity, and acceleration must all use one consistent unit system. Centrifugal acceleration scales with \(\omega^2 r\), so a unit error in angular velocity or length can become especially severe.
 
+With \key{FOLLOWER=YES}, the acceleration field is evaluated at the current nodal positions instead of the reference positions; this requires a nonlinear analysis.
+
 The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exactly.
 
 \begin{keywordparameters}
 \key{NAME}/\key{LOAD_COLLECTOR} & optional in analysis & Named reusable collector; required outside an analysis. \\
 \key{OP} & optional & \val{MOD} (default) for ordinary selection; \val{NEW} also clears inherited direct inertial-load entries. \\
 \key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{0}. \\
+\key{FOLLOWER} & optional & \val{NO} (default) or \val{YES}; current positions, nonlinear only. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
@@ -439,6 +458,9 @@ its first Newton evaluation, without interpolating it over the mechanical
 load increments. A linear perturbation uses the difference from the base
 temperature to calculate the thermal response but does not commit it.
 Successful general static steps commit their temperature targets.
+A steady-state heat-transfer step commits its solved temperature field
+in the same way. Prescribed temperatures of a heat-transfer analysis
+are instead defined with \cmd{BOUNDARY} on DOF 11.
 
 \begin{keywordparameters}
 \key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
@@ -463,7 +485,8 @@ region. A positive heat flux \(q\) acts into the thermal balance and
 contributes through \(\int_A N^T q\,\mathrm dA\) over the reference
 surface. \key{AMPLITUDE} references a scalar history multiplying the
 heat-input density. \key{OP=MOD} replaces the matching surface target;
-\key{OP=NEW} starts a new heat-flux history.
+\key{OP=NEW} starts a new heat-flux history. The Abaqus form
+\cmd{DSFLUX} writes into the same history.
 
 \begin{keywordparameters}
 \key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
@@ -499,6 +522,7 @@ Each row supplies the target surface, film coefficient, and ambient
 temperature. A named \key{AMPLITUDE} scales \(h\) while \(T_\infty\)
 remains the specified value. \key{OP=MOD} replaces the matching
 surface target; \key{OP=NEW} starts a new convection history.
+The Abaqus form \cmd{SFILM} writes into the same history.
 
 \begin{keywordparameters}
 \key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
@@ -513,6 +537,72 @@ environment at temperature 20 through a film coefficient of 0.015,
 expressed in the model's consistent thermal units.
 
 \exampleheading
+\begin{inputdeck}
+*CONVECTION
+COOLED_FACE, 0.015, 20.
+\end{inputdeck}
+
+\keywordpage{CFLUX}
+
+\cmd{CFLUX} prescribes concentrated heat flow at a node or at every node of a node set for heat-transfer analyses. Each row gives the target, the temperature DOF \val{11}, and the power per target node; positive values flow into the body. The value is not divided among the nodes of a set. CFLUX keeps its own history: \key{OP=MOD} replaces the matching node or node-set target, \key{OP=NEW} clears only the concentrated heat flow. \key{AMPLITUDE} scales the power. The keyword is accepted at model level and in heat-transfer steps or loadcases.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the power. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{target, 11, power} & Node or node set, temperature DOF, and heat flow per node. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{inputdeck}
+*CFLUX
+HEATER, 11, 5.
+\end{inputdeck}
+
+\keywordpage{DSFLUX}
+
+\cmd{DSFLUX} is the Abaqus form of a uniform surface heat flux. Each row contains a surface, the label \val{S}, and the heat-flux density into the body. It is equivalent to \cmd{HEATFLUX} and uses the same history; \key{OP} and \key{AMPLITUDE} behave identically. Other flux labels are not supported.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{AMPLITUDE} & optional & Named amplitude multiplying the flux density. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, S, flux} & Surface, uniform-flux label, and heat input per unit area. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{inputdeck}
+*DSFLUX
+HOT_FACE, S, 0.25
+\end{inputdeck}
+
+\paragraph*{Equivalent HEATFLUX}
+\begin{inputdeck}
+*HEATFLUX
+HOT_FACE, 0.25
+\end{inputdeck}
+
+\keywordpage{SFILM}
+
+\cmd{SFILM} is the Abaqus form of uniform surface convection. Each row contains a surface, the label \val{F}, the absolute sink temperature, and the nonnegative film coefficient. Note that the order of sink temperature and film coefficient is reversed with respect to \cmd{CONVECTION}. It writes into the convection history; \key{FILMAMPLITUDE} scales the film coefficient. Other film labels are not supported.
+
+\begin{keywordparameters}
+\key{OP} & optional & \val{MOD} (default) or \val{NEW}. \\
+\key{FILMAMPLITUDE} & optional & Named amplitude multiplying the film coefficient. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{surface, F, sink, h} & Surface, film label, ambient temperature, and film coefficient. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{inputdeck}
+*SFILM
+COOLED_FACE, F, 20., 0.015
+\end{inputdeck}
+
+\paragraph*{Equivalent CONVECTION}
 \begin{inputdeck}
 *CONVECTION
 COOLED_FACE, 0.015, 20.
