@@ -666,13 +666,6 @@ void append_element_block_header(std::string& buffer,
 }
 
 /**
- * Returns the id if it fits a five-column FRD integer field, otherwise 0.
- */
-ID frd_id(ID id) {
-    return id >= 0 && id <= 99999 ? id : 0;
-}
-
-/**
  * Appends one -1 element-definition record.
  *
  * The group field carries the section id and the material field the material
@@ -1196,13 +1189,13 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
             continue;
         }
 
-        logging::warning(frd_id(section->id_) == section->id_,
+        logging::warning(section->id_ <= 99999,
             "FrdWriter: section id ", section->id_,
             " exceeds the FRD field width and is written as 0");
 
         if (section->material_) {
             const ID material_id = section->material_->id();
-            logging::warning(frd_id(material_id) == material_id,
+            logging::warning(material_id <= 99999,
                 "FrdWriter: material id ", material_id,
                 " of material ", section->material_->name,
                 " exceeds the FRD field width and is written as 0");
@@ -1243,8 +1236,10 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
 
                 // Export section and material ids so post-processors can split nodal averaging
                 const auto& section     = element->_section;
-                const ID    group_id    = section ? frd_id(section->id_) : 0;
-                const ID    material_id = section && section->material_ ? frd_id(section->material_->id()) : 0;
+                const ID    section_id  = section                       ? section->id_            : 0;
+                const ID    mat_id      = section && section->material_ ? section->material_->id() : 0;
+                const ID    group_id    = section_id <= 99999 ? section_id : 0;
+                const ID    material_id = mat_id     <= 99999 ? mat_id     : 0;
 
                 append_element_header_line(buffer, element_ids[static_cast<std::size_t>(elem_row)], type, group_id, material_id);
 
