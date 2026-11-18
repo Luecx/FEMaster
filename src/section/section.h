@@ -36,8 +36,19 @@ namespace fem {
 struct Section : public fem::Printable, public Castable {
     using Ptr = std::shared_ptr<Section>; ///< Shared pointer alias for section ownership.
 
-    material::Material::Ptr  material_ = nullptr; ///< Material associated with the section.
-    model::ElementRegion::Ptr region_  = nullptr; ///< Element region associated with the section.
+    material::Material::Ptr  material_ = nullptr;       ///< Material associated with the section.
+    model::ElementRegion::Ptr region_  = nullptr;       ///< Element region associated with the section.
+    ID                        id_      = create_id();   ///< Positive section id, e.g. for FRD export.
+
+    /**
+     * @brief Creates a new unique positive section id.
+     *
+     * @return ID Next section id, starting at 1.
+     */
+    static ID create_id() {
+        static ID next_id = 0;
+        return ++next_id;
+    }
 
     /**
      * @brief Defaulted virtual destructor for polymorphic deletion.

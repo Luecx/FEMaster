@@ -667,15 +667,20 @@ void append_element_block_header(std::string& buffer,
 
 /**
  * Appends one -1 element-definition record.
+ *
+ * The group field carries the section id and the material field the material
+ * id. Both are zero when the element has no section or material.
  */
 void append_element_header_line(std::string& buffer,
                                 ID element_id,
-                                int type) {
+                                int type,
+                                ID group_id,
+                                ID material_id) {
     buffer.append(" -1");
     append_integer(buffer, element_id, 10);
     append_integer(buffer, type, 5);
-    append_integer(buffer, 0, 5);
-    append_integer(buffer, 0, 5);
+    append_integer(buffer, group_id, 5);
+    append_integer(buffer, material_id, 5);
     buffer.push_back('\n');
 }
 
@@ -1210,7 +1215,12 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                     continue;
                 }
 
-                append_element_header_line(buffer, element_ids[static_cast<std::size_t>(elem_row)], type);
+                // Export section and material ids so post-processors can split nodal averaging
+                const auto& section     = element->_section;
+                const ID    group_id    = section ? section->id_ : 0;
+                const ID    material_id = section && section->material_ ? section->material_->id() : 0;
+
+                append_element_header_line(buffer, element_ids[static_cast<std::size_t>(elem_row)], type, group_id, material_id);
 
                 // Copy connectivity so FRD-specific high-order permutations remain local
                 std::vector<ID> connectivity;

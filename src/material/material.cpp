@@ -27,6 +27,14 @@ Material::Material(std::string name)
     : fem::Namable(std::move(name)) {}
 
 /**
+ * @copydoc Material::create_id
+ */
+ID Material::create_id() {
+    static ID next_id = 0;
+    return ++next_id;
+}
+
+/**
  * @copydoc Material::has_elasticity
  */
 bool Material::has_elasticity() const {
