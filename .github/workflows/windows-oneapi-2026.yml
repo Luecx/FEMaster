@@ -1,0 +1,91 @@
+name: Windows — Intel oneAPI 2026.2 (test)
+
+on:
+  push:
+    branches:
+      - ci/windows-oneapi-2026-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Install Intel oneAPI Toolkit 2026.2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe'
+          $installer = Join-Path $env:RUNNER_TEMP 'intel-oneapi-toolkit-2026.2.0.661_offline.exe'
+
+          curl.exe --fail --location --retry 3 --retry-delay 5 --output "$installer" "$url"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Intel oneAPI download failed with exit code $LASTEXITCODE"
+          }
+
+          # No IDE integration is necessary for CMake + icx-cl on the command line.
+          $arguments = @('-s', '-a', '--silent', '--eula', 'accept', '-p=NEED_VS2026_INTEGRATION=0')
+          $process = Start-Process -FilePath $installer -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "Intel oneAPI installer failed with exit code $($process.ExitCode)"
+          }
+
+          if (-not (Test-Path 'C:\Program Files (x86)\Intel\oneAPI\setvars.bat')) {
+            throw 'Intel oneAPI setvars.bat was not found after installation.'
+          }
+
+          Remove-Item $installer -Force
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify IntelLLVM toolchain
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          if errorlevel 1 exit /b 1
+          where icx-cl
+          if errorlevel 1 exit /b 1
+          icx-cl --version
+          if errorlevel 1 exit /b 1
+
+      - name: Configure Windows Intel MKL OpenMP
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          if errorlevel 1 exit /b 1
+          cmake --preset windows-intel-mkl-omp > compile-windows-configure.log 2>&1
+          set "status=%ERRORLEVEL%"
+          type compile-windows-configure.log
+          exit /b %status%
+
+      - name: Compile Windows Intel MKL OpenMP
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          if errorlevel 1 exit /b 1
+          cmake --build --preset windows-intel-mkl-omp > compile-windows-build.log 2>&1
+          set "status=%ERRORLEVEL%"
+          type compile-windows-build.log
+          exit /b %status%
+
+      - name: Upload Windows executable and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-oneapi-2026-build
+          path: |
+            build/windows-intel-mkl-omp/bin/
+            compile-windows-configure.log
+            compile-windows-build.log
+          if-no-files-found: warn
+          retention-days: 14
