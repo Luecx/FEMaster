@@ -22,6 +22,8 @@
 #include "../../core/printable.h"
 #include <string>
 
+namespace fem { namespace model { struct Field; } }
+
 namespace fem {
 namespace constraint {
 
