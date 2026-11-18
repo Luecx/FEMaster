@@ -78,27 +78,51 @@ jobs:
 
   compile-windows:
     if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' }}
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - name: Checkout FEMaster
         uses: actions/checkout@v4
 
-      - name: Install Intel oneAPI Base Toolkit
+      - name: Install Intel oneAPI Toolkit 2026.2
         shell: pwsh
         run: |
-          winget source update
-          winget install -e --id Intel.OneAPI.BaseToolkit --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://registrationcenter-download.intel.com/akdlm/IRC_NAS/728c4418-1b40-47a9-ad51-31530fb27c94/intel-oneapi-toolkit-2026.2.0.661_offline.exe'
+          $installer = Join-Path $env:RUNNER_TEMP 'intel-oneapi-toolkit-2026.2.0.661_offline.exe'
 
-          if (!(Test-Path "C:\Program Files (x86)\Intel\oneAPI\setvars.bat")) {
-            Write-Error "Intel oneAPI setvars.bat was not found."
-            exit 1
+          curl.exe --fail --location --retry 3 --retry-delay 5 --output "$installer" "$url"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Intel oneAPI download failed with exit code $LASTEXITCODE"
           }
+
+          # No IDE integration is necessary for CMake + icx-cl on the command line.
+          $arguments = @('-s', '-a', '--silent', '--eula', 'accept', '-p=NEED_VS2026_INTEGRATION=0')
+          $process = Start-Process -FilePath $installer -ArgumentList $arguments -PassThru -Wait
+          if ($process.ExitCode -ne 0) {
+            throw "Intel oneAPI installer failed with exit code $($process.ExitCode)"
+          }
+
+          if (-not (Test-Path 'C:\Program Files (x86)\Intel\oneAPI\setvars.bat')) {
+            throw 'Intel oneAPI setvars.bat was not found after installation.'
+          }
+
+          Remove-Item $installer -Force
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+
+      - name: Verify IntelLLVM toolchain
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          if errorlevel 1 exit /b 1
+          where icx-cl
+          if errorlevel 1 exit /b 1
+          icx-cl --version
+          if errorlevel 1 exit /b 1
 
       - name: Configure Windows Intel MKL OpenMP
         shell: cmd
