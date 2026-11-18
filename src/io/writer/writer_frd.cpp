@@ -1190,7 +1190,7 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
             continue;
         }
 
-        logging::warning(section->id_ <= 99999, "FrdWriter: section id ", section->id_, " exceeds the FRD field width and is written as 0");
+        logging::warning(section->id_ <= 99999                                   , "FrdWriter: section id  ", section->id_                                    , " exceeds the FRD field width and is written as 0");
         logging::warning(!section->material_ || section->material_->id() <= 99999, "FrdWriter: material id ", section->material_ ? section->material_->id() : 0, " exceeds the FRD field width and is written as 0");
     }
 
