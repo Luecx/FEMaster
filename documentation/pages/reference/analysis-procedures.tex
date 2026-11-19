@@ -296,7 +296,13 @@ amplitude, if present, or the linear load factor otherwise. A load carried
 unchanged from the preceding step remains constant; a removed load decreases
 linearly. Riks requires proportional new loading and therefore disallows named
 amplitudes on newly activated loads. Temperature changes are not supported with
-\key{RIKS} in this implementation. \key{RIKS} activates arc-length path following, in which displacement and load factor are solved together under an additional path constraint. This allows equilibrium paths to continue through limit points where simple monotonic load control may fail.
+\key{RIKS} in this implementation. Follower loads are supported with \key{RIKS};
+their deformed-configuration force derivative with respect to the load factor is
+updated in both the arc-length predictor and the augmented Newton system.
+\key{RIKS} activates arc-length path following, in which displacement and load
+factor are solved together under an additional path constraint. This allows
+equilibrium paths to continue through limit points where simple monotonic load
+control may fail.
 
 \key{DIRECT} requests fixed nonlinear load increments rather than adaptive stepping where supported.
 
