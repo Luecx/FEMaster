@@ -69,6 +69,13 @@ public:
         SparseMatrix&        tangent
     )>;
 
+    // Optional current derivative of the reduced external load with respect
+    // to lambda, evaluated at fixed reduced displacement q.
+    using LoadDerivative = std::function<DynamicVector(
+        const DynamicVector& q,
+        Precision            lambda
+    )>;
+
     // Linearized solve with a single right-hand side
     using LinearSolve = std::function<DynamicVector(
         const SparseMatrix&  tangent,
@@ -138,6 +145,10 @@ public:
     TrialCallback commit_increment_trial;
     TrialCallback rollback_increment_trial;
 
+    // Optional state-dependent load-factor derivative. When absent, the
+    // constant reference_load passed to solve() is used.
+    LoadDerivative load_derivative;
+
     // Optional active-set consistency update after Newton convergence
     ActiveSetCallback update_active_set;
 
@@ -162,7 +173,9 @@ public:
     // Construction
     ArcLengthControl() = default;
 
-    // Follow the nonlinear path using the augmented arc-length constraint
+    // Follow the nonlinear path using the augmented arc-length constraint.
+    // A supplied load_derivative overrides reference_load in both the tangent
+    // predictor and the bordered Newton column.
     bool solve(
         DynamicVector&           q,
         Precision&               lambda,
