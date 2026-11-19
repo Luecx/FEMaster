@@ -30,12 +30,12 @@ namespace fem::bc {
  */
 void ConcentratedHeatFlux::apply(
     model::ModelData&,
-    model::Field&          load,
+    model::Field&            load,
     TripletList*,
     constraint::Equations&,
-    const SystemDofIds&    system_dof_ids,
+    const model::SystemDofs& system_dof_ids,
     TripletList&,
-    Precision              scale
+    Precision                scale
 ) {
     // Validate the thermal field and effective power before accumulating loads
     const Precision power = scale * power_;
@@ -43,7 +43,7 @@ void ConcentratedHeatFlux::apply(
         "CFLUX: target node region is not set");
     logging::error(load.domain == model::FieldDomain::NODE && load.components == 1,
         "CFLUX: target field must be a scalar NODE field");
-    logging::error(static_cast<Index>(system_dof_ids.rows()) == load.rows && system_dof_ids.cols() == 1,
+    logging::error(static_cast<Index>(system_dof_ids.nodes()) == load.rows && system_dof_ids.width() == 1,
         "CFLUX: thermal DOF numbering must match the scalar nodal domain");
     logging::error(std::isfinite(power_) && std::isfinite(power),
         "CFLUX: prescribed and scaled power must be finite");

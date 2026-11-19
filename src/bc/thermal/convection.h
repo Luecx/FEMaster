@@ -71,13 +71,13 @@ struct Convection : Condition {
     // Constraint equations remain unchanged.
 
     void apply(
-        model::ModelData&      model_data,
-        model::Field&          load,
-        TripletList*           load_tangent,
-        constraint::Equations& constraints,
-        const SystemDofIds&    system_dof_ids,
-        TripletList&           system_matrix,
-        Precision              scale
+        model::ModelData&        model_data,
+        model::Field&            load,
+        TripletList*             load_tangent,
+        constraint::Equations&   constraints,
+        const model::SystemDofs& system_dof_ids,
+        TripletList&             system_matrix,
+        Precision                scale
     ) override;
 
     // Assemble only the ambient heat source integral q_h into the scalar RHS.
@@ -91,10 +91,10 @@ struct Convection : Condition {
     // Assemble only K_h into the sparse thermal system triplets. The nodal
     // temperature DOFs are mapped to equation indices via system_dof_ids.
     void apply_matrix(
-        model::ModelData&   model_data,
-        const SystemDofIds& system_dof_ids,
-        TripletList&        matrix,
-        Precision           scale = Precision(1)
+        model::ModelData&        model_data,
+        const model::SystemDofs& system_dof_ids,
+        TripletList&             matrix,
+        Precision                scale = Precision(1)
     );
 
     // Diagnostics

@@ -1,5 +1,5 @@
 #include "../src/mattools/mask_field.h"
-#include "../src/mattools/numerate_dofs.h"
+#include "../src/model/system_dofs.h"
 
 #include <cmath>
 
@@ -7,32 +7,67 @@
 
 using namespace fem;
 
-TEST(MattoolsNumerateDofs, PreservesDynamicColumnCount) {
-    SystemDofs scalar(4, 1);
-    scalar << true, false, true, true;
+TEST(SystemDofs, NumeratesActiveComponentsNodeMajor) {
+    model::SystemDofs scalar(4, 1);
+    scalar.activate(0, 0);
+    scalar.activate(2, 0);
+    scalar.activate(3, 0);
+    scalar.numerate();
 
-    const auto scalar_ids = mattools::numerate_dofs(scalar);
+    ASSERT_EQ(scalar.nodes(), 4);
+    ASSERT_EQ(scalar.width(), 1);
+    ASSERT_EQ(scalar.size(), 3);
+    EXPECT_EQ(scalar(0, 0), 0);
+    EXPECT_EQ(scalar(1, 0), -1);
+    EXPECT_EQ(scalar(2, 0), 1);
+    EXPECT_EQ(scalar(3, 0), 2);
 
-    ASSERT_EQ(scalar_ids.rows(), 4);
-    ASSERT_EQ(scalar_ids.cols(), 1);
-    EXPECT_EQ(scalar_ids(0, 0), 0);
-    EXPECT_EQ(scalar_ids(1, 0), -1);
-    EXPECT_EQ(scalar_ids(2, 0), 1);
-    EXPECT_EQ(scalar_ids(3, 0), 2);
+    Dofs selection;
+    selection.setConstant(false);
+    selection(5) = true;
 
-    SystemDofs structural(2, 6);
-    structural.fill(false);
-    structural(0, 0) = true;
-    structural(0, 5) = true;
-    structural(1, 2) = true;
+    model::SystemDofs structural(2, 6);
+    structural.activate(0, 0);
+    structural.activate(0, selection);
+    structural.activate(1, 2);
+    structural.numerate();
 
-    const auto structural_ids = mattools::numerate_dofs(structural);
+    ASSERT_EQ(structural.nodes(), 2);
+    ASSERT_EQ(structural.width(), 6);
+    ASSERT_EQ(structural.size(), 3);
+    EXPECT_TRUE (structural.active(0, 5));
+    EXPECT_FALSE(structural.active(1, 0));
+    EXPECT_EQ(structural(0, 0), 0);
+    EXPECT_EQ(structural(0, 5), 1);
+    EXPECT_EQ(structural(1, 2), 2);
+}
 
-    ASSERT_EQ(structural_ids.rows(), 2);
-    ASSERT_EQ(structural_ids.cols(), 6);
-    EXPECT_EQ(structural_ids(0, 0), 0);
-    EXPECT_EQ(structural_ids(0, 5), 1);
-    EXPECT_EQ(structural_ids(1, 2), 2);
+TEST(SystemDofs, ReduceAndExpandRoundTrip) {
+    model::SystemDofs dofs(3, 2);
+    dofs.activate(0, 1);
+    dofs.activate(2, 0);
+    dofs.activate(2, 1);
+    dofs.numerate();
+
+    model::Field field("INPUT", model::FieldDomain::NODE, 3, 2);
+    for (Index node = 0; node < 3; ++node)
+        for (Index dof = 0; dof < 2; ++dof) field(node, dof) = Precision(10 * node + dof);
+
+    const DynamicVector reduced = dofs.reduce(field);
+    ASSERT_EQ(reduced.size(), 3);
+    EXPECT_EQ(reduced(0), Precision(1));
+    EXPECT_EQ(reduced(1), Precision(20));
+    EXPECT_EQ(reduced(2), Precision(21));
+
+    const model::Field expanded = dofs.expand(reduced);
+    ASSERT_EQ(expanded.rows, 3);
+    ASSERT_EQ(expanded.components, 2);
+    EXPECT_EQ(expanded(0, 0), Precision(0));
+    EXPECT_EQ(expanded(0, 1), Precision(1));
+    EXPECT_EQ(expanded(1, 0), Precision(0));
+    EXPECT_EQ(expanded(1, 1), Precision(0));
+    EXPECT_EQ(expanded(2, 0), Precision(20));
+    EXPECT_EQ(expanded(2, 1), Precision(21));
 }
 
 

@@ -120,7 +120,7 @@ void Support::apply(
     model::Field&,
     TripletList*,
     constraint::Equations& constraints,
-    const SystemDofIds&,
+    const model::SystemDofs&,
     TripletList&,
     Precision
 ) {

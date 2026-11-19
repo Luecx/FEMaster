@@ -66,7 +66,6 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/eigenvalue_estimates.h"
 
 using fem::constraint::ConstraintTransformer;
@@ -123,9 +122,9 @@ struct ModalMode {
  * @param M Assembled active-system mass matrix.
  * @return Mass-weighted rigid directions M R with six columns.
  */
-static DynamicMatrix build_mass_weighted_rigid_body_directions(const SystemDofIds& dofs,
-                                                               const model::Field&  positions,
-                                                               const SparseMatrix&  M) {
+static DynamicMatrix build_mass_weighted_rigid_body_directions(const model::SystemDofs& dofs,
+                                                               const model::Field&      positions,
+                                                               const SparseMatrix&      M) {
     // Construct rigid-body translations and rotations about the global origin
     DynamicMatrix R = DynamicMatrix::Zero(M.rows(), 6);
 
@@ -327,15 +326,15 @@ void LinearEigenfrequency::run() {
     model->step_begin();
 
     // (1) Unconstrained system DOF indices (node x 6 -> active dof id or -1)
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom"
     );
 
     // (2) Constraints from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
+            auto groups = this->model->collect_constraints(system_dofs, target_conditions);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -344,11 +343,11 @@ void LinearEigenfrequency::run() {
 
     // (3) Assemble active stiffness K and mass M (n x n)
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(system_dofs); },
         "constructing stiffness matrix K"
     );
     auto M = Timer::measure(
-        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_lumped_mass_matrix(system_dofs); },
         "constructing mass matrix M"
     );
 
@@ -359,7 +358,7 @@ void LinearEigenfrequency::run() {
             ConstraintTransformer::Options copt;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,   // system DOF map (node,dof) -> global id or -1
+                system_dofs,          // system DOF map (node,dof) -> global id or -1
                 K.rows(),             // n (active DOFs)
                 copt
             );
@@ -396,7 +395,7 @@ void LinearEigenfrequency::run() {
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
     // Estimate the lowest flexible omega^2 from admissible quadratic fields.
     // Matrices, interval bounds and returned eigenvalues remain in physical units.
-    CT->initialize_dof_locations(active_dof_idx_mat);
+    CT->initialize_dof_locations(system_dofs);
     Precision lambda_estimate = Timer::measure(
         [&]() { return mattools::estimate_eigenvalue_ritz(
             A, Mr, *model->_data->positions, *CT); },
@@ -469,12 +468,12 @@ void LinearEigenfrequency::run() {
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
 
         Phi.col(i) = u_mode;
-        m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        m.mode_mat = system_dofs.expand(u_mode);
     }
 
     // (8) Build mass-weighted rigid directions about the mass center or origin
     const DynamicMatrix MR = build_mass_weighted_rigid_body_directions(
-        active_dof_idx_mat, *model->_data->positions, M
+        system_dofs, *model->_data->positions, M
     );
 
     // Project all mass-normalized modes onto the six rigid-body directions

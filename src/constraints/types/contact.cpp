@@ -443,11 +443,11 @@ void add_gradient(
  * noise from outer products of constraint gradients.
  */
 void add_tangent_block(
-    ID            row_node,
-    ID            col_node,
-    const Mat3&   block,
-    SystemDofIds& system_nodal_dofs,
-    TripletList&  triplets
+    ID                 row_node,
+    ID                 col_node,
+    const Mat3&        block,
+    model::SystemDofs& system_nodal_dofs,
+    TripletList&       triplets
 ) {
     for (Dim local_row = 0; local_row < 3; ++local_row) {
         const int global_row = system_nodal_dofs(row_node, local_row);
@@ -684,10 +684,10 @@ Precision Contact::current_penalty() const noexcept {
  * @param triplets Sparse triplet list receiving contact tangent entries.
  */
 void Contact::assemble(
-    SystemDofIds&     system_nodal_dofs,
-    model::ModelData& model_data,
-    model::NodeData&  nodal_forces,
-    TripletList&      triplets
+    model::SystemDofs& system_nodal_dofs,
+    model::ModelData&  model_data,
+    model::NodeData&   nodal_forces,
+    TripletList&       triplets
 ) const {
     // -------------------------------------------------------------------------
     // 1. Validate current model state and prepare thread-local accumulation

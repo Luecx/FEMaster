@@ -50,21 +50,21 @@ Equations ConstraintGroups::flatten() const {
  * Support equations may involve several nodal degrees of freedom. Every active
  * entry appearing in such an equation is marked in the mask, while inactive
  * DOFs and entries belonging exclusively to other constraint groups remain
- * unmarked. The mask has the same dimensions as the system DOF index matrix
+ * unmarked. The mask has the same dimensions as the system DOF numbering
  * and is used to select support reaction components for result output.
  *
  * @param dofs Global nodal DOF indices; -1 denotes an inactive DOF.
  * @return Boolean matrix marking active DOFs referenced by support equations.
  */
-BooleanMatrix ConstraintGroups::support_mask(const SystemDofIds& dofs) const {
-    BooleanMatrix mask = BooleanMatrix::Constant(dofs.rows(), dofs.cols(), false);
+BooleanMatrix ConstraintGroups::support_mask(const model::SystemDofs& dofs) const {
+    BooleanMatrix mask = BooleanMatrix::Constant(dofs.nodes(), dofs.width(), false);
 
     // Traverse only support equations, excluding other constraint families.
     for (const auto& equation : supports) {
         for (const auto& entry : equation.entries) {
             // Ignore out-of-range nodes/DOFs and inactive system coordinates.
-            if (entry.node_id >= 0 && entry.node_id < dofs.rows()
-                && entry.dof < dofs.cols()
+            if (entry.node_id >= 0 && entry.node_id < dofs.nodes()
+                && entry.dof < dofs.width()
                 && dofs(entry.node_id, entry.dof) != -1) {
                 mask(entry.node_id, entry.dof) = true;
             }

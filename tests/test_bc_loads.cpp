@@ -102,7 +102,7 @@ TEST(BC_Loads, StaticHistoryUsesAmplitudeOnlyForNewLoads) {
     target.add(bc::CLOAD, new_load);
 
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, model::SystemDofs{}, nullptr)(0, 0);
     };
 
     // Replacement: old load ramps down linearly, new load follows A(t).
@@ -156,7 +156,7 @@ TEST(BC_Loads, StaticIntersectionCombinesContinuedRemovedAndAddedLoads) {
 
     // f(t) = 100 + (1 - lambda) * 80 + A(t) * 60.
     const auto at = [&](Precision time, Precision progress) {
-        return mdl.build_load_matrix(initial, target, time, progress, SystemDofIds{}, nullptr)(0, 0);
+        return mdl.build_load_matrix(initial, target, time, progress, model::SystemDofs{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0),   Precision(0)),   Precision(180), 1e-12);
     EXPECT_NEAR(at(Precision(0.5), Precision(0.5)), Precision(155), 1e-12);
@@ -187,7 +187,7 @@ TEST(BC_Loads, DynamicTargetKeepsNonzeroAndZeroAmplitudeEndpoints) {
     const auto at = [&](Precision time) {
         // The final flag matches transient/harmonic build_target_load_matrix().
         return mdl.build_load_matrix(
-            bc::ConditionState{}, target, time, Precision(1), SystemDofIds{}, nullptr)(0, 0);
+            bc::ConditionState{}, target, time, Precision(1), model::SystemDofs{}, nullptr)(0, 0);
     };
     EXPECT_NEAR(at(Precision(0)), Precision(200), 1e-12);
     EXPECT_NEAR(at(Precision(0.5)), Precision(100), 1e-12);
@@ -217,11 +217,11 @@ TEST(BC_Loads, ImplicitStepLoadsUseComplementaryProgress) {
     target.add(bc::CLOAD, new_load);
 
     const auto start = mdl.build_load_matrix(
-        initial, target, Precision(0), Precision(0), SystemDofIds{}, nullptr);
+        initial, target, Precision(0), Precision(0), model::SystemDofs{}, nullptr);
     const auto middle = mdl.build_load_matrix(
-        initial, target, Precision(0.5), Precision(0.5), SystemDofIds{}, nullptr);
+        initial, target, Precision(0.5), Precision(0.5), model::SystemDofs{}, nullptr);
     const auto end = mdl.build_load_matrix(
-        initial, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
+        initial, target, Precision(1), Precision(1), model::SystemDofs{}, nullptr);
 
     EXPECT_NEAR(start(0, 0), 100, 1e-12);
     EXPECT_NEAR(middle(0, 0), 150, 1e-12);
@@ -291,7 +291,7 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
         target.add(bc::CLOAD, condition);
     }
     const model::Field bc = mdl.build_load_matrix(
-        bc::ConditionState{}, target, Precision(1), Precision(1), SystemDofIds{}, nullptr);
+        bc::ConditionState{}, target, Precision(1), Precision(1), model::SystemDofs{}, nullptr);
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
@@ -329,9 +329,9 @@ TEST(BC_Loads, VLoadDoesNotScaleByDensity) {
     load.region_ = region;
     load.values_ = Vec3(2.0, 0.0, 0.0);
 
-    model::Field          rhs{"RHS", model::FieldDomain::NODE, 8, 6};
-    constraint::Equations equations{};
-    SystemDofIds           system_dof_ids{};
+    model::Field           rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    constraint::Equations  equations{};
+    model::SystemDofs      system_dof_ids{};
     TripletList            matrix{};
 
     rhs.set_zero();
@@ -383,9 +383,9 @@ TEST(BC_Loads, InertialLoadScalesByDensityAndAmplitude) {
     load.center_acc_ = Vec3(-2.0, 0.0, 0.0);
     load.amplitude_  = amplitude;
 
-    model::Field          rhs{"RHS", model::FieldDomain::NODE, 8, 6};
-    constraint::Equations equations{};
-    SystemDofIds           system_dof_ids{};
+    model::Field           rhs{"RHS", model::FieldDomain::NODE, 8, 6};
+    constraint::Equations  equations{};
+    model::SystemDofs      system_dof_ids{};
     TripletList            matrix{};
 
     rhs.set_zero();
@@ -432,9 +432,9 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     load.omega_      = Vec3::Zero();
     load.alpha_      = Vec3::Zero();
 
-    model::Field          rhs{"RHS", model::FieldDomain::NODE, 1, 6};
-    constraint::Equations equations{};
-    SystemDofIds           system_dof_ids{};
+    model::Field           rhs{"RHS", model::FieldDomain::NODE, 1, 6};
+    constraint::Equations  equations{};
+    model::SystemDofs      system_dof_ids{};
     TripletList            matrix{};
 
     rhs.set_zero();
@@ -494,8 +494,8 @@ TEST(BC_Loads, FollowerPressureRequiresLoadTangentAtZeroLoadFactor) {
     bc::ConditionState target;
     target.add(bc::PLOAD, follower);
 
-    SystemDofIds indices(1, 6);
-    indices.setConstant(-1);
+    model::SystemDofs indices(1, 6);
+    indices.numerate();
     EXPECT_THROW(
         mdl.build_load_matrix(bc::ConditionState{}, target,
                               Precision(0), Precision(0), indices, nullptr),

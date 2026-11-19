@@ -42,7 +42,6 @@
 #include "../core/timer.h"
 #include "../mattools/append_sparse_block.h"
 #include "../mattools/projection.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../math/pi.h"
 #include "../model/model.h"
 #include "../solve/eigval/solve_eigval.h"
@@ -276,12 +275,12 @@ void LinearHarmonic::run() {
     model->step_begin();
 
     // Enumerate active structural DOFs and collect their support equations
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix");
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom");
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
+        [&]() { return model->collect_constraints(system_dofs, target_conditions); },
         "building constraints");
 
     report_constraint_groups(groups);
@@ -289,11 +288,11 @@ void LinearHarmonic::run() {
 
     // Assemble the real stiffness and mass in the original active DOF space
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(system_dofs); },
         "constructing stiffness matrix K");
 
     auto M = Timer::measure(
-        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_lumped_mass_matrix(system_dofs); },
         "constructing mass matrix M");
 
     // Construct the homogeneous null-space mapping from reduced to active DOFs
@@ -302,7 +301,7 @@ void LinearHarmonic::run() {
             ConstraintTransformer::Options options;
             options.method = constraint_method;
             return std::make_unique<ConstraintTransformer>(
-                equations, active_dof_idx_mat, K.rows(), options);
+                equations, system_dofs, K.rows(), options);
         },
         "building constraint transformer");
 
@@ -426,7 +425,7 @@ void LinearHarmonic::run() {
 
             for (Index pattern = 0; pattern < pattern_count; ++pattern) {
                 const auto& source = load_patterns[static_cast<std::size_t>(pattern)].second;
-                const DynamicVector force = mattools::reduce_mat_to_vec(active_dof_idx_mat, source);
+                const DynamicVector force = system_dofs.reduce(source);
 
                 reduced_loads.col(pattern) = transformer->assemble_system_rhs(K, force);
             }
@@ -521,7 +520,7 @@ void LinearHarmonic::run() {
             // Evaluate direct and collector-activated target loads at the
             // current frequency, then reduce forces into constraint coordinates.
             model::Field global_load_mat = build_target_load_matrix(frequency);
-            const DynamicVector force = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
+            const DynamicVector force = system_dofs.reduce(global_load_mat);
             const DynamicVector reduced_force = transformer->assemble_system_rhs(K, force);
 
             DynamicVector q_real;
@@ -582,8 +581,8 @@ void LinearHarmonic::run() {
             u_real = transformer->recover_displacement(q_real);
             u_imag = transformer->recover_displacement(q_imag);
 
-            auto displacement_real = mattools::expand_vec_to_mat(active_dof_idx_mat, u_real);
-            auto displacement_imag = mattools::expand_vec_to_mat(active_dof_idx_mat, u_imag);
+            auto displacement_real = system_dofs.expand(u_real);
+            auto displacement_imag = system_dofs.expand(u_imag);
 
             // Provide the solved displacements and current loading for lazy
             // recovery of harmonic stress/strain and other requested results.

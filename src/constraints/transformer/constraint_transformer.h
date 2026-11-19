@@ -44,6 +44,7 @@
 #include "constraint_map.h"
 #include "constraint_system.h"
 #include "null_space.h"
+#include "../../model/system_dofs.h"
 
 #include <limits>
 #include <vector>
@@ -152,16 +153,16 @@ public:
 
     // Construct a transformer using default options. The default-initialized
     // method stored in Options determines the enforcement strategy.
-    ConstraintTransformer(const Equations&     equations,
-                          const SystemDofIds& dofs,
-                          Index                n_dofs);
+    ConstraintTransformer(const Equations&         equations,
+                          const model::SystemDofs& dofs,
+                          Index                    n_dofs);
 
     // Assemble the symbolic equations and initialize the explicitly selected
     // constraint representation.
-    ConstraintTransformer(const Equations&     equations,
-                          const SystemDofIds& dofs,
-                          Index                n_dofs,
-                          const Options&       options);
+    ConstraintTransformer(const Equations&         equations,
+                          const model::SystemDofs& dofs,
+                          Index                    n_dofs,
+                          const Options&           options);
 
     // Return the selected constraint enforcement method.
     Method method() const { return method_; }
@@ -184,7 +185,7 @@ public:
     // Build master-to-node/DOF locations on demand from the existing global
     // numbering. Also store all nodes with at least one active DOF.
     // Valid for null-space reduction and elimination, not Lagrange.
-    void initialize_dof_locations(const SystemDofIds& dofs);
+    void initialize_dof_locations(const model::SystemDofs& dofs);
 
     // Check whether the optional geometric lookup has been initialized.
     bool has_dof_locations() const { return dof_locations_initialized_; }

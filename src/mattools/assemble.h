@@ -20,7 +20,7 @@
  * independent. The caller retains responsibility for material-state management
  * and for ensuring that a supplied pattern matches the current system topology.
  *
- * @see build_sparsity_pattern
+ * @see model::SystemDofs::pattern
  * @see model::Element
  * @see parallel::for_index
  *
@@ -30,13 +30,13 @@
 
 #pragma once
 
-#include "build_sparsity_pattern.h"
 
 #include "../core/logging.h"
 #include "../core/parallel.h"
 #include "../core/timer.h"
 #include "../data/field.h"
 #include "../model/element/element.h"
+#include "../model/system_dofs.h"
 
 #include <algorithm>
 #include <type_traits>
@@ -130,7 +130,7 @@ auto compute_local_matrix_with_optional_forces(
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
-                             const SystemDofIds& indices,
+                             const model::SystemDofs& indices,
                              Lambda&& compute_local_matrix,
                              model::NodeData* nodal_forces = nullptr,
                              const SparseMatrix* pattern = nullptr) {
@@ -172,13 +172,13 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     // returned matrix must own its coefficients independently.
     //
     // Reusing a pattern avoids the topological neighborhood construction,
-    // sorting and structural deduplication performed by build_sparsity_pattern.
+    // sorting and structural deduplication performed by SystemDofs::pattern.
     //
     // No connectivity validation is repeated here. A supplied pattern is
     // assumed to match the current element topology and global DOF numbering.
     SparseMatrix global_matrix = pattern
         ? *pattern
-        : build_sparsity_pattern(elements, indices);
+        : indices.pattern(elements);
 
     // A copied matrix may contain coefficients from an earlier assembly.
     // Reset its numerical values while retaining the complete CSC structure.
@@ -299,7 +299,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
 
         const int dofs_per_node = size / nodes;
 
-        logging::error(dofs_per_node <= indices.cols(),
+        logging::error(dofs_per_node <= indices.width(),
             "Matrix assembly local DOF layout exceeds the global mapping");
 
         // Construct the local-to-global mapping in node-major order:

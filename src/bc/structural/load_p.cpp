@@ -68,13 +68,13 @@ namespace fem::bc {
  * @param scale Multiplier of the nominal pressure.
  */
 void PLoad::apply(
-    model::ModelData&      model_data,
-    model::Field&          load,
-    TripletList*           load_tangent,
+    model::ModelData&        model_data,
+    model::Field&            load,
+    TripletList*             load_tangent,
     constraint::Equations&,
-    const SystemDofIds&    system_dof_ids,
+    const model::SystemDofs& system_dof_ids,
     TripletList&,
-    Precision              scale
+    Precision                scale
 ) {
     // Validate the definition and the configuration required by the flag
     logging::error(region_ != nullptr,

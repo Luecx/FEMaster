@@ -52,7 +52,7 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
  * @param model_data Model data holding positions and surfaces.
  * @return Equations The constraint equations of this coupling.
  */
-Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Coupling::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     switch (type) {
         case CouplingType::KINEMATIC : return kinematic_equations   (system_nodal_dofs, model_data);
         case CouplingType::STRUCTURAL: return distributing_equations(system_nodal_dofs, model_data);
@@ -87,7 +87,7 @@ std::vector<ID> Coupling::slave_node_ids(model::ModelData& model_data) const {
  * Rotational DOFs are equated directly. Translational DOFs couple with the
  * master translations and rotations through the lever arm to the master.
  */
-Equations Coupling::kinematic_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Coupling::kinematic_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     Equations equations {};
 
     logging::error(model_data.positions != nullptr,
@@ -176,7 +176,7 @@ Equations Coupling::kinematic_equations(SystemDofIds& system_nodal_dofs, model::
  * constant during the analysis. The small trace-scaled eps keeps degenerate
  * slave patterns (e.g. collinear nodes) solvable.
  */
-Equations Coupling::distributing_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Coupling::distributing_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     Equations equations {};
 
     logging::error(model_data.positions_reference != nullptr,
@@ -242,10 +242,10 @@ Equations Coupling::distributing_equations(SystemDofIds& system_nodal_dofs, mode
  * This method checks which degrees of freedom (DOFs) need to be active for the
  * master node based on the coupling configuration and the active DOFs in the slave nodes.
  *
- * @param system_dof_mask A mask of active DOFs for all nodes in the system.
+ * @param system_dofs Current DOF activation of all nodes, not yet numbered.
  * @return Dofs A Dofs object indicating which DOFs are required for the master node.
  */
-Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data) {
+Dofs Coupling::master_dofs(const model::SystemDofs& system_dofs, model::ModelData& model_data) {
     // A distributing coupling drives exactly the coupled master DOFs
     if (type == CouplingType::STRUCTURAL) {
         return coupled_dofs;
@@ -257,7 +257,7 @@ Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_
     // Determine which DOFs are active for the slave nodes
     for (ID slave_node : ids) {
         for (int i = 0; i < 6; i++) {
-            slave_dofs(i) |= system_dof_mask(slave_node, i);
+            slave_dofs(i) |= system_dofs.active(slave_node, i);
         }
     }
 

@@ -162,13 +162,13 @@ TEST(Reader_Parser, LinearStaticUsesNamedAmplitudeAtStepTime) {
 
         const auto at_start = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            Precision(0), Precision(0), SystemDofIds{}, nullptr);
+            Precision(0), Precision(0), model::SystemDofs{}, nullptr);
         const auto at_middle = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            linear->step_period / Precision(2), Precision(0.5), SystemDofIds{}, nullptr);
+            linear->step_period / Precision(2), Precision(0.5), model::SystemDofs{}, nullptr);
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
-            linear->step_period, Precision(1), SystemDofIds{}, nullptr);
+            linear->step_period, Precision(1), model::SystemDofs{}, nullptr);
         const ID   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
@@ -544,7 +544,7 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
         // Check the actual constraint equation, not just the stored basis
         // name. The local x axis is global +Y; the local y axis is global -X.
         constraint::Equations equations;
-        SystemDofIds dof_ids;
+        model::SystemDofs dof_ids;
         TripletList triplets;
         support->apply(model_data, rhs, nullptr, equations, dof_ids, triplets, Precision(1));
         ASSERT_EQ(equations.size(), 1u);

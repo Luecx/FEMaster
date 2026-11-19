@@ -44,7 +44,7 @@ TEST(Constraints_Set, AssembleBasics) {
         {{ {1, 1, 1.0}, {1, 2, 0.0} }, 5.0},    // u1y = 5
         {{ /* empty */ }, 7.0 },                // empty row
     };
-    SystemDofIds dofs(3,6); dofs.setConstant(-1); dofs(0,0)=0; dofs(1,1)=1; // minimal map
+    model::SystemDofs dofs(3,6); dofs.activate(0,0); dofs.activate(1,1); dofs.numerate(); // minimal map
     const auto system = constraint::assemble_constraint_system(equations, dofs, 2);
     EXPECT_EQ(system.equations, 3); // kept rows include empty unless drop-tol > 0
     EXPECT_EQ(system.dofs, 2);
@@ -61,7 +61,7 @@ TEST(Constraints_Set, ZeroRowDrop) {
         {{ {0, 0, 1.0} }, 0.0}, // one real equation
         {{ /* empty */ }, 7.0 } // should be dropped
     };
-    SystemDofIds dofs(1,6); dofs.setConstant(-1); dofs(0,0)=0;
+    model::SystemDofs dofs(1,6); dofs.activate(0,0); dofs.numerate();
     const auto system = constraint::assemble_constraint_system(equations, dofs, 1, options);
     EXPECT_EQ(system.equations, 1);
     EXPECT_EQ(system.C.rows(), 1);
@@ -80,7 +80,7 @@ TEST(Constraints_Connector, TwoNodesSameDir) {
     auto cs = std::make_shared<cos::RectangularSystem>("R", Vec3(1,0,0));
     constraint::Connector conn(0, 1, cs, constraint::ConnectorType::Join); // constrain translations
 
-    SystemDofIds ids(2,6); ids.setConstant(-1); ids(0,0)=0; ids(1,0)=1; ids(0,1)=2; ids(1,1)=3; ids(0,2)=4; ids(1,2)=5;
+    model::SystemDofs ids(2,6); for (Index n = 0; n < 2; ++n) for (Index d = 0; d < 3; ++d) ids.activate(n, d); ids.numerate();
     auto eqs = conn.get_equations(ids, *mdl._data);
     // Expect three equations (Tx,Ty,Tz) relating node 0 and 1 with opposite signs
     int count = 0;
@@ -92,7 +92,7 @@ TEST(Constraints_Connector, TwoNodesSameDir) {
 TEST(Constraints_NullSpace, BuildAndTransforms) {
     // Empty set (no constraints) to exercise the identity-map path safely
     constraint::Equations equations{};
-    SystemDofIds dofs(3,6); dofs.setConstant(-1); // 3 dofs total (n)
+    model::SystemDofs dofs(3,6); dofs.numerate(); // 3 dofs total (n)
     const auto system = constraint::assemble_constraint_system(equations, dofs, 3);
     auto [map, rep] = constraint::build_null_space(system);
     EXPECT_TRUE(rep.feasible);
@@ -123,10 +123,11 @@ static constraint::Coupling distributing_coupling(model::Model& mdl, bool master
     return constraint::Coupling(0, slaves, coupled, constraint::CouplingType::STRUCTURAL);
 }
 
-static SystemDofIds all_dofs_active(Index nodes) {
-    SystemDofIds ids(nodes, 6);
+static model::SystemDofs all_dofs_active(Index nodes) {
+    model::SystemDofs ids(nodes, 6);
     for (Index node = 0; node < nodes; ++node)
-        for (Index d = 0; d < 6; ++d) ids(node, d) = static_cast<int>(6 * node + d);
+        for (Index d = 0; d < 6; ++d) ids.activate(node, d);
+    ids.numerate();
     return ids;
 }
 

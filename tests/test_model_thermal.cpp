@@ -29,10 +29,10 @@ TEST(ModelThermalDofs, ActivatesOnlyThermalElementNodes) {
     model.set_element<model::T3>(1, 8, 9);
     model.compile();
 
-    const SystemDofIds ids = model.build_thermal_dof_index_matrix();
+    const model::SystemDofs ids = model.build_thermal_dofs();
 
-    ASSERT_EQ(ids.rows(), 10);
-    ASSERT_EQ(ids.cols(), 1);
+    ASSERT_EQ(ids.nodes(), 10);
+    ASSERT_EQ(ids.width(), 1);
 
     for (Index node = 0; node < 8; ++node) {
         EXPECT_EQ(ids(node, 0), node);

@@ -96,13 +96,13 @@ struct Temperature : Condition {
     // unchanged.
 
     void apply(
-        model::ModelData&      model_data,
-        model::Field&          load,
-        TripletList*           load_tangent,
-        constraint::Equations& constraints,
-        const SystemDofIds&    system_dof_ids,
-        TripletList&           system_matrix,
-        Precision              scale
+        model::ModelData&        model_data,
+        model::Field&            load,
+        TripletList*             load_tangent,
+        constraint::Equations&   constraints,
+        const model::SystemDofs& system_dof_ids,
+        TripletList&             system_matrix,
+        Precision                scale
     ) override;
 
     // Diagnostics

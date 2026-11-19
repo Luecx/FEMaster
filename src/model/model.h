@@ -41,6 +41,7 @@
 #include "model_data.h"
 #include "../bc/condition_state.h"
 #include "part.h"
+#include "system_dofs.h"
 
 #include <ostream>
 #include <utility>
@@ -182,15 +183,15 @@ struct Model {
     // collect prescribed loads and constraints, and assemble structural tangent,
     // geometric, mass and internal-force contributions in global coordinates.
     // Optional stiffness-scaling fields act per element.
-    SystemDofIds build_structural_dof_index_matrix();
-    SystemDofIds build_thermal_dof_index_matrix();
+    SystemDofs build_structural_dofs();
+    SystemDofs build_thermal_dofs();
     SparseMatrix build_thermal_conductivity_matrix(
-        const SystemDofIds& system_dof_ids);
+        const SystemDofs& system_dof_ids);
 
     // Thermal passes read explicitly provided target conditions and retain
     // only the operator or right-hand side contribution required by the caller.
     Field build_thermal_load_matrix(const bc::ConditionState& target, Precision time = 0, Precision step_progress = Precision(1));
-    SparseMatrix build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
+    SparseMatrix build_thermal_boundary_matrix(const SystemDofs& system_dof_ids, const bc::ConditionState& target, Precision time = 0);
     constraint::Equations collect_thermal_constraints(const bc::ConditionState& target);
 
     // Structural loads shared by both states remain constant; removed loads
@@ -202,19 +203,19 @@ struct Model {
                             const bc::ConditionState& target,
                             Precision                 time,
                             Precision                 step_progress,
-                            const SystemDofIds&       system_dof_ids,
+                            const SystemDofs&         system_dof_ids,
                             TripletList*              load_tangent);
-    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
+    constraint::ConstraintGroups collect_constraints(SystemDofs& system_dof_ids,
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
 
     // Element operators use active numbering and optional element scaling
     SparseMatrix build_stiffness_matrix(
-        SystemDofIds& indices,
+        SystemDofs& indices,
         const Field* base_temperature = nullptr,
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_tangent_stiffness_matrix(
-        SystemDofIds& indices,
+        SystemDofs& indices,
         NodeData& nodal_forces,
         const Field& target_displacement,
         const Field* target_temperature,
@@ -224,7 +225,7 @@ struct Model {
         bool update_state = true,
         const SparseMatrix* pattern = nullptr);
     SparseMatrix build_geom_stiffness_matrix(
-        SystemDofIds& indices,
+        SystemDofs& indices,
         const Field& target_displacement,
         const Field* target_temperature,
         const Field* base_displacement = nullptr,
@@ -237,8 +238,8 @@ struct Model {
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr,
         bool update_state = true,
-        SystemDofIds* indices = nullptr);
-    SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
+        SystemDofs* indices = nullptr);
+    SparseMatrix build_lumped_mass_matrix(SystemDofs& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural
     // stresses, shell faces, shell resultants, PEEQ and heat flux are recovered element-nodally;

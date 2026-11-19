@@ -23,6 +23,7 @@
 #include "../../core/types_cls.h"
 #include "../../core/types_eig.h"
 #include "equation.h"
+#include "../../model/system_dofs.h"
 
 #include <cstdint>
 
@@ -72,12 +73,12 @@ public:
     // Generate the homogeneous linear equations for the selected MPC type.
     // BEAM uses the current nodal positions to evaluate the master-to-slave
     // offset of the rigid-link kinematics.
-    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const;
+    Equations get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) const;
 
     // Additional generalized DOFs required at the independent second node.
     // Existing slave DOFs determine which master translations and rotations
     // must participate in the MPC equations.
-    [[nodiscard]] Dofs master_dofs(const SystemDofs& system_dof_mask) const;
+    [[nodiscard]] Dofs master_dofs(const model::SystemDofs& system_dofs) const;
 
     // Node identifiers follow Abaqus MPC ordering: node 1 is dependent and
     // node 2 is the independent master.

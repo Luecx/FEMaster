@@ -30,6 +30,7 @@
 #include "../../core/types_cls.h"
 #include "../../core/types_eig.h"
 #include "../types/equation.h"
+#include "../../model/system_dofs.h"
 
 #include <vector>
 
@@ -103,7 +104,7 @@ struct ConstraintSystem {
 // right-hand side and the source metadata associated with every retained row.
 ConstraintSystem assemble_constraint_system(
     const Equations&         equations,
-    const SystemDofIds&      system_dofs,
+    const model::SystemDofs& system_dofs,
     Index                    n_dofs,
     const ConstraintOptions& options = {}
 );

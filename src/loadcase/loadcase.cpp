@@ -72,10 +72,10 @@ void LoadCase::commit_state(const model::Field& displacement) const {
  * Nonlinear analyses request the analytic follower-load tangent df/du in the
  * equation numbering of system_dof_ids.
  */
-model::Field LoadCase::build_step_load_matrix(Precision           time,
-                                              Precision           progress,
-                                              const SystemDofIds& system_dof_ids,
-                                              TripletList*        load_tangent) const {
+model::Field LoadCase::build_step_load_matrix(Precision                time,
+                                              Precision                progress,
+                                              const model::SystemDofs& system_dof_ids,
+                                              TripletList*             load_tangent) const {
     return model->build_load_matrix(
         initial_conditions, target_conditions,
         time, progress,
@@ -94,7 +94,7 @@ model::Field LoadCase::build_target_load_matrix(Precision time) const {
     return model->build_load_matrix(
         bc::ConditionState{}, target_conditions,
         time, Precision(1),
-        SystemDofIds{}, nullptr);
+        model::SystemDofs{}, nullptr);
 }
 
 /**

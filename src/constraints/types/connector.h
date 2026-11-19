@@ -18,6 +18,7 @@
 #include "../../core/types_eig.h"
 #include "../../cos/coordinate_system.h"
 #include "equation.h"
+#include "../../model/system_dofs.h"
 
 namespace fem {
 namespace model {
@@ -81,7 +82,7 @@ public:
      * @param model_data Reference to model data (coordinates are required).
      * @return Equations Collection of linear constraint equations.
      */
-    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+    Equations get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
 
     /**
      * @brief Computes the impacted global DOFs considering the local frame.

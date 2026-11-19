@@ -20,6 +20,7 @@
 #include "../../data/region.h"
 #include "equation.h"
 #include "../../core/printable.h"
+#include "../../model/system_dofs.h"
 #include <string>
 #include <vector>
 
@@ -86,7 +87,7 @@ class Coupling : public fem::Printable {
      * @param row_offset The row offset for inserting the equations into the global system.
      * @return TripletList A list of triplets representing the coupling equations.
      */
-    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+    Equations get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
 
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.
@@ -94,10 +95,10 @@ class Coupling : public fem::Printable {
      * This function determines which degrees of freedom (DOFs) are required for the
      * master node, based on the coupled DOFs and the active DOFs in the slave nodes.
      *
-     * @param system_dof_mask A mask of active DOFs for all nodes in the system.
+     * @param system_dofs Current DOF activation of all nodes, not yet numbered.
      * @return Dofs A Dofs object indicating which DOFs are required for the master node.
      */
-    Dofs master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data);
+    Dofs master_dofs(const model::SystemDofs& system_dofs, model::ModelData& model_data);
 
     /**
      * @brief One-line string representation describing this coupling.
@@ -109,8 +110,8 @@ class Coupling : public fem::Printable {
 
     private:
     std::vector<ID> slave_node_ids        (model::ModelData& model_data) const;
-    Equations       kinematic_equations   (SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
-    Equations       distributing_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+    Equations       kinematic_equations   (model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
+    Equations       distributing_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
 };
 }    // namespace constraint
 }    // namespace fem
