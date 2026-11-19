@@ -50,7 +50,13 @@ integrated in time with the implicit Newmark method.
 \[
 \left(K-\omega^2M+i\omega C\right)\hat u(\omega)=\hat f(\omega),
 \]
-solved directly for each requested excitation frequency.
+solved directly for each requested excitation frequency or, with \cmd{MODALBASIS}, in a reduced Ritz space.
+
+\textbf{Steady-state heat transfer}
+\[
+\left(K_\mathrm{cond}+K_\mathrm{film}\right)T=q,
+\]
+with absolute nodal temperatures \(T\), conduction and convection operators in the reference configuration, and prescribed temperatures imposed as constraints.
 
 \keywordnestedpage{LOADCASE}
 
@@ -62,11 +68,12 @@ Native \cmd{LOADCASE} begins an analysis definition. \key{TYPE} selects one of t
   \item \val{LINEARSTATICTOPO};
   \item \val{EIGENFREQ};
   \item \val{LINEARTRANSIENT};
-  \item \val{LINEARHARMONIC}.
+  \item \val{LINEARHARMONIC};
+  \item \val{STEADYHEATTRANSFER}.
 \end{itemize}
 \key{NAME} is optional and gives the analysis a descriptive identifier.
 
-Commands inside the loadcase select support and load collectors and configure the numerical procedure. Their validity depends on the analysis type: for example, \cmd{TIME} and \cmd{NEWMARK} belong to \val{LINEARTRANSIENT}, \cmd{FREQUENCIES} belongs to \val{LINEARHARMONIC}, and \cmd{NONLINEAR} belongs to \val{NONLINEARSTATIC}.
+Commands inside the loadcase select support and load collectors and configure the numerical procedure. Their validity depends on the analysis type: for example, \cmd{TIME} and \cmd{NEWMARK} belong to \val{LINEARTRANSIENT}, \cmd{FREQUENCIES} and \cmd{MODALBASIS} belong to \val{LINEARHARMONIC}, and \cmd{NONLINEAR} belongs to \val{NONLINEARSTATIC}.
 
 A deck may contain several native loadcases, which FEMaster executes in input order. Persistent direct structural conditions (such as Abaqus-style boundary and single-DOF concentrated-load definitions) carry their target values into subsequent analyses until modified. Unnamed native vector loads and supports participate in their current analysis, while named load and support collectors are activated for each analysis by its own \cmd{LOADS} and \cmd{SUPPORTS} selections. The analysis procedure determines which model and solution state it uses.
 
@@ -188,7 +195,7 @@ The two closing keywords apply to different analysis scopes.
 
 \keywordnestedpage{STEP}
 
-\cmd{STEP} begins an Abaqus-style analysis step. Multiple steps can appear in one deck and are executed consecutively in input order when their respective \cmd{END STEP} is reached. Each step contains exactly one procedure keyword: \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, or \cmd{STEADY STATE DYNAMICS}. The keyword selects the analysis class and the active procedure controls.
+\cmd{STEP} begins an Abaqus-style analysis step. Multiple steps can appear in one deck and are executed consecutively in input order when their respective \cmd{END STEP} is reached. Each step contains exactly one procedure keyword: \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, \cmd{STEADY STATE DYNAMICS}, or \cmd{HEAT TRANSFER}. The keyword selects the analysis class and the active procedure controls.
 
 \key{NAME} assigns an optional step name. \key{NLGEOM} activates the geometrically nonlinear static procedure when present without a value or set to \val{YES}; \val{NO} and \val{OFF} use linear geometry. \key{INC} sets the positive maximum number of nonlinear increments (default 100). \key{PERTURBATION} selects a linear perturbation step. Static procedures retain unchanged load definitions at their nominal value, ramp removed loads down linearly, and apply added loads using \(A(t)\) from a named \cmd{AMPLITUDE} or a linear ramp by default. Static amplitudes use Step time and must satisfy \(A(0)=0\) and \(A(T_{\mathrm{step}})=1\). New amplitude-driven loads are not supported with \cmd{STATIC, RIKS}. Transient and steady-state dynamic procedures evaluate named amplitudes as time- or frequency-dependent load multipliers.
 
@@ -306,6 +313,8 @@ control may fail.
 
 \key{DIRECT} requests fixed nonlinear load increments rather than adaptive stepping where supported.
 
+Loads defined with \key{FOLLOWER=YES} are evaluated in the current configuration. Pressure follows the current surface normal and area, gravity and inertial loads use the current positions, and oriented concentrated loads use the basis at the current nodal position. Their analytic load tangent \(\partial f_\mathrm{ext}/\partial u\) is included in \(K_T\); because it is generally nonsymmetric, a general sparse solver is used. Follower loads are not supported with \key{RIKS}. Without \key{FOLLOWER}, pressure acts on the reference surface and is also accepted in nonlinear steps.
+
 For ordinary nonlinear static input, the data positions are initial increment, Step period, minimum increment, and maximum increment. The values are converted to the normalized load path represented by the FEMaster nonlinear analysis. For \key{RIKS}, the first four entries analogously define initial, period, minimum, and maximum arc-length scales. Abaqus Riks termination controls in the later data positions are currently not supported.
 
 \begin{keywordparameters}
@@ -367,7 +376,8 @@ converged at a non-unit load factor. Thus load cards retain their
 normal target-value meaning:
 a \cmd{CLOAD} of 11000 following a step with 10000 denotes a new total target
 of 11000, not an additional 11000. The same assembly applies to all supported
-structural load families; load-dependent follower tangents are not included.
+structural load families. Follower loads (\key{FOLLOWER=YES}) require a
+nonlinear analysis and are rejected in linear and perturbation steps.
 
 The output displacement, reaction force, stress, strain, and section force
 fields represent incremental responses. The reported temperature is the
@@ -429,6 +439,10 @@ The mode shapes \(\phi_i\) describe relative deformation patterns; their arbitra
 
 \key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} as supported Abaqus syntax. FEMaster's own eigensolution settings determine the numerical backend used for the calculation.
 
+FEMaster uses shift-invert with a small negative shift, so free or partially supported models with rigid-body modes can be factorized. The shift is scaled by a quadratic Ritz estimate of the lowest flexible eigenvalue; if no estimate is available, a diagonal-sum ratio of stiffness and mass is used instead.
+
+Modal participation is reported for all modes as the mass-weighted projection onto the six rigid-body motions \((x,y,z,r_x,r_y,r_z)\). Rotations are taken about the centre of the assembled mass, including point masses, and are also available for solid-only models without rotational DOFs. The values are projections, not effective modal masses.
+
 \begin{keyworddata}
 First value & Positive number of requested eigenpairs. \\
 Remaining accepted positions & Additional Abaqus spectral controls not used by the currently supported mapping. \\
@@ -471,7 +485,7 @@ Depending on the sign convention used for \(K_G\), the equivalent generalized ei
 
 The eigenvalue \(\lambda_i\) is a multiplier on the reference preload, not an absolute force. If the preload corresponds to 10 kN and the first factor is 3.2, the linearized critical load associated with that mode is 32 kN. This interpretation is valid only within the assumptions of linear eigenvalue buckling; imperfections, material nonlinearity, contact changes, and nonlinear prebuckling deformation are not represented by the eigenvalue alone.
 
-The first data value is the positive number of requested buckling modes. \key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} as supported Abaqus syntax.
+The first data value is the positive number of requested buckling modes. \key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} as supported Abaqus syntax. Unless a shift is given with \cmd{SIGMA}, FEMaster estimates it from a quadratic Ritz approximation of the lowest buckling factor (see Section~\ref{sec:numerical-controls}).
 
 The buckling step first forms the reference stress state from its applied load and then computes load factors. The selected nodes, load and element properties must exist before this analysis.
 
@@ -569,7 +583,7 @@ The result \(\hat u\) contains amplitude and phase information. Resonances appea
 
 Each data record contains lower frequency, optional upper frequency, optional point count, bias, and scale factor. If the upper frequency is omitted or zero, only the lower frequency is solved. For a range, the upper frequency must be at least as large as the lower. The default point count is 20. Bias values other than 1 and scale factors other than 1 are not supported. A logarithmic range requires a positive lower frequency.
 
-Native FEMaster specifies a single equidistant frequency sweep per \cmd{FREQUENCIES, SCALE=LINEAR} card using the lower bound, upper bound and point count. See Section~\ref{sec:numerical-controls} for the spacing formula and the corresponding native loadcase example.
+Native FEMaster specifies a single equidistant frequency sweep per \cmd{FREQUENCIES, SCALE=LINEAR} card using the lower bound, upper bound and point count. A native harmonic loadcase may additionally select the modal-reduced solution with \cmd{MODALBASIS}. See Section~\ref{sec:numerical-controls} for the spacing formula, the reduced basis and the corresponding native loadcase example.
 
 This step performs a frequency-response analysis over 10--1000 Hz. The harmonic force is applied to the previously defined node set \val{TIP}; the stiffness and mass properties must be assigned to the model.
 
@@ -603,6 +617,55 @@ BC
 HARMONIC_FORCE
 *FREQUENCIES, SCALE=LINEAR
 10., 1000., 100
+*END
+\end{inputdeck}
+
+\keywordnestedpage{HEAT TRANSFER}
+
+Abaqus \cmd{HEAT TRANSFER, STEADY STATE} selects linear, uncoupled stationary heat conduction. The native equivalent is \cmd{LOADCASE, TYPE=STEADYHEATTRANSFER}. FEMaster solves
+\[
+\left(K_\mathrm{cond}+K_\mathrm{film}\right)T=q_\mathrm{flux}+q_\mathrm{conc}+q_\mathrm{film},
+\]
+where \(K_\mathrm{cond}=\int_\Omega \nabla N^T k\,\nabla N\,\mathrm d\Omega\) uses the constant \cmd{CONDUCTIVITY} \(k\) of the element material and \(K_\mathrm{film}\) contains the film coefficients of \cmd{CONVECTION}/\cmd{SFILM}. The right-hand side collects surface heat flux (\cmd{HEATFLUX}/\cmd{DSFLUX}), concentrated nodal heat flow (\cmd{CFLUX}), and the ambient-temperature contribution of convection. Prescribed temperatures are defined with \cmd{BOUNDARY} on DOF 11 and enforced as constraint equations. All operators use the reference geometry; there is no heat capacity and no time integration.
+
+One temperature unknown is created for each node of a solid thermal element. The solution is an absolute temperature field. Nodes outside the thermal mesh keep their step-start temperature. The converged field is committed as the current target temperature, so a following structural step with \key{RESUME=YES} uses it for thermal expansion.
+
+\key{STEADYSTATE} is required; transient heat transfer is not supported. \key{NLGEOM} and \key{PERTURBATION} are rejected. The optional data line follows Abaqus (initial increment, period, minimum, maximum increment). Only the end of the step is solved; the period defines the time at which amplitudes of thermal loads and prescribed temperatures are evaluated (default 1). A temperature change-rate entry is not accepted. \cmd{SOLVER} and \cmd{CONSTRAINTMETHOD} may follow the procedure card; the default constraint method is \val{ELIMINATION}. Without explicit output requests, temperature \val{NT} and heat flux \val{HFL} are written.
+
+\begin{keywordparameters}
+\key{STEADYSTATE} & required flag & Stationary heat conduction. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{initial, period, minimum, maximum} & Optional; positive period (default 1) evaluates thermal amplitudes. \\
+\end{keyworddata}
+
+The following step prescribes 20 on \val{COLD} and 100 on \val{HOT} and adds convection on the surface \val{SKIN}.
+
+\exampleheading
+
+\begin{inputdeck}
+*STEP
+*HEAT TRANSFER, STEADY STATE
+1., 1.
+*BOUNDARY
+COLD, 11, 11, 20.
+HOT, 11, 11, 100.
+*SFILM
+SKIN, F, 20., 0.015
+*NODE FILE
+NT, HFL
+*END STEP
+\end{inputdeck}
+
+\paragraph*{Heat-transfer loadcase}
+\begin{inputdeck}
+*LOADCASE, TYPE=STEADYHEATTRANSFER
+*BOUNDARY
+COLD, 11, 11, 20.
+*CFLUX
+HEATER, 11, 5.
+*CONVECTION
+SKIN, 0.015, 20.
 *END
 \end{inputdeck}
 

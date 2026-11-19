@@ -105,7 +105,9 @@ SERVICE
 
 FEMaster accepts the common field-output request cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} inside an active step/loadcase. These spellings share one internal request mechanism: FEMaster does not distinguish between ASCII and binary output semantics at the input-card level. The selected result writer determines the actual result-file format.
 
-The first explicit field-output request replaces the analysis step's predefined frame-output set. Subsequent node/element output cards add further requested Fields. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Each variable also records the requested result location: \cmd{NODE FILE}/\cmd{NODE OUTPUT} select global nodal output; \cmd{EL FILE}/\cmd{ELEMENT OUTPUT}/\cmd{EL OUTPUT} select element-nodal output where supported. The same variable may be requested at both locations in one step without repeating the element recovery. A request for \val{S} additionally writes the stresses on the top and bottom shell faces (\val{STRESS_TOP}, \val{STRESS_BOT}) at the same result location, analogous to the Abaqus section-point output; the \val{STRESS} field itself contains the mid-surface stress. For non-shell elements both face fields equal the regular stress. For stress, strain and upper/lower shell surface stress, element-nodal data are recovered first and the global nodal result is created only when requested. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
+The first explicit field-output request replaces the analysis step's predefined frame-output set; the defaults are only used when a step contains no request at all. Subsequent node/element output cards add further requested Fields. Unknown variable names are skipped with a warning instead of aborting the input. Common Abaqus/CalculiX variable names are translated to FEMaster result quantities, for example \val{U} to displacement, \val{RF} to reaction forces, \val{S} to stress, and \val{E} to strain. Each variable also records the requested result location: \cmd{NODE FILE}/\cmd{NODE OUTPUT} select global nodal output; \cmd{EL FILE}/\cmd{ELEMENT OUTPUT}/\cmd{EL OUTPUT} select element-nodal output where supported. The same variable may be requested at both locations in one step without repeating the element recovery. A request for \val{S} additionally writes the stresses on the top and bottom shell faces (\val{STRESS_TOP}, \val{STRESS_BOT}) at the same result location, analogous to the Abaqus section-point output; the \val{STRESS} field itself contains the mid-surface stress. For non-shell elements both face fields equal the regular stress. For stress, strain and upper/lower shell surface stress, element-nodal data are recovered first and the global nodal result is created only when requested. Compact step metadata that defines the analysis result itself is written independently of this filtering; eigenfrequency analyses always retain eigenvalues, angular eigenfrequencies, frequencies, and modal participation, while buckling analyses always retain buckling factors.
+
+Element-wide scalar quantities such as volume, compliance, topology density and orientation are always written in the \val{ELEMENT} domain, even when requested through an element output card. Shell section resultants and the heat flux \val{HFL} are recovered element-nodally and averaged to nodes only for nodal requests. A steady-state heat-transfer step writes temperature \val{NT} and heat flux \val{HFL} by default.
 
 The Abaqus container \cmd{OUTPUT, FIELD} is accepted for compatibility but does not itself change the request set. The actual selection is performed by the following node/element output cards.
 
@@ -284,10 +286,11 @@ Typical Fields depend on analysis type:
 \endhead
 Linear static & Displacement, strain, stress, shell top/bottom stresses and resultants where applicable, external forces, reactions, section forces, and related recovered quantities. \\
 Nonlinear static & Accepted-increment displacement, stress, reaction-force, and load-factor states plus final displacement, strain, stress, internal/external forces, and reactions. \\
-Eigenfrequency & Requested mode-frame Fields plus always-written step metadata: eigenvalues, eigenfrequencies/frequencies, and modal participation. \\
+Eigenfrequency & Requested mode-frame Fields plus always-written step metadata: eigenvalues, eigenfrequencies/frequencies, and modal participation in the six rigid-body directions \((x,y,z,r_x,r_y,r_z)\) about the centre of mass. \\
 Linear buckling & Requested buckling-mode frame Fields plus always-written buckling factors. \\
 Linear transient & Displacement, velocity, and acceleration at written time frames. \\
 Linear harmonic & Real and imaginary displacement, stress, and strain amplitudes for the requested excitation frequencies. \\
+Steady-state heat transfer & Absolute nodal temperature and recovered heat-flux vector. \\
 \bottomrule
 \end{longtable}
 
@@ -398,6 +401,11 @@ Harmonic stress, real / imaginary & \val{STRREAL} / \val{STRIMAG} & Separate com
 Strain & \val{TOSTRAIN} & Nodal recovered strain components. \\
 Harmonic strain, real / imaginary & \val{STRNREAL} / \val{STRNIMAG} & Separate components of the complex harmonic strain. \\
 Shell resultants & \val{SHR} & Membrane, bending, and transverse-shear resultants. \\
+Shell face stresses (top / mid / bottom) & \val{STRPOS} / \val{STRMID} / \val{STRNEG} & Stresses on the top and bottom shell faces and the regular stress, written for a request of \val{S}. \\
+Section forces & \val{SECFR} & Local section forces of beam, truss, and shell elements. \\
+Shear flow & \val{SHFLOW} & Shear flow of shear-panel elements. \\
+Temperature & \val{NDTEMP} & Nodal temperature. \\
+Heat flux & \val{FLUX} & Recovered heat-flux vector. \\
 \bottomrule
 \end{longtable}
 
@@ -408,6 +416,8 @@ n_{\mathrm{FRD}} = 10^8\,i_{\mathrm{instance}} + n_{\mathrm{local}},
 where \(i_{\mathrm{instance}}\) is the numeric Instance identifier and \(n_{\mathrm{local}}\) is the original Part-local node ID. The local node ID must be smaller than \(10^8\). The same FRD node numbering is used consistently for coordinates, element connectivity, and nodal result blocks. Thus identifiers such as \val{100000001} and \val{200000001} represent the same local node label in different Instances; they are output identifiers and do not replace the semantic \val{INSTANCE.local-id} notation used in \file{.res}.
 
 User node and element IDs in FEMaster may include \val{0}. FRD numbering is an output-format concern and does not impose a positive-ID restriction on the FEMaster input model.
+
+Each FRD element record carries the section ID in its group field and the material ID in its material field, so postprocessors can separate sections and materials, for example when averaging nodal results. Elements without section or material receive \val{0}. IDs above 99999 do not fit the five-column FRD fields; they are written as \val{0} with a warning.
 
 Higher-order element connectivity is reordered where necessary to satisfy FRD conventions. For shell resultants, an explicitly assigned Section orientation defines the local output basis. Without an explicit orientation, FEMaster uses a deterministic tangent basis derived from the shell geometry.
 

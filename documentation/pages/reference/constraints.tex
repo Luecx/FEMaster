@@ -171,8 +171,10 @@ independent node. The three relation types have the following kinematic meaning:
 \end{itemize}
 FEMaster expands these relations into constraint equations alongside supports, ties, and couplings.
 
+Both node references may also be node sets. A dependent node set combined with a single independent node creates one relation per set node, all referring to that node. Two node sets of equal size are paired entry by entry in their compiled set order. An independent node set requires a dependent node set, and empty or differently sized sets are rejected.
+
 \begin{keyworddata}
-\val{type, dependent_node, independent_node} & One two-node relation per row; \val{BEAM}, \val{TIE}, or \val{PIN}. \\
+\val{type, dependent, independent} & \val{BEAM}, \val{TIE}, or \val{PIN}; nodes or node sets as described above. \\
 \end{keyworddata}
 
 For the already defined node pairs, the first relation connects them
@@ -183,6 +185,15 @@ with beam kinematics and the second defines a pin connection.
 *MPC
 BEAM, 101, 102
 PIN, 201, 202
+\end{inputdeck}
+
+\paragraph*{Node-set expansion}
+Every node of \val{RIM} is connected to the reference node 1000, and the
+nodes of \val{SIDE_A} are tied pairwise to those of \val{SIDE_B}.
+\begin{inputdeck}
+*MPC
+BEAM, RIM, 1000
+TIE, SIDE_A, SIDE_B
 \end{inputdeck}
 
 \keywordpage{RIGID BODY}

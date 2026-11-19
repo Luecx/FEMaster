@@ -75,14 +75,17 @@ Linearized stability analysis using the structural stiffness and the geometric s
 Linear time-domain dynamic analysis including inertial and optional damping effects. The equations of motion are integrated using an implicit Newmark scheme, allowing the response to time-dependent loading, initial velocities, and transient excitation to be evaluated over a prescribed time interval. \\
 
 \val{LINEARHARMONIC} &
-Linear steady-state response to harmonic excitation. The procedure solves the frequency-dependent complex equation system directly at specified excitation frequencies, providing displacement and other supported response amplitudes together with their phase information. Optional damping can be included through Rayleigh damping. \\
+Linear steady-state response to harmonic excitation. The procedure solves the frequency-dependent complex equation system directly at specified excitation frequencies, providing displacement and other supported response amplitudes together with their phase information. Optional damping can be included through Rayleigh damping. A modal-reduced variant uses low-frequency eigenmodes enriched by static load responses. \\
+
+\val{STEADYHEATTRANSFER} &
+Linear, uncoupled stationary heat conduction. The procedure solves one scalar temperature per node of the solid thermal elements under prescribed temperatures, surface heat flux, concentrated heat flow, and convection. The resulting absolute temperature field can be reused as the target temperature of subsequent structural analyses. \\
 
 \bottomrule
 \end{longtable}
 
 The analysis procedures differ not only in their numerical solution methods but also in the physical assumptions underlying their results. Linear static analysis and linearized eigenvalue procedures are generally efficient and suitable for a wide range of engineering investigations, provided their assumptions are appropriate for the problem. Nonlinear static analysis extends the equilibrium formulation to situations in which the structural response changes with deformation, loading, or contact conditions, but typically requires incremental loading and iterative convergence. Dynamic procedures additionally account for mass and inertia, either by integrating the response over time or by evaluating the steady-state response at selected excitation frequencies. These distinctions should be considered when selecting a procedure, since the most computationally demanding analysis is not necessarily the most appropriate one for a particular engineering question.
 
-Both FEMaster-specific analysis definitions and supported Abaqus procedure keywords are available within the input language. The corresponding Abaqus procedures include \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS}. Their accepted parameters, available numerical controls, and relationship to the FEMaster analysis types are documented in Section~\ref{sec:analysis-procedures}.
+Both FEMaster-specific analysis definitions and supported Abaqus procedure keywords are available within the input language. The corresponding Abaqus procedures include \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, \cmd{STEADY STATE DYNAMICS}, and \cmd{HEAT TRANSFER, STEADY STATE}. Their accepted parameters, available numerical controls, and relationship to the FEMaster analysis types are documented in Section~\ref{sec:analysis-procedures}.
 
 
 \section{Degree-of-freedom convention}

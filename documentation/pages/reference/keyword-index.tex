@@ -30,6 +30,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{INSTANCE} & Abaqus-compatible & Model Definition \\
 \cmd{END INSTANCE} & Abaqus-compatible & Model Definition \\
 \cmd{NODE} & Abaqus-compatible & Model Definition \\
+\cmd{IMPERFECTION} & FEMaster extension & Model Definition; geometric imperfections from offsets or result frames \\
 \cmd{ELEMENT} & Compatible + extensions & Model Definition; \cmd{ELEMENT} formulations \\
 
 \midrule
@@ -44,6 +45,8 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{PLASTIC} & Abaqus-compatible & Materials; isotropic J2 plasticity \\
 \cmd{HYPERELASTIC} & Abaqus-compatible & Materials \\
 \cmd{DENSITY} & Abaqus-compatible & Materials \\
+\cmd{CONDUCTIVITY} & Abaqus-compatible & Materials; constant isotropic conductivity \\
+\cmd{SPECIFIC HEAT} & Abaqus-compatible & Materials; constant specific heat \\
 \cmd{EXPANSION} & Abaqus-compatible & Materials \\
 \cmd{THERMALEXPANSION} & Legacy alias & Materials; legacy alias of \cmd{EXPANSION} \\
 
@@ -82,6 +85,9 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{TEMPERATURE} & FEMaster extension & Loads and Boundary Conditions \\
 \cmd{HEATFLUX} & FEMaster extension & Loads and Boundary Conditions \\
 \cmd{CONVECTION} & FEMaster extension & Loads and Boundary Conditions \\
+\cmd{CFLUX} & Abaqus-compatible & Loads and Boundary Conditions; concentrated heat flow \\
+\cmd{DSFLUX} & Abaqus-compatible & Loads and Boundary Conditions; surface heat flux \\
+\cmd{SFILM} & Abaqus-compatible & Loads and Boundary Conditions; surface film convection \\
 
 \midrule
 \cmd{COUPLING} & Compatible + extensions & Constraints and Contact \\
@@ -106,6 +112,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{BUCKLE} & Abaqus-compatible & Analysis Procedures \\
 \cmd{DYNAMIC} & Abaqus-compatible & Analysis Procedures \\
 \cmd{STEADY STATE DYNAMICS} & Abaqus-compatible & Analysis Procedures \\
+\cmd{HEAT TRANSFER} & Abaqus-compatible & Analysis Procedures; \key{STEADYSTATE} only \\
 \cmd{END STEP} & Abaqus-compatible & Analysis Procedures \\
 
 \midrule
@@ -116,6 +123,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{NEWMARK} & FEMaster extension & Solver and Numerical Controls \\
 \cmd{DAMPING} & FEMaster extension & Solver and Numerical Controls \\
 \cmd{FREQUENCIES} & FEMaster extension & Solver and Numerical Controls \\
+\cmd{MODALBASIS} & FEMaster extension & Solver and Numerical Controls; modal-reduced harmonic response \\
 \cmd{NUMEIGENVALUES} & FEMaster extension & Solver and Numerical Controls \\
 \cmd{SIGMA} & FEMaster extension & Solver and Numerical Controls \\
 \cmd{WRITEEVERY} & FEMaster extension & Solver and Numerical Controls \\
@@ -186,6 +194,6 @@ The \cmd{PLASTIC} material card is available with Abaqus-compatible syntax, with
 Other numerical-control keywords have the scopes and restrictions
 documented on their individual reference pages.
 
-Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
+Field-output cards \cmd{NODE OUTPUT}, \cmd{ELEMENT OUTPUT}, \cmd{NODE FILE}, \cmd{EL FILE}, and \cmd{EL OUTPUT} actively configure the per-step frame-result selection. The first explicit request replaces the step's frame-output defaults; unknown variables are skipped with a warning. Compact analysis metadata such as eigenvalues, frequencies, modal participation, and buckling factors is always written when the corresponding analysis provides it. \cmd{OUTPUT, FIELD} is accepted as a compatibility container only, while \cmd{NODE PRINT} and \cmd{EL PRINT} are accepted and ignored.
 
 The index, detailed thematic documentation, and applicable complete examples together describe the supported input keywords and element formulations. This keeps the manual aligned with the syntax users can actually run.
