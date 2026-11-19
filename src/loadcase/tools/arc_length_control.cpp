@@ -63,8 +63,8 @@ constexpr Index maximum_active_set_updates = 8;
  * @param q Reduced nonlinear unknown vector. On success it contains the final
  *          accepted state. On failure it is restored to the last accepted state.
  * @param lambda Load factor associated with `q`.
- * @param reference_load Reduced reference load vector used by the arc-length
- *                       predictor and augmented Newton system.
+ * @param reference_load Reduced constant reference load used when no
+ *                       state-dependent load_derivative callback is set.
  * @param evaluate Residual and tangent assembly at a supplied `q` and load
  *                 factor.
  * @param linear_solve Linearized solve with one right-hand side.
@@ -144,9 +144,18 @@ bool ArcLengthControl::solve(
                 predictor_tangent
             );
 
+            // The predictor follows the current load direction. A follower
+            // load can rotate or change area after each accepted increment.
+            const DynamicVector predictor_load = load_derivative
+                ? load_derivative(q_accepted_, lambda_accepted_)
+                : reference_load;
+            logging::error(predictor_load.size() == predictor_tangent.rows()
+                        && predictor_load.allFinite(),
+                "ArcLengthControl: predictor load derivative has invalid size or values");
+
             DynamicVector dq_load = linear_solve(
                 predictor_tangent,
-                reference_load
+                predictor_load
             );
 
             logging::error(dq_load.allFinite(),
@@ -215,8 +224,14 @@ bool ArcLengthControl::solve(
 
                         logging::error(tangent.rows() == tangent.cols(),
                             "ArcLengthControl: tangent matrix must be square");
-                        logging::error(static_cast<Index>(reference_load.size()) == n,
-                            "ArcLengthControl: reference load has invalid size");
+                        // This is the exact partial derivative df_ext/dlambda at
+                        // fixed q, not necessarily the initial reference load.
+                        const DynamicVector current_load = load_derivative
+                            ? load_derivative(q, lambda)
+                            : reference_load;
+                        logging::error(static_cast<Index>(current_load.size()) == n
+                                    && current_load.allFinite(),
+                            "ArcLengthControl: load derivative has invalid size or values");
 
                         const DynamicVector delta_q      = q - q_accepted_;
                         const Precision     delta_lambda = lambda - lambda_accepted_;
@@ -237,8 +252,8 @@ bool ArcLengthControl::solve(
                         mattools::append_sparse_block(triplets, tangent);
 
                         for (Index i = 0; i < n; ++i) {
-                            if (reference_load(i) != Precision(0)) {
-                                triplets.emplace_back(i, n, -reference_load(i));
+                            if (current_load(i) != Precision(0)) {
+                                triplets.emplace_back(i, n, -current_load(i));
                             }
 
                             if (delta_q(i) != Precision(0)) {
