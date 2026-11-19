@@ -47,7 +47,7 @@ Connector::Connector(ID node_1_id,
 /**
  * @copydoc Connector::get_equations
  */
-Equations Connector::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Connector::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     (void)model_data;
     Equations equations{};
 

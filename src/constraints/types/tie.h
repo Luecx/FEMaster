@@ -18,6 +18,7 @@
 #include "../../model/geometry/line/line_interface.h"
 #include "../../model/geometry/surface/surface.h"
 #include "equation.h"
+#include "../../model/system_dofs.h"
 
 namespace fem {
 namespace constraint {
@@ -42,9 +43,9 @@ class Tie {
     Precision distance; ///< Maximum search distance for projection.
     bool adjust;        ///< Whether to move slave nodes onto the master geometry.
 
-    Equations get_surface_surface_equations(SystemDofIds& system_nodal_dofs,
-                                            model::ModelData& model_data);
-    Equations get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& model_data);
+    Equations get_surface_surface_equations(model::SystemDofs& system_nodal_dofs,
+                                            model::ModelData&  model_data);
+    Equations get_equations(model::SystemDofs* system_nodal_dofs, model::ModelData& model_data);
 
 public:
     // -------------------------------------------------------------------------
@@ -94,7 +95,7 @@ public:
      * @param model_data Model data providing geometry information.
      * @return Equations Coupling equations enforcing the tie.
      */
-    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+    Equations get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
 };
 } // namespace constraint
 } // namespace fem

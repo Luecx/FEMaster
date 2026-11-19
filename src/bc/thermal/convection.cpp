@@ -88,13 +88,13 @@ Precision Convection::effective_film_coefficient(Precision scale) const {
  * @param scale Common multiplier of h and the ambient source.
  */
 void Convection::apply(
-    model::ModelData&      model_data,
-    model::Field&          load,
+    model::ModelData&        model_data,
+    model::Field&            load,
     TripletList*,
     constraint::Equations&,
-    const SystemDofIds&    system_dof_ids,
-    TripletList&           system_matrix,
-    Precision              scale
+    const model::SystemDofs& system_dof_ids,
+    TripletList&             system_matrix,
+    Precision                scale
 ) {
     // Assemble the ambient source q_h and boundary operator K_h separately.
     apply_rhs(model_data, load, scale);
@@ -228,19 +228,19 @@ void Convection::apply_rhs(
  * @param matrix Sparse triplet list receiving convection operator entries.
  */
 void Convection::apply_matrix(
-    model::ModelData&   model_data,
-    const SystemDofIds& system_dof_ids,
-    TripletList&        matrix,
-    Precision           scale
+    model::ModelData&        model_data,
+    const model::SystemDofs& system_dof_ids,
+    TripletList&             matrix,
+    Precision                scale
 ) {
     // Validate the surface geometry and scalar thermal equation numbering.
     logging::error(region_ != nullptr,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "CONVECTION: reference positions are not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.rows()) == model_data.positions_reference->rows,
+    logging::error(static_cast<Index>(system_dof_ids.nodes()) == model_data.positions_reference->rows,
         "CONVECTION: thermal DOF map does not match the nodal domain");
-    logging::error(system_dof_ids.cols() == 1,
+    logging::error(system_dof_ids.width() == 1,
         "CONVECTION: thermal DOF map must contain exactly one component");
 
     const Precision h = effective_film_coefficient(scale);
@@ -306,7 +306,7 @@ void Convection::apply_matrix(
             for (Index i = 0; i < surface->n_nodes; ++i) {
                 const ID node_i = surface->nodes()[i];
                 logging::error(node_i >= 0
-                            && static_cast<Eigen::Index>(node_i) < system_dof_ids.rows(),
+                            && static_cast<Eigen::Index>(node_i) < system_dof_ids.nodes(),
                     "CONVECTION: surface references invalid node ", node_i);
 
                 const int row = system_dof_ids(static_cast<Eigen::Index>(node_i), 0);
@@ -316,7 +316,7 @@ void Convection::apply_matrix(
                 for (Index j = 0; j < surface->n_nodes; ++j) {
                     const ID node_j = surface->nodes()[j];
                     logging::error(node_j >= 0
-                                && static_cast<Eigen::Index>(node_j) < system_dof_ids.rows(),
+                                && static_cast<Eigen::Index>(node_j) < system_dof_ids.nodes(),
                         "CONVECTION: surface references invalid node ", node_j);
 
                     const int col = system_dof_ids(static_cast<Eigen::Index>(node_j), 0);

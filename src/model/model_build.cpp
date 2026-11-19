@@ -31,7 +31,6 @@
 
 #include "../core/parallel.h"
 #include "../mattools/assemble.h"
-#include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
 #include "model.h"
 #include "solid/element_solid.h"
@@ -231,16 +230,15 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  * a nonzero coefficient, including components of nodes without elements. These
  * components must remain in the algebraic system until constraint reduction;
  * dropping them would change the equations into unintended supports.
- * The final boolean mask is converted to contiguous zero-based system indices.
+ * The activated components are numbered contiguously from zero.
  *
- * @return Node-by-six matrix of global unconstrained system DOF identifiers.
+ * @return Node-by-six numbering of the unconstrained system DOFs.
  */
-SystemDofIds Model::build_structural_dof_index_matrix() {
+SystemDofs Model::build_structural_dofs() {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
-    SystemDofs mask{_data->positions->rows, 6};
-    mask.fill(false);
+    SystemDofs system_dofs{_data->positions->rows, 6};
 
     // Activate generalized DOFs used by regular compiled elements
     for (auto& element : _data->elements) {
@@ -248,10 +246,7 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
 
         const auto dofs = element->dofs();
         for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
-            const ID node_id = element->nodes()[local_node];
-            for (ID dof = 0; dof < 6; ++dof) {
-                mask(node_id, dof) |= dofs(0, dof);
-            }
+            system_dofs.activate(element->nodes()[local_node], dofs);
         }
     }
 
@@ -261,10 +256,7 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
 
         const auto dofs = element->dofs();
         for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
-            const ID node_id = element->nodes()[local_node];
-            for (ID dof = 0; dof < 6; ++dof) {
-                mask(node_id, dof) |= dofs(0, dof);
-            }
+            system_dofs.activate(element->nodes()[local_node], dofs);
         }
     }
 
@@ -273,13 +265,13 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
     // coupling and MPC master DOFs so their masks include these directions.
     for (const auto& equation : _data->equations) {
         for (const auto& entry : equation.entries) {
-            logging::error(entry.node_id >= 0 && entry.node_id < mask.rows()
+            logging::error(entry.node_id >= 0 && entry.node_id < system_dofs.nodes()
                         && entry.dof < 6 && std::isfinite(entry.coeff),
                 "Model: invalid manual equation term (node=", entry.node_id,
                 ", dof=", int(entry.dof), ", coefficient=", entry.coeff, ")");
 
             if (entry.coeff != Precision(0)) {
-                mask(entry.node_id, entry.dof) = true;
+                system_dofs.activate(entry.node_id, entry.dof);
             }
         }
     }
@@ -287,10 +279,7 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
     // Add master-node components required to represent coupling kinematics
     for (auto& coupling : _data->couplings) {
         const ID master_id = coupling.master_node;
-        const auto master_dofs = coupling.master_dofs(mask, *_data);
-        for (ID dof = 0; dof < 6; ++dof) {
-            mask(master_id, dof) |= master_dofs(0, dof);
-        }
+        system_dofs.activate(master_id, coupling.master_dofs(system_dofs, *_data));
     }
 
     // Activate constrained components at both nodes of every connector
@@ -299,23 +288,17 @@ SystemDofIds Model::build_structural_dof_index_matrix() {
         const ID node2_id = connector.node_2();
         const auto dofs   = connector.dofs();
 
-        for (ID dof = 0; dof < 6; ++dof) {
-            mask(node1_id, dof) |= dofs(0, dof);
-            mask(node2_id, dof) |= dofs(0, dof);
-        }
+        system_dofs.activate(node1_id, dofs);
+        system_dofs.activate(node2_id, dofs);
     }
 
     // Add independent-node components required by two-node MPC kinematics
     for (const auto& mpc : _data->mpcs) {
-        const ID   master_id   = mpc.node_2();
-        const auto master_dofs = mpc.master_dofs(mask);
-
-        for (ID dof = 0; dof < 6; ++dof) {
-            mask(master_id, dof) |= master_dofs(0, dof);
-        }
+        system_dofs.activate(mpc.node_2(), mpc.master_dofs(system_dofs));
     }
 
-    return mattools::numerate_dofs(mask);
+    system_dofs.numerate();
+    return system_dofs;
 }
 
 /**
@@ -345,7 +328,7 @@ Field Model::build_load_matrix(const bc::ConditionState& initial,
                                const bc::ConditionState& target,
                                Precision                 time,
                                Precision                 step_progress,
-                               const SystemDofIds&       system_dof_ids,
+                               const SystemDofs&         system_dof_ids,
                                TripletList*              load_tangent) {
     // Initialize global generalized forces and the outputs unused by loads
     Field load = _data->create_field_("LOAD_MATRIX", FieldDomain::NODE, 6, false);
@@ -410,7 +393,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
     // Prepare the numerical spatial bases and outputs unused by structural loads
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
     constraint::Equations constraints{};
-    SystemDofIds          system_dof_ids{};
+    SystemDofs            system_dof_ids{};
     TripletList           system_matrix{};
 
     // Transient load bases are assembled once and reused over time. A follower
@@ -467,7 +450,7 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>> Model::build_load_basis(const 
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
  * @return Constraint equations grouped and annotated by their origin.
  */
-constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
+constraint::ConstraintGroups Model::collect_constraints(SystemDofs& system_dof_ids,
                                                            const bc::ConditionState& target) {
     // Prepare grouped equations and temporary data required by support prescriptions
     constraint::ConstraintGroups groups{};
@@ -550,7 +533,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
  * @return Assembled sparse linear stiffness matrix.
  */
 SparseMatrix Model::build_stiffness_matrix(
-    SystemDofIds& indices,
+    SystemDofs&   indices,
     const Field*  base_temperature,
     const Field*  stiffness_scalar
 ) {
@@ -626,7 +609,7 @@ SparseMatrix Model::build_stiffness_matrix(
  * @return Assembled sparse nonlinear tangent matrix.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
-    SystemDofIds&       indices,
+    SystemDofs&         indices,
     NodeData&           nodal_forces,
     const Field&        target_displacement,
     const Field*        target_temperature,
@@ -745,7 +728,7 @@ void Model::build_internal_force(
     const Field*  base_displacement,
     const Field*  base_temperature,
     bool          update_state,
-    SystemDofIds* indices      // only relevant for contact, if nullptr, no contact is considered
+    SystemDofs*   indices      // only relevant for contact, if nullptr, no contact is considered
 ) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "internal force output must use NODE domain");
@@ -859,7 +842,7 @@ void Model::build_internal_force(
  * @return Assembled sparse perturbation geometric stiffness matrix.
  */
 SparseMatrix Model::build_geom_stiffness_matrix(
-    SystemDofIds& indices,
+    SystemDofs&   indices,
     const Field&  target_displacement,
     const Field*  target_temperature,
     const Field*  base_displacement,
@@ -908,7 +891,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @return Assembled sparse lumped mass matrix.
  */
-SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
+SparseMatrix Model::build_lumped_mass_matrix(SystemDofs& indices) {
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
         if (auto structural = element->as<StructuralElement>()) {
             return structural->mass(storage);

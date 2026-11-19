@@ -65,7 +65,7 @@ void VLoad::apply(
     model::Field&          load,
     TripletList*,
     constraint::Equations&,
-    const SystemDofIds&,
+    const model::SystemDofs&,
     TripletList&,
     Precision              scale
 ) {

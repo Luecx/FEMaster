@@ -1,42 +1,108 @@
-
 /**
- * @file build_sparsity_pattern.cpp
- * @brief Builds compressed sparse matrix patterns from finite-element topology.
+ * @file system_dofs.cpp
+ * @brief Implements the node-by-component system DOF numbering.
  *
- * Compact node-to-element incidence supplies each node's neighboring nodes.
- * Their active global DOFs define one sorted row set shared by all columns
- * belonging to that node.
+ * The sparsity pattern is built from element connectivity alone. Compact
+ * node-to-element incidence supplies each node's neighboring nodes, whose
+ * active global DOFs define one sorted row set shared by all columns of that
+ * node. Prefix sums allocate the compressed-column structure directly.
  *
- * Prefix sums allocate the compressed-column structure directly, avoiding
- * element matrix evaluation, sparse insertion and structural merging.
- *
- * The returned matrix owns both the pattern and zero-valued coefficient storage.
- * Numerical assembly, material state and nodal forces remain outside this file.
- *
- * @see build_sparsity_pattern
- * @see assemble_matrix
- *
+ * @see src/model/system_dofs.h
  * @author Finn Eggers
- * @date 22.10.2026
+ * @date 19.11.2026
  */
 
-#include "build_sparsity_pattern.h"
+#include "system_dofs.h"
 
 #include "../core/logging.h"
 #include "../core/parallel.h"
-#include "../model/element/element.h"
+#include "element/element.h"
 
 #include <algorithm>
 #include <limits>
 
-namespace fem { namespace mattools {
+namespace fem::model {
+
+SystemDofs::SystemDofs(Index node_count, Index dof_count)
+    : _mask(node_count, dof_count),
+      _ids (node_count, dof_count) {
+    _mask.fill(false);
+    _ids .fill(-1);
+}
+
+void SystemDofs::activate(Index node, Index dof) {
+    logging::error(!_numerated,
+        "SystemDofs: cannot activate DOFs after numbering");
+    _mask(node, dof) = true;
+}
+
+void SystemDofs::activate(Index node, const Dofs& dofs) {
+    logging::error(!_numerated,
+        "SystemDofs: cannot activate DOFs after numbering");
+    logging::error(width() <= dofs.cols(),
+        "SystemDofs: DOF selection is narrower than the numbering");
+    for (Index dof = 0; dof < width(); ++dof) {
+        _mask(node, dof) = _mask(node, dof) || dofs(dof);
+    }
+}
+
+void SystemDofs::numerate() {
+    logging::error(!_numerated,
+        "SystemDofs: numbering already assigned");
+
+    int next = 0;
+    for (Index node = 0; node < nodes(); ++node) {
+        for (Index dof = 0; dof < width(); ++dof) {
+            _ids(node, dof) = _mask(node, dof) ? next++ : -1;
+        }
+    }
+
+    _size      = next;
+    _numerated = true;
+}
+
+DynamicVector SystemDofs::reduce(const Field& field) const {
+    logging::error(_numerated,
+        "SystemDofs: reduce requires a numbering");
+    logging::error(field.rows == nodes() && field.components == width(),
+        "SystemDofs: field ", field.name, " is ", field.rows, "x", field.components,
+        ", numbering is ", nodes(), "x", width());
+
+    DynamicVector vector(_size);
+    for (Index node = 0; node < nodes(); ++node) {
+        for (Index dof = 0; dof < width(); ++dof) {
+            const int id = _ids(node, dof);
+            if (id >= 0) vector(id) = field(node, dof);
+        }
+    }
+    return vector;
+}
+
+Field SystemDofs::expand(const DynamicVector& vector) const {
+    logging::error(_numerated,
+        "SystemDofs: expand requires a numbering");
+    logging::error(vector.size() == _size,
+        "SystemDofs: vector has ", vector.size(), " entries, numbering has ", _size);
+
+    Field field{"EXPANDED_VECTOR", FieldDomain::NODE, nodes(), width()};
+    field.set_zero();
+    for (Index node = 0; node < nodes(); ++node) {
+        for (Index dof = 0; dof < width(); ++dof) {
+            const int id = _ids(node, dof);
+            if (id >= 0) field(node, dof) = vector(id);
+        }
+    }
+    return field;
+}
 
 /**
  * Builds a zero-valued sparse matrix containing every admissible coupling.
  *
- * The pattern is determined exclusively from element connectivity and the
- * global DOF mapping. Every active DOF of a neighboring node is included,
- * yielding a conservative pattern that may contain structural zeros.
+ * Every active DOF of a neighboring node is included, yielding a conservative
+ * pattern that may contain structural zeros. Null elements are ignored. An
+ * empty element collection contributes no entries but preserves the global
+ * dimension, which includes the regular-element assembly of POINTMASS-only
+ * models whose auxiliary elements are assembled separately.
  *
  * Construction proceeds in five stages:
  *  1. Validate input and count node-to-element incidence.
@@ -44,42 +110,28 @@ namespace fem { namespace mattools {
  *  3. Determine sorted and unique global row indices for each node.
  *  4. Count column entries and allocate the compressed sparse matrix.
  *  5. Populate the CSC row indices and zero-valued coefficients.
- *
- * Active global DOF indices must be unique. Negative indices are inactive,
- * unused global indices produce empty columns, and null elements are ignored.
- * An empty element collection contributes no entries but preserves the global
- * dimension defined by indices. This includes the regular-element assembly of
- * POINTMASS-only models, whose auxiliary elements are assembled separately.
- * Empty maps and maps without active DOFs produce a zero-dimensional matrix.
- *
- * No element matrices, geometry or material states are evaluated.
- *
- * @param elements Elements supplying node counts and connectivity.
- * @param indices Node/DOF to global index map defining the algebraic system.
- * @return Compressed square sparse matrix with zero-valued coefficients.
  */
-SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elements,
-                                    const SystemDofIds& indices) {
+SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const {
     using StorageIndex = SparseMatrix::StorageIndex;
 
     const parallel::ScopedLinearAlgebraThreads threading{};
 
     constexpr std::size_t min_batch_size = 64;
 
-    const std::size_t node_count  = static_cast<std::size_t>(indices.rows());
-    const int         maximum_dof = indices.size() == 0 ? -1 : indices.maxCoeff();
+    logging::error(_numerated,
+        "SystemDofs: pattern requires a numbering");
+
+    const std::size_t node_count = static_cast<std::size_t>(nodes());
 
     // ---------------------------------------------------------------------
     // 1. Validate input and count node-to-element incidence
     // ---------------------------------------------------------------------
 
-    // The global DOF map, rather than the element collection, determines the
-    // matrix dimension. Keep the maximum signed until inactive-only maps have
-    // been handled, and never evaluate maxCoeff() on an empty map.
-    logging::error(maximum_dof < std::numeric_limits<StorageIndex>::max(),
+    // The numbering, rather than the element collection, determines the
+    // matrix dimension
+    logging::error(_size < std::numeric_limits<StorageIndex>::max(),
         "Sparsity pattern dimension exceeds sparse storage index capacity");
-    const std::size_t global_size = maximum_dof < 0
-        ? std::size_t(0) : static_cast<std::size_t>(maximum_dof) + 1;
+    const std::size_t global_size = static_cast<std::size_t>(_size);
 
     // Count how often each node occurs in the element connectivity.
     // Invalid identifiers are recorded without accessing invalid offsets.
@@ -197,8 +249,8 @@ SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elemen
         auto& rows = node_rows[node];
 
         for (ID neighbor : neighbors) {
-            for (int dof = 0; dof < indices.cols(); ++dof) {
-                const int row = indices(neighbor, dof);
+            for (int dof = 0; dof < width(); ++dof) {
+                const int row = _ids(neighbor, dof);
                 if (row >= 0) {
                     rows.push_back(row);
                 }
@@ -226,8 +278,8 @@ SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elemen
     for (std::size_t node = 0; node < node_count; ++node) {
         const auto& rows = node_rows[node];
 
-        for (int dof = 0; dof < indices.cols(); ++dof) {
-            const int col = indices(node, dof);
+        for (int dof = 0; dof < width(); ++dof) {
+            const int col = _ids(node, dof);
             if (col < 0) {
                 continue;
             }
@@ -297,8 +349,8 @@ SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elemen
             return;
         }
 
-        for (int dof = 0; dof < indices.cols(); ++dof) {
-            const int col = indices(node, dof);
+        for (int dof = 0; dof < width(); ++dof) {
+            const int col = _ids(node, dof);
             if (col < 0) {
                 continue;
             }
@@ -313,4 +365,4 @@ SparseMatrix build_sparsity_pattern(const std::vector<model::ElementPtr>& elemen
     return global_matrix;
 }
 
-} } // namespace fem::mattools
+} // namespace fem::model

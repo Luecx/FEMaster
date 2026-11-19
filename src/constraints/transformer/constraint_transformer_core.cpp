@@ -25,15 +25,15 @@
 namespace fem {
 namespace constraint {
 
-ConstraintTransformer::ConstraintTransformer(const Equations&    equations,
-                                             const SystemDofIds& dofs,
-                                             Index               n_dofs)
+ConstraintTransformer::ConstraintTransformer(const Equations&         equations,
+                                             const model::SystemDofs& dofs,
+                                             Index                    n_dofs)
     : ConstraintTransformer(equations, dofs, n_dofs, Options{}) {}
 
-ConstraintTransformer::ConstraintTransformer(const Equations&    equations,
-                                             const SystemDofIds& dofs,
-                                             Index               n_dofs,
-                                             const Options&      options)
+ConstraintTransformer::ConstraintTransformer(const Equations&         equations,
+                                             const model::SystemDofs& dofs,
+                                             Index                    n_dofs,
+                                             const Options&           options)
     : method_(options.method),
       lagrange_regularization_(std::max(Precision(0), options.lagrange_regularization)),
       system_(assemble_constraint_system(
@@ -54,10 +54,10 @@ ConstraintTransformer::ConstraintTransformer(const Equations&    equations,
     }
 }
 
-void ConstraintTransformer::initialize_dof_locations(const SystemDofIds& dofs) {
+void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& dofs) {
     logging::error(has_reduced_map(),
         "[ConstraintTransformer] DOF locations require a reduced map");
-    logging::error(dofs.cols() > 0,
+    logging::error(dofs.width() > 0,
         "[ConstraintTransformer] DOF numbering has no components");
 
     // Invert only the master part of the global numbering. This temporary
@@ -76,13 +76,13 @@ void ConstraintTransformer::initialize_dof_locations(const SystemDofIds& dofs) {
     std::vector<DofLocation> locations(n_master);
     std::vector<Index>       active_nodes;
     std::vector<char>        found(n_master, false);
-    active_nodes.reserve(static_cast<std::size_t>(dofs.rows()));
+    active_nodes.reserve(static_cast<std::size_t>(dofs.nodes()));
 
     // Walk the original node-by-component numbering once. A node belongs to
     // the geometric extent even when its active DOFs are all slaves.
-    for (Index node = 0; node < static_cast<Index>(dofs.rows()); ++node) {
+    for (Index node = 0; node < static_cast<Index>(dofs.nodes()); ++node) {
         bool active = false;
-        for (Eigen::Index component = 0; component < dofs.cols(); ++component) {
+        for (Eigen::Index component = 0; component < dofs.width(); ++component) {
             const auto gid = dofs(node, component);
             if (gid < 0) continue;
 

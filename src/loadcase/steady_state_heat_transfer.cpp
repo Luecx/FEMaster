@@ -17,7 +17,6 @@
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/all_finite.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 
 #include <cmath>
@@ -67,11 +66,11 @@ void SteadyStateHeatTransfer::run() {
     model->step_begin();
 
     // One active scalar equation per node connected to a thermal element
-    const SystemDofIds dofs = Timer::measure(
-        [&]() { return model->build_thermal_dof_index_matrix(); },
+    const model::SystemDofs dofs = Timer::measure(
+        [&]() { return model->build_thermal_dofs(); },
         "numbering thermal degrees of freedom");
 
-    const Index n_dofs = dofs.size() == 0 ? 0 : static_cast<Index>(dofs.maxCoeff() + 1);
+    const Index n_dofs = dofs.size();
     logging::error(n_dofs > 0,
         "STEADYHEATTRANSFER requires at least one thermal element");
 
@@ -88,7 +87,7 @@ void SteadyStateHeatTransfer::run() {
     auto loads = Timer::measure(
         [&]() { return model->build_thermal_load_matrix(target_conditions, step_period, Precision(1)); },
         "assembling thermal loads");
-    const DynamicVector f = mattools::reduce_mat_to_vec(dofs, loads);
+    const DynamicVector f = dofs.reduce(loads);
 
     // Prescribed absolute temperatures constrain the scalar thermal unknowns
     const auto equations = Timer::measure(
@@ -116,7 +115,7 @@ void SteadyStateHeatTransfer::run() {
         "solving steady-state heat transfer");
     const DynamicVector T = transformer.recover_displacement(q);
 
-    model::Field temperature = mattools::expand_vec_to_mat(dofs, T);
+    model::Field temperature = dofs.expand(T);
     temperature.name = "TEMPERATURE";
 
     // Unconnected and non-thermal nodes are not part of the solved system.

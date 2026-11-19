@@ -11,6 +11,7 @@
 
 #include "equation.h"
 #include "../../data/region.h"
+#include "../../model/system_dofs.h"
 
 namespace fem {
 namespace constraint {
@@ -42,7 +43,7 @@ public:
      * @param system_nodal_dofs Global DOF numbering (used for availability checks).
      * @param model_data Model data providing coordinates and topology.
      */
-    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const;
+    Equations get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) const;
 };
 } // namespace constraint
 } // namespace fem

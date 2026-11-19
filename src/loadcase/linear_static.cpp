@@ -21,7 +21,6 @@
 #include "../core/timer.h"
 #include "../mattools/all_finite.h"
 #include "../mattools/mask_field.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../model/element/element_structural.h"
 #include "../model/model.h"
 #include "../solve/eigval/solve_eigval.h"
@@ -120,13 +119,13 @@ void LinearStatic::run() {
         : model->_data->temperature.get();
 
     // Enumerate the current structural system in global generalized coordinates
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix");
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom");
 
     // Assemble step initial/target conditions and selected collectors
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(step_period, Precision(1), SystemDofIds{}, nullptr); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1), model::SystemDofs{}, nullptr); },
         "constructing load matrix (node x 6)");
 
     if (inertia_relief) {
@@ -147,7 +146,7 @@ void LinearStatic::run() {
 
     // collector all the constraints that are active in this analysis
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
+        [&]() { return model->collect_constraints(system_dofs, target_conditions); },
         "building constraints");
 
     // report if required by the user and turn into equations
@@ -199,18 +198,18 @@ void LinearStatic::run() {
     auto K = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat, reference_internal, base_displacement,
+                system_dofs, reference_internal, base_displacement,
                 target_temperature, base_displacement, base_temperature,
                 nullptr, false);
         },
         "constructing tangent stiffness and reference internal force");
 
     auto f_external = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        [&]() { return system_dofs.reduce(global_load_mat); },
         "reducing external load matrix -> active vector");
 
     auto f_reference = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        [&]() { return system_dofs.reduce(reference_internal); },
         "reducing reference internal force -> active vector");
 
     // General linear statics: K0 u = F - fint(0,Ttarget).
@@ -220,7 +219,7 @@ void LinearStatic::run() {
     if (perturbation) {
         DynamicVector f_start = DynamicVector::Zero(f_external.size());
         if (step_start_load) {
-            f_start = mattools::reduce_mat_to_vec(active_dof_idx_mat, *step_start_load);
+            f_start = system_dofs.reduce(*step_start_load);
         }
 
         model::Field base_internal = model->_data->create_field_(
@@ -230,7 +229,7 @@ void LinearStatic::run() {
             base_internal, base_displacement, base_temperature,
             &base_displacement, base_temperature, false, nullptr);
         f_base_internal =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, base_internal);
+            system_dofs.reduce(base_internal);
         f = (f_external - f_start) - (f_reference - f_base_internal);
     }
 
@@ -251,7 +250,7 @@ void LinearStatic::run() {
             options.method = constraint_method;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,
+                system_dofs,
                 K.rows(),
                 options);
         },
@@ -311,15 +310,15 @@ void LinearStatic::run() {
         "computing support reactions");
 
     auto global_disp_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
+        [&]() { return system_dofs.expand(u); },
         "expanding solved displacement to nodal field");
 
     auto global_react_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
+        [&]() { return system_dofs.expand(r_support); },
         "expanding support reactions to matrix form");
 
     auto global_internal_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, internal_active); },
+        [&]() { return system_dofs.expand(internal_active); },
         "expanding internal nodal forces to matrix form");
 
     // export stiffness files in .mtx format
@@ -330,7 +329,7 @@ void LinearStatic::run() {
     }
 
     auto reaction_masked = mattools::mask_field(
-        global_react_mat, groups.support_mask(active_dof_idx_mat), "REACTION_FORCES"
+        global_react_mat, groups.support_mask(system_dofs), "REACTION_FORCES"
     );
 
     Timer::measure(

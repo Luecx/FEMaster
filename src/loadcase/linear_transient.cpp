@@ -19,7 +19,6 @@
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../io/writer/write_mtx.h"
 
 #include <algorithm>
@@ -67,15 +66,15 @@ void Transient::run() {
     model->step_begin();
 
     // (1) Unconstrained DOF index
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom"
     );
 
     // (2) Constraint equations
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
+            auto groups = this->model->collect_constraints(system_dofs, target_conditions);
             return groups.flatten();
         },
         "building constraints"
@@ -83,11 +82,11 @@ void Transient::run() {
 
     // (3) Active stiffness K and mass M
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(system_dofs); },
         "constructing stiffness matrix K"
     );
     auto M = Timer::measure(
-        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_lumped_mass_matrix(system_dofs); },
         "constructing mass matrix M"
     );
 
@@ -97,7 +96,7 @@ void Transient::run() {
             ConstraintTransformer::Options copt;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,
+                system_dofs,
                 K.rows(),            // n active DOFs
                 copt
             );
@@ -149,11 +148,11 @@ void Transient::run() {
 
     // (7) Build time-dependent reduced force callback for the solver
     auto reduced_force = [this,
-                           &active_dof_idx_mat,
+                           &system_dofs,
                            CT_ptr = CT.get(),
                            &K](double time) -> DynamicVector {
         auto load_matrix = build_target_load_matrix(time);
-        auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
+        auto f_active = system_dofs.reduce(load_matrix);
         return CT_ptr->assemble_system_rhs(K, f_active);
     };
 
@@ -162,7 +161,7 @@ void Transient::run() {
         auto load_basis = model->build_load_basis(target_conditions);
         reduced_force_basis.reserve(load_basis.size());
         for (auto& [amplitude, load_matrix] : load_basis) {
-            auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
+            auto f_active = system_dofs.reduce(load_matrix);
             reduced_force_basis.emplace_back(amplitude, CT->assemble_system_rhs(K, f_active));
         }
     }
@@ -189,7 +188,7 @@ void Transient::run() {
         logging::error(velocity_state->components == 6,
             "Initial velocity field must have exactly 6 components");
 
-        auto v_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, *velocity_state);
+        auto v_active = system_dofs.reduce(*velocity_state);
         // Map to reduced initial velocity qdot0 = T^T v_active
         qdot0 = CT->project_vector(v_active);
     }
@@ -221,9 +220,9 @@ void Transient::run() {
         auto v_full = CT->recover_velocity(qvk);
         auto a_full = CT->recover_acceleration(qak);
 
-        auto U_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        auto V_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
-        auto A_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
+        auto U_mat = system_dofs.expand(u_full);
+        auto V_mat = system_dofs.expand(v_full);
+        auto A_mat = system_dofs.expand(a_full);
 
         using io::writer::OutputField;
         output.begin_frame(frame_time, "_" + std::to_string(k));

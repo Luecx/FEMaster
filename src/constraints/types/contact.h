@@ -28,6 +28,7 @@
 
 #include "../../data/field.h"
 #include "../../data/region.h"
+#include "../../model/system_dofs.h"
 
 #include <unordered_map>
 #include <vector>
@@ -121,10 +122,10 @@ public:
     bool update_augmented_lagrange() const;
 
     // Current mortar residual and frozen-geometry contact tangent
-    void assemble(SystemDofIds&     system_nodal_dofs,
-                  model::ModelData& model_data,
-                  model::NodeData&  nodal_forces,
-                  TripletList&      triplets) const;
+    void assemble(model::SystemDofs& system_nodal_dofs,
+                  model::ModelData&  model_data,
+                  model::NodeData&   nodal_forces,
+                  TripletList&       triplets) const;
 };
 
 } // namespace constraint

@@ -49,7 +49,6 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/eigenvalue_estimates.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "../io/writer/write_mtx.h"
@@ -139,15 +138,15 @@ void LinearBuckling::run() {
     model->step_begin();
 
     // (1) Unconstrained DOF index (node x 6 -> active dof id or -1)
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom"
     );
 
     // (2) Build constraint equations from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
+            auto groups = this->model->collect_constraints(system_dofs, target_conditions);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -156,13 +155,13 @@ void LinearBuckling::run() {
 
     // (3) Global load matrix (node x 6) -> keep for reporting if you like
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(Precision(1), Precision(1), SystemDofIds{}, nullptr); },
+        [&]() { return build_step_load_matrix(Precision(1), Precision(1), model::SystemDofs{}, nullptr); },
         "building global load matrix"
     );
 
     // (4) Active stiffness K (n x n)
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(system_dofs); },
         "constructing stiffness matrix K"
     );
 
@@ -188,12 +187,12 @@ void LinearBuckling::run() {
     );
 
     auto f_external = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        [&]() { return system_dofs.reduce(global_load_mat); },
         "reducing external preload -> active vector"
     );
 
     auto f_reference = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        [&]() { return system_dofs.reduce(reference_internal); },
         "reducing reference internal preload -> active vector"
     );
 
@@ -205,7 +204,7 @@ void LinearBuckling::run() {
             ConstraintTransformer::Options copt;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,   // system DOF map
+                system_dofs,          // system DOF map
                 K.rows(),             // n (active DOFs)
                 copt
             );
@@ -254,14 +253,14 @@ void LinearBuckling::run() {
     // evaluated element-locally from this state, so the buckling solver never
     // constructs an intermediate global integration-point stress field.
     auto U_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
+        [&]() { return system_dofs.expand(u_pre); },
         "expanding preload displacement to node x DOF"
     );
 
     auto Kg = Timer::measure(
         [&]() {
             return model->build_geom_stiffness_matrix(
-                active_dof_idx_mat,
+                system_dofs,
                 U_mat,
                 model->_data->temperature.get(),
                 nullptr,
@@ -287,7 +286,7 @@ void LinearBuckling::run() {
     } else {
         // Bneg can be indefinite. The Ritz estimator uses elastic energy as
         // its positive metric and selects the smallest positive load factor.
-        CT->initialize_dof_locations(active_dof_idx_mat);
+        CT->initialize_dof_locations(system_dofs);
         const Precision lambda_est_raw = Timer::measure(
             [&]() { return mattools::estimate_eigenvalue_ritz(
                 A, Bneg, *model->_data->positions, *CT); },
@@ -341,7 +340,7 @@ void LinearBuckling::run() {
         // Reduced -> full vector with constraints
         DynamicVector u_mode = CT->recover_displacement(m.q_mode);
         // Full -> node x DOF
-        auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        auto mode_field = system_dofs.expand(u_mode);
         m.mode_mat      = mode_field;
     }
 

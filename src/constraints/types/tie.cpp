@@ -104,7 +104,7 @@ static std::vector<ID> collect_slave_nodes(const model::NodeRegion::Ptr&    slav
     return out;
 }
 
-Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     logging::error(!adjust,
         "TIE: ADJUST is not supported for surface-surface mortar");
     logging::error(model_data.positions != nullptr,
@@ -530,7 +530,7 @@ void Tie::adjust_geometry(model::ModelData& model_data) {
 /**
  * @copydoc Tie::get_equations
  */
-Equations Tie::get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& model_data) {
+Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelData& model_data) {
     logging::error(model_data.positions != nullptr,
         "positions field not set in model data");
     if (adjust && system_nodal_dofs == nullptr) {
@@ -760,7 +760,7 @@ Equations Tie::get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& 
 /**
  * @copydoc Tie::get_equations
  */
-Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+Equations Tie::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) {
     return get_equations(&system_nodal_dofs, model_data);
 }
 }    // namespace constraint

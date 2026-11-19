@@ -62,7 +62,7 @@ Mpc::Mpc(ID node_1_id, ID node_2_id, Type type)
  * @param model_data Model data containing the current nodal positions.
  * @return Symbolic homogeneous constraint equations.
  */
-Equations Mpc::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const {
+Equations Mpc::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) const {
     Equations equations{};
 
     // PIN and TIE directly equate the selected active generalized DOFs
@@ -154,17 +154,17 @@ Equations Mpc::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
  * the master rotations that contribute to each active slave translation through
  * the rigid-link cross product.
  *
- * @param system_dof_mask Current structural DOF activation mask.
+ * @param system_dofs Current structural DOF activation, not yet numbered.
  * @return Master-node DOFs that must be activated for this MPC.
  */
-Dofs Mpc::master_dofs(const SystemDofs& system_dof_mask) const {
+Dofs Mpc::master_dofs(const model::SystemDofs& system_dofs) const {
     Dofs required{false, false, false, false, false, false};
 
     // PIN and TIE require a matching master component for every selected slave
     // component that already participates in the structural system
     const Dim n_direct_dofs = type_ == Type::Pin ? Dim(3) : Dim(6);
     for (Dim dof = 0; dof < n_direct_dofs; ++dof) {
-        required(dof) = system_dof_mask(node_1_id_, dof);
+        required(dof) = system_dofs.active(node_1_id_, dof);
     }
 
     if (type_ != Type::Beam) {
@@ -173,9 +173,9 @@ Dofs Mpc::master_dofs(const SystemDofs& system_dof_mask) const {
 
     // A BEAM master rotation is required whenever it is directly coupled at the
     // slave or contributes to an active slave translation through theta x r
-    required(3) = required(3) || system_dof_mask(node_1_id_, 1) || system_dof_mask(node_1_id_, 2);
-    required(4) = required(4) || system_dof_mask(node_1_id_, 0) || system_dof_mask(node_1_id_, 2);
-    required(5) = required(5) || system_dof_mask(node_1_id_, 0) || system_dof_mask(node_1_id_, 1);
+    required(3) = required(3) || system_dofs.active(node_1_id_, 1) || system_dofs.active(node_1_id_, 2);
+    required(4) = required(4) || system_dofs.active(node_1_id_, 0) || system_dofs.active(node_1_id_, 2);
+    required(5) = required(5) || system_dofs.active(node_1_id_, 0) || system_dofs.active(node_1_id_, 1);
 
     return required;
 }

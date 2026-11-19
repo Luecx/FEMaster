@@ -101,10 +101,8 @@ using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;
 // Degree-of-freedom types
 // ============================================================================
 
-using Dofs         = Eigen::Matrix<bool, 1, 6>;
-using ElDofs       = Dofs;
-using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using Dofs   = Eigen::Matrix<bool, 1, 6>;
+using ElDofs = Dofs;
 
 // ============================================================================
 // Integration field types

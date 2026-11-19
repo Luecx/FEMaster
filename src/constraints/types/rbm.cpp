@@ -76,12 +76,12 @@ static Vec3 compute_center_of_gravity(const Rbm& rbm, model::ModelData& model_da
     return c_num / m;
 }
 
-static bool has_any_translation_dof(const SystemDofIds& dofs, ID node_id) {
+static bool has_any_translation_dof(const model::SystemDofs& dofs, ID node_id) {
     return dofs(node_id, 0) >= 0 || dofs(node_id, 1) >= 0 || dofs(node_id, 2) >= 0;
 }
 
 static bool add_if_available(Equation& equation,
-                             const SystemDofIds& dofs,
+                             const model::SystemDofs& dofs,
                              ID node_id,
                              Dim dof,
                              Precision coeff) {
@@ -93,7 +93,7 @@ static bool add_if_available(Equation& equation,
 }
 } // namespace
 
-Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const {
+Equations Rbm::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data) const {
     Equations eqs;
 
     logging::error(model_data.positions != nullptr,

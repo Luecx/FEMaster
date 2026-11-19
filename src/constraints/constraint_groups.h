@@ -13,6 +13,7 @@
 
 #include "types/equation.h"
 #include "../core/types_eig.h"
+#include "../model/system_dofs.h"
 
 namespace fem {
 namespace constraint {
@@ -56,7 +57,7 @@ struct ConstraintGroups {
     // Entries are marked where support equations reference active structural
     // DOFs. All other entries remain false. The mask is primarily used to
     // restrict reaction force output to DOFs associated with supports.
-    BooleanMatrix support_mask(const SystemDofIds& dofs) const;
+    BooleanMatrix support_mask(const model::SystemDofs& dofs) const;
 
     // Write a detailed overview of all constraint groups to the logger.
     // Reports the number of equations in each group and formats individual

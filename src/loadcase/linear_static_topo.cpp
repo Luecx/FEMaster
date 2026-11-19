@@ -22,7 +22,6 @@
 #include "../mattools/assemble.h"
 #include "../mattools/all_finite.h"
 #include "../mattools/mask_field.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"
@@ -74,14 +73,14 @@ void LinearStaticTopo::run() {
     model->step_begin();
 
     // Enumerate the current structural system in global generalized coordinates
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom"
     );
 
     // Assemble direct history and collector-activated conditions from the current model
     auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(step_period, Precision(1), SystemDofIds{}, nullptr); },
+        [&]() { return build_step_load_matrix(step_period, Precision(1), model::SystemDofs{}, nullptr); },
         "constructing load matrix (node x 6)"
     );
 
@@ -126,14 +125,14 @@ void LinearStaticTopo::run() {
     }
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
+        [&]() { return model->collect_constraints(system_dofs, target_conditions); },
         "building constraints"
     );
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
     auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(system_dofs); },
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
@@ -151,11 +150,11 @@ void LinearStaticTopo::run() {
         nullptr);
 
     auto f_external = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        [&]() { return system_dofs.reduce(global_load_mat); },
         "reducing load matrix -> active external vector"
     );
     auto f_reference = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, reference_internal); },
+        [&]() { return system_dofs.reduce(reference_internal); },
         "reducing reference internal force -> active vector"
     );
     auto f = f_external - f_reference;
@@ -189,7 +188,7 @@ void LinearStaticTopo::run() {
             copt.method = constraint_method;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,
+                system_dofs,
                 K.rows(),
                 copt
             );
@@ -250,11 +249,11 @@ void LinearStaticTopo::run() {
     );
 
     auto global_disp_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
+        [&]() { return system_dofs.expand(u); },
         "expanding displacement vector to matrix form"
     );
     auto global_react_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
+        [&]() { return system_dofs.expand(r_support); },
         "expanding support reactions to matrix form"
     );
 
@@ -273,13 +272,13 @@ void LinearStaticTopo::run() {
 
     const bool has_orientation = orientation != nullptr;
 
-    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
+    BooleanMatrix support_mask(system_dofs.nodes(), system_dofs.width());
     support_mask.setConstant(false);
     for (const auto& eq : groups.supports) {
         for (const auto& e : eq.entries) {
             if (e.node_id >= 0 && e.node_id < support_mask.rows()
              && e.dof < support_mask.cols()
-             && active_dof_idx_mat(e.node_id, e.dof) != -1) {
+             && system_dofs(e.node_id, e.dof) != -1) {
                 support_mask(e.node_id, e.dof) = true;
             }
         }

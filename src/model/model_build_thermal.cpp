@@ -23,7 +23,7 @@
  *
  * @see ThermalElement
  * @see bc::ThermalCollector
- * @see Model::build_thermal_dof_index_matrix
+ * @see Model::build_thermal_dofs
  *
  * @author Finn Eggers
  * @date 18.09.2026
@@ -32,7 +32,6 @@
 #include "../core/config.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.h"
-#include "../mattools/numerate_dofs.h"
 #include "element/element_thermal.h"
 #include "model.h"
 
@@ -50,12 +49,11 @@ namespace fem::model {
  *
  * Every node referenced by at least one `ThermalElement` receives exactly one
  * active temperature component. Nodes referenced only by non-thermal elements
- * remain inactive. The resulting boolean mask is converted to contiguous
- * zero-based global thermal equation identifiers.
+ * remain inactive. The activated nodes are numbered contiguously from zero.
  *
- * @return Node-by-one matrix of global thermal system DOF identifiers.
+ * @return Node-by-one numbering of the thermal system DOFs.
  */
-SystemDofIds Model::build_thermal_dof_index_matrix() {
+SystemDofs Model::build_thermal_dofs() {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
@@ -121,19 +119,20 @@ SystemDofIds Model::build_thermal_dof_index_matrix() {
         std::rethrow_exception(failure);
     }
 
-    SystemDofs mask{node_count, 1};
+    SystemDofs system_dofs{node_count, 1};
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        mask(node, 0) = active_nodes[static_cast<std::size_t>(node)].load(
-            std::memory_order_relaxed
-        );
+        if (active_nodes[static_cast<std::size_t>(node)].load(std::memory_order_relaxed)) {
+            system_dofs.activate(node, Index(0));
+        }
     }
 
     // Contiguous global equation numbering remains a deterministic prefix-style
     // operation after the parallel activation phase.
-    return mattools::numerate_dofs(mask);
+    system_dofs.numerate();
+    return system_dofs;
 }
 
 /**
@@ -152,13 +151,13 @@ SystemDofIds Model::build_thermal_dof_index_matrix() {
  * @return Assembled global conductivity matrix `K_T`.
  */
 SparseMatrix Model::build_thermal_conductivity_matrix(
-    const SystemDofIds& system_dof_ids
+    const SystemDofs& system_dof_ids
 ) {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.rows()) == _data->positions->rows,
+    logging::error(static_cast<Index>(system_dof_ids.nodes()) == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
-    logging::error(system_dof_ids.cols() == 1,
+    logging::error(system_dof_ids.width() == 1,
         "Model: thermal DOF map must contain exactly one component");
 
     // Select thermally participating elements in parallel. The indexed temporary
@@ -222,7 +221,7 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
     Field rhs = _data->create_field_("THERMAL_LOAD", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
-    const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();
+    const SystemDofs      system_dof_ids = build_thermal_dofs();
     constraint::Equations equations{};
     TripletList           matrix{};
 
@@ -258,17 +257,17 @@ Field Model::build_thermal_load_matrix(const bc::ConditionState& target,
  * @param time Analysis time supplied to amplitude-dependent conditions.
  * @return Thermal boundary operator K_h for the current model state.
  */
-SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofIds& system_dof_ids,
+SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofs& system_dof_ids,
                                                   const bc::ConditionState& target, Precision time) {
     // Validate the scalar equation numbering and compiled nodal domain
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.rows()) == _data->positions->rows,
+    logging::error(static_cast<Index>(system_dof_ids.nodes()) == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
-    logging::error(system_dof_ids.cols() == 1,
+    logging::error(system_dof_ids.width() == 1,
         "Model: thermal DOF map must contain exactly one component");
 
-    const int system_size = system_dof_ids.size() == 0 ? 0 : system_dof_ids.maxCoeff() + 1;
+    const int system_size = static_cast<int>(system_dof_ids.size());
     Field rhs = _data->create_field_("THERMAL_BOUNDARY_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
@@ -308,7 +307,7 @@ constraint::Equations Model::collect_thermal_constraints(const bc::ConditionStat
     Field rhs = _data->create_field_("THERMAL_CONSTRAINT_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 
-    const SystemDofIds    system_dof_ids = build_thermal_dof_index_matrix();
+    const SystemDofs      system_dof_ids = build_thermal_dofs();
     constraint::Equations equations{};
     TripletList           matrix{};
 

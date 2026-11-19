@@ -41,7 +41,7 @@ namespace constraint {
 // position in the input collection when empty rows are discarded.
 ConstraintSystem assemble_constraint_system(
     const Equations&         equations,
-    const SystemDofIds&      system_dofs,
+    const model::SystemDofs& system_dofs,
     Index                    n_dofs,
     const ConstraintOptions& options
 ) {

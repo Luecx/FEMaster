@@ -18,6 +18,7 @@
 #include "../model/model.h"
 #include "../io/writer/writers.h"
 #include "../io/writer/output_request_handler.h"
+#include "../model/system_dofs.h"
 
 #include <memory>
 #include <string>
@@ -88,10 +89,10 @@ struct LoadCase : public Castable {
     // Evaluate a transition or the nominal active target at analysis time. A
     // non-null load_tangent receives the follower-load derivative df/du in the
     // equation numbering of system_dof_ids.
-    model::Field build_step_load_matrix  (Precision           time,
-                                          Precision           progress,
-                                          const SystemDofIds& system_dof_ids,
-                                          TripletList*        load_tangent) const;
+    model::Field build_step_load_matrix  (Precision                time,
+                                          Precision                progress,
+                                          const model::SystemDofs& system_dof_ids,
+                                          TripletList*             load_tangent) const;
     model::Field build_target_load_matrix(Precision time) const;
 
     // Assigned load-case identifier

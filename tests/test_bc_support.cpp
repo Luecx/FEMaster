@@ -37,9 +37,9 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     nset->add(0);
     bc::Support s_id(nset, Vec6(0, NAN, NAN, NAN, NAN, NAN));
 
-    model::Field          rhs{};
-    constraint::Equations eqs_id{};
-    SystemDofIds           system_dof_ids{};
+    model::Field           rhs{};
+    constraint::Equations  eqs_id{};
+    model::SystemDofs      system_dof_ids{};
     TripletList            matrix{};
 
     s_id.apply(*mdl._data, rhs, nullptr, eqs_id, system_dof_ids, matrix, Precision(1));

@@ -665,7 +665,7 @@ void apply_inertia_relief(model::ModelData& model_data,
     // convention. The resulting field therefore already contains the signed
     // balancing inertia forces.
     constraint::Equations constraints{};
-    SystemDofIds          system_dof_ids{};
+    model::SystemDofs     system_dof_ids{};
     TripletList           system_matrix{};
 
     inertia_load.apply(

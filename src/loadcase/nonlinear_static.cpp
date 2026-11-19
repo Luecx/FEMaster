@@ -29,9 +29,7 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
-#include "../mattools/build_sparsity_pattern.h"
 #include "../mattools/mask_field.h"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
 #include "../io/writer/write_mtx.h"
@@ -243,9 +241,9 @@ void NonlinearStatic::run() {
             "NONLINEARSTATIC RIKS: predefined temperature changes are not supported");
     }
 
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_structural_dof_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
+    auto system_dofs = Timer::measure(
+        [&]() { return model->build_structural_dofs(); },
+        "numbering structural degrees of freedom"
     );
 
     // Detect configuration-dependent external loads. Follower loads depend on
@@ -274,23 +272,19 @@ void NonlinearStatic::run() {
     // not the instantaneous derivative: load control still evaluates the
     // actual external force at each Newton trial, while Riks disallows
     // newly amplitude-driven loads to retain a proportional load direction.
-    const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0), active_dof_idx_mat, &discarded_load_tangent);
-    const auto global_load_total = build_step_load_matrix(step_period , Precision(1), active_dof_idx_mat, &discarded_load_tangent);
+    const auto global_load_start = build_step_load_matrix(Precision(0), Precision(0), system_dofs, &discarded_load_tangent);
+    const auto global_load_total = build_step_load_matrix(step_period , Precision(1), system_dofs, &discarded_load_tangent);
     auto global_load_delta = subtract_field(global_load_total, global_load_start, "LOAD_DELTA");
 
-    const DynamicVector f_total = mattools::reduce_mat_to_vec(
-        active_dof_idx_mat, global_load_delta
-    );
+    const DynamicVector f_total = system_dofs.reduce(global_load_delta);
 
     // The initial force may include large reaction-only loads. Project it
     // through the same constraint map as the Newton residual before using it
     // for relative convergence normalization.
-    const DynamicVector f_initial = mattools::reduce_mat_to_vec(
-        active_dof_idx_mat, global_load_start
-    );
+    const DynamicVector f_initial = system_dofs.reduce(global_load_start);
 
     auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, target_conditions); },
+        [&]() { return model->collect_constraints(system_dofs, target_conditions); },
         "building constraints"
     );
 
@@ -313,19 +307,19 @@ void NonlinearStatic::run() {
         }
     }
 
-    const Index n_active   = active_dof_idx_mat.maxCoeff() + 1;
+    const Index n_active   = system_dofs.size();
     const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
 
     // Element connectivity and active numbering remain fixed throughout this
     // step. Reuse their pattern while assembling contact couplings separately.
     const auto tangent_pattern = Timer::measure(
-        [&]() { return mattools::build_sparsity_pattern(model->_data->elements, active_dof_idx_mat); },
+        [&]() { return system_dofs.pattern(model->_data->elements); },
         "building nonlinear tangent sparsity pattern"
     );
 
     BooleanMatrix support_mask(
-        active_dof_idx_mat.rows(),
-        active_dof_idx_mat.cols()
+        system_dofs.nodes(),
+        system_dofs.width()
     );
     support_mask.setConstant(false);
 
@@ -334,7 +328,7 @@ void NonlinearStatic::run() {
             if (e.node_id >= 0
                 && e.node_id < support_mask.rows()
                 && e.dof < support_mask.cols()
-                && active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                && system_dofs(e.node_id, e.dof) != -1) {
                 support_mask(e.node_id, e.dof) = true;
             }
         }
@@ -347,7 +341,7 @@ void NonlinearStatic::run() {
 
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,
+                system_dofs,
                 n_active,
                 options
             );
@@ -369,7 +363,7 @@ void NonlinearStatic::run() {
     logging::down();
 
     DynamicVector       q_total      = DynamicVector::Zero(transformer->unknowns());
-    const DynamicVector u_initial    = mattools::reduce_mat_to_vec(active_dof_idx_mat, initial_displacement);
+    const DynamicVector u_initial    = system_dofs.reduce(initial_displacement);
     const DynamicVector u_particular = transformer->recover_displacement(q_total);
 
     logging::error(control != NonlinearControl::ArcLength || transformer->homogeneous(),
@@ -391,10 +385,10 @@ void NonlinearStatic::run() {
         ? reduced_initial_load.lpNorm<Eigen::Infinity>()
         : Precision(0);
 
-    model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+    model::Field displacement = system_dofs.expand(u_total);
 
     auto update_positions = [&]() {
-        displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+        displacement = system_dofs.expand(u_total);
         *model->_data->positions = current_positions_from_displacement(
             reference_positions,
             displacement
@@ -446,7 +440,7 @@ void NonlinearStatic::run() {
 
         const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
         const model::Field displacement_evaluation =
-            mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
+            system_dofs.expand(u_evaluation);
 
         *model->_data->positions = current_positions_from_displacement(
             reference_positions,
@@ -468,7 +462,7 @@ void NonlinearStatic::run() {
 
         try {
             Kt = model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat,
+                system_dofs,
                 internal_mat,
                 displacement_evaluation,
                 step_temperature,
@@ -490,7 +484,7 @@ void NonlinearStatic::run() {
         // lambda again: apply() has already interpolated start and target values.
         // The same evaluation returns the analytic load tangent df/du.
         TripletList load_tangent_entries;
-        const auto  external_mat = build_step_load_matrix(lambda * step_period, lambda, active_dof_idx_mat, &load_tangent_entries);
+        const auto  external_mat = build_step_load_matrix(lambda * step_period, lambda, system_dofs, &load_tangent_entries);
 
         // The external load enters the residual r = f_ext - f_int with a
         // positive sign, so its derivative is subtracted from the structural
@@ -507,9 +501,9 @@ void NonlinearStatic::run() {
         }
 
         const DynamicVector internal_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
+            system_dofs.reduce(internal_mat);
         const DynamicVector external_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
+            system_dofs.reduce(external_mat);
         const DynamicVector full_residual = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
@@ -545,7 +539,7 @@ void NonlinearStatic::run() {
 
         const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
         const model::Field displacement_evaluation =
-            mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
+            system_dofs.expand(u_evaluation);
 
         *model->_data->positions = current_positions_from_displacement(
             reference_positions,
@@ -571,7 +565,7 @@ void NonlinearStatic::run() {
                 &displacement_evaluation,
                 step_temperature,
                 true,
-                &active_dof_idx_mat
+                &system_dofs
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
@@ -581,15 +575,15 @@ void NonlinearStatic::run() {
         if (logging_was_enabled) logging::enable();
 
         const DynamicVector internal_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
+            system_dofs.reduce(internal_mat);
 
         // Every Newton trial evaluates the condition-defined transition at
         // the actual trial load factor. Do not multiply the assembled load by
         // lambda again: apply() has already interpolated start and target values.
         TripletList discarded_tangent;
-        const auto  external_mat = build_step_load_matrix(lambda * step_period, lambda, active_dof_idx_mat, &discarded_tangent);
+        const auto  external_mat = build_step_load_matrix(lambda * step_period, lambda, system_dofs, &discarded_tangent);
         const DynamicVector external_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, external_mat);
+            system_dofs.reduce(external_mat);
         const DynamicVector full_residual = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
@@ -821,11 +815,11 @@ void NonlinearStatic::run() {
             &displacement,
             step_temperature,
             true,
-            &active_dof_idx_mat
+            &system_dofs
         );
 
         TripletList discarded_tangent;
-        auto        increment_external = build_step_load_matrix(lambda * step_period, lambda, active_dof_idx_mat, &discarded_tangent);
+        auto        increment_external = build_step_load_matrix(lambda * step_period, lambda, system_dofs, &discarded_tangent);
 
         auto increment_reaction_full = subtract_field(
             increment_internal,
@@ -1016,7 +1010,7 @@ void NonlinearStatic::run() {
                 [&](const DynamicVector& q, Precision lambda) -> DynamicVector {
                     const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
                     const model::Field displacement_evaluation =
-                        mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
+                        system_dofs.expand(u_evaluation);
                     *model->_data->positions = current_positions_from_displacement(
                         reference_positions, displacement_evaluation);
 
@@ -1025,13 +1019,13 @@ void NonlinearStatic::run() {
                     TripletList start_tangent;
                     TripletList end_tangent;
                     const auto start_load = build_step_load_matrix(
-                        Precision(0), Precision(0), active_dof_idx_mat, &start_tangent);
+                        Precision(0), Precision(0), system_dofs, &start_tangent);
                     const auto end_load = build_step_load_matrix(
-                        step_period, Precision(1), active_dof_idx_mat, &end_tangent);
+                        step_period, Precision(1), system_dofs, &end_tangent);
                     const auto load_delta = subtract_field(
                         end_load, start_load, "CURRENT_LOAD_DELTA");
                     const DynamicVector full_derivative =
-                        mattools::reduce_mat_to_vec(active_dof_idx_mat, load_delta);
+                        system_dofs.reduce(load_delta);
 
                     DynamicVector reduced_derivative;
                     transformer->project_vector(full_derivative, reduced_derivative);
@@ -1077,7 +1071,7 @@ void NonlinearStatic::run() {
     auto final_Kt = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat,
+                system_dofs,
                 final_internal,
                 displacement,
                 step_temperature,
@@ -1104,7 +1098,7 @@ void NonlinearStatic::run() {
 
     // Preserve the accepted path time, not merely the nominal step limit.
     TripletList discarded_final_tangent;
-    auto        global_load_final = build_step_load_matrix(load_factor * step_period, load_factor, active_dof_idx_mat, &discarded_final_tangent);
+    auto        global_load_final = build_step_load_matrix(load_factor * step_period, load_factor, system_dofs, &discarded_final_tangent);
     committed_structural_load = std::make_shared<model::Field>(global_load_final);
     auto reaction_full = subtract_field(
         final_internal,

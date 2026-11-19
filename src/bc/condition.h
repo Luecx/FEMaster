@@ -51,6 +51,7 @@
 #include "../core/printable.h"
 #include "../core/types_eig.h"
 #include "../core/types_num.h"
+#include "../model/system_dofs.h"
 
 #include <cmath>
 #include <memory>
@@ -93,13 +94,13 @@ struct Condition : Printable {
     // the global equation indices of system_dof_ids and contain df/du with the
     // same multiplier as the load. A null load_tangent requests no linearization.
     virtual void apply(
-        model::ModelData&      model_data,
-        model::Field&          load,
-        TripletList*           load_tangent,
-        constraint::Equations& constraints,
-        const SystemDofIds&    system_dof_ids,
-        TripletList&           system_matrix,
-        Precision              scale
+        model::ModelData&        model_data,
+        model::Field&            load,
+        TripletList*             load_tangent,
+        constraint::Equations&   constraints,
+        const model::SystemDofs& system_dof_ids,
+        TripletList&             system_matrix,
+        Precision                scale
     ) = 0;
 
     // Diagnostics
@@ -110,12 +111,12 @@ protected:
     // to the triplets. Nodal positions only change through the translational
     // DOFs, so the columns always address components 0..2. Components without
     // an active equation do not exist in the system and are skipped.
-    static void add_load_tangent_block(TripletList&        load_tangent,
-                                       const SystemDofIds& system_dof_ids,
-                                       ID                  row_node,
-                                       Dim                 row_dof,
-                                       ID                  col_node,
-                                       const Mat3&         block) {
+    static void add_load_tangent_block(TripletList&             load_tangent,
+                                       const model::SystemDofs& system_dof_ids,
+                                       ID                       row_node,
+                                       Dim                      row_dof,
+                                       ID                       col_node,
+                                       const Mat3&              block) {
         for (Dim i = 0; i < 3; ++i) {
             const int row = system_dof_ids(row_node, row_dof + i);
             if (row < 0) continue;
