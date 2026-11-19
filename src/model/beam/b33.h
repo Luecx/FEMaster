@@ -101,8 +101,22 @@ struct B33 : BeamElement<2> {
         BeamElement<2>::rotate_yz_to_principal(phi, ey, ez);
         BeamElement<2>::rotate_yz_to_principal(phi, refy, refz);
 
+        // Only bending and torsion follow the shear-point line. Axial
+        // extension belongs to the centroid and must not acquire fictitious
+        // extension/bending coupling from the shear-center offset.
+        StaticMatrix<12, 12> K_axial = StaticMatrix<12, 12>::Zero();
+        K_axial(0, 0) = a;
+        K_axial(0, 6) = -a;
+        K_axial(6, 0) = -a;
+        K_axial(6, 6) = a;
+        K_sp(0, 0) = 0;
+        K_sp(0, 6) = 0;
+        K_sp(6, 0) = 0;
+        K_sp(6, 6) = 0;
+
         const StaticMatrix<12, 12> B_smp_to_sp = BeamElement<2>::rigid_offset_N(ey, ez);
-        const StaticMatrix<12, 12> K_smp = B_smp_to_sp.transpose() * K_sp * B_smp_to_sp;
+        const StaticMatrix<12, 12> K_smp =
+            B_smp_to_sp.transpose() * K_sp * B_smp_to_sp + K_axial;
         const StaticMatrix<12, 12> B_ref_to_smp = BeamElement<2>::rigid_offset_N(-refy, -refz);
         const StaticMatrix<12, 12> K_ref = B_ref_to_smp.transpose() * K_smp * B_ref_to_smp;
         return Trot.transpose() * K_ref * Trot;
@@ -110,7 +124,7 @@ struct B33 : BeamElement<2> {
 
     StaticMatrix<12, 12> mass_impl() override {
         const StaticMatrix<12, 12> Trot = transformation();
-        StaticMatrix<12, 12> M_sp = StaticMatrix<12, 12>::Zero();
+        StaticMatrix<12, 12> M_smp = StaticMatrix<12, 12>::Zero();
 
         Precision A   = get_profile()->area_;
         Precision L   = length();
@@ -118,7 +132,7 @@ struct B33 : BeamElement<2> {
         Precision Ip  = get_profile()->inertia_y_ + get_profile()->inertia_z_;
         Precision IpA = Ip / A;
 
-        M_sp <<
+        M_smp <<
             140,        0,         0,         0,         0,         0,        70,         0,         0,         0,          0,          0,
               0,      156,         0,         0,         0,    22 * L,         0,        54,         0,         0,          0,    -13 * L,
               0,        0,       156,         0,   -22 * L,         0,         0,         0,        54,         0,     13 * L,          0,
@@ -132,7 +146,7 @@ struct B33 : BeamElement<2> {
               0,        0,    13 * L,         0,-3 * L * L,         0,         0,         0,    22 * L,         0,  4 * L * L,          0,
               0,  -13 * L,         0,         0,         0,-3 * L * L,         0,   -22 * L,         0,         0,          0,  4 * L * L;
 
-        M_sp *= rho * L * A / 420;
+        M_smp *= rho * L * A / 420;
 
         Precision phi = Precision(0);
         {
@@ -144,16 +158,13 @@ struct B33 : BeamElement<2> {
         }
 
         Profile* pr = get_profile();
-        Precision ey   = pr->offset_y_;
-        Precision ez   = pr->offset_z_;
         Precision refy = pr->reference_y_;
         Precision refz = pr->reference_z_;
 
-        BeamElement<2>::rotate_yz_to_principal(phi, ey, ez);
         BeamElement<2>::rotate_yz_to_principal(phi, refy, refz);
 
-        const StaticMatrix<12, 12> B_smp_to_sp = BeamElement<2>::rigid_offset_N(ey, ez);
-        const StaticMatrix<12, 12> M_smp = B_smp_to_sp.transpose() * M_sp * B_smp_to_sp;
+        // Mass properties are centroidal: moving the shear point must not
+        // move the center of mass or introduce a fictitious rotary inertia.
         const StaticMatrix<12, 12> B_ref_to_smp = BeamElement<2>::rigid_offset_N(-refy, -refz);
         const StaticMatrix<12, 12> M_ref = B_ref_to_smp.transpose() * M_smp * B_ref_to_smp;
         return Trot.transpose() * M_ref * Trot;

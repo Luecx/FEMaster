@@ -182,7 +182,9 @@ For \val{GENERAL} and geometric input, the first data line is followed by an opt
 
 A \key{DENSITY} override may be specified without changing a shared named material. If \key{PROFILE} is used, the only data line is the optional section direction.
 
-For closed circular sections, torsion is calculated from the polar second moment. For solid rectangles and thin-walled open/closed library shapes, torsion uses engineering approximations. The currently generic transverse shear areas remain \(5A/6\) and nontrivial shear-center corrections are not derived. Consequently, these inputs are linear generalized-section approximations, not a claim of full Abaqus library-section equivalence.
+For closed circular sections, torsion is calculated from the polar second moment. For solid rectangles and thin-walled open/closed library shapes, torsion uses engineering approximations. The currently generic transverse shear areas remain \(5A/6\). Nontrivial shear-center offsets are not derived for the other library shapes; the angle section \val{L} is the exception described below. Consequently, these inputs are linear generalized-section approximations, not a claim of full Abaqus library-section equivalence.
+
+For \val{SECTION=L}, the node/reference line passes through the centroid of the cross-section, not the outer corner or the shear center. In the thin-wall approximation, the shear center is at the intersection of the two leg mid-lines. For horizontal-leg width \(a\), vertical-leg height \(b\), bottom thickness \(t_1\), and side thickness \(t_2\), its location relative to the outer corner is \((t_2/2,t_1/2)\). If the centroid is at \((c_y,c_z)\) relative to that corner, the stored profile offsets are \(e_y=t_2/2-c_y\), \(e_z=t_1/2-c_z\) and \(\mathrm{ref}_y=\mathrm{ref}_z=0\). These offsets are used by both \val{B31} and \val{B33}; the shear-center estimate is approximate for finite-thickness or filleted angles.
 
 The nonzero orientation vector must not be parallel to the beam tangent. It defines the local cross-section basis in which section inertias and offsets are interpreted.
 
