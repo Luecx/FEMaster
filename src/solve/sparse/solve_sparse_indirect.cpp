@@ -8,9 +8,12 @@ namespace fem::solver {
 DynamicMatrix solve_indirect(SolverDevice device,
                              SparseMatrix& mat,
                              const DynamicMatrix& rhs) {
-    logging::error(mat.cols() == mat.rows(), "matrix must be square");
-    logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
-    logging::error(rhs.cols() > 0, "at least one right-hand side is required");
+    logging::error(mat.cols() == mat.rows(),
+        "matrix must be square");
+    logging::error(rhs.rows() == mat.rows(),
+        "missmatch of rhs and matrix");
+    logging::error(rhs.cols() > 0,
+        "at least one right-hand side is required");
 
 #ifndef SUPPORT_GPU
     logging::info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");

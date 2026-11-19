@@ -185,7 +185,8 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
              std::setw(16), std::left, buffer_size_spsv_2,
              std::setw(16), std::left, cuda::manager.mem_free());
     cuda::CudaArray<char> buffer_spsv_2{buffer_size_spsv_2};
-    logging::warning(cuda::manager.mem_free() > 1e9, "Free memory is dangerously low, crashes for no reasons may occur");
+    logging::warning(cuda::manager.mem_free() > 1e9,
+        "Free memory is dangerously low, crashes for no reasons may occur");
 
     runtime_check_cuda(cusparseSpSV_analysis(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
                                              descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,

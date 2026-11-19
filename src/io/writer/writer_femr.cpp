@@ -59,7 +59,8 @@ void append_precision(Bytes& out, Precision value) {
 }
 
 void append_string(Bytes& out, const std::string& value) {
-    logging::error(value.size() <= 0xffffu, "FemrWriter: string is too long");
+    logging::error(value.size() <= 0xffffu,
+        "FemrWriter: string is too long");
     append_uint(out, static_cast<std::uint16_t>(value.size()));
     out.insert(out.end(), value.begin(), value.end());
 }
@@ -72,7 +73,8 @@ Bytes encode_lz4(const Bytes& input) {
     const int stored_size = LZ4_compress_default(
         reinterpret_cast<const char*>(input.data()),
         reinterpret_cast<char*>(out.data()), source_size, static_cast<int>(out.size()));
-    logging::error(stored_size > 0, "FemrWriter: LZ4 compression failed");
+    logging::error(stored_size > 0,
+        "FemrWriter: LZ4 compression failed");
     out.resize(static_cast<std::size_t>(stored_size));
     return out;
 }
@@ -98,7 +100,8 @@ std::uint8_t field_domain_code(model::FieldDomain domain) {
         case model::FieldDomain::NODE: return 1;
         case model::FieldDomain::ELEMENT: return 2;
         default:
-            logging::error(false, "FemrWriter: unsupported FEMR v1 field domain");
+            logging::error(false,
+                "FemrWriter: unsupported FEMR v1 field domain");
             return 0;
     }
 }
@@ -145,7 +148,8 @@ FemrWriter& FemrWriter::operator=(FemrWriter&& other) noexcept {
 void FemrWriter::open(const std::string& filename) {
     close();
     file_.open(filename, std::ios::binary | std::ios::trunc);
-    logging::error(file_.is_open(), "FemrWriter: failed to open file: ", filename);
+    logging::error(file_.is_open(),
+        "FemrWriter: failed to open file: ", filename);
     closed_ = false; file_crc_state_ = 0xffffffffu;
     current_loadcase_ = 0; current_step_type_ = WriterStepType::Static;
     current_frame_ = 0; next_field_id_ = 1;
@@ -185,7 +189,8 @@ void FemrWriter::write_chunk(const char type[4], const Bytes& payload,
     append_uint(header, std::uint32_t{0});
     file_.write(reinterpret_cast<const char*>(header.data()), static_cast<std::streamsize>(header.size()));
     file_.write(reinterpret_cast<const char*>(stored.data()), static_cast<std::streamsize>(stored.size()));
-    logging::error(file_.good(), "FemrWriter: failed while writing chunk");
+    logging::error(file_.good(),
+        "FemrWriter: failed while writing chunk");
     if (include_in_file_checksum) {
         file_crc_state_ = crc32_update(file_crc_state_, header.data(), header.size());
         file_crc_state_ = crc32_update(file_crc_state_, stored.data(), stored.size());
@@ -196,7 +201,8 @@ void FemrWriter::write_model_data(const model::ModelData& model_data) {
     Bytes instances;
     append_uint(instances, static_cast<std::uint32_t>(model_data.instances.size()));
     for (const auto& [name, instance] : model_data.instances) {
-        logging::error(instance != nullptr, "FemrWriter: null instance: ", name);
+        logging::error(instance != nullptr,
+            "FemrWriter: null instance: ", name);
         append_i32(instances, static_cast<std::int32_t>(instance->instance_id));
         append_string(instances, instance->instance_id == 0 ? std::string{} : name);
     }
@@ -218,7 +224,8 @@ void FemrWriter::write_model_data(const model::ModelData& model_data) {
     // stored explicitly as well, so readers never infer them from connectivity.
     for (Index row = 0; row < static_cast<Index>(node_count); ++row) {
         const auto& [instance, local_id] = model_data.node_mapping[static_cast<std::size_t>(row)];
-        logging::error(instance != nullptr, "FemrWriter: dense node has no semantic identity: ", row);
+        logging::error(instance != nullptr,
+            "FemrWriter: dense node has no semantic identity: ", row);
         append_i32(payload, static_cast<std::int32_t>(row));
         append_i32(payload, static_cast<std::int32_t>(instance->instance_id));
         append_i32(payload, static_cast<std::int32_t>(local_id));
@@ -227,11 +234,13 @@ void FemrWriter::write_model_data(const model::ModelData& model_data) {
     }
     for (Index row = 0; row < static_cast<Index>(element_count); ++row) {
         const auto& element = model_data.elements[static_cast<std::size_t>(row)];
-        logging::error(element != nullptr, "FemrWriter: dense element row is empty: ", row);
+        logging::error(element != nullptr,
+            "FemrWriter: dense element row is empty: ", row);
         logging::error(element->elem_id == static_cast<ID>(row),
                        "FemrWriter: element identifier does not match its dense row");
         const auto& [instance, local_id] = model_data.element_mapping[static_cast<std::size_t>(row)];
-        logging::error(instance != nullptr, "FemrWriter: dense element has no semantic identity: ", row);
+        logging::error(instance != nullptr,
+            "FemrWriter: dense element has no semantic identity: ", row);
         append_i32(payload, element->elem_id);
         append_i32(payload, static_cast<std::int32_t>(instance->instance_id));
         append_i32(payload, static_cast<std::int32_t>(local_id));
@@ -273,7 +282,8 @@ void FemrWriter::ensure_frame(const std::string& field_name, Precision frame_val
 
 void FemrWriter::write_field(const model::Field& field, const std::string& field_name,
                              const model::ModelData*, Precision frame_value) {
-    logging::error(file_.is_open(), "FemrWriter: file is not open");
+    logging::error(file_.is_open(),
+        "FemrWriter: file is not open");
     const bool supported_domain = field.domain == model::FieldDomain::UNKNOWN
                                || field.domain == model::FieldDomain::NODE
                                || field.domain == model::FieldDomain::ELEMENT;

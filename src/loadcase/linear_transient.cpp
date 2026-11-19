@@ -76,7 +76,6 @@ void Transient::run() {
     auto equations = Timer::measure(
         [&]() {
             auto groups = this->model->collect_constraints(active_dof_idx_mat, target_conditions);
-            //report_constraint_groups(groups); // enable if you want full print like buckling
             return groups.flatten();
         },
         "building constraints"

@@ -63,7 +63,8 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
                         )
                         .bind([&parser, type](fem::Precision value) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "WRITE EVERY must appear inside *LOADCASE.");
+                            logging::error(base != nullptr,
+                                "WRITE EVERY must appear inside *LOADCASE.");
 
                             if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 if (*type == "TIME") {
@@ -76,7 +77,8 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
                                 return;
                             }
 
-                            logging::error(false, "WRITE EVERY not supported for loadcase type " + base->type_name());
+                            logging::error(false,
+                                "WRITE EVERY not supported for loadcase type " + base->type_name());
                         })
                 )
         );

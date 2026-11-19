@@ -240,7 +240,8 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         );
         qr.setPivotThreshold(pivot_tolerance);
         qr.compute(preprocessed.C);
-        logging::error(qr.info() == Eigen::Success, "[NullSpace] SparseQR failed");
+        logging::error(qr.info() == Eigen::Success,
+            "[NullSpace] SparseQR failed");
         R = qr.matrixR();
     });
 
@@ -434,7 +435,8 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         }
 
         const DynamicVector reduced_solution = qr.solve(preprocessed.d);
-        logging::error(qr.info() == Eigen::Success, "[NullSpace] particular solution failed");
+        logging::error(qr.info() == Eigen::Success,
+            "[NullSpace] particular solution failed");
 
         DynamicVector full_solution = DynamicVector::Zero(system.dofs);
         for (int local_column = 0;

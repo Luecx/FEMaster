@@ -42,7 +42,8 @@ void request_tokens(Parser&                           parser,
 
         const auto field = io::writer::output_field_from_request(token);
         if (!field.has_value()) {
-            logging::warning(false, "Unsupported output field request: ", token, " (ignored)");
+            logging::warning(false,
+                "Unsupported output field request: ", token, " (ignored)");
             continue;
         }
 

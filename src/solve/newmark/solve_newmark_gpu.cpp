@@ -49,7 +49,8 @@ newmark_linear_gpu(const SparseMatrix&,
                    const NewmarkOpts&,
                    const NewmarkForceBasis&)
 {
-    logging::error(false, "Newmark GPU path requires SUPPORT_GPU.");
+    logging::error(false,
+        "Newmark GPU path requires SUPPORT_GPU.");
     return {};
 }
 
@@ -63,7 +64,8 @@ newmark_linear_gpu(const SparseMatrix&,
                    const NewmarkOpts&,
                    const NewmarkForceBasis&)
 {
-    logging::error(false, "Newmark GPU path requires USE_CUDSS.");
+    logging::error(false,
+        "Newmark GPU path requires USE_CUDSS.");
     return {};
 }
 
@@ -75,8 +77,10 @@ constexpr CudaPrecision kOne  = CudaPrecision(1);
 constexpr CudaPrecision kZero = CudaPrecision(0);
 
 int checked_size(Eigen::Index n) {
-    logging::error(n > 0, "Newmark GPU: system size must be positive.");
-    logging::error(n <= std::numeric_limits<int>::max(), "Newmark GPU: system size exceeds cuBLAS int range.");
+    logging::error(n > 0,
+        "Newmark GPU: system size must be positive.");
+    logging::error(n <= std::numeric_limits<int>::max(),
+        "Newmark GPU: system size exceeds cuBLAS int range.");
     return static_cast<int>(n);
 }
 
@@ -204,7 +208,8 @@ struct CudssFactorizedSolver {
           mat(matrix)
     {
         (void)name;
-        logging::error(matrix.rows() == matrix.cols(), "Newmark GPU: cuDSS matrix must be square.");
+        logging::error(matrix.rows() == matrix.cols(),
+            "Newmark GPU: cuDSS matrix must be square.");
 
         Timer timer{};
         timer.start();
@@ -318,7 +323,8 @@ struct ForceBasisGpu {
             const auto& amplitude = basis[basis_idx].first;
             const auto& force = basis[basis_idx].second;
 
-            logging::error(force.size() == n, "Newmark GPU: force basis vector size mismatch.");
+            logging::error(force.size() == n,
+                "Newmark GPU: force basis vector size mismatch.");
 
             auto force_gpu = std::make_unique<cuda::CudaVector>(n);
             force_gpu->upload(force.data());
@@ -381,7 +387,8 @@ void build_initial_acceleration(GpuSpmv& C_op,
         return;
     }
 
-    logging::error(M_solver != nullptr, "Newmark GPU: M solver is required when initial acceleration is not supplied.");
+    logging::error(M_solver != nullptr,
+        "Newmark GPU: M solver is required when initial acceleration is not supplied.");
 
     force_basis.assemble_step(0, rhs);
     C_op.apply(v, tmp, kOne, kZero);
@@ -402,14 +409,20 @@ newmark_linear_gpu(const SparseMatrix& M,
                    const NewmarkOpts& opts,
                    const NewmarkForceBasis& force_basis)
 {
-    logging::error(opts.dt > 0.0, "Newmark GPU: dt must be positive.");
-    logging::error(opts.t_end >= opts.t_start, "Newmark GPU: t_end must be >= t_start.");
-    logging::error(ic.u0.size() != 0 && ic.v0.size() != 0, "Newmark GPU: u0 and v0 must be provided.");
-    logging::error(ic.u0.size() == ic.v0.size(), "Newmark GPU: u0 and v0 size mismatch.");
-    logging::error(!force_basis.empty(), "Newmark GPU path requires force_basis.");
+    logging::error(opts.dt > 0.0,
+        "Newmark GPU: dt must be positive.");
+    logging::error(opts.t_end >= opts.t_start,
+        "Newmark GPU: t_end must be >= t_start.");
+    logging::error(ic.u0.size() != 0 && ic.v0.size() != 0,
+        "Newmark GPU: u0 and v0 must be provided.");
+    logging::error(ic.u0.size() == ic.v0.size(),
+        "Newmark GPU: u0 and v0 size mismatch.");
+    logging::error(!force_basis.empty(),
+        "Newmark GPU path requires force_basis.");
 
     const int n = checked_size(M.rows());
-    logging::error(ic.u0.size() == n, "Newmark GPU: initial condition size mismatch.");
+    logging::error(ic.u0.size() == n,
+        "Newmark GPU: initial condition size mismatch.");
 
     cuda::manager.create_cuda();
 

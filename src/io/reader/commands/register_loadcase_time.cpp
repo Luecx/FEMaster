@@ -50,7 +50,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                         )
                         .bind([&parser](const std::array<fem::Precision, 3>& T) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
+                            logging::error(base != nullptr,
+                                "TIME must appear inside *LOADCASE.");
 
                             if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 const auto t_start = T[0];
@@ -60,7 +61,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                                 return;
                             }
 
-                            logging::error(false, "TIME not supported for loadcase type " + base->type_name());
+                            logging::error(false,
+                                "TIME not supported for loadcase type " + base->type_name());
                         })
                 )
         );
@@ -82,7 +84,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                         )
                         .bind([&parser](const std::array<fem::Precision, 2>& T) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "TIME must appear inside *LOADCASE.");
+                            logging::error(base != nullptr,
+                                "TIME must appear inside *LOADCASE.");
 
                             if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 const auto t_end = T[0];
@@ -91,7 +94,8 @@ void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& parser) {
                                 return;
                             }
 
-                            logging::error(false, "TIME not supported for loadcase type " + base->type_name());
+                            logging::error(false,
+                                "TIME not supported for loadcase type " + base->type_name());
                         })
                 )
         );

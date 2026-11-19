@@ -149,7 +149,8 @@ void register_beam_section(dsl::Registry& registry, model::Model& model) {
 
             command.on_exit([=, &model](const dsl::Keys&) {
                 const auto part = model._data->parts.get();
-                logging::error(part != nullptr, keyword_name, ": no active part");
+                logging::error(part != nullptr,
+                    keyword_name, ": no active part");
                 logging::error(part->elem_sets.has(*elset),
                     keyword_name, ": undefined ELSET ", *elset);
                 logging::error(direction->allFinite() && direction->norm() > Precision(0),

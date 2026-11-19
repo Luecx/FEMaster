@@ -67,8 +67,10 @@ void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& parser)
                         )
                         .bind([&parser, type](const std::array<fem::Precision, 2>& ab) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "DAMPING must appear inside *LOADCASE.");
-                            logging::error(*type == "RAYLEIGH", "DAMPING TYPE must be RAYLEIGH.");
+                            logging::error(base != nullptr,
+                                "DAMPING must appear inside *LOADCASE.");
+                            logging::error(*type == "RAYLEIGH",
+                                "DAMPING TYPE must be RAYLEIGH.");
 
                             const fem::loadcase::tools::RayleighDamping damping{ab[0], ab[1]};
 

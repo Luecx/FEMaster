@@ -41,7 +41,8 @@ void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, Parser&
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
-            logging::error(base != nullptr, "INITIALVELOCITY must appear inside *LOADCASE.");
+            logging::error(base != nullptr,
+                "INITIALVELOCITY must appear inside *LOADCASE.");
 
             const std::string field = keys.raw("FIELD");
 
@@ -49,14 +50,18 @@ void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, Parser&
                 // Resolve field now and attach pointer directly
                 auto& mdl = parser.model();
                 auto fptr = mdl._data->get_field(field);
-                logging::error(fptr != nullptr, "Initial velocity field ", field, " does not exist");
-                logging::error(fptr->domain == fem::model::FieldDomain::NODE, "Initial velocity field ", field, " must be a node field");
-                logging::error(fptr->components == 6, "Initial velocity field ", field, " must have exactly 6 components");
+                logging::error(fptr != nullptr,
+                    "Initial velocity field ", field, " does not exist");
+                logging::error(fptr->domain == fem::model::FieldDomain::NODE,
+                    "Initial velocity field ", field, " must be a node field");
+                logging::error(fptr->components == 6,
+                    "Initial velocity field ", field, " must have exactly 6 components");
                 lc->initial_velocity = fptr;
                 return;
             }
 
-            logging::error(false, "INITIALVELOCITY not supported for loadcase type " + base->type_name());
+            logging::error(false,
+                "INITIALVELOCITY not supported for loadcase type " + base->type_name());
         });
 
         // No data lines for this command
