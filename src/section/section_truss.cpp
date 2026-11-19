@@ -19,7 +19,8 @@ TrussSection::TrussSection(material::Material::Ptr   material,
                            model::ElementRegion::Ptr region,
                            Precision                 area)
     : area_(area) {
-    logging::error(area_ > Precision(0), "TrussSection: cross-section area must be positive");
+    logging::error(area_ > Precision(0),
+        "TrussSection: cross-section area must be positive");
 
     material_ = std::move(material);
     region_   = std::move(region);

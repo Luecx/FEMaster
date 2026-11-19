@@ -357,9 +357,6 @@ void LinearEigenfrequency::run() {
     auto CT = Timer::measure(
         [&]() {
             ConstraintTransformer::Options copt;
-            // Optional tolerances (keep defaults unless your constraints are ill-conditioned):
-            // copt.null_space.rank_tolerance = 1e-12;
-            // copt.null_space.feasibility_tolerance = 1e-10;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,   // system DOF map (node,dof) -> global id or -1

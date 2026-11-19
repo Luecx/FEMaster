@@ -14,8 +14,7 @@
  * @author Finn Eggers
  */
 
-#ifndef SHELL_H
-#define SHELL_H
+#pragma once
 
 #include "../../core/core.h"
 #include "../element/element_structural.h"
@@ -46,33 +45,39 @@ struct ShellElement : StructuralElement {
 
     ShellSection* get_section() {
         if (!this->_section) {
-            logging::error(false, "Section not set for element ", this->elem_id);
+            logging::error(false,
+                "Section not set for element ", this->elem_id);
         }
         if (!this->_section->template as<ShellSection>()) {
-            logging::error(false, "Section is not a beam section for element ", this->elem_id);
+            logging::error(false,
+                "Section is not a beam section for element ", this->elem_id);
         }
         return this->_section->template as<ShellSection>();
     }
     const ShellSection* get_section() const {
         if (!this->_section) {
-            logging::error(false, "Section not set for element ", this->elem_id);
+            logging::error(false,
+                "Section not set for element ", this->elem_id);
         }
         if (!this->_section->template as<ShellSection>()) {
-            logging::error(false, "Section is not a shell section for element ", this->elem_id);
+            logging::error(false,
+                "Section is not a shell section for element ", this->elem_id);
         }
         return this->_section->template as<ShellSection>();
     }
     material::MaterialPtr get_material() {
         ShellSection* section = get_section();
         if (!section->material_) {
-            logging::error(false, "Material not set for element ", this->elem_id);
+            logging::error(false,
+                "Material not set for element ", this->elem_id);
         }
         return section->material_;
     }
     material::MaterialPtr get_material() const {
         const ShellSection* section = get_section();
         if (!section->material_) {
-            logging::error(false, "Material not set for element ", this->elem_id);
+            logging::error(false,
+                "Material not set for element ", this->elem_id);
         }
         return section->material_;
     }
@@ -110,8 +115,10 @@ struct ShellElement : StructuralElement {
 
     // Gather current and reference shell midsurface coordinates.
     StaticMatrix<N, 3> node_coords_global() {
-        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
-        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+        logging::error(this->_model_data != nullptr,
+            "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions != nullptr,
+            "positions field not set in model data");
         const auto& positions = *this->_model_data->positions;
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; i++) {
@@ -172,7 +179,8 @@ struct ShellElement : StructuralElement {
         (void) rst;
         (void) base_displacement;
         (void) base_temperature;
-        logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
+        logging::error(false,
+            "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
     }
 
     /**
@@ -231,5 +239,3 @@ struct ShellElement : StructuralElement {
 protected:
 };
 }
-
-#endif // SHELL_H

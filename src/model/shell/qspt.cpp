@@ -49,8 +49,10 @@ const math::quadrature::Quadrature& QSPT::integration_scheme() const {
 }
 
 Precision QSPT::volume() {
-    logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
-    logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+    logging::error(this->_model_data != nullptr,
+        "no model data assigned to element ", this->elem_id);
+    logging::error(this->_model_data->positions != nullptr,
+        "positions field not set in model data");
     return this->get_section()->thickness_ * geometry.area(*this->_model_data->positions);
 }
 
@@ -119,7 +121,8 @@ QSPT::GeometryData QSPT::geometry_data() {
     const Precision a2 = (-data.edges[1]).cross(data.edges[2]).norm();
     data.area = Precision(0.5) * (a1 + a2);
 
-    logging::error(data.area > kGeomTol, "QSPT area is zero for element ", this->elem_id);
+    logging::error(data.area > kGeomTol,
+        "QSPT area is zero for element ", this->elem_id);
 
     return data;
 }
@@ -184,7 +187,8 @@ Precision QSPT::effective_shear_modulus() {
 QSPT::ShearState QSPT::shear_state() {
     const GeometryData data = geometry_data();
     const Precision h = data.h12 * data.h23 / (data.h13 * data.h24);
-    logging::error(h > kGeomTol, "QSPT metric parameter h became invalid for element ", this->elem_id);
+    logging::error(h > kGeomTol,
+        "QSPT metric parameter h became invalid for element ", this->elem_id);
 
     ShearState state;
     state.edge_lengths = data.edge_lengths;

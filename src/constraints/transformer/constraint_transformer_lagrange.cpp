@@ -211,7 +211,8 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
     Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr{};
     qr.setPivotThreshold(Precision(0));
     qr.compute(transpose);
-    logging::error(qr.info() == Eigen::Success, "[Lagrange] QR(C^T) factorization failed");
+    logging::error(qr.info() == Eigen::Success,
+        "[Lagrange] QR(C^T) factorization failed");
     return qr.solve(equilibrium_rhs);
 }
 

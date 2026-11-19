@@ -90,7 +90,8 @@ std::vector<ID> Coupling::slave_node_ids(model::ModelData& model_data) const {
 Equations Coupling::kinematic_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     Equations equations {};
 
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(model_data.positions != nullptr,
+        "positions field not set in model data");
     const auto& node_coords = *model_data.positions;
 
     const std::vector<ID> ids = slave_node_ids(model_data);
@@ -178,13 +179,15 @@ Equations Coupling::kinematic_equations(SystemDofIds& system_nodal_dofs, model::
 Equations Coupling::distributing_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     Equations equations {};
 
-    logging::error(model_data.positions_reference != nullptr, "COUPLING: reference positions field not set");
+    logging::error(model_data.positions_reference != nullptr,
+        "COUPLING: reference positions field not set");
     const auto& positions = *model_data.positions_reference;
 
     const std::vector<ID> ids = slave_node_ids(model_data);
     const Index           n   = static_cast<Index>(ids.size());
 
-    logging::error(n > 0, "COUPLING: distributing coupling has no slave nodes");
+    logging::error(n > 0,
+        "COUPLING: distributing coupling has no slave nodes");
     logging::error(!std::binary_search(ids.begin(), ids.end(), master_node),
         "COUPLING: master node ", master_node, " must not be part of its distributing slave region");
 
@@ -207,7 +210,8 @@ Equations Coupling::distributing_equations(SystemDofIds& system_nodal_dofs, mode
     G.diagonal().array() += eps;
 
     const DynamicMatrix B = Eigen::LDLT<StaticMatrix<6, 6>>(G).solve(A);
-    logging::error(B.allFinite(), "COUPLING: distributing coupling coefficients are not finite");
+    logging::error(B.allFinite(),
+        "COUPLING: distributing coupling coefficients are not finite");
 
     // q_m(c) - sum_k B(c, k) u_k = 0 for every coupled master DOF c
     for (Dim c = 0; c < 6; ++c) {

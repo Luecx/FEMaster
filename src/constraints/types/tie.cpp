@@ -105,8 +105,10 @@ static std::vector<ID> collect_slave_nodes(const model::NodeRegion::Ptr&    slav
 }
 
 Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    logging::error(!adjust, "TIE: ADJUST is not supported for surface-surface mortar");
-    logging::error(model_data.positions != nullptr, "TIE: positions field not set in model data");
+    logging::error(!adjust,
+        "TIE: ADJUST is not supported for surface-surface mortar");
+    logging::error(model_data.positions != nullptr,
+        "TIE: positions field not set in model data");
 
     constexpr Precision tolerance   = Precision(1e-12);
 
@@ -271,7 +273,8 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
                 [&](const Vec2&, const Vec3&, Precision weight) { slave_area += weight; });
         }
 
-        logging::error(slave_area > tolerance, "TIE: slave surface ", slave_surface_id, " has zero mortar area");
+        logging::error(slave_area > tolerance,
+            "TIE: slave surface ", slave_surface_id, " has zero mortar area");
 
         BvhAabb::Aabb slave_box = make_surface_aabb(slave);
         slave_box.inflate(distance);
@@ -296,7 +299,8 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
         }
 
         if (candidate_patches.empty()) {
-            logging::warning(false, "TIE: dual mortar slave surface ", slave_surface_id, " has no master candidates");
+            logging::warning(false,
+                "TIE: dual mortar slave surface ", slave_surface_id, " has no master candidates");
             continue;
         }
 
@@ -385,7 +389,8 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
 
         const DynamicMatrix W = decomposition.solve(B);
         if (!W.allFinite()) {
-            logging::warning(false, "TIE: invalid local mortar coefficients for slave surface ", slave_surface_id);
+            logging::warning(false,
+                "TIE: invalid local mortar coefficients for slave surface ", slave_surface_id);
             continue;
         }
 
@@ -538,10 +543,6 @@ Equations Tie::get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& 
     auto&     lines       = model_data.lines;
 
     Equations equations;
-
-    // if (master_surfaces && slave_surfaces) {
-    //     return get_surface_surface_equations(system_nodal_dofs, model_data);
-    // }
 
     // build the bvh for fast access to elements to not query all elements for every slave node
     BvhAabb bvh(distance);

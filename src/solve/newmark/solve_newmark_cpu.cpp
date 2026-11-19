@@ -89,14 +89,17 @@ namespace {
             }
         #endif
             fact.compute(A);
-            logging::error(fact.info() == Eigen::Success, "Newmark: factorization of effective matrix A failed.");
+            logging::error(fact.info() == Eigen::Success,
+                "Newmark: factorization of effective matrix A failed.");
             ready = true;
         }
 
         void solve(const DynamicVector& rhs, DynamicVector& x) {
-            logging::error(built && ready, "Newmark: EffectiveSolver not built/factorized.");
+            logging::error(built && ready,
+                "Newmark: EffectiveSolver not built/factorized.");
             x = fact.solve(rhs);
-            logging::error(fact.info() == Eigen::Success, "Newmark: linear solve with A failed.");
+            logging::error(fact.info() == Eigen::Success,
+                "Newmark: linear solve with A failed.");
         }
     };
 
@@ -118,7 +121,8 @@ namespace {
             const auto Md = M.diagonal();
             for (Eigen::Index i = 0; i < n; ++i) {
                 const auto mii = Md[i];
-                logging::error(mii != Precision(0), "Newmark: zero diagonal entry in lumped mass.");
+                logging::error(mii != Precision(0),
+                    "Newmark: zero diagonal entry in lumped mass.");
                 a0[i] = rhs[i] / mii;
             }
             return a0;
@@ -130,15 +134,19 @@ namespace {
     #ifndef USE_MKL
         Eigen::SimplicialLDLT<SparseMatrix> Mldl;
         Mldl.compute(M);
-        logging::error(Mldl.info() == Eigen::Success, "Newmark: factorization of M failed for initial acceleration.");
+        logging::error(Mldl.info() == Eigen::Success,
+            "Newmark: factorization of M failed for initial acceleration.");
         auto a0 = Mldl.solve(rhs);
-        logging::error(Mldl.info() == Eigen::Success, "Newmark: solve with M failed for initial acceleration.");
+        logging::error(Mldl.info() == Eigen::Success,
+            "Newmark: solve with M failed for initial acceleration.");
     #else
         Eigen::PardisoLDLT<SparseMatrix> Mldl;
         Mldl.compute(M);
-        logging::error(Mldl.info() == Eigen::Success, "Newmark: Pardiso factorization of M failed for initial acceleration.");
+        logging::error(Mldl.info() == Eigen::Success,
+            "Newmark: Pardiso factorization of M failed for initial acceleration.");
         auto a0 = Mldl.solve(rhs);
-        logging::error(Mldl.info() == Eigen::Success, "Newmark: Pardiso solve with M failed for initial acceleration.");
+        logging::error(Mldl.info() == Eigen::Success,
+            "Newmark: Pardiso solve with M failed for initial acceleration.");
     #endif
         tM.stop();
         logging::info(true, "Initial acceleration: done in ", tM.elapsed(), " ms.");
@@ -161,10 +169,14 @@ newmark_linear_cpu(const SparseMatrix& M,
                    ForceFn f_of_t)
 {
     // Basic checks via logging::error (no throws)
-    logging::error(opts.dt > 0.0, "Newmark: dt must be positive.");
-    logging::error(opts.t_end >= opts.t_start, "Newmark: t_end must be >= t_start.");
-    logging::error(ic.u0.size() != 0 && ic.v0.size() != 0, "Newmark: u0 and v0 must be provided.");
-    logging::error(ic.u0.size() == ic.v0.size(), "Newmark: u0 and v0 size mismatch.");
+    logging::error(opts.dt > 0.0,
+        "Newmark: dt must be positive.");
+    logging::error(opts.t_end >= opts.t_start,
+        "Newmark: t_end must be >= t_start.");
+    logging::error(ic.u0.size() != 0 && ic.v0.size() != 0,
+        "Newmark: u0 and v0 must be provided.");
+    logging::error(ic.u0.size() == ic.v0.size(),
+        "Newmark: u0 and v0 size mismatch.");
 
     // Method hook: INDIRECT uses the same direct factorization in this implementation.
     (void)opts.method;

@@ -96,7 +96,8 @@ static bool add_if_available(Equation& equation,
 Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const {
     Equations eqs;
 
-    logging::error(model_data.positions != nullptr, "RBM: positions field not set in model data");
+    logging::error(model_data.positions != nullptr,
+        "RBM: positions field not set in model data");
     const auto& X = *model_data.positions;
 
     // Collect candidate nodes from all elements in the region.

@@ -89,7 +89,8 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 
         // Recover from a failed LU factorization or solve with the common QR fallback
         if (!success) {
-            logging::warning(false, "General sparse LU failed; falling back to SparseQR");
+            logging::warning(false,
+                "General sparse LU failed; falling back to SparseQR");
 
             Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr(mat);
             qr.compute(mat);
@@ -152,7 +153,8 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 
     // Recover from a failed LDLT factorization or solve with the common QR fallback
     if (!success) {
-        logging::warning(false, "Sparse LDLT failed; falling back to SparseQR");
+        logging::warning(false,
+            "Sparse LDLT failed; falling back to SparseQR");
 
         Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr(mat);
         qr.compute(mat);

@@ -197,7 +197,8 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
                                            3,
                                            vec_sol,
                                            &singularity));
-        logging::error(singularity == -1, "decomposing system not possible for RHS ", column);
+        logging::error(singularity == -1,
+            "decomposing system not possible for RHS ", column);
         vec_sol.download(sol.col(column).data());
     }
     t.stop();

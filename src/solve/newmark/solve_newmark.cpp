@@ -18,13 +18,18 @@ newmark_linear(const SparseMatrix& M,
                ForceFn f_of_t,
                const NewmarkForceBasis& force_basis)
 {
-    logging::error(M.rows() == M.cols(), "Newmark: M must be square.");
-    logging::error(C.rows() == C.cols(), "Newmark: C must be square.");
-    logging::error(K.rows() == K.cols(), "Newmark: K must be square.");
-    logging::error(M.rows() == C.rows() && M.rows() == K.rows(), "Newmark: matrix size mismatch.");
+    logging::error(M.rows() == M.cols(),
+        "Newmark: M must be square.");
+    logging::error(C.rows() == C.cols(),
+        "Newmark: C must be square.");
+    logging::error(K.rows() == K.cols(),
+        "Newmark: K must be square.");
+    logging::error(M.rows() == C.rows() && M.rows() == K.rows(),
+        "Newmark: matrix size mismatch.");
 
     if (opts.device == GPU) {
-        logging::error(!force_basis.empty(), "Newmark GPU path requires force_basis.");
+        logging::error(!force_basis.empty(),
+            "Newmark GPU path requires force_basis.");
         return detail::newmark_linear_gpu(M, C, K, ic, opts, force_basis);
     }
 

@@ -49,14 +49,16 @@ void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser)
                         )
                         .bind([&parser](const std::array<fem::Precision, 2>& bg) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "NEWMARK must appear inside *LOADCASE.");
+                            logging::error(base != nullptr,
+                                "NEWMARK must appear inside *LOADCASE.");
 
                             if (auto* lc = base->as<fem::loadcase::Transient>()) {
                                 lc->set_newmark(bg[0], bg[1]);
                                 return;
                             }
 
-                            logging::error(false, "NEWMARK not supported for loadcase type " + base->type_name());
+                            logging::error(false,
+                                "NEWMARK not supported for loadcase type " + base->type_name());
                         })
                 )
         );

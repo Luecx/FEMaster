@@ -6,7 +6,8 @@ namespace fem { namespace math {
 
 Vec3 normalized(Vec3 v) {
     const Precision n = v.norm();
-    logging::error(n > Precision(1e-14), "Unable to normalise vector");
+    logging::error(n > Precision(1e-14),
+        "Unable to normalise vector");
     return v / n;
 }
 

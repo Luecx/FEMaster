@@ -29,7 +29,8 @@ void Manager::create_cuda() {
     int device_count = 0;
     runtime_check_cuda(cudaGetDeviceCount(&device_count));
     if (device_count == 0) {
-        logging::warning(false, "No CUDA devices detected");
+        logging::warning(false,
+            "No CUDA devices detected");
         return;
     }
 

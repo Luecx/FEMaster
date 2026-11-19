@@ -33,7 +33,8 @@ eigval_simple_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts) {
         case EigvalMode::ShiftInvert:
             return eigval_simple_shiftinvert_cpu(A, k, opts);
         default:
-            logging::error(false, "Simple eigval problem supports only Regular or ShiftInvert");
+            logging::error(false,
+                "Simple eigval problem supports only Regular or ShiftInvert");
             return {};
     }
 }
@@ -48,7 +49,8 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const Ei
         case EigvalMode::Cayley:
             return eigval_general_cayley_cpu(A, B, k, opts);
         default:
-            logging::error(false, "Generalized eigval problem supports only ShiftInvert, Buckling, or Cayley");
+            logging::error(false,
+                "Generalized eigval problem supports only ShiftInvert, Buckling, or Cayley");
             return {};
     }
 }
