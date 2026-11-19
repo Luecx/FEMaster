@@ -259,11 +259,9 @@ void NonlinearStatic::run() {
         }
     }
 
-    // Riks uses one constant reduced load direction for the bordered system.
-    // A follower load changes this direction with the displacement, so its
-    // exact linearization would require dlambda-dependent load derivatives.
-    logging::error(control != NonlinearControl::ArcLength || !has_follower_load,
-        "NONLINEARSTATIC ARC LENGTH does not support follower loads");
+    // Follower loads change the Riks load direction with the configuration.
+    // ArcLengthControl receives their current df_ext/dlambda below, in addition
+    // to the analytic df_ext/du already used in the effective tangent.
 
     // Every load evaluation passes the active numbering and a load-tangent
     // output because follower loads must not be evaluated without their
@@ -1007,6 +1005,39 @@ void NonlinearStatic::run() {
         arc_length_control.rollback_increment_trial = rollback_increment_trial;
 
         arc_length_control.update_active_set = update_active_set;
+
+        if (has_follower_load) {
+            // At fixed geometry the allowed Riks load histories are affine in
+            // lambda: continued loads stay constant, removed loads ramp down,
+            // and newly added loads ramp up. Thus the endpoint difference is
+            // the exact partial derivative df_ext/dlambda at the current q.
+            // This geometry must match the one used for K_eff = Kt - df_ext/du.
+            arc_length_control.load_derivative =
+                [&](const DynamicVector& q, Precision lambda) -> DynamicVector {
+                    const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
+                    const model::Field displacement_evaluation =
+                        mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
+                    *model->_data->positions = current_positions_from_displacement(
+                        reference_positions, displacement_evaluation);
+
+                    // Follower loads require a tangent output even when only
+                    // their forces are needed. These triplets are discarded.
+                    TripletList start_tangent;
+                    TripletList end_tangent;
+                    const auto start_load = build_step_load_matrix(
+                        Precision(0), Precision(0), active_dof_idx_mat, &start_tangent);
+                    const auto end_load = build_step_load_matrix(
+                        step_period, Precision(1), active_dof_idx_mat, &end_tangent);
+                    const auto load_delta = subtract_field(
+                        end_load, start_load, "CURRENT_LOAD_DELTA");
+                    const DynamicVector full_derivative =
+                        mattools::reduce_mat_to_vec(active_dof_idx_mat, load_delta);
+
+                    DynamicVector reduced_derivative;
+                    transformer->project_vector(full_derivative, reduced_derivative);
+                    return reduced_derivative;
+                };
+        }
 
         residual_reference_force = std::max(
             initial_force_scale,
