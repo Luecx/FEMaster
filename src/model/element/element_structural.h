@@ -128,6 +128,12 @@ struct StructuralElement : ElementInterface {
     // states. Geometric stiffness already present at (u0,T0) is part of tangent
     // and is therefore not repeated.
     //
+    // internal_force is an ELEMENT_NODAL field. The element adds its global-
+    // basis nodal forces into its own rows elem_nodal_offset + local node; the
+    // caller zeroes the field and reduces it onto global nodes, e.g. with
+    // Field::nodal_sum(). Element row ranges are disjoint, so parallel
+    // evaluation needs no worker-private force fields.
+    //
     // Any of tangent, geometric_tangent, or internal_force may be nullptr. The
     // corresponding quantity is then not evaluated or assembled, allowing the
     // caller to request only the response components it requires.

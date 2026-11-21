@@ -63,8 +63,8 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
         model.compute_stress(
             displacement, temperature.get(), nullptr, nullptr);
     // Project unaveraged recovery to the nodal values tested here
-    const auto stress = std::get<0>(stress_strain).to_nodal(*model._data, "STRESS");
-    const auto strain = std::get<1>(stress_strain).to_nodal(*model._data, "STRAIN");
+    const auto stress = std::get<0>(stress_strain).nodal_avg(*model._data, "STRESS");
+    const auto strain = std::get<1>(stress_strain).nodal_avg(*model._data, "STRAIN");
 
     for (Index node = 0; node < 8; ++node) {
         EXPECT_NEAR(strain(node, 0), 0.2, 1e-9);
@@ -91,7 +91,7 @@ TEST(SolidThermal, FreeExpansionAndRestrainedPrestress) {
     displacement.set_zero();
     stress_strain =
         model.compute_stress(displacement);
-    const auto restrained_stress = std::get<0>(stress_strain).to_nodal(*model._data, "STRESS");
+    const auto restrained_stress = std::get<0>(stress_strain).nodal_avg(*model._data, "STRESS");
     const Precision expected = -1000.0 / (1.0 - 2.0 * 0.25) * 0.2;
 
     for (Index node = 0; node < 8; ++node) {

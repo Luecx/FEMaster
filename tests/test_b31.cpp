@@ -60,7 +60,7 @@ model::Model build_b31_model(bool with_offsets = true) {
 }
 
 model::NodeData exact_force(model::B31& element, const model::Field& displacement) {
-    model::NodeData force("F", model::FieldDomain::NODE, 2, 6);
+    model::NodeData force("F", model::FieldDomain::ELEMENT_NODAL, 2, 6);
     force.set_zero();
     element.evaluate(
         nullptr,

@@ -154,7 +154,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     // Model recovery now retains independent ELEMENT_NODAL shell resultants.
     // The existing nodal FRD test explicitly requests the projected values.
     fem::model::Field element_resultants = model.compute_shell_resultants(displacement);
-    fem::model::Field nodal_resultants = element_resultants.to_nodal(*model._data, "SHELL_RESULTANTS");
+    fem::model::Field nodal_resultants = element_resultants.nodal_avg(*model._data, "SHELL_RESULTANTS");
 
     {
         fem::io::writer::FrdWriter writer(output_path);

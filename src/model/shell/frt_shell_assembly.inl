@@ -769,9 +769,9 @@ MapMatrix FRTShell<N>::evaluate(
 
     if (with_force) {
         for (Index node = 0; node < num_nodes; ++node) {
-            const Index node_id = static_cast<Index>(this->node_ids[node]);
+            const Index row = static_cast<Index>(this->elem_nodal_offset) + node;
             for (Index dof = 0; dof < dofs_per_node; ++dof) {
-                (*internal_force_output)(node_id, dof) += force(dofs_per_node * node + dof);
+                (*internal_force_output)(row, dof) += force(dofs_per_node * node + dof);
             }
         }
     }

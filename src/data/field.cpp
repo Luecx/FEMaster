@@ -760,19 +760,50 @@ void Field::validate_compatible(const Field& other,
 /**
  * Projects element-local nodal values onto global nodes by equal averaging.
  *
- * Uncomputed element-local rows remain all NaN and are omitted. Fully finite
- * rows participate, including values equal to zero. The compact node gather
- * permits independent parallel reduction per global node. Nodes with no valid
- * contributing element remain NaN, distinguishing missing results from zero.
+ * Nodes with no valid contributing element remain NaN, distinguishing missing
+ * results from zero.
  *
  * @param model_data Compiled element connectivity and element-local offsets.
  * @param target_name Optional output field name, defaults to the source name.
  * @return Global nodal field with the same number of components.
  */
-Field Field::to_nodal(const ModelData& model_data, const std::string& target_name) const {
+Field Field::nodal_avg(const ModelData& model_data, const std::string& target_name) const {
+    return nodal_gather(model_data, target_name, true);
+}
+
+/**
+ * Accumulates element-local nodal values at global nodes.
+ *
+ * Used for element-nodal force contributions such as internal forces. Nodes
+ * with no valid contributing element are zero.
+ *
+ * @param model_data Compiled element connectivity and element-local offsets.
+ * @param target_name Optional output field name, defaults to the source name.
+ * @return Global nodal field with the same number of components.
+ */
+Field Field::nodal_sum(const ModelData& model_data, const std::string& target_name) const {
+    return nodal_gather(model_data, target_name, false);
+}
+
+/**
+ * Gathers element-local nodal rows at their global nodes.
+ *
+ * Dense elements and auxiliary point elements are both visited through their
+ * `elem_nodal_offset`. Uncomputed element-local rows remain all NaN and are
+ * omitted. Fully finite rows participate, including values equal to zero. The
+ * compact node gather permits independent parallel reduction per global node.
+ *
+ * @param model_data Compiled element connectivity and element-local offsets.
+ * @param target_name Optional output field name, defaults to the source name.
+ * @param average Divide by the number of contributions; otherwise sum.
+ * @return Global nodal field with the same number of components.
+ */
+Field Field::nodal_gather(const ModelData&   model_data,
+                          const std::string& target_name,
+                          bool               average) const {
     // Validate source domain and the compiled model topology
     logging::error(domain == FieldDomain::ELEMENT_NODAL,
-        "Field '", name, "': to_nodal requires ELEMENT_NODAL input");
+        "Field '", name, "': nodal projection requires ELEMENT_NODAL input");
     logging::error(model_data.element_nodal_offsets != nullptr,
         "Field '", name, "': element-nodal offsets are not initialized");
     logging::error(model_data.positions != nullptr,
@@ -785,12 +816,9 @@ Field Field::to_nodal(const ModelData& model_data, const std::string& target_nam
 
     logging::error(offsets.rows == element_count + 1,
         "Field '", name, "': element-nodal offsets have unexpected length");
-    const Index expected_rows = static_cast<Index>(offsets(element_count, 0));
-    logging::error(rows == expected_rows,
+    logging::error(rows == model_data.field_rows(FieldDomain::ELEMENT_NODAL),
         "Field '", name, "': row count does not match element-nodal offsets");
 
-    // Count only rows that contain a complete finite element-node result
-    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
     for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
         const auto& element = model_data.elements[static_cast<std::size_t>(elem_idx)];
         if (!element) continue;
@@ -799,45 +827,48 @@ Field Field::to_nodal(const ModelData& model_data, const std::string& target_nam
         const Index end    = static_cast<Index>(offsets(elem_idx + 1, 0));
         logging::error(end >= offset && end - offset == static_cast<Index>(element->n_nodes()),
             "Field '", name, "': invalid element-nodal row span at element ", elem_idx);
-
-        for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
-            if (!has_valid_row(offset + local)) continue;
-
-            const Index node = static_cast<Index>(element->nodes()[local]);
-            logging::error(node < node_count,
-                "Field '", name, "': invalid node ID ", node);
-            ++node_offsets[static_cast<std::size_t>(node + 1)];
-        }
     }
 
-    // Convert contribution counts to contiguous per-node gather ranges
+    // Visits every valid element-local row of dense and point elements once
+    auto for_each_row = [&](auto&& visit) {
+        for (const auto* list : {&model_data.elements, &model_data.point_elements}) {
+            for (const auto& element : *list) {
+                if (!element) continue;
+
+                const Index offset = static_cast<Index>(element->elem_nodal_offset);
+                for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
+                    if (!has_valid_row(offset + local)) continue;
+
+                    const Index node = static_cast<Index>(element->nodes()[local]);
+                    logging::error(node < node_count,
+                        "Field '", name, "': invalid node ID ", node);
+                    visit(node, offset + local);
+                }
+            }
+        }
+    };
+
+    // Count contributions and convert them to contiguous per-node gather ranges
+    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
+    for_each_row([&](Index node, Index /*row*/) {
+        ++node_offsets[static_cast<std::size_t>(node + 1)];
+    });
+
     for (Index node = 0; node < node_count; ++node) {
         node_offsets[static_cast<std::size_t>(node + 1)] +=
             node_offsets[static_cast<std::size_t>(node)];
     }
 
-    const Index        contribution_count = node_offsets.back();
-    std::vector<Index> source_rows        (static_cast<std::size_t>(contribution_count));
-    std::vector<Index> write_offsets      = node_offsets;
+    std::vector<Index> source_rows  (static_cast<std::size_t>(node_offsets.back()));
+    std::vector<Index> write_offsets = node_offsets;
 
-    // Gather each element's valid local values once into the corresponding node
-    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        const auto& element = model_data.elements[static_cast<std::size_t>(elem_idx)];
-        if (!element) continue;
+    for_each_row([&](Index node, Index row) {
+        source_rows[static_cast<std::size_t>(write_offsets[static_cast<std::size_t>(node)]++)] = row;
+    });
 
-        const Index offset = static_cast<Index>(offsets(elem_idx, 0));
-        for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
-            if (!has_valid_row(offset + local)) continue;
-
-            const Index node   = static_cast<Index>(element->nodes()[local]);
-            const Index target = write_offsets[static_cast<std::size_t>(node)]++;
-
-            source_rows[static_cast<std::size_t>(target)] = offset + local;
-        }
-    }
-
-    // Independent global-node reductions; no atomics or worker-local fields
-    Field nodal = model_data.create_field_(result_name, FieldDomain::NODE, components);
+    // Independent global-node reductions; no atomics or worker-local fields.
+    // Averages leave uncovered nodes NaN, sums leave them zero.
+    Field nodal = model_data.create_field_(result_name, FieldDomain::NODE, components, average);
 
     parallel::for_index(node_count, global_config.max_threads,
         [&](Index node, int /*worker*/) {
@@ -856,7 +887,8 @@ Field Field::to_nodal(const ModelData& model_data, const std::string& target_nam
                 }
             }
 
-            // Normalize the accumulated components by the number of contributions
+            if (!average) return;
+
             const Precision count = static_cast<Precision>(end - begin);
             for (Index component = 0; component < components; ++component) {
                 nodal(node, component) /= count;

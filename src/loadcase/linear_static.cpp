@@ -186,8 +186,7 @@ void LinearStatic::run() {
     }
 
     model::Field reference_internal = model->_data->create_field_(
-        "REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
-    reference_internal.set_zero();
+        "REFERENCE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
 
     // Tangent at (0,Tref) for ordinary statics or (u0,T0) for perturbation.
     // The internal-force anchor uses the target temperature.
@@ -204,12 +203,15 @@ void LinearStatic::run() {
         },
         "constructing tangent stiffness and reference internal force");
 
+    model::Field reference_nodal = reference_internal.nodal_sum(*model->_data);
+    model->build_contact_force(system_dofs, reference_nodal, &K);
+
     auto f_external = Timer::measure(
         [&]() { return system_dofs.reduce(global_load_mat); },
         "reducing external load matrix -> active vector");
 
     auto f_reference = Timer::measure(
-        [&]() { return system_dofs.reduce(reference_internal); },
+        [&]() { return system_dofs.reduce(reference_nodal); },
         "reducing reference internal force -> active vector");
 
     // General linear statics: K0 u = F - fint(0,Ttarget).
@@ -223,13 +225,12 @@ void LinearStatic::run() {
         }
 
         model::Field base_internal = model->_data->create_field_(
-            "BASE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
-        base_internal.set_zero();
+            "BASE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
         model->build_internal_force(
             base_internal, base_displacement, base_temperature,
-            &base_displacement, base_temperature, false, nullptr);
+            &base_displacement, base_temperature, false);
         f_base_internal =
-            system_dofs.reduce(base_internal);
+            system_dofs.reduce(base_internal.nodal_sum(*model->_data));
         f = (f_external - f_start) - (f_reference - f_base_internal);
     }
 

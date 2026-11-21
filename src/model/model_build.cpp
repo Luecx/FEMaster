@@ -5,21 +5,21 @@
  * The routines operate on the dense assembly created by `Model::compile()`.
  * They bind sections to compiled elements, construct shared shell reference
  * normals, enumerate active generalized DOFs, assemble loads and constraint
- * equations, and combine regular elements, post-compile point elements and
- * contact contributions into global sparse operators and nodal internal-force
- * fields.
+ * equations, and combine regular and post-compile point elements into global
+ * sparse operators and element-nodal internal-force fields. Contact forces and
+ * tangents are assembled separately.
  *
  * FEMaster `POINTMASS` commands create auxiliary `PointElement` objects after
  * compilation because they target compiled NSETs. Those point elements are kept
- * outside dense ELSET and element-field enumeration, but participate in the same
- * DOF, stiffness and mass operators as regular structural elements.
+ * outside dense ELSET enumeration, but own element-nodal rows behind the dense
+ * rows and participate in the same DOF, stiffness, force and mass operators as
+ * regular structural elements.
  *
  * Element-local matrix evaluation remains the responsibility of each structural
  * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparsity construction, atomic matrix accumulation and nodal force reduction.
- * Stress and stress resultants needed for geometric or nonlinear operators
- * remain element-local;
- * model assembly exchanges only displacement, matrices and nodal forces.
+ * sparsity construction and atomic matrix accumulation. Internal forces are
+ * written by every element into its own ELEMENT_NODAL rows and reduced onto
+ * global nodes by the caller.
  *
  * @see Model
  * @see Model::compile
@@ -96,7 +96,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
     const Precision equalize_angle = equalize_angle_degrees * pi / Precision(180);
     const Precision cos_equalize   = std::cos(equalize_angle);
     const Index element_count      = static_cast<Index>(_data->elements.size());
-    const Index expected_rows      = static_cast<Index>((*_data->element_nodal_offsets)(element_count));
+    const Index expected_rows      = _data->field_rows(FieldDomain::ELEMENT_NODAL);
 
     // Models without element-local rows do not require shell-normal storage
     if (expected_rows == 0) {
@@ -582,7 +582,7 @@ SparseMatrix Model::build_stiffness_matrix(
 }
 
 /**
- * Assembles the nonlinear tangent and matching nodal internal-force vector.
+ * Assembles the nonlinear tangent and matching element-nodal internal force.
  *
  * Every structural element performs one physical trial evaluation through
  * `evaluate()`. The same constitutive response supplies its internal
@@ -590,15 +590,16 @@ SparseMatrix Model::build_stiffness_matrix(
  * integration-point stress scratch field is allocated during assembly.
  *
  * Native POINTMASS elements use the same path: their linear spring law produces
- * the matching nodal force and constant tangent directly.
+ * the matching force and constant tangent directly.
  *
  * A supplied pattern is reused for regular elements and must match their
- * connectivity and active DOF numbering. Point elements and changing contact
- * couplings are assembled separately without modifying the supplied pattern.
+ * connectivity and active DOF numbering. Point elements are assembled
+ * separately without modifying the supplied pattern. Contact is not included;
+ * see build_contact_force().
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
- * @param nodal_forces Six-component nodal field receiving internal and contact
- *                     force contributions.
+ * @param element_forces Six-component ELEMENT_NODAL field overwritten with the
+ *                       element internal forces.
  * @param target_displacement Requested global nodal displacement field.
  * @param target_temperature Requested global nodal temperature field.
  * @param base_displacement Base displacement state used for linearization.
@@ -610,7 +611,7 @@ SparseMatrix Model::build_stiffness_matrix(
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
     SystemDofs&         indices,
-    NodeData&           nodal_forces,
+    Field&              element_forces,
     const Field&        target_displacement,
     const Field*        target_temperature,
     const Field&        base_displacement,
@@ -619,26 +620,31 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     bool                update_state,
     const SparseMatrix* pattern
 ) {
-    logging::error(nodal_forces.domain == FieldDomain::NODE,
-        "tangent internal force output must use NODE domain");
-    logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
-        "tangent internal force output has wrong node count");
-    logging::error(nodal_forces.components >= 6,
+    logging::error(element_forces.domain == FieldDomain::ELEMENT_NODAL,
+        "tangent internal force output must use ELEMENT_NODAL domain");
+    logging::error(element_forces.rows == _data->field_rows(FieldDomain::ELEMENT_NODAL),
+        "tangent internal force output has wrong row count");
+    logging::error(element_forces.components >= 6,
         "tangent internal force output requires at least 6 components");
+    logging::error(!stiffness_scalar || stiffness_scalar->domain == FieldDomain::ELEMENT,
+        "stiffness scale field must use ELEMENT domain");
+    logging::error(!stiffness_scalar || stiffness_scalar->components == 1,
+        "stiffness scale field must have 1 component");
 
-    auto lambda = [&](const ElementPtr& element,
-                      Precision*        local_matrix_storage,
-                      NodeData&         local_nodal_forces) -> MapMatrix {
+    element_forces.set_zero();
+
+    // Element rows are disjoint, so every callback writes its forces directly
+    auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         auto* structural = element->as<StructuralElement>();
         if (!structural) {
-            MapMatrix matrix{local_matrix_storage, 0, 0};
+            MapMatrix matrix{storage, 0, 0};
             return matrix;
         }
 
         MapMatrix tangent = structural->evaluate(
-            local_matrix_storage,
+            storage,
             nullptr,
-            &local_nodal_forces,
+            &element_forces,
             &target_displacement,
             target_temperature,
             &base_displacement,
@@ -646,131 +652,67 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
             update_state
         );
 
-        if (stiffness_scalar) {
-            logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
-                "stiffness scale field must use ELEMENT domain");
-            logging::error(stiffness_scalar->components == 1,
-                "stiffness scale field must have 1 component");
+        // Point elements have negative ids and are never scaled
+        if (stiffness_scalar && structural->elem_id >= 0) {
             tangent *= (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
         }
 
         return tangent;
     };
 
-    SparseMatrix global_matrix = mattools::assemble_matrix(
-        _data->elements,
-        indices,
-        lambda,
-        &nodal_forces,
-        pattern
-    );
+    SparseMatrix global_matrix = mattools::assemble_matrix(_data->elements, indices, lambda, pattern);
 
     if (!_data->point_elements.empty()) {
-        auto point_lambda = [&](const ElementPtr& element,
-                                Precision*        storage,
-                                NodeData&         local_nodal_forces) -> MapMatrix {
-            if (auto structural = element->as<StructuralElement>()) {
-                return structural->evaluate(
-                    storage, nullptr, &local_nodal_forces,
-                    &target_displacement, target_temperature,
-                    &base_displacement, base_temperature,
-                    update_state);
-            }
-            MapMatrix matrix{storage, 0, 0};
-            return matrix;
-        };
-        global_matrix += mattools::assemble_matrix(
-            _data->point_elements,
-            indices,
-            point_lambda,
-            &nodal_forces
-        );
+        global_matrix += mattools::assemble_matrix(_data->point_elements, indices, lambda);
     }
 
-    TripletList contact_triplets;
-    for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, contact_triplets);
-    }
-
-    if (!contact_triplets.empty()) {
-        SparseMatrix contact_matrix(global_matrix.rows(), global_matrix.cols());
-        contact_matrix.insertFromTriplets(contact_triplets.begin(), contact_triplets.end());
-        global_matrix += contact_matrix;
-    }
-
-    nodal_forces.check_finite("Internal force");
+    element_forces.check_finite("Internal force");
     return global_matrix;
 }
 
 /**
- * Evaluates nonlinear internal and contact forces without retaining a tangent.
+ * Evaluates element-nodal internal forces without retaining a tangent.
  *
  * Structural elements use the same physical `evaluate()` path as full
  * Newton assembly, but receive a null matrix buffer. They therefore update trial
- * material state and assemble their matching internal force without constructing
- * tangent-only terms. Contact follows with tangent triplets discarded.
+ * material state and write their matching internal force without constructing
+ * tangent-only terms. Every element owns disjoint ELEMENT_NODAL rows, so regular
+ * and point elements are evaluated in one parallel loop without private fields.
+ * Contact is not included; see build_contact_force().
  *
- * @param indices Active global DOF identifiers required by contact assembly.
- * @param nodal_forces Six-component nodal field overwritten with the resulting
- *                     internal and contact forces.
+ * @param element_forces Six-component ELEMENT_NODAL field overwritten with the
+ *                       element internal forces.
  * @param target_displacement Requested global nodal displacement field.
  * @param target_temperature Requested global nodal temperature field.
  * @param base_displacement Optional base displacement state; nullptr denotes zero.
  * @param base_temperature Optional base temperature state; nullptr denotes the
  *                         material stress-free temperature.
  * @param update_state If the material state shall be updated or not
- * @param include_contact If contact should be considered
  */
 void Model::build_internal_force(
-    NodeData&     nodal_forces,
+    Field&        element_forces,
     const Field&  target_displacement,
     const Field*  target_temperature,
     const Field*  base_displacement,
     const Field*  base_temperature,
-    bool          update_state,
-    SystemDofs*   indices      // only relevant for contact, if nullptr, no contact is considered
+    bool          update_state
 ) {
-    logging::error(nodal_forces.domain == FieldDomain::NODE,
-        "internal force output must use NODE domain");
-    logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
-        "internal force output has wrong node count");
-    logging::error(nodal_forces.components >= 6,
+    logging::error(element_forces.domain == FieldDomain::ELEMENT_NODAL,
+        "internal force output must use ELEMENT_NODAL domain");
+    logging::error(element_forces.rows == _data->field_rows(FieldDomain::ELEMENT_NODAL),
+        "internal force output has wrong row count");
+    logging::error(element_forces.components >= 6,
         "internal force output requires at least 6 components");
 
-    nodal_forces.set_zero();
+    element_forces.set_zero();
 
-    // Element forces share global nodes, so direct parallel writes into the
-    // caller-owned field would race. Give every worker a private nodal field,
-    // evaluate regular and auxiliary point elements in one indexed loop, and
-    // reduce the completed worker fields afterwards.
     const std::size_t regular_count = _data->elements.size();
-    const std::size_t point_count   = _data->point_elements.size();
-    const std::size_t element_count = regular_count + point_count;
-
-    constexpr std::size_t min_batch_size = 64;
-    const int worker_count = parallel::worker_count(
-        element_count,
-        static_cast<int>(global_config.max_threads),
-        min_batch_size
-    );
-
-    std::vector<NodeData> worker_forces;
-    worker_forces.reserve(static_cast<std::size_t>(worker_count));
-
-    for (int worker = 0; worker < worker_count; ++worker) {
-        worker_forces.emplace_back(
-            nodal_forces.name,
-            nodal_forces.domain,
-            nodal_forces.rows,
-            nodal_forces.components
-        );
-        worker_forces.back().set_zero();
-    }
+    const std::size_t element_count = regular_count + _data->point_elements.size();
 
     parallel::for_index(
         element_count,
-        worker_count,
-        [&](std::size_t element_index, int worker) {
+        static_cast<int>(global_config.max_threads),
+        [&](std::size_t element_index, int /*worker*/) {
             const ElementPtr& element =
                 element_index < regular_count
                     ? _data->elements[element_index]
@@ -783,41 +725,53 @@ void Model::build_internal_force(
 
             structural->evaluate(
                 nullptr, nullptr,
-                &worker_forces[static_cast<std::size_t>(worker)],
+                &element_forces,
                 &target_displacement, target_temperature,
                 base_displacement, base_temperature,
                 update_state
             );
         },
-        min_batch_size
+        std::size_t(64)
     );
 
-    const Index value_count = nodal_forces.rows * nodal_forces.components;
-    Precision* target = nodal_forces.data();
+    element_forces.check_finite("Internal force");
+}
 
-    parallel::for_index(
-        value_count,
-        worker_count,
-        [&](Index value, int /*worker*/) {
-            Precision sum = Precision(0);
+/**
+ * Adds contact forces and, optionally, the matching contact tangent.
+ *
+ * Contact couples changing node pairs and is therefore not part of the
+ * element-nodal layout. Its forces are added directly to global nodes, usually
+ * onto the reduced element internal force from Field::nodal_sum().
+ *
+ * @param indices Active global DOF identifiers used by the contact tangent.
+ * @param nodal_forces Six-component NODE field receiving contact forces.
+ * @param tangent Optional active-numbering matrix receiving the contact tangent.
+ */
+void Model::build_contact_force(SystemDofs&   indices,
+                                NodeData&     nodal_forces,
+                                SparseMatrix* tangent) {
+    logging::error(nodal_forces.domain == FieldDomain::NODE,
+        "contact force output must use NODE domain");
+    logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
+        "contact force output has wrong node count");
+    logging::error(nodal_forces.components >= 6,
+        "contact force output requires at least 6 components");
 
-            for (int source = 0; source < worker_count; ++source) {
-                sum += worker_forces[static_cast<std::size_t>(source)].data()[value];
-            }
+    if (_data->contacts.empty()) return;
 
-            target[value] = sum;
-        },
-        Index(1024)
-    );
-
-    if (indices) {
-        TripletList discarded_contact_triplets;
-        for (const auto& contact : _data->contacts) {
-            contact.assemble(*indices, *_data, nodal_forces, discarded_contact_triplets);
-        }
+    TripletList triplets;
+    for (const auto& contact : _data->contacts) {
+        contact.assemble(indices, *_data, nodal_forces, triplets);
     }
 
-    nodal_forces.check_finite("Internal force");
+    if (tangent && !triplets.empty()) {
+        SparseMatrix contact_matrix(tangent->rows(), tangent->cols());
+        contact_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+        *tangent += contact_matrix;
+    }
+
+    nodal_forces.check_finite("Contact force");
 }
 
 /**

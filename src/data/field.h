@@ -195,10 +195,12 @@ struct Field {
     // rows and components through the supplied diagnostic label.
     void check_finite(const std::string& label) const;
 
-    // Average valid ELEMENT_NODAL rows at connected global nodes; unwritten
-    // all-NaN rows do not contribute.
-    [[nodiscard]] Field to_nodal(const ModelData&   model_data,
-                                 const std::string& target_name = {}) const;
+    // Average or sum valid ELEMENT_NODAL rows at connected global nodes;
+    // unwritten all-NaN rows do not contribute.
+    [[nodiscard]] Field nodal_avg(const ModelData&   model_data,
+                                  const std::string& target_name = {}) const;
+    [[nodiscard]] Field nodal_sum(const ModelData&   model_data,
+                                  const std::string& target_name = {}) const;
 
     // Returns the first three components of a row
     [[nodiscard]] Vec3 row_vec3(Index row) const;
@@ -228,6 +230,11 @@ struct Field {
 private:
     // Validates domain and dimensions for an element-wise operation
     void validate_compatible(const Field& other, const char* operation) const;
+
+    // Shared gather behind nodal_avg and nodal_sum
+    [[nodiscard]] Field nodal_gather(const ModelData&   model_data,
+                                     const std::string& target_name,
+                                     bool               average) const;
 };
 
 // Legacy field spelling; the alias does not impose a NODE domain.

@@ -13,8 +13,8 @@
  * or structural merging are required.
  *
  * Parallel workers share the global coefficient array and use atomic additions
- * for overlapping matrix contributions. Optional nodal forces are accumulated
- * in worker-local fields and reduced after numerical assembly.
+ * for overlapping matrix contributions. Element force output is not handled
+ * here: callbacks write it into disjoint ELEMENT_NODAL rows themselves.
  *
  * Pattern ownership, element evaluation and numerical accumulation remain
  * independent. The caller retains responsibility for material-state management
@@ -39,49 +39,9 @@
 #include "../model/system_dofs.h"
 
 #include <algorithm>
-#include <type_traits>
 #include <vector>
 
 namespace fem { namespace mattools {
-
-/**
- * Evaluates an element-local matrix with optional nodal force accumulation.
- *
- * Matrix-only callbacks use the signature
- *
- *     f(element, storage)
- *
- * while callbacks also producing nodal forces use
- *
- *     f(element, storage, nodal_forces).
- *
- * Compile-time dispatch selects the appropriate callback signature without
- * runtime branching. The callback returns a local matrix mapped onto the
- * supplied aligned storage.
- *
- * A force-producing callback requires a valid nodal force field. This
- * requirement is checked by assemble_matrix before numerical assembly.
- *
- * @tparam Lambda Element-local matrix callback type.
- * @param compute_local_matrix Callback evaluating the element matrix.
- * @param element Current finite element.
- * @param local_matrix_storage Aligned storage for the local matrix.
- * @param nodal_forces Optional nodal force accumulation field.
- * @return Element-local matrix mapped onto the supplied storage.
- */
-template<typename Lambda>
-auto compute_local_matrix_with_optional_forces(
-    Lambda&                  compute_local_matrix,
-    const model::ElementPtr& element,
-    Precision*               local_matrix_storage,
-    model::NodeData*         nodal_forces
-) {
-    if constexpr (std::is_invocable_v<Lambda&, const model::ElementPtr&, Precision*, model::NodeData&>) {
-        return compute_local_matrix(element, local_matrix_storage, *nodal_forces);
-    } else {
-        return compute_local_matrix(element, local_matrix_storage);
-    }
-}
 
 /**
  * Assembles a global sparse matrix using a fixed compressed-column pattern.
@@ -113,27 +73,21 @@ auto compute_local_matrix_with_optional_forces(
  * and is not validated in advance. Missing coefficient positions encountered
  * during assembly are nevertheless reported as errors.
  *
- * Optional nodal forces are reset before assembly. Parallel callbacks receive
- * worker-local fields, which are reduced into the caller-owned output field
- * after all elements have been evaluated.
- *
  * Callbacks must not write beyond the supplied capacity of 128 local DOFs.
  * Material-state changes made by callbacks remain the caller's responsibility.
  *
- * @tparam Lambda Element-matrix callback, optionally accepting nodal forces.
+ * @tparam Lambda Element-matrix callback f(element, storage).
  * @param elements Elements supplying connectivity and callback inputs.
  * @param indices Node/DOF to global index map.
  * @param compute_local_matrix Callback evaluating local element matrices.
- * @param nodal_forces Optional caller-owned nodal force output field.
  * @param pattern Optional existing CSC pattern, left unchanged.
  * @return Assembled global matrix with owned compressed sparse storage.
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
-                             const model::SystemDofs& indices,
-                             Lambda&& compute_local_matrix,
-                             model::NodeData* nodal_forces = nullptr,
-                             const SparseMatrix* pattern = nullptr) {
+                             const model::SystemDofs&              indices,
+                             Lambda&&                              compute_local_matrix,
+                             const SparseMatrix*                   pattern = nullptr) {
     const parallel::ScopedLinearAlgebraThreads threading;
 
     constexpr std::size_t min_batch_size = 64;
@@ -141,22 +95,13 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
 
     // Select the number of workers according to the number of elements.
     // Small models remain serial to avoid unnecessary threading overhead.
-    // The same worker count is used for element assembly and force reduction.
     const int num_threads = parallel::worker_count(
         elements.size(), static_cast<int>(global_config.max_threads), min_batch_size);
 
     // ---------------------------------------------------------------------
-    // 1. Validate callback requirements
+    // 1. Validate inputs
     // ---------------------------------------------------------------------
 
-    // A callback accepting a nodal force field requires a valid output pointer.
-    // This is a compile-time property of the callback, so it only needs to be
-    // checked once rather than for every element during numerical assembly.
-    constexpr bool requires_forces =
-        std::is_invocable_v<Lambda&, const model::ElementPtr&, Precision*, model::NodeData&>;
-
-    logging::error(!requires_forces || nodal_forces != nullptr,
-        "Matrix assembly callback requires a nodal force output field");
     logging::error(pattern == nullptr || pattern->isCompressed(),
         "Matrix assembly callback requires a compressed sparsity pattern");
 
@@ -193,37 +138,6 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     logging::info(true, "Time for pattern setup     : ", timer.elapsed(), " ms");
     logging::info(true, "Pattern nonzeros           : ", global_matrix.nonZeros());
 
-    // ---------------------------------------------------------------------
-    // 3. Prepare optional nodal force accumulation
-    // ---------------------------------------------------------------------
-
-    // Matrix coefficients support atomic updates, but the existing nodal
-    // force field interface does not. Parallel callbacks therefore cannot
-    // safely accumulate into the same force field.
-    //
-    // With one worker, the callback writes directly to nodal_forces.
-    // With multiple workers, each worker receives a private field having
-    // the same dimensions and domain as the caller-owned output.
-    std::vector<model::NodeData> thread_nodal_forces;
-
-    if (nodal_forces) {
-        nodal_forces->set_zero();
-
-        if (num_threads > 1) {
-            thread_nodal_forces.reserve(num_threads);
-
-            for (int worker = 0; worker < num_threads; ++worker) {
-                thread_nodal_forces.emplace_back(
-                    nodal_forces->name,
-                    nodal_forces->domain,
-                    nodal_forces->rows,
-                    nodal_forces->components);
-
-                thread_nodal_forces.back().set_zero();
-            }
-        }
-    }
-
     // Obtain direct access to Eigen's compressed-column storage:
     //
     //   outer[j] ... outer[j + 1]   : stored entries of column j
@@ -240,7 +154,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     Precision*  values = global_matrix.valuePtr();
 
     // ---------------------------------------------------------------------
-    // 4. Evaluate element matrices and assemble global coefficients
+    // 3. Evaluate element matrices and assemble global coefficients
     // ---------------------------------------------------------------------
 
     timer.start();
@@ -251,7 +165,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     //
     // The sparsity pattern remains fixed. Different workers may update the
     // same coefficient, but never modify the structure of the sparse matrix.
-    parallel::for_index(elements.size(), num_threads, [&](std::size_t e, int worker) {
+    parallel::for_index(elements.size(), num_threads, [&](std::size_t e, int /*worker*/) {
         const auto& element = elements[e];
 
         if (!element) {
@@ -267,22 +181,9 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
         alignas(64) Precision storage[capacity * capacity];
         int global_dofs[capacity];
 
-        // Select the appropriate nodal force destination.
-        //
-        // Serial assembly writes directly into the caller's output field.
-        // Parallel assembly uses the field belonging to the current worker,
-        // avoiding races between element callbacks that share mesh nodes.
-        model::NodeData* local_nodal_forces = thread_nodal_forces.empty()
-            ? nodal_forces
-            : &thread_nodal_forces[worker];
-
         // Evaluate the local matrix exactly once. The callback may also
-        // update material state and accumulate local nodal forces.
-        //
-        // Neither the sparsity pattern nor the numerical assembly algorithm
-        // depends on the element formulation used by this callback.
-        auto local = compute_local_matrix_with_optional_forces(
-            compute_local_matrix, element, storage, local_nodal_forces);
+        // update material state and write element-nodal forces.
+        auto local = compute_local_matrix(element, storage);
 
         const int nodes = element->n_nodes();
         const int size  = static_cast<int>(local.rows());
@@ -387,44 +288,6 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     timer.stop();
 
     logging::info(true, "Time for matrix assembly   : ", timer.elapsed(), " ms");
-
-    // ---------------------------------------------------------------------
-    // 5. Reduce optional worker-local nodal forces
-    // ---------------------------------------------------------------------
-
-    // Numerical matrix assembly is complete at this point.
-    //
-    // If worker-local force fields were created, their contributions must
-    // now be summed into the caller-owned nodal force field:
-    //
-    //   f_global[i] = sum_worker f_worker[i]
-    //
-    // The reduction is parallelized over output entries rather than workers.
-    // Each output entry is therefore written by exactly one worker and does
-    // not require atomic operations or additional synchronization.
-    //
-    // Serial assembly skips this phase because callbacks already accumulated
-    // directly into nodal_forces.
-    if (!thread_nodal_forces.empty()) {
-        timer.start();
-
-        const Index count = static_cast<Index>(nodal_forces->rows) * nodal_forces->components;
-        Precision*  output = nodal_forces->data();
-
-        parallel::for_index(count, num_threads, [&](Index i, int) {
-            Precision sum = Precision(0);
-
-            for (int worker = 0; worker < num_threads; ++worker) {
-                sum += thread_nodal_forces[worker].data()[i];
-            }
-
-            output[i] = sum;
-        });
-
-        timer.stop();
-
-        logging::info(true, "Time for force reduction   : ", timer.elapsed(), " ms");
-    }
 
     return global_matrix;
 }

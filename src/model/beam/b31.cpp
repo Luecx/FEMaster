@@ -702,9 +702,9 @@ MapMatrix B31::evaluate(
         }
 
         for (Index node = 0; node < N; ++node) {
-            const Index node_id = static_cast<Index>(node_ids[node]);
+            const Index row = static_cast<Index>(elem_nodal_offset) + node;
             for (Index dof = 0; dof < dofs_per_node; ++dof) {
-                (*internal_force_output)(node_id, dof) +=
+                (*internal_force_output)(row, dof) +=
                     force(node * dofs_per_node + dof);
             }
         }

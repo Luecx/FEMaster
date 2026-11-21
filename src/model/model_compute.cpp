@@ -6,14 +6,14 @@
  * delegate element-specific evaluation to compiled structural elements.
  * Integration-point results use the offsets established during compilation;
  * element-nodal quantities are projected to global nodes only when required,
- * using Field::to_nodal() to omit undefined element-local values.
+ * using Field::nodal_avg() to omit undefined element-local values.
  *
  * Nodal stress recovery, shell-face recovery, shell-resultant recovery, beam
  * section forces, shear flow and thermal heat-flux recovery may evaluate
  * elements with OpenMP. Eigen and MKL internal threading are temporarily
  * restricted during those loops to avoid nested oversubscription. Thermal flux
  * remains in disjoint ELEMENT_NODAL storage until nodal output requests
- * averaging through Field::to_nodal().
+ * averaging through Field::nodal_avg().
  *
  * @see Model
  * @see ModelData
@@ -42,7 +42,7 @@ namespace fem::model {
  * coordinates and writes six-component stress and strain values into
  * `ELEMENT_NODAL` storage. The compiled element-nodal offsets keep parallel
  * writes disjoint. Unwritten element-local rows remain NaN and are omitted
- * by Field::to_nodal() when a global nodal result is requested.
+ * by Field::nodal_avg() when a global nodal result is requested.
  *
  * Elements without nodal recovery coordinates do not participate.
  *
@@ -137,7 +137,7 @@ Field Model::compute_peeq_element_nodal() {
  * Retains the existing direct nodal PEEQ API for model callers.
  */
 Field Model::compute_peeq_nodal() {
-    return compute_peeq_element_nodal().to_nodal(*_data, "PEEQ");
+    return compute_peeq_element_nodal().nodal_avg(*_data, "PEEQ");
 }
 
 /**
@@ -147,7 +147,7 @@ Field Model::compute_peeq_nodal() {
  * with the through-thickness coordinate set to `+1` for the top face and `-1`
  * for the bottom face. Non-shell structural elements use their unchanged nodal
  * recovery coordinates for both fields. Unwritten rows remain NaN and are
- * omitted by Field::to_nodal() when nodal results are requested.
+ * omitted by Field::nodal_avg() when nodal results are requested.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param linearization Displacement expansion state; null denotes zero.
@@ -417,7 +417,7 @@ Field Model::compute_shear_flow(Field& displacement) {
  * Element recovery is parallel because no two elements write the same
  * `ELEMENT_NODAL` rows. As with stress recovery, the caller decides whether
  * to preserve these discontinuous values or project them onto shared nodes
- * using `Field::to_nodal()`.
+ * using `Field::nodal_avg()`.
  *
  * No model-wide integration-point heat-flux field is created or exported.
  *

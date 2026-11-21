@@ -857,24 +857,24 @@ C3D8I::Vector24 C3D8I::local_displacement(const Field& displacement) {
 }
 
 /**
- * Adds element translational forces to the global nodal accumulator.
+ * Adds element translational forces to the element-nodal accumulator.
  *
- * The output must use the NODE domain and provide at least XYZ components.
- * Each local node contributes according to its global connectivity identifier.
+ * The output must use the ELEMENT_NODAL domain and provide at least XYZ
+ * components. Each local node contributes to its row behind elem_nodal_offset.
  *
- * @param node_forces Global nodal force accumulator.
+ * @param node_forces Element-nodal force accumulator.
  * @param local_force Element force in node-major XYZ ordering.
  */
 void C3D8I::assemble_local_force(Field& node_forces, const Vector24& local_force) {
-    logging::error(node_forces.domain == FieldDomain::NODE,
-        "C3D8I: internal force output must use NODE domain");
+    logging::error(node_forces.domain == FieldDomain::ELEMENT_NODAL,
+        "C3D8I: internal force output must use ELEMENT_NODAL domain");
     logging::error(node_forces.components >= D,
         "C3D8I: internal force output requires at least three components");
 
     for (Index node = 0; node < N; ++node) {
-        const Index node_id = static_cast<Index>(node_ids[node]);
+        const Index row = static_cast<Index>(elem_nodal_offset) + node;
         for (Dim dof = 0; dof < D; ++dof) {
-            node_forces(node_id, dof) += local_force(D * node + dof);
+            node_forces(row, dof) += local_force(D * node + dof);
         }
     }
 }

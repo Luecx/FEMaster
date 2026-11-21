@@ -287,9 +287,9 @@ MapMatrix QSPT::evaluate(
         const StaticVector<12> force = K * u;
 
         for (Index node = 0; node < 4; ++node) {
-            const Index node_id = static_cast<Index>(node_ids[node]);
+            const Index row = static_cast<Index>(elem_nodal_offset) + node;
             for (Dim dof = 0; dof < 3; ++dof) {
-                (*internal_force)(node_id, dof) += force(3 * node + dof);
+                (*internal_force)(row, dof) += force(3 * node + dof);
             }
         }
     }

@@ -139,22 +139,21 @@ void LinearStaticTopo::run() {
     model::Field reference_displacement = model->_data->create_field_("REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
 
-    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
+    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
     model->build_internal_force(
         reference_internal,
         reference_displacement,
         model->_data->temperature.get(),
         nullptr,
         nullptr,
-        false,
-        nullptr);
+        false);
 
     auto f_external = Timer::measure(
         [&]() { return system_dofs.reduce(global_load_mat); },
         "reducing load matrix -> active external vector"
     );
     auto f_reference = Timer::measure(
-        [&]() { return system_dofs.reduce(reference_internal); },
+        [&]() { return system_dofs.reduce(reference_internal.nodal_sum(*model->_data)); },
         "reducing reference internal force -> active vector"
     );
     auto f = f_external - f_reference;

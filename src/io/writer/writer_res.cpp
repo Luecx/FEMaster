@@ -356,7 +356,9 @@ void write_element_location_field(std::ofstream& file_path,
 
     logging::error(offsets.rows == element_count + 1,
         "ResWriter: ", offset_name, " must have element_count + 1 rows");
-    logging::error(field.rows == static_cast<Index>(offsets(element_count, 0)),
+    // Point-element rows trail the dense ELEMENT_NODAL rows and are not written
+    const Index dense_rows = static_cast<Index>(offsets(element_count, 0));
+    logging::error(field.rows == model_data.field_rows(field.domain),
         "ResWriter: field '", field_name, "' row count does not match ", offset_name);
     logging::error(element_ids.size() == model_data.elements.size(),
         "ResWriter: element id mapping does not match compiled elements");
@@ -367,7 +369,7 @@ void write_element_location_field(std::ofstream& file_path,
         field.domain,
         2,
         static_cast<int>(field.components),
-        static_cast<int>(field.rows)
+        static_cast<int>(dense_rows)
     );
 
     // Keep complete element ranges together inside one formatting worker

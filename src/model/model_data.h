@@ -74,7 +74,8 @@ struct Instance;
  * `point_elements` are different only in ownership: they are synthesized from
  * FEMaster `POINTMASS, NSET=...` commands after the dense topology has already
  * been compiled. They participate in DOF, stiffness, mass and inertia assembly,
- * but do not alter dense element ids, ELSETs or element-domain fields.
+ * but do not alter dense element ids or ELSETs. Their element-nodal rows are
+ * counted behind the dense `ELEMENT_NODAL` rows.
  *
  * Named fields are owned through shared pointers in `fields`. Dedicated handles
  * expose fields with central solver meaning, such as current/reference nodal
@@ -111,9 +112,12 @@ struct ModelData {
     std::vector<LinePtr>    lines;
 
     // Auxiliary point elements created from post-compile FEMaster POINTMASS
-    // commands. They reference compiled node ids but deliberately stay outside
-    // the frozen dense element namespace and its element-domain enumerations.
+    // commands. They reference compiled node ids but stay outside the frozen
+    // dense element namespace. Only their element-nodal rows are enumerated,
+    // behind all dense rows; point_nodal_rows counts them. Adding point
+    // elements requires initialize_element_enumeration() to run again.
     std::vector<ElementPtr> point_elements;
+    Index                   point_nodal_rows = 0;
 
     // Assembly section assignments and shared non-topological definitions.
     std::vector<Section::Ptr> sections;
