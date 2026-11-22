@@ -446,13 +446,13 @@ MapMatrix T3::evaluate(
             force.noalias() += tangent * delta;
         }
 
-        // Scatter the six element force components to the global nodal field.
-        const Index node0 = static_cast<Index>(node_ids[0]);
-        const Index node1 = static_cast<Index>(node_ids[1]);
+        // Scatter the six element force components to the element-nodal rows.
+        const Index row0 = static_cast<Index>(elem_nodal_offset);
+        const Index row1 = row0 + 1;
 
         for (Dim d = 0; d < 3; ++d) {
-            (*internal_force)(node0, d) += force(d);
-            (*internal_force)(node1, d) += force(3 + d);
+            (*internal_force)(row0, d) += force(d);
+            (*internal_force)(row1, d) += force(3 + d);
         }
     }
 

@@ -209,14 +209,16 @@ struct Model {
                                                     const bc::ConditionState& target);
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(const bc::ConditionState& target);
 
-    // Element operators use active numbering and optional element scaling
+    // Element operators use active numbering and optional element scaling.
+    // Internal forces are ELEMENT_NODAL and reduced by the caller with
+    // Field::nodal_sum(); contact forces and tangents are assembled separately.
     SparseMatrix build_stiffness_matrix(
         SystemDofs& indices,
         const Field* base_temperature = nullptr,
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_tangent_stiffness_matrix(
         SystemDofs& indices,
-        NodeData& nodal_forces,
+        Field& element_forces,
         const Field& target_displacement,
         const Field* target_temperature,
         const Field& base_displacement,
@@ -232,13 +234,16 @@ struct Model {
         const Field* base_temperature = nullptr,
         const Field* stiffness_scalar = nullptr);
     void build_internal_force(
-        NodeData& nodal_forces,
+        Field& element_forces,
         const Field& target_displacement,
         const Field* target_temperature,
         const Field* base_displacement = nullptr,
         const Field* base_temperature = nullptr,
-        bool update_state = true,
-        SystemDofs* indices = nullptr);
+        bool update_state = true);
+    void build_contact_force(
+        SystemDofs& indices,
+        NodeData& nodal_forces,
+        SparseMatrix* tangent = nullptr);
     SparseMatrix build_lumped_mass_matrix(SystemDofs& indices);
 
     // Result recovery from compiled structural and thermal elements. Structural

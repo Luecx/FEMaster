@@ -375,9 +375,9 @@ MapMatrix BeamElement<N>::evaluate(
         }
 
         for (Index node = 0; node < N; ++node) {
-            const Index node_id = static_cast<Index>(node_ids[node]);
+            const Index row = static_cast<Index>(elem_nodal_offset) + node;
             for (Index dof = 0; dof < 6; ++dof) {
-                (*internal_force)(node_id, dof) += force(node * 6 + dof);
+                (*internal_force)(row, dof) += force(node * 6 + dof);
             }
         }
     }

@@ -93,20 +93,16 @@ void check_uniform_thermal_load(
     };
     reference_displacement.set_zero();
 
-    model::Field reference_internal{
-        "REFERENCE_INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        static_cast<Index>(N),
-        6
-    };
+    model::Field element_internal = model._data->create_field_(
+        "REFERENCE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
     model.build_internal_force(
-        reference_internal,
+        element_internal,
         reference_displacement,
         temperature.get(),
         nullptr,
         nullptr,
-        false,
-        nullptr);
+        false);
+    model::Field reference_internal = element_internal.nodal_sum(*model._data);
 
     // A homogeneous thermal free-expansion displacement produces exactly the
     // same generalized strain as the uniform, thickness-constant thermal load.
@@ -154,8 +150,8 @@ void check_uniform_thermal_load(
             model.compute_stress(
                 displacement, temperature.get(), nullptr, nullptr);
 
-        const auto stress  = std::get<0>(stress_strain).to_nodal(*model._data, "STRESS");
-        const auto strain  = std::get<1>(stress_strain).to_nodal(*model._data, "STRAIN");
+        const auto stress  = std::get<0>(stress_strain).nodal_avg(*model._data, "STRESS");
+        const auto strain  = std::get<1>(stress_strain).nodal_avg(*model._data, "STRAIN");
 
         bool planar_xy = true;
         for (Index node = 1; node < static_cast<Index>(N); ++node) {
@@ -200,7 +196,7 @@ void check_uniform_thermal_load(
         if (planar_xy) {
             const auto restrained =
                 model.compute_stress(displacement);
-            const auto restrained_stress = std::get<0>(restrained).to_nodal(*model._data, "STRESS");
+            const auto restrained_stress = std::get<0>(restrained).nodal_avg(*model._data, "STRESS");
             for (Index node = 0; node < static_cast<Index>(N); ++node) {
                 EXPECT_NEAR(restrained_stress(node, 0), -1000.0 * free_strain / 0.75, 1e-8);
                 EXPECT_NEAR(restrained_stress(node, 1), -1000.0 * free_strain / 0.75, 1e-8);
@@ -220,13 +216,13 @@ void check_uniform_thermal_load(
         (*temperature)(node, 0) = material->get_thermal_zero_temperature();
     }
     model.build_internal_force(
-        reference_internal,
+        element_internal,
         reference_displacement,
         temperature.get(),
         nullptr,
         nullptr,
-        false,
-        nullptr);
+        false);
+    reference_internal = element_internal.nodal_sum(*model._data);
     for (Index node = 0; node < static_cast<Index>(N); ++node) {
         for (Index dof = 0; dof < 6; ++dof) {
             EXPECT_NEAR(reference_internal(node, dof), 0.0, 1e-12);
@@ -460,20 +456,16 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     };
     reference_displacement.set_zero();
 
-    model::Field reference_internal{
-        "REFERENCE_INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        8,
-        6
-    };
+    model::Field element_internal = model._data->create_field_(
+        "REFERENCE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
     model.build_internal_force(
-        reference_internal,
+        element_internal,
         reference_displacement,
         temperature.get(),
         nullptr,
         nullptr,
-        false,
-        nullptr);
+        false);
+    model::Field reference_internal = element_internal.nodal_sum(*model._data);
 
     // Verify consistent nodal loads, including the independent drilling motion
     auto* element = model._data->elements[0]->as<model::FRTShellS8>();
@@ -495,7 +487,7 @@ TEST(ShellThermal, S8PlanarLinearTemperatureGradient) {
     const auto recovered = model.compute_stress(
         displacement, temperature.get(), nullptr, nullptr);
 
-    const auto stress  = std::get<0>(recovered).to_nodal(*model._data, "STRESS");
+    const auto stress  = std::get<0>(recovered).nodal_avg(*model._data, "STRESS");
     for (Index node = 0; node < 8; ++node) {
         for (Index component = 0; component < 6; ++component) {
             EXPECT_NEAR(stress(node, component), 0.0, 1e-8);

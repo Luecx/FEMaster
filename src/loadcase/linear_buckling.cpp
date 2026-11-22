@@ -170,7 +170,7 @@ void LinearBuckling::run() {
     model::Field reference_displacement = model->_data->create_field_("REFERENCE_DISPLACEMENT", model::FieldDomain::NODE, 6, false);
     reference_displacement.set_zero();
 
-    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::NODE, 6, false);
+    model::Field reference_internal = model->_data->create_field_("REFERENCE_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
 
     Timer::measure(
         [&]() {
@@ -180,8 +180,7 @@ void LinearBuckling::run() {
                 model->_data->temperature.get(),
                 nullptr,
                 nullptr,
-                false,
-                nullptr);
+                false);
         },
         "constructing reference internal preload force"
     );
@@ -192,7 +191,7 @@ void LinearBuckling::run() {
     );
 
     auto f_reference = Timer::measure(
-        [&]() { return system_dofs.reduce(reference_internal); },
+        [&]() { return system_dofs.reduce(reference_internal.nodal_sum(*model->_data)); },
         "reducing reference internal preload -> active vector"
     );
 

@@ -175,7 +175,7 @@ Precision PointElement::volume() {
  * @param tangent Optional caller-owned storage for the complete 6x6 tangent.
  * @param geometric_tangent Optional caller-owned storage for the geometric
  *        tangent, which is always zero.
- * @param internal_force Optional global nodal internal-force accumulator.
+ * @param internal_force Optional ELEMENT_NODAL internal-force accumulator.
  * @param target_displacement Requested displacement state. Required when
  *        internal_force is requested.
  * @param target_temperature Ignored; point springs have no thermal response.
@@ -222,10 +222,11 @@ MapMatrix PointElement::evaluate(
             "PointElement: internal force evaluation requires displacement");
 
         const Index node = static_cast<Index>(node_ids[0]);
+        const Index row  = static_cast<Index>(elem_nodal_offset);
 
         for (Index dof = 0; dof < 3; ++dof) {
-            (*internal_force)(node, dof    ) += section->spring_constants_       (dof) * (*target_displacement)(node, dof);
-            (*internal_force)(node, dof + 3) += section->rotary_spring_constants_(dof) * (*target_displacement)(node, dof + 3);
+            (*internal_force)(row, dof    ) += section->spring_constants_       (dof) * (*target_displacement)(node, dof);
+            (*internal_force)(row, dof + 3) += section->rotary_spring_constants_(dof) * (*target_displacement)(node, dof + 3);
         }
     }
 

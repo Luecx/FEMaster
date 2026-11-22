@@ -230,17 +230,27 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("IMPERFECTION");
 
     // ---------------------------------------------------------------------
-    // Assembly regions, properties and dense fields
+    // Assembly regions
     // ---------------------------------------------------------------------
-    root.execute_children("FIELD");
-    root.execute_children("NORMAL");
-
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("NSET");
         assembly->execute_children("ELSET");
         assembly->execute_children("SURFACE");
         assembly->execute_children("SFSET");
+    }
 
+    // Point elements own element-nodal rows. Create them and recount before
+    // any element-location field exists, including FIELD, NORMAL and normals.
+    root.execute_children("POINTMASS");
+    model_->_data->initialize_element_enumeration();
+
+    // ---------------------------------------------------------------------
+    // Assembly properties and dense fields
+    // ---------------------------------------------------------------------
+    root.execute_children("FIELD");
+    root.execute_children("NORMAL");
+
+    for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("MASS");
         assembly->execute_children("ROTARYINERTIA");
         assembly->execute_children("SPRING");
@@ -270,11 +280,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
     // Complete reference normals from the final initial geometry.
     model_->build_shell_element_normals();
-
-    // ---------------------------------------------------------------------
-    // Compiled model features
-    // ---------------------------------------------------------------------
-    root.execute_children("POINTMASS");
 
     // Resolve all compiled nodal bases before any CLOAD or SUPPORT is materialized.
     // Assembly sets already exist, so these assignments are independent of

@@ -308,7 +308,6 @@ void NonlinearStatic::run() {
     }
 
     const Index n_active   = system_dofs.size();
-    const Index node_count = model->_data->field_rows(model::FieldDomain::NODE);
 
     // Element connectivity and active numbering remain fixed throughout this
     // step. Reuse their pattern while assembling contact couplings separately.
@@ -447,15 +446,11 @@ void NonlinearStatic::run() {
             displacement_evaluation
         );
 
-        model::NodeData internal_mat{
-            "INTERNAL_FORCES",
-            model::FieldDomain::NODE,
-            node_count,
-            6
-        };
-        internal_mat.set_zero();
+        model::Field element_mat = model->_data->create_field_(
+            "ELEMENT_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
 
-        SparseMatrix Kt;
+        SparseMatrix    Kt;
+        model::NodeData internal_mat;
 
         const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
@@ -463,7 +458,7 @@ void NonlinearStatic::run() {
         try {
             Kt = model->build_tangent_stiffness_matrix(
                 system_dofs,
-                internal_mat,
+                element_mat,
                 displacement_evaluation,
                 step_temperature,
                 displacement_evaluation,
@@ -472,6 +467,8 @@ void NonlinearStatic::run() {
                 true,
                 &tangent_pattern
             );
+            internal_mat = element_mat.nodal_sum(*model->_data, "INTERNAL_FORCES");
+            model->build_contact_force(system_dofs, internal_mat, &Kt);
         } catch (...) {
             if (logging_was_enabled) logging::enable();
             throw;
@@ -546,27 +543,25 @@ void NonlinearStatic::run() {
             displacement_evaluation
         );
 
-        model::NodeData internal_mat{
-            "INTERNAL_FORCES",
-            model::FieldDomain::NODE,
-            node_count,
-            6
-        };
-        internal_mat.set_zero();
+        model::Field element_mat = model->_data->create_field_(
+            "ELEMENT_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
+
+        model::NodeData internal_mat;
 
         const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
 
         try {
             model->build_internal_force(
-                internal_mat,
+                element_mat,
                 displacement_evaluation,
                 step_temperature,
                 &displacement_evaluation,
                 step_temperature,
-                true,
-                &system_dofs
+                true
             );
+            internal_mat = element_mat.nodal_sum(*model->_data, "INTERNAL_FORCES");
+            model->build_contact_force(system_dofs, internal_mat);
         } catch (...) {
             if (logging_was_enabled) logging::enable();
             throw;
@@ -799,24 +794,21 @@ void NonlinearStatic::run() {
         // Internal/external/reaction forces are primary equilibrium fields.
         // Stress, strain and any other constitutive result are intentionally
         // absent here and are recovered by the output handler only if requested.
-        model::NodeData increment_internal{
-            "INTERNAL_FORCES",
-            model::FieldDomain::NODE,
-            node_count,
-            6
-        };
-        increment_internal.set_zero();
+        model::Field increment_element = model->_data->create_field_(
+            "ELEMENT_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
 
         nonlinear_state.reset_material_state();
         model->build_internal_force(
-            increment_internal,
+            increment_element,
             displacement,
             step_temperature,
             &displacement,
             step_temperature,
-            true,
-            &system_dofs
+            true
         );
+
+        model::NodeData increment_internal = increment_element.nodal_sum(*model->_data, "INTERNAL_FORCES");
+        model->build_contact_force(system_dofs, increment_internal);
 
         TripletList discarded_tangent;
         auto        increment_external = build_step_load_matrix(lambda * step_period, lambda, system_dofs, &discarded_tangent);
@@ -1059,20 +1051,15 @@ void NonlinearStatic::run() {
 
     update_positions();
 
-    model::NodeData final_internal{
-        "INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        node_count,
-        6
-    };
-    final_internal.set_zero();
+    model::Field final_element = model->_data->create_field_(
+        "ELEMENT_INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
 
     nonlinear_state.reset_material_state();
     auto final_Kt = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
                 system_dofs,
-                final_internal,
+                final_element,
                 displacement,
                 step_temperature,
                 displacement,
@@ -1084,6 +1071,9 @@ void NonlinearStatic::run() {
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
     );
+
+    model::NodeData final_internal = final_element.nodal_sum(*model->_data, "INTERNAL_FORCES");
+    model->build_contact_force(system_dofs, final_internal, &final_Kt);
 
     if (!stiffness_file.empty()) {
         if (regularize_zero_stiffness_rows) {

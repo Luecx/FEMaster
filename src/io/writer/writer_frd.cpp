@@ -1407,8 +1407,7 @@ void FrdWriter::write_element_nodal_field(const model::Field& field,
     const Index element_count = static_cast<Index>(model_data.elements.size());
     logging::error(model_data.element_nodal_offsets->rows == element_count + 1,
         "FrdWriter: element-nodal offsets do not match compiled elements");
-    const Index expected_rows = static_cast<Index>(
-        (*model_data.element_nodal_offsets)(element_count, 0));
+    const Index expected_rows = model_data.field_rows(model::FieldDomain::ELEMENT_NODAL);
     logging::error(field.rows == expected_rows,
         "FrdWriter: element-nodal field row count does not match offsets");
 

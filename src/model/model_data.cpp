@@ -56,7 +56,7 @@ Index ModelData::field_rows(FieldDomain domain) const {
         case FieldDomain::ELEMENT_NODAL:
             logging::error(element_nodal_offsets != nullptr,
                 "ModelData: element nodal offsets are not initialized");
-            return static_cast<Index>((*element_nodal_offsets)(element_count));
+            return static_cast<Index>((*element_nodal_offsets)(element_count)) + point_nodal_rows;
         case FieldDomain::ELEMENT_IP:
             logging::error(element_ip_offsets != nullptr,
                 "ModelData: element IP offsets are not initialized");
@@ -85,17 +85,26 @@ Index ModelData::field_rows(FieldDomain domain) const {
  * row per connected node, integration-point ranges contain `num_ip()` rows and
  * material-point ranges contain `num_ip() * num_mp_per_ip()` rows.
  *
+ * Auxiliary point elements are counted behind all dense element-nodal rows.
+ * They own no integration or material points. Since POINTMASS commands create
+ * them after compile(), the parser recounts once they exist.
+ *
  * Material-state fields are allocated lazily by Model::step_begin(), once
  * section assignments determine the necessary constitutive state width.
- * Enumeration is a one-time operation because changing offsets would invalidate
- * all dependent fields and element references.
+ * Recounting is only allowed while no element-location field exists, because
+ * changing offsets would invalidate such fields.
  */
 void ModelData::initialize_element_enumeration() {
-    // Reject repeated initialization of offsets referenced by compiled elements
-    logging::error(element_nodal_offsets == nullptr
-                && element_ip_offsets    == nullptr
-                && element_mp_offsets    == nullptr,
-        "ModelData: element enumeration has already been initialized");
+    // Reject recounting once fields depend on the current offsets
+    logging::error(shell_element_nodal_normals == nullptr
+                && material_state_old          == nullptr
+                && material_state_new          == nullptr,
+        "ModelData: element enumeration cannot change after element fields exist");
+    for (const auto& [field_name, field] : fields) {
+        logging::error(!field || field->domain == FieldDomain::NODE
+                              || field->domain == FieldDomain::ELEMENT,
+            "ModelData: element enumeration cannot change after field ", field_name);
+    }
 
     // Allocate one prefix entry per element and a terminal total entry
     const Index element_count = static_cast<Index>(elements.size());
@@ -136,6 +145,15 @@ void ModelData::initialize_element_enumeration() {
     (*element_nodal_offsets)(element_count) = static_cast<Precision>(nodal_offset);
     (*element_ip_offsets)(element_count)    = static_cast<Precision>(ip_offset);
     (*element_mp_offsets)(element_count)    = static_cast<Precision>(mp_offset);
+
+    // Point element rows follow the dense rows
+    point_nodal_rows = 0;
+    for (const auto& element : point_elements) {
+        if (!element) continue;
+
+        element->elem_nodal_offset = static_cast<ID>(nodal_offset + point_nodal_rows);
+        point_nodal_rows          += static_cast<Index>(element->n_nodes());
+    }
 
     // Material history is initialized after sections are assigned, immediately
     // before the first element evaluation in Model::step_begin().

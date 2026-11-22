@@ -101,8 +101,8 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
     auto [element_top, element_bot] = model.compute_stress_top_bot(
         displacement, nullptr, nullptr, nullptr);
 
-    const auto stress_top = element_top.to_nodal(*model._data, "STRESS_TOP");
-    const auto stress_bot = element_bot.to_nodal(*model._data, "STRESS_BOT");
+    const auto stress_top = element_top.nodal_avg(*model._data, "STRESS_TOP");
+    const auto stress_bot = element_bot.nodal_avg(*model._data, "STRESS_BOT");
 
     ASSERT_EQ(stress_top.rows, stress_bot.rows);
     ASSERT_EQ(stress_top.components, stress_bot.components);
@@ -162,7 +162,7 @@ TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
         linearization(node, 2) = u(2);
     }
 
-    model::NodeData base_force("F_BASE", model::FieldDomain::NODE, 8, 6);
+    model::NodeData base_force("F_BASE", model::FieldDomain::ELEMENT_NODAL, 8, 6);
     base_force.set_zero();
 
     Precision tangent_storage[24 * 24] {};
@@ -210,7 +210,7 @@ TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
     target(6, 1) -= Precision(1e-4);
     target(5, 2) += Precision(1.5e-4);
 
-    model::NodeData target_force("F_TARGET", model::FieldDomain::NODE, 8, 6);
+    model::NodeData target_force("F_TARGET", model::FieldDomain::ELEMENT_NODAL, 8, 6);
     target_force.set_zero();
     element->evaluate(
         nullptr,
@@ -377,7 +377,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     }
 
     model::NodeData internal{
-        "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
+        "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 8, 6
     };
     internal.set_zero();
 
@@ -404,7 +404,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
     auto internal_force = [&](const model::Field& u) {
         model::NodeData force{
-            "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
+            "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 8, 6
         };
         force.set_zero();
         element->evaluate(nullptr, nullptr, &force, &u, nullptr, &u, nullptr, true);
@@ -467,7 +467,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
     }
 
     model::NodeData rotated_internal{
-        "INTERNAL_FORCES", model::FieldDomain::NODE, 8, 6
+        "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 8, 6
     };
     rotated_internal.set_zero();
 
@@ -575,7 +575,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
 
                 // Reconstruct the force through the same public residual-only path
                 auto internal_force = [&](const model::Field& displacement) {
-                    model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+                    model::NodeData forces("F", model::FieldDomain::ELEMENT_NODAL, 8, 6);
                     forces.set_zero();
                     element->evaluate(nullptr, nullptr, &forces, &displacement, nullptr, &displacement, nullptr, true);
 
@@ -603,7 +603,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                         displacement(node, 2) = amplitude * (Precision(0.1) * x.z() + x.x() * x.z());
                     }
 
-                    model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+                    model::NodeData forces("F", model::FieldDomain::ELEMENT_NODAL, 8, 6);
                     forces.set_zero();
                     Precision storage[24 * 24] {};
                     const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, nullptr, &displacement, nullptr, true);
@@ -689,7 +689,7 @@ TEST(Elements_C3D8I, LinearLimitAndSixRigidBodyModes) {
         // Compare linear condensation with the undeformed finite-strain tangent
         auto* element = model._data->elements[0]->as<model::C3D8I>();
         model::Field displacement("U", model::FieldDomain::NODE, 8, 6);
-        model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+        model::NodeData forces("F", model::FieldDomain::ELEMENT_NODAL, 8, 6);
         displacement.set_zero();
         forces.set_zero();
         Precision storage[24 * 24] {};
@@ -755,7 +755,7 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
 
         // Physical trial evaluations must be deterministic from the committed history
         const model::Field committed = *model._data->material_state_old;
-        model::NodeData forces("F", model::FieldDomain::NODE, 8, 6);
+        model::NodeData forces("F", model::FieldDomain::ELEMENT_NODAL, 8, 6);
         forces.set_zero();
         Precision storage[24 * 24] {};
         const DynamicMatrix tangent = element->evaluate(storage, nullptr, &forces, &displacement, &displacement, nullptr, true);

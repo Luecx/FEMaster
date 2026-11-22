@@ -424,6 +424,7 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
         point->set_section(section);
         mdl._data->point_elements.push_back(point);
     }
+    mdl._data->initialize_element_enumeration();
 
     bc::InertialLoad load;
     load.region_     = std::make_shared<model::ElementRegion>("EMPTY_REGION");
@@ -468,6 +469,7 @@ TEST(BC_Loads, InertiaReliefBalancesPointMassOnlyModel) {
         point->set_section(section);
         mdl._data->point_elements.push_back(point);
     }
+    mdl._data->initialize_element_enumeration();
 
     model::Field global_load{"GLOBAL_LOAD", model::FieldDomain::NODE, 2, 6};
     global_load.set_zero();

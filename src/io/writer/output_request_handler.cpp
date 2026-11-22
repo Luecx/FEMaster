@@ -4,7 +4,7 @@
  *
  * The handler first uses an exact (quantity, domain) match from its cache.
  * Selected nodal requests may recover the element-nodal representation and
- * project it with Field::to_nodal(). Otherwise a direct switch evaluates the
+ * project it with Field::nodal_avg(). Otherwise a direct switch evaluates the
  * requested physical quantity in its natural domain, recursively obtaining
  * any required primary fields. Recoveries that return multiple fields store
  * them together so subsequent requests reuse the same model evaluation.
@@ -157,7 +157,7 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
 
         if (project_element_nodal) {
             auto& source = compute(field, model::FieldDomain::ELEMENT_NODAL);
-            store(field, source.to_nodal(*model_->_data, std::string(output_field_name(field))));
+            store(field, source.nodal_avg(*model_->_data, std::string(output_field_name(field))));
             return fields_.at(key).value();
         }
     }

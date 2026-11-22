@@ -233,23 +233,23 @@ C3D8R::Vector24 C3D8R::local_displacement(const Field& displacement) {
 }
 
 /**
- * Scatters one element-local translational force vector into the global nodal
- * force field.
+ * Scatters one element-local translational force vector into the element's
+ * ELEMENT_NODAL force rows.
  *
- * @param node_forces Global nodal accumulator with at least XYZ components.
+ * @param node_forces Element-nodal accumulator with at least XYZ components.
  * @param local_force Element force in node-major XYZ ordering.
  */
 void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force) {
-    logging::error(node_forces.domain == FieldDomain::NODE,
-        "C3D8R: internal force output must use NODE domain");
+    logging::error(node_forces.domain == FieldDomain::ELEMENT_NODAL,
+        "C3D8R: internal force output must use ELEMENT_NODAL domain");
     logging::error(node_forces.components >= D,
         "C3D8R: internal force output requires at least three components");
 
     for (Index node = 0; node < N; ++node) {
-        const Index node_id = static_cast<Index>(node_ids[node]);
+        const Index row = static_cast<Index>(elem_nodal_offset) + node;
 
         for (Dim dof = 0; dof < D; ++dof) {
-            node_forces(node_id, dof) += local_force(D * node + dof);
+            node_forces(row, dof) += local_force(D * node + dof);
         }
     }
 }
