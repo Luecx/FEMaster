@@ -197,6 +197,13 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
                 " requires ELEMENT output");
             break;
 
+        // Nodal internal forces are provided; element-nodal ones are recovered
+        case OutputField::INTERNAL_FORCES:
+            logging::error(domain == model::FieldDomain::ELEMENT_NODAL,
+                "OutputRequestHandler: field ", output_field_name(field),
+                " must be provided by the analysis in the requested domain");
+            break;
+
         default:
             logging::error(false,
                 "OutputRequestHandler: field ", output_field_name(field),
@@ -266,6 +273,22 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
                 if (before_compute_) before_compute_();
                 forces -= model_->compute_section_forces(
                     base, base_temperature, &base, base_temperature);
+                store(field, std::move(forces));
+                return fields_.at(key).value();
+            }
+
+            case OutputField::INTERNAL_FORCES: {
+                auto forces = model_->_data->create_field_(
+                    "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
+                model_->build_internal_force(
+                    forces, total, target_temperature, &base, base_temperature, false);
+                if (before_compute_) before_compute_();
+                auto base_forces = model_->_data->create_field_(
+                    "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
+                model_->build_internal_force(
+                    base_forces, base, base_temperature, &base, base_temperature, false);
+
+                forces -= base_forces;
                 store(field, std::move(forces));
                 return fields_.at(key).value();
             }
@@ -342,6 +365,21 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
                 target_temperature,
                 linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
                 linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr)));
+            break;
+        }
+
+        case OutputField::INTERNAL_FORCES: {
+            auto& displacement = compute(OutputField::DISPLACEMENT, model::FieldDomain::NODE);
+            auto  forces       = model_->_data->create_field_(
+                "INTERNAL_FORCES", model::FieldDomain::ELEMENT_NODAL, 6, false);
+            model_->build_internal_force(
+                forces,
+                displacement,
+                target_temperature,
+                linearization_base_ ? linearization_base_ : (nonlinear_ ? &displacement : nullptr),
+                linearization_base_ ? base_temperature : (nonlinear_ ? target_temperature : nullptr),
+                false);
+            store(field, std::move(forces));
             break;
         }
 
