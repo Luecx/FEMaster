@@ -198,32 +198,25 @@ TIE, SIDE_A, SIDE_B
 
 \keywordpage{RIGID BODY}
 
-\cmd{RIGID BODY} couples all six generalized degrees of freedom of
-a node set to a reference node. It is a compact CalculiX-compatible
-way to define a complete kinematic rigid-body constraint. The
-\key{NSET} parameter specifies the coupled nodes; \key{REF NODE}
-selects the reference node (or a one-node set). The optional
-CalculiX \key{ROT NODE} feature is not supported.
+\cmd{RIGID BODY} attaches an element set, a tie node set and a pin node set to one reference node, following the Abaqus definition. It is accepted at root and Assembly level after the model has been compiled. \key{REF NODE} selects the reference node or a one-node set; at least one of \key{ELSET}, \key{TIE NSET} and \key{PIN NSET} is required.
+
+Tie nodes follow the translations and rotations of the reference node, pin nodes only its translations. The nodes of the elements in \key{ELSET} are tie nodes unless they also appear in \key{PIN NSET}. A node must not appear in both \key{TIE NSET} and \key{PIN NSET}. Rotations are only constrained at nodes with active rotational degrees of freedom, so solid nodes behave like pin nodes and shell or beam nodes like tie nodes. The CalculiX spelling \key{NSET} is an alias for \key{TIE NSET}.
+
+The elements in \key{ELSET} keep their stiffness and mass; the constraint suppresses their deformation. The constraint is linear in the reference configuration and therefore valid for small rotations. \key{POSITION=CENTER OF MASS}, \key{ANALYTICAL SURFACE}, \key{DENSITY}, \key{NODAL THICKNESS} and the CalculiX \key{ROT NODE} are not supported; \key{ISOTHERMAL} is accepted and ignored.
 
 \begin{keywordparameters}
-\key{NSET} & required & Node set to be coupled rigidly. \\
 \key{REF NODE} & required & Reference node or one-node set. \\
+\key{ELSET} & optional & Element set whose nodes become tie nodes. \\
+\key{TIE NSET} / \key{NSET} & optional & Nodes following translations and rotations. \\
+\key{PIN NSET} & optional & Nodes following translations only. \\
+\key{POSITION} & optional & Only \val{INPUT} (default). \\
 \end{keywordparameters}
-
-The example rigidly constrains the nodes in \val{FLANGE_NODES} to the motion of RP. The full six-DOF kinematic coupling shown below represents the same intended rigid-body motion.
 
 \exampleheading
 
 \begin{inputdeck}
-*RIGID BODY, NSET=FLANGE_NODES, REF NODE=RP
-\end{inputdeck}
-
-\paragraph*{Equivalent kinematic coupling}
-
-\begin{inputdeck}
-*COUPLING, REF NODE=RP, SURFACE=FLANGE_NODES
-*KINEMATIC
-1, 6
+*RIGID BODY, REF NODE=N_RIB_REF_1, ELSET=EL_RIB_1
+*RIGID BODY, REF NODE=RP, TIE NSET=FLANGE_NODES, PIN NSET=BOLT_NODES
 \end{inputdeck}
 
 \keywordpage{TIE}

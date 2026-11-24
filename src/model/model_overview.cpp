@@ -224,6 +224,12 @@ void Model::print_overview() const {
         logging::info(true, coupling.str());
     }
     logging::down();
+    logging::info(true, "Rigid bod.: ", model_data.rigid_bodies.size());
+    logging::up();
+    for (const auto& rigid_body : model_data.rigid_bodies) {
+        logging::info(true, rigid_body.str());
+    }
+    logging::down();
     logging::info(true, "Ties      : ", model_data.ties.size());
     logging::info(true, "Contacts  : ", model_data.contacts.size());
     logging::info(true, "RBMs      : ", model_data.rbms.size());

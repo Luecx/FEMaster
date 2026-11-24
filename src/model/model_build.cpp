@@ -282,6 +282,11 @@ SystemDofs Model::build_structural_dofs() {
         system_dofs.activate(master_id, coupling.master_dofs(system_dofs, *_data));
     }
 
+    // Add reference-node components required by rigid-body kinematics
+    for (auto& rigid_body : _data->rigid_bodies) {
+        system_dofs.activate(rigid_body.ref_node, rigid_body.master_dofs(system_dofs, *_data));
+    }
+
     // Activate constrained components at both nodes of every connector
     for (auto& connector : _data->connectors) {
         const ID node1_id = connector.node_1();
@@ -501,6 +506,7 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofs& system_dof_i
     collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
     collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
     collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
+    collect(_data->rigid_bodies,                Source::RigidBody, groups.rigid_bodies, get_equations);
     collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
     collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
 

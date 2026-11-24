@@ -30,6 +30,7 @@
 #include "../constraints/types/connector.h"
 #include "../constraints/types/contact.h"
 #include "../constraints/types/coupling.h"
+#include "../constraints/types/rigid_body.h"
 #include "../constraints/types/equation.h"
 #include "../constraints/types/mpc.h"
 #include "../constraints/types/rbm.h"
@@ -168,6 +169,7 @@ struct ModelData {
     std::vector<constraint::Connector> connectors;
     std::vector<constraint::Mpc>       mpcs;
     std::vector<constraint::Coupling>  couplings;
+    std::vector<constraint::RigidBody> rigid_bodies;
     std::vector<constraint::Tie>       ties;
     std::vector<constraint::Contact>   contacts;
     std::vector<constraint::Rbm>       rbms;
