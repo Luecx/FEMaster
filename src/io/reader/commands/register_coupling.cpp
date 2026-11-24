@@ -280,26 +280,20 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 ref_node = model.compiled_node_id(reference);
             }
 
-            model::ElementRegion::Ptr elements = nullptr;
-            if (keys.has("ELSET")) {
-                logging::error(model._data->elem_sets.has(keys.raw("ELSET")),
-                    "RIGIDBODY: element set ", keys.raw("ELSET"), " is not defined");
-                elements = model._data->elem_sets.get(keys.raw("ELSET"));
-            }
+            model::ElementRegion::Ptr elements  = nullptr;
+            model::NodeRegion::Ptr    tie_nodes = nullptr;
+            model::NodeRegion::Ptr    pin_nodes = nullptr;
 
-            model::NodeRegion::Ptr tie_nodes = nullptr;
-            if (keys.has("TIENSET")) {
-                logging::error(model._data->node_sets.has(keys.raw("TIENSET")),
-                    "RIGIDBODY: tie node set ", keys.raw("TIENSET"), " is not defined");
-                tie_nodes = model._data->node_sets.get(keys.raw("TIENSET"));
-            }
+            logging::error(!keys.has("ELSET") || model._data->elem_sets.has(keys.raw("ELSET")),
+                "RIGIDBODY: element set ", keys.raw("ELSET"), " is not defined");
+            logging::error(!keys.has("TIENSET") || model._data->node_sets.has(keys.raw("TIENSET")),
+                "RIGIDBODY: tie node set ", keys.raw("TIENSET"), " is not defined");
+            logging::error(!keys.has("PINNSET") || model._data->node_sets.has(keys.raw("PINNSET")),
+                "RIGIDBODY: pin node set ", keys.raw("PINNSET"), " is not defined");
 
-            model::NodeRegion::Ptr pin_nodes = nullptr;
-            if (keys.has("PINNSET")) {
-                logging::error(model._data->node_sets.has(keys.raw("PINNSET")),
-                    "RIGIDBODY: pin node set ", keys.raw("PINNSET"), " is not defined");
-                pin_nodes = model._data->node_sets.get(keys.raw("PINNSET"));
-            }
+            if (keys.has("ELSET"))   elements  = model._data->elem_sets.get(keys.raw("ELSET"));
+            if (keys.has("TIENSET")) tie_nodes = model._data->node_sets.get(keys.raw("TIENSET"));
+            if (keys.has("PINNSET")) pin_nodes = model._data->node_sets.get(keys.raw("PINNSET"));
 
             constraint::RigidBody rigid_body{ref_node, elements, tie_nodes, pin_nodes};
             rigid_body.ref_region = ref_region;

@@ -276,15 +276,26 @@ SystemDofs Model::build_structural_dofs() {
         }
     }
 
-    // Add master-node components required to represent coupling kinematics
-    for (auto& coupling : _data->couplings) {
-        const ID master_id = coupling.master_node;
-        system_dofs.activate(master_id, coupling.master_dofs(system_dofs, *_data));
-    }
+    // Add master-node components required by coupling and rigid-body kinematics.
+    // Both may use each other's reference nodes as slaves, so repeat until no
+    // further reference-node component is activated.
+    const auto activate_master = [&system_dofs](ID master_id, const Dofs& dofs) {
+        bool changed = false;
+        for (Index dof = 0; dof < system_dofs.width(); ++dof) {
+            changed = changed || (dofs(dof) && !system_dofs.active(master_id, dof));
+        }
+        system_dofs.activate(master_id, dofs);
+        return changed;
+    };
 
-    // Add reference-node components required by rigid-body kinematics
-    for (auto& rigid_body : _data->rigid_bodies) {
-        system_dofs.activate(rigid_body.ref_node, rigid_body.master_dofs(system_dofs, *_data));
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (auto& coupling : _data->couplings) {
+            changed = activate_master(coupling.master_node, coupling.master_dofs(system_dofs, *_data)) || changed;
+        }
+        for (auto& rigid_body : _data->rigid_bodies) {
+            changed = activate_master(rigid_body.ref_node, rigid_body.master_dofs(system_dofs, *_data)) || changed;
+        }
     }
 
     // Activate constrained components at both nodes of every connector
