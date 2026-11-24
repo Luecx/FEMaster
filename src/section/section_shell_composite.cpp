@@ -38,6 +38,8 @@ namespace fem {
  * The total thickness is the sum of all layer thicknesses. All layers must
  * share the thermal expansion coefficient and reference temperature because
  * the shell element maps free thermal expansion as a constant membrane strain.
+ * All layers must also share one density because shell mass integration uses a
+ * constant density through the thickness.
  *
  * @param layers Layers ordered from the bottom to the top shell surface.
  * @param region Element region receiving the section.
@@ -79,6 +81,12 @@ CompositeShellSection::CompositeShellSection(
                         || (material->get_thermal_expansion()        == reference->get_thermal_expansion()
                          && material->get_thermal_zero_temperature() == reference->get_thermal_zero_temperature())),
             "CompositeShellSection: all layers must share the same thermal expansion");
+
+        // Mass integration currently assumes one density through the thickness
+        logging::error(material->has_density() == reference->has_density()
+                    && (!material->has_density()
+                        || material->get_density() == reference->get_density()),
+            "CompositeShellSection: all layers must share the same density");
 
         num_mp_ += layer.points;
     }
@@ -435,8 +443,9 @@ Index CompositeShellSection::material_state_size() const {
 /**
  * Returns the thickness-averaged density of all layers.
  *
- * The mean is exact for the translational mass. Rotary inertia uses it with
- * the total thickness and therefore neglects the layer distribution.
+ * The constructor currently enforces equal layer densities, so the mean is the
+ * common density. The weighted form is kept for a later extension to layer-wise
+ * mass integration.
  *
  * @return Mean density, or -1 if any layer has no density.
  */
