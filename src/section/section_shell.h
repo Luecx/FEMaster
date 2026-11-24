@@ -107,6 +107,12 @@ struct ShellSection : Section {
     // to allocate a contiguous state-row block before any constitutive call.
     [[nodiscard]] virtual Index num_mp_per_ip() const = 0;
 
+    // Effective section density used for shell mass integration. A negative
+    // value marks a section without density, following the material convention.
+    [[nodiscard]] virtual Precision density() const {
+        return material_ && material_->has_density() ? material_->get_density() : Precision(-1);
+    }
+
     // Output material, region, orientation, selected axis and thickness through
     // the project logger using the common shell-section representation.
     void info() override;

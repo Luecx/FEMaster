@@ -39,6 +39,7 @@
 #include "../section/section_beam.h"
 #include "../section/section_point_mass.h"
 #include "../section/section_shell_abd.h"
+#include "../section/section_shell_composite.h"
 #include "../section/section_shell_integrated.h"
 #include "../section/section_solid.h"
 #include "../section/section_truss.h"
@@ -666,6 +667,13 @@ void Model::compile() {
                     shell->material_,
                     region,
                     shell->thickness_,
+                    transformed_orientation(shell->orientation_),
+                    shell->csys_axis_
+                );
+            } else if (auto* shell = source_section->as<CompositeShellSection>()) {
+                section = std::make_shared<CompositeShellSection>(
+                    shell->layers_,
+                    region,
                     transformed_orientation(shell->orientation_),
                     shell->csys_axis_
                 );

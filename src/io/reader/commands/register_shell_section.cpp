@@ -2,8 +2,8 @@
  * @file register_shell_section.cpp
  * @brief Registers integrated and ABD shell sections.
  *
- * `SHELLSECTION` supports material-integrated thickness definitions and direct
- * membrane-bending `ABD` constitutive data. It resolves the target element set,
+ * `SHELLSECTION` supports material-integrated thickness definitions, layered
+ * `COMPOSITE` layups and direct membrane-bending `ABD` constitutive data. It resolves the target element set,
  * optional material orientation and coordinate-system axis before creating the
  * corresponding shell-section implementation.
  *
@@ -20,9 +20,11 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include "../../../model/model.h"
 #include "../../../section/section_shell_abd.h"
+#include "../../../section/section_shell_composite.h"
 #include "../../../section/section_shell_integrated.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -38,26 +40,32 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
         auto orientation = std::make_shared<std::string>();
         auto thickness   = std::make_shared<Precision>(Precision(1));
         auto csys_axis   = std::make_shared<Index>(0);
+        auto layers      = std::make_shared<std::vector<CompositeShellSection::Layer>>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("TYPE").optional("INTEGRATED").allowed({"INTEGRATED", "ABD"})
+                .key("TYPE").optional("INTEGRATED").allowed({"INTEGRATED", "ABD", "COMPOSITE"})
+                .flag("COMPOSITE")
                 .key("MATERIAL").alternative("MAT").optional()
                 .key("ELSET").required()
                 .key("THICKNESS").optional("1.0")
                 .key("ORIENTATION").optional()
                 .key("CSYSAXIS").optional("1").allowed({"1", "2", "3"})
         );
-        command.on_enter([material, elset, orientation, thickness, csys_axis](const fem::io::dsl::Keys& keys) {
+        command.on_enter([material, elset, orientation, thickness, csys_axis, layers](const fem::io::dsl::Keys& keys) {
             *material    = keys.has("MATERIAL") ? keys.raw("MATERIAL") : std::string{};
             *elset       = keys.raw("ELSET");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             *thickness   = keys.get<Precision>("THICKNESS");
             *csys_axis   = static_cast<Index>(keys.get<int>("CSYSAXIS") - 1);
+            layers->clear();
         });
 
         command.variant(fem::io::dsl::Variant::make()
-            .when(fem::io::dsl::Condition::key_equals("TYPE", {"INTEGRATED"}))
+            .when(fem::io::dsl::Condition::all_of({
+                fem::io::dsl::Condition::key_equals("TYPE", {"INTEGRATED"}),
+                fem::io::dsl::Condition::negate(fem::io::dsl::Condition::key_present("COMPOSITE"))
+            }))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
@@ -132,6 +140,68 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                 })
             )
         );
+
+        // Composite layup: one data line per layer from the bottom to the top
+        // surface with thickness, Simpson points, material, angle and name.
+        // Abaqus input selects it with the bare COMPOSITE flag.
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::any_of({
+                fem::io::dsl::Condition::key_equals("TYPE", {"COMPOSITE"}),
+                fem::io::dsl::Condition::key_present("COMPOSITE")
+            }))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<Precision>().name("THICKNESS")
+                    .one<int>().name("INTEGRATIONPOINTS")
+                        .on_missing(3).on_empty(3)
+                    .one<std::string>().name("MATERIAL")
+                    .one<Precision>().name("ANGLE")
+                        .on_missing(Precision{0}).on_empty(Precision{0})
+                    .one<std::string>().name("NAME")
+                        .on_missing(std::string{}).on_empty(std::string{})
+                )
+                .bind([&model, layers](Precision          layer_thickness,
+                                       int                integration_points,
+                                       const std::string& layer_material,
+                                       Precision          angle,
+                                       const std::string& name) {
+                    logging::error(layer_thickness > Precision(0),
+                        "SHELLSECTION: layer thickness must be positive");
+                    logging::error(integration_points >= 3 && integration_points % 2 == 1,
+                        "SHELLSECTION: layer integration points must be odd and at least 3");
+                    logging::error(model._data->materials.has(layer_material),
+                        "SHELLSECTION: material ", layer_material, " is not defined");
+
+                    layers->push_back({
+                        model._data->materials.get(layer_material),
+                        layer_thickness,
+                        angle,
+                        static_cast<Index>(integration_points),
+                        name
+                    });
+                })
+            )
+        );
+
+        command.on_exit([&model, elset, orientation, csys_axis, layers](const fem::io::dsl::Keys& keys) {
+            if (keys.raw("TYPE") != "COMPOSITE" && !keys.has("COMPOSITE")) return;
+
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "SHELLSECTION: no active part is available");
+            logging::error(part->elem_sets.has(*elset),
+                "SHELLSECTION: element set ", *elset, " is not defined in part ", part->name);
+            logging::error(orientation->empty() || model._data->coordinate_systems.has(*orientation),
+                "SHELLSECTION: coordinate system ", *orientation, " is not defined");
+
+            model.add_section(std::make_shared<CompositeShellSection>(
+                *layers,
+                part->elem_sets.get(*elset),
+                orientation->empty() ? nullptr : model._data->coordinate_systems.get(*orientation),
+                *csys_axis
+            ));
+        });
     });
 }
 

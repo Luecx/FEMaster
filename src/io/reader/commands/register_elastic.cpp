@@ -32,6 +32,7 @@
 #include "../../../core/types_num.h"
 #include "../../../material/generalised_isotropic_elasticity.h"
 #include "../../../material/isotropic_elasticity.h"
+#include "../../../material/lamina_elasticity.h"
 #include "../../../material/orthotropic_elasticity.h"
 #include "../../../model/model.h"
 
@@ -42,7 +43,8 @@ namespace fem::io::reader::commands {
  *
  * Supported forms are isotropic `E, nu`, generalized isotropic `E, nu, G`,
  * orthotropic engineering constants
- * `E1, E2, E3, nu12, nu13, nu23, G12, G13, G23`, and Abaqus orthotropic
+ * `E1, E2, E3, nu12, nu13, nu23, G12, G13, G23`, shell laminae
+ * `E1, E2, nu12, G12, G13, G23`, and Abaqus orthotropic
  * stiffness coefficients
  * `D1111, D1122, D2222, D1133, D2233, D3333, D1212, D1313, D2323`.
  *
@@ -62,7 +64,8 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
                         "ISO", "ISOTROPIC",
                         "GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO",
                         "ENGINEERINGCONSTANTS",
-                        "ORTHO", "ORTHOTROPIC"
+                        "ORTHO", "ORTHOTROPIC",
+                        "LAMINA"
                     })
                     .doc("Elasticity formulation")
         );
@@ -122,6 +125,26 @@ void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
                         data[0], data[1], data[2],
                         data[3], data[4], data[5],
                         data[6], data[7], data[8]
+                    );
+                })
+            )
+        );
+
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"LAMINA"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 6>().name("DATA")
+                        .desc("E1,E2,nu12,G12,G13,G23")
+                )
+                .bind([&model](const std::array<fem::Precision, 6>& data) {
+                    auto material = model._data->materials.get();
+                    logging::error(material != nullptr,
+                        "ELASTIC requires an active material context");
+
+                    material->set_elasticity<fem::material::LaminaElasticity>(
+                        data[0], data[1], data[2], data[3], data[4], data[5]
                     );
                 })
             )
