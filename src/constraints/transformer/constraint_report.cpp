@@ -153,6 +153,7 @@ std::string make_tag(EquationSourceKind source, Index idx) {
         case EquationSourceKind::Connector: code = 'C'; break;
         case EquationSourceKind::Mpc:       code = 'P'; break;
         case EquationSourceKind::Coupling:  code = 'U'; break;
+        case EquationSourceKind::RigidBody: code = 'B'; break;
         case EquationSourceKind::Tie:       code = 'T'; break;
         case EquationSourceKind::Rbm:       code = 'R'; break;
         case EquationSourceKind::Manual:    code = 'M'; break;

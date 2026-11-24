@@ -60,6 +60,7 @@
 #include <utility>
 
 #include "../../../constraints/types/coupling.h"
+#include "../../../constraints/types/rigid_body.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -146,9 +147,8 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         }
     };
 
-    // Common compiled reference and slave-region lookup for COUPLING and RIGID BODY.
-    const auto resolve = [&model, ctx](const std::string& master, const std::string& surface,
-                                        bool only_nodesets = false) {
+    // Common compiled reference and slave-region lookup for COUPLING.
+    const auto resolve = [&model, ctx](const std::string& master, const std::string& surface) {
         *ctx = Context{};
         ctx->master  = master;
         ctx->surface = surface;
@@ -168,7 +168,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
 
             // Resolve the common slave target once. A geometric surface wins if
             // the same name is also present in the node-set namespace.
-            if (!only_nodesets && model._data->surface_sets.has(ctx->surface)) {
+            if (model._data->surface_sets.has(ctx->surface)) {
                 ctx->slave_surfaces = model._data->surface_sets.get(ctx->surface);
                 logging::error(ctx->slave_surfaces != nullptr && ctx->slave_surfaces->size() > 0,
                     "COUPLING: slave surface ", ctx->surface, " is empty");
@@ -176,8 +176,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             }
 
             logging::error(model._data->node_sets.has(ctx->surface),
-                "COUPLING: target ", ctx->surface,
-                only_nodesets ? " is not a node set" : " is neither a surface nor a node set");
+                "COUPLING: target ", ctx->surface, " is neither a surface nor a node set");
             ctx->slave_nodes = model._data->node_sets.get(ctx->surface);
             logging::error(ctx->slave_nodes != nullptr && ctx->slave_nodes->size() > 0,
                 "COUPLING: slave node set ", ctx->surface, " is empty");
@@ -240,23 +239,65 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         );
     });
 
-    // CalculiX-style rigid body: a full kinematic coupling on an NSET.
-    // ROT NODE cannot be mapped to FEMaster reference-node rotations and is rejected.
+    // Abaqus-style rigid body with optional element, tie and pin sets. The
+    // CalculiX NSET spelling is an alias for TIE NSET.
     registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
-        command.doc("Rigidly couple a node set to one reference node.");
+        command.doc("Rigidly attach an element set and tie/pin node sets to one reference node.");
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NSET").required().doc("Slave node set")
                 .key("REFNODE").required().doc("Reference node or one-node set")
+                .key("ELSET").optional().doc("Element set whose nodes become tie nodes")
+                .key("TIENSET").alternative("NSET").optional().doc("Nodes following translations and rotations")
+                .key("PINNSET").optional().doc("Nodes following translations only")
+                .key("POSITION").optional("INPUT").allowed({"INPUT"}).doc("Only INPUT is supported")
                 .key("ROTNODE").optional().doc("Unsupported CalculiX rotation node; rejected if supplied")
+                .key("ANALYTICALSURFACE").optional().doc("Unsupported; rejected if supplied")
+                .key("DENSITY").optional().doc("Unsupported; rejected if supplied")
+                .key("NODALTHICKNESS").optional().doc("Unsupported; rejected if supplied")
+                .flag("ISOTHERMAL").doc("Accepted and ignored")
         );
-        command.on_enter([resolve, emit](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             logging::error(!keys.has("ROTNODE"),
                 "RIGIDBODY: ROT NODE is not supported");
-            resolve(keys.raw("REFNODE"), keys.raw("NSET"), true);
-            emit(Dofs{true, true, true, true, true, true},
-                 constraint::CouplingType::KINEMATIC);
+            logging::error(!keys.has("ANALYTICALSURFACE") && !keys.has("DENSITY") && !keys.has("NODALTHICKNESS"),
+                "RIGIDBODY: ANALYTICAL SURFACE, DENSITY and NODAL THICKNESS are not supported");
+            logging::error(keys.has("ELSET") || keys.has("TIENSET") || keys.has("PINNSET"),
+                "RIGIDBODY: requires ELSET, TIE NSET or PIN NSET");
+            logging::error(model._data->compiled,
+                "RIGIDBODY: constraints require a compiled model");
+
+            // Reference node from a one-node set or a direct compiled reference
+            const std::string reference = keys.raw("REFNODE");
+            model::NodeRegion::Ptr ref_region = nullptr;
+            ID ref_node = -1;
+            if (model._data->node_sets.has(reference)) {
+                ref_region = model._data->node_sets.get(reference);
+                logging::error(ref_region != nullptr && ref_region->size() == 1,
+                    "RIGIDBODY: reference node set ", reference, " must contain exactly one node");
+                ref_node = ref_region->first();
+            } else {
+                ref_node = model.compiled_node_id(reference);
+            }
+
+            model::ElementRegion::Ptr elements  = nullptr;
+            model::NodeRegion::Ptr    tie_nodes = nullptr;
+            model::NodeRegion::Ptr    pin_nodes = nullptr;
+
+            logging::error(!keys.has("ELSET") || model._data->elem_sets.has(keys.raw("ELSET")),
+                "RIGIDBODY: element set ", keys.raw("ELSET"), " is not defined");
+            logging::error(!keys.has("TIENSET") || model._data->node_sets.has(keys.raw("TIENSET")),
+                "RIGIDBODY: tie node set ", keys.raw("TIENSET"), " is not defined");
+            logging::error(!keys.has("PINNSET") || model._data->node_sets.has(keys.raw("PINNSET")),
+                "RIGIDBODY: pin node set ", keys.raw("PINNSET"), " is not defined");
+
+            if (keys.has("ELSET"))   elements  = model._data->elem_sets.get(keys.raw("ELSET"));
+            if (keys.has("TIENSET")) tie_nodes = model._data->node_sets.get(keys.raw("TIENSET"));
+            if (keys.has("PINNSET")) pin_nodes = model._data->node_sets.get(keys.raw("PINNSET"));
+
+            constraint::RigidBody rigid_body{ref_node, elements, tie_nodes, pin_nodes};
+            rigid_body.ref_region = ref_region;
+            model._data->rigid_bodies.emplace_back(std::move(rigid_body));
         });
         command.variant(fem::io::dsl::Variant::make());
     });
