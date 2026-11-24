@@ -513,13 +513,13 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofs& system_dof_i
     // Each constraint family receives its own source indexing and output group.
     using Source = constraint::EquationSourceKind;
 
-    collect(target.get(bc::SUPPORT), Source::Support,   groups.supports,   get_supports);
-    collect(_data->connectors,                  Source::Connector, groups.connectors, get_equations);
-    collect(_data->mpcs,                        Source::Mpc,       groups.mpcs,       get_equations);
-    collect(_data->couplings,                   Source::Coupling,  groups.couplings,  get_equations);
-    collect(_data->rigid_bodies,                Source::RigidBody, groups.rigid_bodies, get_equations);
-    collect(_data->ties,                        Source::Tie,       groups.ties,       get_equations);
-    collect(_data->rbms,                        Source::Rbm,       groups.rbms,       get_equations);
+    collect(target.get(bc::SUPPORT), Source::Support,   groups.supports,     get_supports);
+    collect(_data->connectors,       Source::Connector, groups.connectors,   get_equations);
+    collect(_data->mpcs,             Source::Mpc,       groups.mpcs,         get_equations);
+    collect(_data->couplings,        Source::Coupling,  groups.couplings,    get_equations);
+    collect(_data->rigid_bodies,     Source::RigidBody, groups.rigid_bodies, get_equations);
+    collect(_data->ties,             Source::Tie,       groups.ties,         get_equations);
+    collect(_data->rbms,             Source::Rbm,       groups.rbms,         get_equations);
 
     // Append manually defined equations without regenerating their coefficients.
     // Preserve explicitly assigned source types and mark unknown origins as manual.

@@ -33,14 +33,14 @@ Equations ConstraintGroups::flatten() const {
 
     // Append each group in the same order used during constraint assembly.
     // Keep the groups themselves unchanged for diagnostics and result recovery.
-    all.insert(all.end(), supports  .begin(), supports  .end());
-    all.insert(all.end(), connectors.begin(), connectors.end());
-    all.insert(all.end(), mpcs      .begin(), mpcs      .end());
-    all.insert(all.end(), couplings .begin(), couplings .end());
+    all.insert(all.end(), supports    .begin(), supports    .end());
+    all.insert(all.end(), connectors  .begin(), connectors  .end());
+    all.insert(all.end(), mpcs        .begin(), mpcs        .end());
+    all.insert(all.end(), couplings   .begin(), couplings   .end());
     all.insert(all.end(), rigid_bodies.begin(), rigid_bodies.end());
-    all.insert(all.end(), ties      .begin(), ties      .end());
-    all.insert(all.end(), rbms      .begin(), rbms      .end());
-    all.insert(all.end(), others    .begin(), others    .end());
+    all.insert(all.end(), ties        .begin(), ties        .end());
+    all.insert(all.end(), rbms        .begin(), rbms        .end());
+    all.insert(all.end(), others      .begin(), others      .end());
 
     return all;
 }
@@ -93,14 +93,14 @@ void ConstraintGroups::report() const {
         const char* name;
         const Equations& equations;
     } categories[] = {
-        {"Supports",   supports},
-        {"Connectors", connectors},
-        {"MPCs",       mpcs},
-        {"Couplings",  couplings},
+        {"Supports",     supports},
+        {"Connectors",   connectors},
+        {"MPCs",         mpcs},
+        {"Couplings",    couplings},
         {"Rigid bodies", rigid_bodies},
-        {"Ties",       ties},
-        {"RBMs",       rbms},
-        {"Other",      others}
+        {"Ties",         ties},
+        {"RBMs",         rbms},
+        {"Other",        others}
     };
 
     // Always show category counts; print individual equations only when present.
