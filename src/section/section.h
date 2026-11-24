@@ -54,6 +54,19 @@ struct Section : public fem::Printable, public Castable {
      */
     virtual ~Section() = default;
 
+    // Material evaluated at the element-local material point mp of every
+    // integration point. Single-material sections use material_ everywhere.
+    virtual material::Material::Ptr material_at(Index mp) const {
+        (void) mp;
+        return material_;
+    }
+
+    // Largest constitutive state width required by any material point of this
+    // section. Sizes the model-wide ELEMENT_MP state field.
+    virtual Index material_state_size() const {
+        return material_ && material_->has_elasticity() ? material_->elasticity()->state_size() : 0;
+    }
+
     /**
      * @brief Outputs section details through the logger.
      */

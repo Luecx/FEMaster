@@ -82,16 +82,15 @@ struct ShellElement : StructuralElement {
         return section->material_;
     }
     Precision get_density(bool required = false) const {
-        const ShellSection* section           = get_section();
-        const auto&         material          = section->material_;
-        const bool          density_available = material && material->has_density();
+        const Precision density           = get_section()->density();
+        const bool      density_available = density >= Precision(0);
 
         if (required) {
             logging::error(density_available,
                            "ShellElement: density is required for element ", this->elem_id);
         }
 
-        return density_available ? material->get_density() : Precision(0);
+        return density_available ? density : Precision(0);
     }
 
     // Formulation-specific mechanical response through the common structural

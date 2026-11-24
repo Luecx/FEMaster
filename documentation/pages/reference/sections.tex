@@ -95,9 +95,10 @@ The first form assigns material and, where needed, material orientation to a con
 
 \keywordnestedpage{SHELL SECTION}
 
-\cmd{SHELL SECTION} assigns thickness and constitutive properties to shell elements. Native FEMaster supports two forms:
+\cmd{SHELL SECTION} assigns thickness and constitutive properties to shell elements. Native FEMaster supports three forms:
 \begin{itemize}
   \item \val{TYPE=INTEGRATED}, where a material law is integrated through the physical shell thickness;
+  \item \val{TYPE=COMPOSITE}, where a layup of individual layers is integrated layer by layer;
   \item \val{TYPE=ABD}, where the generalized membrane--bending and transverse-shear stiffnesses are supplied directly.
 \end{itemize}
 
@@ -125,12 +126,15 @@ For \val{TYPE=ABD}, FEMaster reads 40 numerical values: all 36 entries of the fu
 
 \key{ORIENTATION} selects the local Section/material coordinate system. The ABD matrix is interpreted in this local shell basis. This is critical for laminates and anisotropic panels: an ABD matrix entered in one material direction but assigned with another orientation describes a different structure. \key{CSYSAXIS}=1,2,3 selects which axis of the named coordinate system establishes the in-plane reference direction; the default is axis 1.
 
+For \val{TYPE=COMPOSITE} (Abaqus: bare \key{COMPOSITE} parameter), every data line defines one layer, ordered from the bottom surface \(z=-t/2\) to the top surface along the shell normal: layer thickness, number of Simpson points (odd, at least 3, default 3), material, orientation angle in degrees and an optional layer name. The angle rotates the layer material axes about the shell normal relative to the first Section axis. The shell thickness is the sum of all layer thicknesses and \key{MATERIAL} and \key{THICKNESS} are ignored. Mass uses the thickness-averaged density. All layers must share the same thermal expansion. Layer orientations given by a coordinate-system name are not supported; use \key{ORIENTATION} on the Section together with layer angles.
+
 The supported Abaqus \cmd{SHELL SECTION} form represents a homogeneous integrated Section. Its data line gives thickness and optionally the number of Simpson integration points. FEMaster currently supports five through-thickness points for this imported form; if the count is omitted, five are used. Layered composite layups and other Abaqus-specific shell-section options are not implied by this syntax.
 
 The shell normal and in-plane Section direction together define the local shell basis in which \(N_{xx}\), \(N_{yy}\), \(M_{xx}\), \(M_{yy}\), top/bottom stresses, and an anisotropic ABD matrix are interpreted. On curved meshes both directions vary with the surface geometry. A 90-degree orientation difference can exchange strong and weak laminate directions while leaving the input syntactically valid.
 
 \begin{keywordparameters}
-\key{TYPE} & native optional & \val{INTEGRATED} (default) or \val{ABD}. \\
+\key{TYPE} & native optional & \val{INTEGRATED} (default), \val{COMPOSITE} or \val{ABD}. \\
+\key{COMPOSITE} & optional flag & Abaqus selector for the composite form. \\
 \key{ELSET} & required & Shell element set. \\
 \key{MATERIAL} / \key{MAT} & integrated required & Material used by the integrated Section; optional for native ABD input. \\
 \key{THICKNESS} & native optional & Nominal thickness parameter; default \val{1.0}. \\
@@ -140,6 +144,7 @@ The shell normal and in-plane Section direction together define the local shell 
 
 \begin{keyworddata}
 Integrated FEMaster & One positive shell thickness. \\
+Composite & One line per layer: thickness, points, material, angle, name. \\
 ABD FEMaster & 36 row-major generalized-stiffness entries followed by 4 row-major transverse-shear entries. \\
 Abaqus homogeneous form & Thickness and optional integration-point count; the current supported count is 5. \\
 \end{keyworddata}
@@ -152,6 +157,15 @@ An integrated shell section uses a material and thickness; a directly specified 
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
 2.0, 5
+\end{inputdeck}
+
+\paragraph*{Composite layup}
+\begin{inputdeck}
+*SHELL SECTION, ELSET=PANEL, TYPE=COMPOSITE
+0.25, 3, CFRP, 0.
+0.25, 3, CFRP, 90.
+0.25, 3, CFRP, 90.
+0.25, 3, CFRP, 0.
 \end{inputdeck}
 
 \paragraph*{Direct ABD stiffness}

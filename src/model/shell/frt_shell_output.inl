@@ -38,7 +38,8 @@ Precision FRTShell<N>::thermal_strain_at(
     Precision    r,
     Precision    s
 ) const {
-    const auto material = this->get_material();
+    // Sections guarantee one common expansion law for all material points.
+    const auto material = this->get_section()->material_at(0);
     if (!temperature_field || !material || !material->has_thermal_expansion()) {
         return Precision(0);
     }
@@ -453,11 +454,17 @@ bool FRTShell<N>::compute_peeq(Field& peeq) {
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "FRTShell: PEEQ recovery requires scalar ELEMENT_NODAL output");
 
-    auto mat = this->get_material();
-    if (!mat || !mat->has_elasticity()) return false;
+    const ShellSection* section         = this->get_section();
+    const Index         material_points = this->num_mp_per_ip();
 
-    const auto* j2 = mat->elasticity()->template as<material::IsotropicJ2Elasticity>();
-    if (!j2) return false;
+    // Layered sections may combine J2 and elastic material points.
+    bool has_j2 = false;
+    for (Index mp = 0; mp < material_points; ++mp) {
+        const auto mp_material = section->material_at(mp);
+        has_j2 |= mp_material && mp_material->has_elasticity()
+               && mp_material->elasticity()->template as<material::IsotropicJ2Elasticity>() != nullptr;
+    }
+    if (!has_j2) return false;
 
     const RowMatrix ip_rst    = this->stress_strain_ip_rst();
     const RowMatrix nodal_rst = this->stress_strain_nodal_rst();
@@ -466,14 +473,18 @@ bool FRTShell<N>::compute_peeq(Field& peeq) {
     // A virgin J2 shell has zero accumulated plastic strain before nonlinear
     // state storage has been expanded to the constitutive state width.
     const auto& state = this->_model_data->material_state_old;
-    if (state && state->components >= j2->state_size()) {
-        const Index material_points = this->num_mp_per_ip();
-
+    if (state) {
         // Reduce the through-thickness history to its maximum at each in-plane IP.
         for (Index ip = 0; ip < static_cast<Index>(ip_rst.rows()); ++ip) {
             Precision maximum = Precision(0);
 
             for (Index mp = 0; mp < material_points; ++mp) {
+                const auto mp_material = section->material_at(mp);
+                const auto* j2 = mp_material && mp_material->has_elasticity()
+                    ? mp_material->elasticity()->template as<material::IsotropicJ2Elasticity>()
+                    : nullptr;
+                if (!j2 || state->components < j2->state_size()) continue;
+
                 const Index state_row = this->mp_index(ip, mp);
                 const Precision* old_state = &(*state)(state_row, 0);
                 maximum = std::max(maximum, j2->equivalent_plastic_strain(old_state));

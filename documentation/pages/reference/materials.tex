@@ -66,6 +66,14 @@ The Poisson ratios are directional. For example, \(\nu_{12}\) describes strain i
 \]
 Transferred orthotropic data are compatible only when the axis ordering and Poisson-ratio convention agree with this definition.
 
+\paragraph*{Lamina}
+
+\key{TYPE=LAMINA} defines an orthotropic plane-stress layer through the six constants
+\[
+E_1,E_2,\nu_{12},G_{12},G_{13},G_{23}.
+\]
+The in-plane response uses the orthotropic plane-stress reduction, transverse shear uses \(G_{13}\) and \(G_{23}\). A lamina can only be used by shell Sections.
+
 \paragraph*{Orthotropic stiffness coefficients}
 
 \key{TYPE=ORTHOTROPIC} or \val{ORTHO} accepts the nine coefficients
@@ -92,6 +100,7 @@ Elastic constants follow the unit system of the model. If stresses are measured 
 \val{E, nu} & Isotropic Young's modulus and Poisson ratio. \\
 \val{E, nu, G} & Native generalized-isotropic form. \\
 Engineering constants & \(E_1,E_2,E_3,\nu_{12},\nu_{13},\nu_{23},G_{12},G_{13},G_{23}\). \\
+Lamina & \(E_1,E_2,\nu_{12},G_{12},G_{13},G_{23}\). \\
 Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},D_{1212},D_{1313},D_{2323}\). \\
 \end{keyworddata}
 

@@ -31,9 +31,9 @@ namespace fem::model {
 /**
  * Determines the uniform component width required by material history fields.
  *
- * The routine scans all compiled elements with an assigned section, material
- * and elastic law. Stateless laws contribute zero components; elements without
- * a complete constitutive assignment are ignored. The maximum is suitable for
+ * The routine asks the section of every compiled element for the largest state
+ * width of its materials. Stateless laws contribute zero components; elements
+ * without a section are ignored. The maximum is suitable for
  * every row of the model-wide `ELEMENT_MP` state field.
  *
  * @return Largest constitutive state-vector size used by any compiled element.
@@ -43,16 +43,11 @@ Index Model::maximum_material_state_size() const {
 
     // Accumulate the largest state requirement across assigned elastic laws
     for (const auto& element : _data->elements) {
-        if (!element || !element->_section || !element->_section->material_) {
+        if (!element || !element->_section) {
             continue;
         }
 
-        const auto& material = element->_section->material_;
-        if (!material->has_elasticity()) {
-            continue;
-        }
-
-        maximum_size = std::max(maximum_size, material->elasticity()->state_size());
+        maximum_size = std::max(maximum_size, element->_section->material_state_size());
     }
 
     return maximum_size;
@@ -67,8 +62,9 @@ Index Model::maximum_material_state_size() const {
  * Each stateful elastic law then initializes the contiguous state vector at
  * every integration-point/material-point row owned by its element.
  *
- * Elements without a section, material, elastic law or state variables leave
- * their allocated rows at zero.
+ * Material points without a material, elastic law or state variables leave
+ * their allocated rows at zero. The section resolves the material of every
+ * element-local material point.
  *
  * @param state Model-wide material-point history field to initialize in place.
  */
@@ -92,29 +88,30 @@ void Model::initialize_material_state(Field& state) const {
 
     // Initialize the constitutive state vector at every represented material point
     for (const auto& element : _data->elements) {
-        if (!element || !element->_section || !element->_section->material_) {
+        if (!element || !element->_section) {
             continue;
         }
 
-        const auto& material = element->_section->material_;
-        if (!material->has_elasticity()) {
-            continue;
-        }
+        // Resolve each element-local integration/material point to its global
+        // row. The section decides which material owns every material point.
+        for (Index mp = 0; mp < element->num_mp_per_ip(); ++mp) {
+            const auto material = element->_section->material_at(mp);
+            if (!material || !material->has_elasticity()) {
+                continue;
+            }
 
-        const auto& elasticity = material->elasticity();
-        const Index state_size = elasticity->state_size();
-        if (state_size == 0) {
-            continue;
-        }
+            const auto& elasticity = material->elasticity();
+            const Index state_size = elasticity->state_size();
+            if (state_size == 0) {
+                continue;
+            }
 
-        logging::error(state_size <= state.components,
-            "Material state size ", state_size,
-            " exceeds field width ", state.components,
-            " for element ", element->elem_id);
+            logging::error(state_size <= state.components,
+                "Material state size ", state_size,
+                " exceeds field width ", state.components,
+                " for element ", element->elem_id);
 
-        // Resolve each element-local integration/material point to its global row
-        for (Index ip = 0; ip < static_cast<Index>(element->num_ip()); ++ip) {
-            for (Index mp = 0; mp < element->num_mp_per_ip(); ++mp) {
+            for (Index ip = 0; ip < static_cast<Index>(element->num_ip()); ++ip) {
                 const Index row = element->mp_index(ip, mp);
                 logging::error(row < state.rows,
                     "Material point row ", row,
