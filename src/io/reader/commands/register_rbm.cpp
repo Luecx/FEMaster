@@ -26,7 +26,7 @@ namespace fem::io::reader::commands {
 
 void register_rbm(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("RBM", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("ELSET").alternative("SET").optional("EALL")
@@ -34,14 +34,18 @@ void register_rbm(fem::io::dsl::Registry& registry, model::Model& model) {
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             const std::string set = keys.raw("ELSET");
 
-            logging::error(model._data->compiled,
-                "RBM: constraints require a compiled model");
-            logging::error(model._data->elem_sets.has(set),
+            // Part-scoped RBM constraints run before compile() and stay part-local
+            const bool local     = !model._data->compiled;
+            const auto part      = model._data->parts.get();
+            auto&      elem_sets = local ? part->elem_sets : model._data->elem_sets;
+            auto&      rbms      = local ? part->rbms      : model._data->rbms;
+
+            logging::error(elem_sets.has(set),
                 "RBM: element set ", set, " not found");
-            logging::error(model._data->elem_sets.get(set) && model._data->elem_sets.get(set)->size() > 0,
+            logging::error(elem_sets.get(set) && elem_sets.get(set)->size() > 0,
                 "RBM: element set ", set, " is empty");
 
-            model._data->rbms.emplace_back(model._data->elem_sets.get(set));
+            rbms.emplace_back(elem_sets.get(set));
         });
         command.variant(fem::io::dsl::Variant::make());
     });

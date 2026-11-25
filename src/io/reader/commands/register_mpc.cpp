@@ -47,13 +47,8 @@ namespace dsl = fem::io::dsl;
  */
 void register_mpc(dsl::Registry& registry, model::Model& model) {
     registry.command("MPC", [&](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.doc("Define BEAM, TIE or PIN multi-point constraints between two nodes.");
-
-        command.on_enter([&model](const dsl::Keys&) {
-            logging::error(model._data->compiled,
-                "MPC: constraints require a compiled model");
-        });
 
         command.variant(dsl::Variant::make()
             .segment(dsl::Segment::make()
@@ -78,39 +73,45 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                             "MPC: unsupported type ", type, "; supported types are BEAM, TIE and PIN");
                     }
 
-                    const bool first_is_set  = model._data->node_sets.has(node_1);
-                    const bool second_is_set = model._data->node_sets.has(node_2);
+                    // Part-scoped MPCs run before compile() and stay part-local
+                    const bool local     = !model._data->compiled;
+                    const auto part      = model._data->parts.get();
+                    auto&      node_sets = local ? part->node_sets : model._data->node_sets;
+                    auto&      mpcs      = local ? part->mpcs      : model._data->mpcs;
+
+                    const bool first_is_set  = node_sets.has(node_1);
+                    const bool second_is_set = node_sets.has(node_2);
 
                     logging::error(!second_is_set || first_is_set,
                         "MPC: second node set requires a first node set");
 
                     if (!first_is_set) {
-                        model._data->mpcs.emplace_back(
-                            model.compiled_node_id(node_1),
-                            model.compiled_node_id(node_2),
+                        mpcs.emplace_back(
+                            local ? static_cast<ID>(std::stoi(node_1)) : model.compiled_node_id(node_1),
+                            local ? static_cast<ID>(std::stoi(node_2)) : model.compiled_node_id(node_2),
                             mpc_type
                         );
                         return;
                     }
 
-                    const auto first = model._data->node_sets.get(node_1);
+                    const auto first = node_sets.get(node_1);
                     logging::error(first != nullptr && first->size() > 0,
                         "MPC: first node set ", node_1, " is empty");
 
                     if (second_is_set) {
-                        const auto second = model._data->node_sets.get(node_2);
+                        const auto second = node_sets.get(node_2);
                         logging::error(second != nullptr && second->size() == first->size(),
                             "MPC: node set ", node_2, " has incompatible size");
 
                         for (std::size_t i = 0; i < first->size(); ++i) {
-                            model._data->mpcs.emplace_back(first->at(i), second->at(i), mpc_type);
+                            mpcs.emplace_back(first->at(i), second->at(i), mpc_type);
                         }
                         return;
                     }
 
-                    const ID master = model.compiled_node_id(node_2);
+                    const ID master = local ? static_cast<ID>(std::stoi(node_2)) : model.compiled_node_id(node_2);
                     for (std::size_t i = 0; i < first->size(); ++i) {
-                        model._data->mpcs.emplace_back(first->at(i), master, mpc_type);
+                        mpcs.emplace_back(first->at(i), master, mpc_type);
                     }
                 })
             )

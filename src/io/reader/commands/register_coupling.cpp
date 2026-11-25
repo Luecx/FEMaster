@@ -11,7 +11,9 @@
  * `MASTER` is the canonical reference-node keyword and accepts the normalized
  * Abaqus spelling `REFNODE` (`REF NODE`) as an alias. The reference may name a
  * one-node `NodeRegion` or one direct compiled node reference such as `42` or
- * `INSTANCE.42`.
+ * `INSTANCE.42`. Inside a `PART` the same names resolve against the part-local
+ * sets and node identifiers; `Model::compile()` instantiates the result once per
+ * Instance.
  *
  * Two equivalent syntax styles are supported. Existing FEMaster decks may keep
  * `TYPE=KINEMATIC|STRUCTURAL` on `*COUPLING` followed by the six-value DOF mask.
@@ -112,14 +114,19 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         logging::error(ctx->slave_surfaces != nullptr || ctx->slave_nodes != nullptr,
             "COUPLING: slave region is not resolved");
 
+        // Part-scoped couplings run before compile() and stay part-local
+        auto& couplings = model._data->compiled
+            ? model._data->couplings
+            : model._data->parts.get()->couplings;
+
         if (ctx->slave_surfaces) {
             constraint::Coupling coupling{ctx->master_node, ctx->slave_surfaces, dofs, type};
             coupling.master_region = ctx->master_region;
-            model._data->couplings.emplace_back(std::move(coupling));
+            couplings.emplace_back(std::move(coupling));
         } else {
             constraint::Coupling coupling{ctx->master_node, ctx->slave_nodes, dofs, type};
             coupling.master_region = ctx->master_region;
-            model._data->couplings.emplace_back(std::move(coupling));
+            couplings.emplace_back(std::move(coupling));
         }
 
         ctx->defined = true;
@@ -152,38 +159,42 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         *ctx = Context{};
         ctx->master  = master;
         ctx->surface = surface;
-            logging::error(model._data->compiled,
-                "COUPLING: constraints require a compiled model");
 
-            // Resolve the reference node from either a one-node set or a direct
-            // compiled node reference such as ID or INSTANCE.ID.
-            if (model._data->node_sets.has(ctx->master)) {
-                ctx->master_region = model._data->node_sets.get(ctx->master);
-                logging::error(ctx->master_region != nullptr && ctx->master_region->size() == 1,
-                    "COUPLING: master node set ", ctx->master, " must contain exactly one node");
-                ctx->master_node = ctx->master_region->first();
-            } else {
-                ctx->master_node = model.compiled_node_id(ctx->master);
-            }
+        // Part-scoped couplings run before compile() against the active part
+        const bool local        = !model._data->compiled;
+        const auto part         = model._data->parts.get();
+        auto&      node_sets    = local ? part->node_sets    : model._data->node_sets;
+        auto&      surface_sets = local ? part->surface_sets : model._data->surface_sets;
 
-            // Resolve the common slave target once. A geometric surface wins if
-            // the same name is also present in the node-set namespace.
-            if (model._data->surface_sets.has(ctx->surface)) {
-                ctx->slave_surfaces = model._data->surface_sets.get(ctx->surface);
-                logging::error(ctx->slave_surfaces != nullptr && ctx->slave_surfaces->size() > 0,
-                    "COUPLING: slave surface ", ctx->surface, " is empty");
-                return;
-            }
+        // Resolve the reference node from either a one-node set or a direct
+        // node reference such as ID or INSTANCE.ID.
+        if (node_sets.has(ctx->master)) {
+            ctx->master_region = node_sets.get(ctx->master);
+            logging::error(ctx->master_region != nullptr && ctx->master_region->size() == 1,
+                "COUPLING: master node set ", ctx->master, " must contain exactly one node");
+            ctx->master_node = ctx->master_region->first();
+        } else {
+            ctx->master_node = local ? static_cast<ID>(std::stoi(ctx->master)) : model.compiled_node_id(ctx->master);
+        }
 
-            logging::error(model._data->node_sets.has(ctx->surface),
-                "COUPLING: target ", ctx->surface, " is neither a surface nor a node set");
-            ctx->slave_nodes = model._data->node_sets.get(ctx->surface);
-            logging::error(ctx->slave_nodes != nullptr && ctx->slave_nodes->size() > 0,
-                "COUPLING: slave node set ", ctx->surface, " is empty");
+        // Resolve the common slave target once. A geometric surface wins if
+        // the same name is also present in the node-set namespace.
+        if (surface_sets.has(ctx->surface)) {
+            ctx->slave_surfaces = surface_sets.get(ctx->surface);
+            logging::error(ctx->slave_surfaces != nullptr && ctx->slave_surfaces->size() > 0,
+                "COUPLING: slave surface ", ctx->surface, " is empty");
+            return;
+        }
+
+        logging::error(node_sets.has(ctx->surface),
+            "COUPLING: target ", ctx->surface, " is neither a surface nor a node set");
+        ctx->slave_nodes = node_sets.get(ctx->surface);
+        logging::error(ctx->slave_nodes != nullptr && ctx->slave_nodes->size() > 0,
+            "COUPLING: slave node set ", ctx->surface, " is empty");
     };
 
     registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.doc("Define a coupling reference node and slave surface or node set.");
 
         command.keyword(
@@ -242,7 +253,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
     // Abaqus-style rigid body with optional element, tie and pin sets. The
     // CalculiX NSET spelling is an alias for TIE NSET.
     registry.command("RIGIDBODY", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.doc("Rigidly attach an element set and tie/pin node sets to one reference node.");
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
@@ -264,40 +275,45 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 "RIGIDBODY: ANALYTICAL SURFACE, DENSITY and NODAL THICKNESS are not supported");
             logging::error(keys.has("ELSET") || keys.has("TIENSET") || keys.has("PINNSET"),
                 "RIGIDBODY: requires ELSET, TIE NSET or PIN NSET");
-            logging::error(model._data->compiled,
-                "RIGIDBODY: constraints require a compiled model");
 
-            // Reference node from a one-node set or a direct compiled reference
+            // Part-scoped rigid bodies run before compile() and stay part-local
+            const bool local        = !model._data->compiled;
+            const auto part         = model._data->parts.get();
+            auto&      node_sets    = local ? part->node_sets    : model._data->node_sets;
+            auto&      elem_sets    = local ? part->elem_sets    : model._data->elem_sets;
+            auto&      rigid_bodies = local ? part->rigid_bodies : model._data->rigid_bodies;
+
+            // Reference node from a one-node set or a direct node reference
             const std::string reference = keys.raw("REFNODE");
             model::NodeRegion::Ptr ref_region = nullptr;
             ID ref_node = -1;
-            if (model._data->node_sets.has(reference)) {
-                ref_region = model._data->node_sets.get(reference);
+            if (node_sets.has(reference)) {
+                ref_region = node_sets.get(reference);
                 logging::error(ref_region != nullptr && ref_region->size() == 1,
                     "RIGIDBODY: reference node set ", reference, " must contain exactly one node");
                 ref_node = ref_region->first();
             } else {
-                ref_node = model.compiled_node_id(reference);
+                ref_node = local ? static_cast<ID>(std::stoi(reference)) : model.compiled_node_id(reference);
             }
 
             model::ElementRegion::Ptr elements  = nullptr;
             model::NodeRegion::Ptr    tie_nodes = nullptr;
             model::NodeRegion::Ptr    pin_nodes = nullptr;
 
-            logging::error(!keys.has("ELSET") || model._data->elem_sets.has(keys.raw("ELSET")),
+            logging::error(!keys.has("ELSET") || elem_sets.has(keys.raw("ELSET")),
                 "RIGIDBODY: element set ", keys.raw("ELSET"), " is not defined");
-            logging::error(!keys.has("TIENSET") || model._data->node_sets.has(keys.raw("TIENSET")),
+            logging::error(!keys.has("TIENSET") || node_sets.has(keys.raw("TIENSET")),
                 "RIGIDBODY: tie node set ", keys.raw("TIENSET"), " is not defined");
-            logging::error(!keys.has("PINNSET") || model._data->node_sets.has(keys.raw("PINNSET")),
+            logging::error(!keys.has("PINNSET") || node_sets.has(keys.raw("PINNSET")),
                 "RIGIDBODY: pin node set ", keys.raw("PINNSET"), " is not defined");
 
-            if (keys.has("ELSET"))   elements  = model._data->elem_sets.get(keys.raw("ELSET"));
-            if (keys.has("TIENSET")) tie_nodes = model._data->node_sets.get(keys.raw("TIENSET"));
-            if (keys.has("PINNSET")) pin_nodes = model._data->node_sets.get(keys.raw("PINNSET"));
+            if (keys.has("ELSET"))   elements  = elem_sets.get(keys.raw("ELSET"));
+            if (keys.has("TIENSET")) tie_nodes = node_sets.get(keys.raw("TIENSET"));
+            if (keys.has("PINNSET")) pin_nodes = node_sets.get(keys.raw("PINNSET"));
 
             constraint::RigidBody rigid_body{ref_node, elements, tie_nodes, pin_nodes};
             rigid_body.ref_region = ref_region;
-            model._data->rigid_bodies.emplace_back(std::move(rigid_body));
+            rigid_bodies.emplace_back(std::move(rigid_body));
         });
         command.variant(fem::io::dsl::Variant::make());
     });

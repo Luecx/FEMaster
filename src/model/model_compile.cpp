@@ -50,6 +50,7 @@
 #include <limits>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -306,7 +307,8 @@ void Model::add_section(Section::Ptr section) {
  *
  * Part-local sections become independent assembly assignments per Instance.
  * Their element regions are remapped; spatial section data is additionally
- * transformed with the rigid instance placement where required.
+ * transformed with the rigid instance placement where required. Part-local
+ * constraints are copied the same way with remapped nodes and regions.
  *
  * Finally, sections are bound to dense elements, element-nodal/IP/MP offsets are
  * initialized and the semantic topology is frozen. Recompilation is unsupported
@@ -695,6 +697,82 @@ void Model::compile() {
             // Instance copies keep the id of their source definition
             section->id_ = source_section->id_;
             _data->sections.push_back(std::move(section));
+        }
+
+        // Part-local constraints are copied once per instance. Nodes are mapped
+        // through the dense node map and regions are replaced by their qualified
+        // compiled counterparts materialized above.
+        auto compiled_node = [&](ID local_id) {
+            const auto it = node_map.find(local_id);
+            logging::error(it != node_map.end(),
+                "Model: constraint in part ", source->name, " references undefined node ", local_id);
+            return it->second;
+        };
+
+        auto compiled_region = [&](auto& sets, const auto& region) -> std::decay_t<decltype(region)> {
+            if (!region) return nullptr;
+            logging::error(sets.has(qualified_name(region->name)),
+                "Model: constraint region ", region->name, " in part ", source->name, " is not a named set");
+            return sets.get(qualified_name(region->name));
+        };
+
+        for (auto connector : source->connectors) {
+            connector.node_1_id_         = compiled_node(connector.node_1_id_);
+            connector.node_2_id_         = compiled_node(connector.node_2_id_);
+            connector.coordinate_system_ = transformed_orientation(connector.coordinate_system_);
+            _data->connectors.push_back(std::move(connector));
+        }
+
+        for (auto mpc : source->mpcs) {
+            mpc.node_1_id_ = compiled_node(mpc.node_1_id_);
+            mpc.node_2_id_ = compiled_node(mpc.node_2_id_);
+            _data->mpcs.push_back(std::move(mpc));
+        }
+
+        for (auto coupling : source->couplings) {
+            coupling.master_node    = compiled_node(coupling.master_node);
+            coupling.master_region  = compiled_region(_data->node_sets   , coupling.master_region);
+            coupling.slave_nodes    = compiled_region(_data->node_sets   , coupling.slave_nodes);
+            coupling.slave_surfaces = compiled_region(_data->surface_sets, coupling.slave_surfaces);
+            _data->couplings.push_back(std::move(coupling));
+        }
+
+        for (auto rigid_body : source->rigid_bodies) {
+            rigid_body.ref_node   = compiled_node(rigid_body.ref_node);
+            rigid_body.ref_region = compiled_region(_data->node_sets, rigid_body.ref_region);
+            rigid_body.elements   = compiled_region(_data->elem_sets, rigid_body.elements);
+            rigid_body.tie_nodes  = compiled_region(_data->node_sets, rigid_body.tie_nodes);
+            rigid_body.pin_nodes  = compiled_region(_data->node_sets, rigid_body.pin_nodes);
+            _data->rigid_bodies.push_back(std::move(rigid_body));
+        }
+
+        // Geometry adjustment of copied ties is performed by the reader once the
+        // initial configuration is final.
+        for (auto tie : source->ties) {
+            tie.master_surfaces = compiled_region(_data->surface_sets, tie.master_surfaces);
+            tie.master_lines    = compiled_region(_data->line_sets   , tie.master_lines);
+            tie.slave_nodes     = compiled_region(_data->node_sets   , tie.slave_nodes);
+            tie.slave_surfaces  = compiled_region(_data->surface_sets, tie.slave_surfaces);
+            _data->ties.push_back(std::move(tie));
+        }
+
+        for (auto contact : source->contacts) {
+            contact.master_surfaces = compiled_region(_data->surface_sets, contact.master_surfaces);
+            contact.slave_surfaces  = compiled_region(_data->surface_sets, contact.slave_surfaces);
+            _data->contacts.push_back(std::move(contact));
+        }
+
+        for (auto rbm : source->rbms) {
+            rbm.element_region = compiled_region(_data->elem_sets, rbm.element_region);
+            _data->rbms.push_back(std::move(rbm));
+        }
+
+        // Equation DOFs keep their global directions, only the nodes are remapped
+        for (auto equation : source->equations) {
+            for (auto& entry : equation.entries) {
+                entry.node_id = compiled_node(entry.node_id);
+            }
+            _data->equations.push_back(std::move(equation));
         }
     }
 

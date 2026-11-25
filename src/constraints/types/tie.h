@@ -21,6 +21,10 @@
 #include "../../model/system_dofs.h"
 
 namespace fem {
+namespace model {
+struct Model;
+}
+
 namespace constraint {
 
 /**
@@ -32,6 +36,9 @@ namespace constraint {
  *  - SurfaceRegion (nodes will be extracted from the surfaces)
  */
 class Tie {
+    // Model::compile() remaps part-local copies into assembly space
+    friend struct model::Model;
+
     // Master: either surface region or line region.
     model::SurfaceRegion::Ptr master_surfaces; ///< Master surface region (2D).
     model::LineRegion::Ptr    master_lines;    ///< Master line region (1D).

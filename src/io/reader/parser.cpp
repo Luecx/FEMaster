@@ -200,6 +200,23 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         part->execute_children("ROTARYINERTIA");
         part->execute_children("SPRING");
 
+        // Part-local constraints are instantiated per Instance by compile()
+        part->execute_children("RBM");
+        part->execute_children("CONNECTOR");
+        part->execute_children("MPC");
+        part->execute_children("CONTACT");
+        part->execute_children("EQUATION");
+        part->execute_children("TIE");
+        part->execute_children("RIGIDBODY");
+        for (const auto* coupling : part->children("COUPLING")) {
+            coupling->enter();
+
+            coupling->execute_children("KINEMATIC");
+            coupling->execute_children("DISTRIBUTING");
+
+            coupling->leave();
+        }
+
         part->leave();
     }
 
@@ -273,6 +290,10 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     }
 
     // Apply initial tie adjustments before geometry-derived reference fields are completed.
+    // At this point the model only holds ties instantiated from parts by compile().
+    for (auto& tie : model_->_data->ties) {
+        tie.adjust_geometry(*model_->_data);
+    }
     root.execute_children("TIE");
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("TIE");

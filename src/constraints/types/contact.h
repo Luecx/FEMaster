@@ -35,6 +35,7 @@
 
 namespace fem {
 namespace model {
+struct Model;
 struct ModelData;
 }
 
@@ -58,6 +59,9 @@ namespace constraint {
  * positions and is therefore never committed, frozen or rolled back.
  */
 class Contact {
+    // Model::compile() remaps part-local copies into assembly space
+    friend struct model::Model;
+
     /**
      * @brief Transactional nodal state of one mortar contact definition.
      *

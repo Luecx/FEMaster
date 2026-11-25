@@ -29,6 +29,7 @@
 
 namespace fem {
 namespace model {
+struct Model;
 struct ModelData;
 }
 }
@@ -53,6 +54,9 @@ namespace constraint {
  * constraint subsystem.
  */
 class Mpc {
+    // Model::compile() remaps part-local copies into assembly space
+    friend struct model::Model;
+
 public:
     enum class Type : std::uint8_t {
         Beam,
