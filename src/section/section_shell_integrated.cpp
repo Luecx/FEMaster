@@ -423,4 +423,14 @@ VolumeStressCauchy IntegratedShellSection::recover_stress(
     return VolumeStressCauchy(sigma).transformed(Mat3::Identity(), output_basis_global);
 }
 
+// Copies the section for one compiled instance; the copy keeps the section id
+Section::Ptr IntegratedShellSection::instantiate(model::ElementRegion::Ptr region,
+                                                 const Mat3&               rotation,
+                                                 const Vec3&               translation) const {
+    auto copy          = std::make_shared<IntegratedShellSection>(*this);
+    copy->region_      = std::move(region);
+    copy->orientation_ = orientation_ ? orientation_->transformed(rotation, translation) : nullptr;
+    return copy;
+}
+
 } // namespace fem

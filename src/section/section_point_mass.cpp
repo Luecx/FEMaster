@@ -83,4 +83,15 @@ std::string PointMassSection::str() const {
     return os.str();
 }
 
+// Copies the section for one compiled instance; the copy keeps the section id
+Section::Ptr PointMassSection::instantiate(model::ElementRegion::Ptr region,
+                                           const Mat3&               rotation,
+                                           const Vec3&               translation) const {
+    (void) rotation;
+    (void) translation;
+    auto copy     = std::make_shared<PointMassSection>(*this);
+    copy->region_ = std::move(region);
+    return copy;
+}
+
 } // namespace fem

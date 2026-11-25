@@ -12,6 +12,7 @@
 #include "../core/logging.h"
 
 #include <sstream>
+#include <utility>
 
 namespace fem {
 void BeamSection::info() {
@@ -42,4 +43,15 @@ std::string BeamSection::str() const {
 
     return os.str();
 }
+// Copies the section for one compiled instance; the copy keeps the section id
+Section::Ptr BeamSection::instantiate(model::ElementRegion::Ptr region,
+                                      const Mat3&               rotation,
+                                      const Vec3&               translation) const {
+    (void) translation;
+    auto copy        = std::make_shared<BeamSection>(*this);
+    copy->region_    = std::move(region);
+    copy->direction_ = rotation * direction_;
+    return copy;
+}
+
 } // namespace fem

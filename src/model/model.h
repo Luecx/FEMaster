@@ -118,6 +118,12 @@ struct Model {
     ID compiled_node_id   (const std::string& reference) const;
     ID compiled_element_id(const std::string& reference) const;
     ID compiled_surface_id(const std::string& reference) const;
+    ID compiled_line_id   (const std::string& reference) const;
+
+    // Node reference on the current side of the compile boundary. Before
+    // compile() it is a plain local id of the active Part, afterwards it is
+    // resolved like compiled_node_id(reference).
+    ID resolve_node_id(const std::string& reference) const;
 
     // Resolution of named compiled regions or scalar entity references.
     // Named node, element and surface sets are returned directly, while scalar references

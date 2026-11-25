@@ -13,6 +13,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -31,6 +32,16 @@ struct StatefulElasticity final : material::Elasticity {
 };
 
 struct TestSection final : Section {
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override {
+        (void) rotation;
+        (void) translation;
+        auto copy     = std::make_shared<TestSection>(*this);
+        copy->region_ = std::move(region);
+        return copy;
+    }
+
     void info() override {}
 
     std::string str() const override {

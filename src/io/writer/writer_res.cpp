@@ -499,66 +499,41 @@ void ResWriter::add_loadcase(int id, WriterStepType step_type) {
 /**
  * Builds the semantic RES identifiers for compiled nodes and elements.
  *
- * Nodes are resolved directly through `ModelData::node_mapping`, which maps a
- * dense assembly node to its owning Instance and original part-local node id.
- *
- * Elements are resolved by reversing each compiled Instance's existing
- * `element_ids` map from local to dense identifiers.
- *
- * The default Instance retains bare local identifiers for compatibility with
- * existing FEMaster result files. Explicit Instances are qualified as
- * `instance_name.local_id`.
+ * Nodes and elements are resolved directly through `ModelData::node_mapping`
+ * and `ModelData::element_mapping`, which map a dense assembly entity to its
+ * owning Instance and original part-local id. Labels are built by
+ * `Instance::label()`: the default Instance retains bare local identifiers for
+ * compatibility with existing FEMaster result files, explicit Instances are
+ * qualified as `instance_name.local_id`.
  */
 void ResWriter::initialize_ids(const model::ModelData& model_data) {
     logging::error(!ids_initialized,
         "ResWriter: result ids have already been initialized");
+    logging::error(model_data.element_mapping.size() == model_data.elements.size(),
+        "ResWriter: element mapping does not match compiled elements");
 
     // Build dense node -> semantic node identifier
     node_ids.resize(model_data.node_mapping.size());
-
     for (std::size_t row = 0; row < model_data.node_mapping.size(); ++row) {
         const auto& [instance, local_id] = model_data.node_mapping[row];
 
         logging::error(instance != nullptr,
             "ResWriter: dense node ", row, " has no source instance");
 
-        node_ids[row] = instance->instance_id == 0
-            ? std::to_string(local_id)
-            : instance->name + "." + std::to_string(local_id);
+        node_ids[row] = instance->label(local_id);
     }
 
-    // Reverse every Instance's local -> dense element map
+    // Build dense element -> semantic element identifier
     element_ids.assign(model_data.elements.size(), "");
+    for (std::size_t row = 0; row < model_data.element_mapping.size(); ++row) {
+        if (!model_data.elements[row]) continue;
 
-    for (const auto& [instance_name, instance] : model_data.instances) {
+        const auto& [instance, local_id] = model_data.element_mapping[row];
+
         logging::error(instance != nullptr,
-            "ResWriter: instance ", instance_name, " is null");
+            "ResWriter: dense element ", row, " has no source instance");
 
-        for (const auto& [local_id, global_id] : instance->element_ids) {
-            const std::size_t row = static_cast<std::size_t>(global_id);
-
-            logging::error(row < element_ids.size(),
-                "ResWriter: element ", local_id, " in instance ", instance_name,
-                " maps outside compiled element storage");
-            logging::error(element_ids[row].empty(),
-                "ResWriter: dense element ", global_id,
-                " has multiple semantic identifiers");
-
-            element_ids[row] = instance->instance_id == 0
-                ? std::to_string(local_id)
-                : instance_name + "." + std::to_string(local_id);
-        }
-    }
-
-    // Every compiled element must have a semantic source identifier
-    for (std::size_t row = 0; row < model_data.elements.size(); ++row) {
-        if (!model_data.elements[row]) {
-            continue;
-        }
-
-        logging::error(!element_ids[row].empty(),
-            "ResWriter: dense element ", row,
-            " has no semantic element identifier");
+        element_ids[row] = instance->label(local_id);
     }
 
     ids_initialized = true;

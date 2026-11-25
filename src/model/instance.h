@@ -27,8 +27,10 @@
 
 #pragma once
 
-#include "../core/types_eig.h"
+#include "../core/logging.h"
 #include "../core/namable.h"
+#include "../core/types_eig.h"
+#include "../core/types_num.h"
 #include "part.h"
 
 #include <memory>
@@ -60,8 +62,10 @@ struct Instance : public fem::Namable {
     // its own local identifier and coordinate spaces throughout compilation.
     Part::Ptr part = nullptr;
 
-    // ID of the instance. The default instance has ID 0 while other instances increment by 1.
-    ID instance_id;
+    // Sequential instance id. The implicit default instance has id 0, every
+    // further instance receives the next id in creation order. Compilation
+    // enumerates instances in this order and external labels are derived from it.
+    ID instance_id = 0;
 
     // Rigid local-to-global placement. Model compilation transforms every local
     // nodal position according to x = R X + t and rotates section directions and
@@ -78,17 +82,36 @@ struct Instance : public fem::Namable {
     std::unordered_map<ID, ID> surface_ids; // local -> global
     std::unordered_map<ID, ID> line_ids;    // local -> global
 
+    // Stride between the external identifier ranges of consecutive instances.
+    // Local identifiers must be non-negative and stay below this bound.
+    static constexpr ExternalID EXTERNAL_ID_STRIDE = 100000000;
+
     // Construction of a named rigid placement. The referenced Part and the
     // transformation are semantic input; all identifier maps remain empty until
     // `Model::compile()` materializes this instance in the dense assembly.
     Instance(std::string name,
              Part::Ptr   part,
+             ID          instance_id,
              Vec3        translation = Vec3::Zero(),
              Mat3        rotation    = Mat3::Identity())
         : fem::Namable(std::move(name)),
           part       (std::move(part)),
+          instance_id(instance_id),
           translation(translation),
           rotation   (rotation) {}
+
+    // Single integer label of a local entity, EXTERNAL_ID_STRIDE * instance_id + local.
+    // Computed in 64 bit so that large instance ids cannot overflow.
+    ExternalID external_id(ID local) const {
+        logging::error(local >= 0 && local < EXTERNAL_ID_STRIDE,
+            "Instance: local id ", local, " of instance ", name, " is outside [0, ", EXTERNAL_ID_STRIDE, ")");
+        return EXTERNAL_ID_STRIDE * static_cast<ExternalID>(instance_id) + static_cast<ExternalID>(local);
+    }
+
+    // Readable label of a local entity: "ID" for the default instance, "INSTANCE.ID" otherwise
+    std::string label(ID local) const {
+        return instance_id == 0 ? std::to_string(local) : name + "." + std::to_string(local);
+    }
 };
 
 } // namespace fem::model

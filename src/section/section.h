@@ -18,6 +18,7 @@
 
 #include "../core/castable.h"
 #include "../core/printable.h"
+#include "../core/types_eig.h"
 #include "../data/region.h"
 #include "../material/material.h"
 
@@ -66,6 +67,13 @@ struct Section : public fem::Printable, public Castable {
     virtual Index material_state_size() const {
         return material_ && material_->has_elasticity() ? material_->elasticity()->state_size() : 0;
     }
+
+    // Independent copy of this section for one compiled instance. The copy keeps
+    // the section id, targets the given compiled element region and places all
+    // spatial section data rigidly according to x = R X + t.
+    virtual Ptr instantiate(model::ElementRegion::Ptr region,
+                            const Mat3&               rotation,
+                            const Vec3&               translation) const = 0;
 
     /**
      * @brief Outputs section details through the logger.

@@ -82,6 +82,11 @@ struct ABDShellSection : ShellSection {
         const Mat3&                   deformation_gradient_increment
     ) const override;
 
+    // Instance copy with remapped region and rigidly placed orientation
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     // Reserve one state row per shell IP so element material-point addressing is
     // uniform across section types. The prescribed ABD formulation does not use it.
     [[nodiscard]] Index num_mp_per_ip() const override { return 1; }

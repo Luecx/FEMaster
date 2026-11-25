@@ -640,7 +640,7 @@ void append_node_block_header(std::string& buffer, Index node_count) {
  * Appends one -1 node-coordinate record.
  */
 void append_node_line(std::string& buffer,
-                      ID node_id,
+                      ExternalID node_id,
                       Precision x,
                       Precision y,
                       Precision z) {
@@ -672,7 +672,7 @@ void append_element_block_header(std::string& buffer,
  * id. Both are zero when the element has no section or material.
  */
 void append_element_header_line(std::string& buffer,
-                                ID           element_id,
+                                ExternalID   element_id,
                                 int          type,
                                 ID           group_id,
                                 ID           material_id) {
@@ -692,8 +692,8 @@ void append_element_header_line(std::string& buffer,
  */
 void append_element_connectivity(std::string& buffer,
                                  const std::vector<ID>& connectivity,
-                                 const std::vector<ID>& node_ids,
-                                 ID element_id) {
+                                 const std::vector<ExternalID>& node_ids,
+                                 ExternalID element_id) {
     for (std::size_t local = 0; local < connectivity.size(); ++local) {
         const ID node_id = connectivity[local];
 
@@ -835,8 +835,8 @@ Index frd_local_node(Index local, int type) {
  * The record uses FRD long ASCII identifiers followed by the field components.
  */
 void append_result_element_node_lines(std::string& buffer,
-                                      ID element_id,
-                                      ID node_id,
+                                      ExternalID element_id,
+                                      ExternalID node_id,
                                       const model::Field& field,
                                       Index row,
                                       const FRDField& frd) {
@@ -866,7 +866,7 @@ void append_result_element_node_lines(std::string& buffer,
  * components continue on -2 records after every six values.
  */
 void append_result_node_lines(std::string& buffer,
-                              ID node_id,
+                              ExternalID node_id,
                               const model::Field& field,
                               Index row,
                               const FRDField& frd) {
@@ -992,8 +992,9 @@ void FrdWriter::add_loadcase(int id, WriterStepType step_type) {
  *     n_\mathrm{local}.
  * \f]
  *
- * The local identifier must remain below \f$10^8\f$ so adjacent Instance ranges
- * cannot overlap. The completed numbering is cached and subsequently reused by
+ * The identifier is computed by `Instance::external_id()` in 64 bit. The local
+ * identifier must remain below \f$10^8\f$ so adjacent Instance ranges cannot
+ * overlap. The completed numbering is cached and subsequently reused by
  * coordinate, connectivity and nodal-result output.
  *
  * @param model_data Compiled model containing topology, positions and semantic
@@ -1012,21 +1013,21 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         return;
     }
 
+    // FRD identifier fields are ten characters wide
+    constexpr ExternalID max_frd_id = 9999999999;
+
     // Build the dense-to-FRD node numbering once for this output file
     node_ids.resize(model_data.node_mapping.size());
-
     for (std::size_t i = 0; i < model_data.node_mapping.size(); ++i) {
         const auto& [instance, local_id] = model_data.node_mapping[i];
 
         logging::error(instance != nullptr,
             "FrdWriter: dense node ", i, " has no source instance");
-        logging::error(local_id < static_cast<ID>(100000000),
-            "FrdWriter: local node id ", local_id,
-            " exceeds the supported instance range");
 
-        node_ids[i] =
-            static_cast<ID>(100000000) * static_cast<ID>(instance->instance_id)
-            + local_id;
+        node_ids[i] = instance->external_id(local_id);
+
+        logging::error(node_ids[i] <= max_frd_id,
+            "FrdWriter: node id ", node_ids[i], " exceeds the FRD field width");
     }
 
     // Preserve original element labels using the same per-instance numbering as nodes
@@ -1040,11 +1041,11 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         const auto& [instance, local_id] = model_data.element_mapping[i];
         logging::error(instance != nullptr,
             "FrdWriter: dense element ", i, " has no source instance");
-        logging::error(local_id < static_cast<Index>(100000000),
-            "FrdWriter: local element ID ", local_id, " exceeds the supported instance range");
 
-        element_ids[i] = static_cast<ID>(100000000) * static_cast<ID>(instance->instance_id)
-                       + static_cast<ID>(local_id);
+        element_ids[i] = instance->external_id(local_id);
+
+        logging::error(element_ids[i] <= max_frd_id,
+            "FrdWriter: element id ", element_ids[i], " exceeds the FRD field width");
     }
 
     // Emit geometry and connectivity using the fixed external numbering

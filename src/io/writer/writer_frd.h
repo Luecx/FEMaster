@@ -67,8 +67,8 @@ class FrdWriter {
     std::ofstream file_path;
 
     // Dense global node/element IDs mapped to original instance identifiers
-    std::vector<ID> node_ids;
-    std::vector<ID> element_ids;
+    std::vector<ExternalID> node_ids;
+    std::vector<ExternalID> element_ids;
 
     // Writer state
     bool model_data_written = false;

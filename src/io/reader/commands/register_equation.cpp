@@ -157,7 +157,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                             } else {
                                 ctx->equations.resize(1);
                                 ctx->equations[0].entries.push_back({
-                                    local ? static_cast<ID>(std::stoi(data[i])) : model.compiled_node_id(data[i]), equation_dof, coefficient
+                                    model.resolve_node_id(data[i]), equation_dof, coefficient
                                 });
                             }
                         } else if (is_set) {
@@ -172,7 +172,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                                 ctx->equations[j].entries.push_back({set->at(j), equation_dof, coefficient});
                             }
                         } else {
-                            const ID node = local ? static_cast<ID>(std::stoi(data[i])) : model.compiled_node_id(data[i]);
+                            const ID node = model.resolve_node_id(data[i]);
                             for (auto& equation : ctx->equations) {
                                 equation.entries.push_back({node, equation_dof, coefficient});
                             }

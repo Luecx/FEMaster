@@ -47,6 +47,11 @@ struct PointMassSection : Section {
                      Vec3                      spring_constants = Vec3::Zero(),
                      Vec3                      rotary_spring_constants = Vec3::Zero());
 
+    // Instance copy with remapped region; point masses carry no spatial data
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     void info() override;
     std::string str() const override;
 };

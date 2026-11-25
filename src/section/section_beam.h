@@ -26,6 +26,11 @@ struct BeamSection : Section {
     Vec3         direction_ = Vec3::Zero(); ///< Optional beam section direction vector.
     Profile::Ptr profile_  = nullptr;       ///< Profile associated with the beam section.
 
+    // Instance copy with remapped region and rotated direction
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     /**
      * @brief Outputs beam section details through the logger.
      */
