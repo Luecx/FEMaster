@@ -107,7 +107,7 @@ A side is selected by an element or element-set target together with a side labe
 
 For shell elements the two sides of the midsurface can also be described by \val{SPOS} and \val{SNEG}. These represent the positive and negative shell sides that determine pressure direction and top/bottom interpretation.
 
-Native FEMaster additionally supports an explicit surface-ID form in which a user surface ID is supplied together with the parent element and side. Explicit surface IDs are non-negative and may start at \val{0}. A surface named directly from an element or element set avoids the separate numerical surface-ID space of the explicit form.
+Native FEMaster additionally supports an explicit surface-ID form in which a user surface ID is supplied together with the parent element and side. Explicit surface IDs are non-negative, may start at \val{0} and must be smaller than $2^{28} = \val{268435456}$. IDs from $2^{28}$ upward are reserved for automatically numbered surfaces and lines, which are counted upward from $2^{28}$ independently in every Part. Earlier versions assigned the lowest free ID instead and accepted explicit IDs of any size; inputs relying on either behavior need to be adapted. A surface named directly from an element or element set avoids the separate numerical surface-ID space of the explicit form.
 
 At Assembly level, \key{INSTANCE} can qualify the target element or element set. This allows a face of one particular Instance to be selected even when several copies use the same local element IDs and set names.
 

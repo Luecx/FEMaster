@@ -66,6 +66,11 @@ struct Part : public fem::Namable {
     // that embeds this part into the assembled model.
     using Ptr = std::shared_ptr<Part>;
 
+    // First identifier of the range reserved for automatically numbered
+    // surfaces and lines. Explicit surface and line identifiers must stay below
+    // this bound so that both kinds never collide, regardless of input order.
+    static constexpr ID AUTO_ID_BEGIN = ID{1} << 28;
+
     // Part-local topology. Node coordinates are expressed in the local part
     // coordinate system, and all element, surface and line connectivity refers
     // to identifiers from these local containers. Model compilation copies and
@@ -75,6 +80,11 @@ struct Part : public fem::Namable {
     std::unordered_map<ID, ElementPtr> elements;
     std::unordered_map<ID, SurfacePtr> surfaces;
     std::unordered_map<ID, LinePtr>    lines;
+
+    // Counters for automatic surface and line numbering. Both start at
+    // AUTO_ID_BEGIN and are only ever incremented, giving O(1) allocation.
+    ID next_surface_id = AUTO_ID_BEGIN;
+    ID next_line_id    = AUTO_ID_BEGIN;
 
     // Named regions in the same local identifier space as the topology above.
     // Each registry also owns its aggregate *ALL region. Compilation creates an
