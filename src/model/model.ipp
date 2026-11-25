@@ -25,6 +25,8 @@
 #include "element/element_structural.h"
 #include "geometry/surface/surface.h"
 
+#include <limits>
+
 /**
  * Adds one node to the currently active semantic part.
  *
@@ -102,8 +104,9 @@ inline void Model::set_element(ID id, Args&&... args) {
  * The concrete element decides whether the requested boundary identifier
  * represents a finite-element surface, a line, or both. Extracted connectivity
  * remains part-local until compilation rewires it through each Instance. A
- * non-negative `id` is used directly; a negative value selects the lowest free
- * identifier independently in the surface and line namespaces.
+ * non-negative `id` is used directly and must be below `Part::AUTO_ID_BEGIN`;
+ * a negative value draws the next identifier from the part's independent
+ * surface or line counter, starting at `Part::AUTO_ID_BEGIN`.
  *
  * Every created boundary is inserted into the corresponding active region when
  * present and always into the aggregate `SFALL` or `LALL` region.
@@ -135,15 +138,19 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
         "Model: boundary ", surface_id, " of element ", element_id,
         " in part ", active->name, " provides neither a surface nor a line");
 
+    // Explicit identifiers must stay below the automatically numbered range
+    logging::error(id < Part::AUTO_ID_BEGIN,
+        "Model: explicit surface/line id ", id, " in part ", active->name,
+        " must be below ", Part::AUTO_ID_BEGIN);
+
     // Allocate and register a part-local surface when the element provides one
     if (surface) {
-        ID local_id = id;
-        if (local_id < 0) {
-            local_id = 0;
-            while (active->surfaces.find(local_id) != active->surfaces.end()) {
-                ++local_id;
-            }
-        }
+        logging::error(id >= 0 || active->next_surface_id < std::numeric_limits<ID>::max(),
+            "Model: automatic surface ids exhausted in part ", active->name);
+
+        const ID local_id = id < 0
+            ? active->next_surface_id++
+            : id;
 
         logging::error(active->surfaces.find(local_id) == active->surfaces.end(),
             "Model: surface ", local_id, " is already defined in part ", active->name);
@@ -154,13 +161,12 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 
     // Allocate and register a part-local line when the element provides one
     if (line) {
-        ID local_id = id;
-        if (local_id < 0) {
-            local_id = 0;
-            while (active->lines.find(local_id) != active->lines.end()) {
-                ++local_id;
-            }
-        }
+        logging::error(id >= 0 || active->next_line_id < std::numeric_limits<ID>::max(),
+            "Model: automatic line ids exhausted in part ", active->name);
+
+        const ID local_id = id < 0
+            ? active->next_line_id++
+            : id;
 
         logging::error(active->lines.find(local_id) == active->lines.end(),
             "Model: line ", local_id, " is already defined in part ", active->name);
@@ -175,8 +181,8 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
  *
  * The named element region must belong to the active part and contain at least
  * one element. Each boundary is delegated to the single-element overload with
- * automatic identifier allocation, selecting the lowest currently free
- * identifier in the applicable local surface or line namespace.
+ * automatic identifier allocation from the reserved range starting at
+ * `Part::AUTO_ID_BEGIN`.
  *
  * @param elset Name of the part-local element region to expand.
  * @param surface_id Element-specific boundary identifier extracted from every
