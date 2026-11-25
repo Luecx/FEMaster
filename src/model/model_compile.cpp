@@ -799,34 +799,6 @@ ID Model::compiled_node_id(const std::string& reference) const {
 }
 
 /**
- * Resolves a node reference in the current model stage.
- *
- * Before compilation the reference is a plain local identifier of the active
- * Part. Afterwards it is resolved through compiled_node_id().
- *
- * @param reference Local `ID`, or `INSTANCE.ID` after compilation.
- * @return Part-local or dense assembly node identifier.
- */
-ID Model::node_id(const std::string& reference) const {
-    if (_data->compiled) return compiled_node_id(reference);
-
-    const auto part = _data->parts.get();
-    logging::error(part != nullptr,
-        "Model: no active part is available for node reference '", reference, "'");
-
-    ID id{};
-    const char* begin = reference.data();
-    const char* end   = begin + reference.size();
-    const auto [ptr, ec] = std::from_chars(begin, end, id);
-
-    logging::error(ec == std::errc{} && ptr == end,
-        "Model: node reference '", reference, "' is not a valid local identifier");
-    logging::error(part->nodes.count(id) > 0,
-        "Model: node ", id, " does not exist in part ", part->name);
-    return id;
-}
-
-/**
  * Resolves a compact element reference into dense assembly element space.
  *
  * The reference may contain a local identifier for the implicit identity

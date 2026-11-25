@@ -87,8 +87,8 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
 
                     if (!first_is_set) {
                         mpcs.emplace_back(
-                            model.node_id(node_1),
-                            model.node_id(node_2),
+                            local ? static_cast<ID>(std::stoi(node_1)) : model.compiled_node_id(node_1),
+                            local ? static_cast<ID>(std::stoi(node_2)) : model.compiled_node_id(node_2),
                             mpc_type
                         );
                         return;
@@ -109,7 +109,7 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                         return;
                     }
 
-                    const ID master = model.node_id(node_2);
+                    const ID master = local ? static_cast<ID>(std::stoi(node_2)) : model.compiled_node_id(node_2);
                     for (std::size_t i = 0; i < first->size(); ++i) {
                         mpcs.emplace_back(first->at(i), master, mpc_type);
                     }

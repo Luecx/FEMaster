@@ -119,11 +119,6 @@ struct Model {
     ID compiled_element_id(const std::string& reference) const;
     ID compiled_surface_id(const std::string& reference) const;
 
-    // Stage-dependent node reference. Before compilation the reference is a
-    // plain local identifier of the active Part, afterwards it is resolved
-    // through compiled_node_id().
-    ID node_id(const std::string& reference) const;
-
     // Resolution of named compiled regions or scalar entity references.
     // Named node, element and surface sets are returned directly, while scalar references
     // are mapped through the corresponding compiled assembly identifier and wrapped
