@@ -199,7 +199,7 @@ TEST(Constraints_Coupling, DistributingRejectsMasterInsideCloud) {
 
 
 // Redundant equations of different source types must not require full row rank.
-TEST(Constraints_Reactions, LsmrRedundantSupportAndMpc) {
+TEST(Constraints_Reactions, RedundantSupportAndMpc) {
     using Transformer = constraint::ConstraintTransformer;
     constraint::Equations equations = {
         {{{0, 0, 1.0}}, 0.0},
@@ -236,7 +236,7 @@ TEST(Constraints_Reactions, LsmrRedundantSupportAndMpc) {
 
 // Right scaling must not alter the regularized solution in the original
 // multiplier coordinates when redundant equations use different scales.
-TEST(Constraints_Reactions, LsmrScaledRedundantSupportAndMpc) {
+TEST(Constraints_Reactions, ScaledRedundantSupportAndMpc) {
     using Transformer = constraint::ConstraintTransformer;
     constraint::Equations equations = {
         {{{0, 0, 1.0}}, 0.0},
@@ -267,4 +267,94 @@ TEST(Constraints_Reactions, LsmrScaledRedundantSupportAndMpc) {
     // In original coordinates, lambda = 10*[1,10]/(101+r).
     EXPECT_NEAR(reactions[0], -10.0 / (101.0 + 1e-10), 1e-6);
     EXPECT_NEAR(reactions[1], 0.0, 1e-6);
+}
+
+
+// A support must recover force along an indirect constraint path, while a
+// disconnected tie component must contribute no support force.
+TEST(Constraints_Reactions, TransitiveSupportComponent) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 1.0}}, 0.0},
+        {{{0, 0, -1.0}, {1, 0, 1.0}}, 0.0},
+        {{{1, 0, -1.0}, {2, 0, 1.0}}, 0.0},
+        {{{3, 0, -1.0}, {4, 0, 1.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    for (Index i = 1; i < 4; ++i)
+        equations[i].source = constraint::EquationSourceKind::Tie;
+
+    model::SystemDofs dofs(5, 6);
+    for (Index i = 0; i < 5; ++i) dofs.activate(i, 0);
+    dofs.numerate();
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 5, options);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    DynamicVector f(5);
+    f << 0.0, 0.0, 12.0, 5.0, -5.0;
+    const DynamicVector q = DynamicVector::Zero(1);
+    const DynamicVector r = transformer.support_reactions(eye(5), f, q);
+    EXPECT_NEAR(r[0], -12.0, 1e-6);
+    EXPECT_NEAR(r.tail(4).norm(), 0.0, 1e-6);
+}
+
+// Independent directional supports can use the singleton formula even when
+// their direction contains multiple physical DOFs.
+TEST(Constraints_Reactions, SingletonDirectionalSupport) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 3.0}, {0, 1, 4.0}}, 0.0},
+        {{{1, 0, 1.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    equations[1].source = constraint::EquationSourceKind::Mpc;
+
+    model::SystemDofs dofs(2, 6);
+    dofs.activate(0, 0);
+    dofs.activate(0, 1);
+    dofs.activate(1, 0);
+    dofs.numerate();
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 3, options);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    DynamicVector f(3);
+    f << 6.0, 8.0, 11.0;
+    const DynamicVector q = DynamicVector::Zero(1);
+    const DynamicVector r = transformer.support_reactions(eye(3), f, q);
+    EXPECT_NEAR(r[0], -6.0, 1e-6);
+    EXPECT_NEAR(r[1], -8.0, 1e-6);
+    EXPECT_NEAR(r[2], 0.0, 1e-6);
+}
+
+// Exercise the sparse QR branch with a connected star above the dense cutoff.
+TEST(Constraints_Reactions, SparseSupportComponent) {
+    using Transformer = constraint::ConstraintTransformer;
+    constexpr Index n = 40;
+    constraint::Equations equations = {{{{0, 0, 1.0}}, 0.0}};
+    equations[0].source = constraint::EquationSourceKind::Support;
+    for (Index i = 1; i < n; ++i) {
+        equations.emplace_back(
+            std::initializer_list<constraint::EquationEntry>{{0, 0, -1.0}, {static_cast<ID>(i), 0, 1.0}}, 0.0);
+        equations.back().source = constraint::EquationSourceKind::Tie;
+    }
+
+    model::SystemDofs dofs(n + 1, 6);
+    for (Index i = 0; i <= n; ++i) dofs.activate(i, 0);
+    dofs.numerate();
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, n + 1, options);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    DynamicVector f = DynamicVector::Ones(n + 1);
+    f[0] = 0.0;
+    f[n] = 0.0;
+    const DynamicVector q = DynamicVector::Zero(1);
+    const DynamicVector r = transformer.support_reactions(eye(n + 1), f, q);
+    EXPECT_NEAR(r[0], -static_cast<Precision>(n - 1), 1e-6);
+    EXPECT_NEAR(r.tail(n).norm(), 0.0, 1e-6);
 }
