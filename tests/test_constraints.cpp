@@ -16,6 +16,7 @@
  */
 
 #include "../src/constraints/transformer/constraint_system.h"
+#include "../src/constraints/transformer/constraint_transformer.h"
 #include "../src/constraints/transformer/null_space.h"
 #include "../src/constraints/types/connector.h"
 #include "../src/constraints/types/coupling.h"
@@ -194,4 +195,40 @@ TEST(Constraints_Coupling, DistributingRejectsMasterInsideCloud) {
     auto         coupling = distributing_coupling(mdl, true);
     auto         ids      = all_dofs_active(5);
     EXPECT_THROW(coupling.get_equations(ids, *mdl._data), std::runtime_error);
+}
+
+
+// Redundant equations of different source types must not require full row rank.
+TEST(Constraints_Reactions, LsmrRedundantSupportAndMpc) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 1.0}}, 0.0},
+        {{{0, 0, 1.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    equations[1].source = constraint::EquationSourceKind::Mpc;
+
+    model::SystemDofs dofs(2, 6);
+    dofs.activate(0, 0);
+    dofs.activate(1, 0);
+    dofs.numerate();
+
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 2, options);
+    ASSERT_EQ(transformer.rank(), 1);
+    ASSERT_EQ(transformer.system().equations, 2);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    const SparseMatrix K = eye(2);
+    DynamicVector f(2);
+    f << 10.0, 3.0;
+    DynamicVector q(1);
+    q << 3.0;
+
+    // Both identical rows receive half the multiplier; only the support
+    // contribution is reported as a support reaction.
+    const DynamicVector reactions = transformer.support_reactions(K, f, q);
+    EXPECT_NEAR(reactions[0], -5.0, 1e-6);
+    EXPECT_NEAR(reactions[1], 0.0, 1e-6);
 }
