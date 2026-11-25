@@ -445,8 +445,8 @@ model::Field& OutputRequestHandler::compute(OutputField field, model::FieldDomai
 /**
  * Writes the requested frame fields in their explicitly selected domains.
  *
- * The ELEMENT_NODAL name prefix preserves existing RES/FRD conventions.
- * A field in any other domain keeps its semantic base name.
+ * Keep semantic names for unique quantities. Only disambiguate element-nodal
+ * output when another domain of the same quantity was explicitly requested.
  */
 void OutputRequestHandler::write_frame(ResultWriters& writer, const model::ModelData* model_data) {
     for (const OutputKey& key : requests_) {
@@ -455,7 +455,14 @@ void OutputRequestHandler::write_frame(ResultWriters& writer, const model::Model
         model::Field& value = compute(key.field, key.domain);
         if (value.rows == 0) continue;
 
-        const std::string prefix = key.domain == model::FieldDomain::ELEMENT_NODAL
+        bool domain_collision = false;
+        for (const OutputKey& other : requests_) {
+            if (other.field == key.field && other.domain != key.domain) {
+                domain_collision = true;
+                break;
+            }
+        }
+        const std::string prefix = domain_collision && key.domain == model::FieldDomain::ELEMENT_NODAL
             ? "ELEMENT_NODAL_" : "";
         const std::string name = prefix + std::string(output_field_name(key.field)) + frame_suffix_;
         const model::ModelData* data = value.domain == model::FieldDomain::UNKNOWN

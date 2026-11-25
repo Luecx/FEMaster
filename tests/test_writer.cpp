@@ -8,6 +8,8 @@
 #include "../src/model/model.h"
 #include "../src/model/shell/frt_shell_s4.h"
 #include "../src/io/writer/output_field.h"
+#include "../src/io/writer/output_request_handler.h"
+#include "../src/io/writer/writers.h"
 #include "../src/io/writer/writer_frd.h"
 #include "../src/io/writer/writer_femr.h"
 #include "../src/io/writer/writer_res.h"
@@ -89,8 +91,8 @@ TEST(Reader_Writer, WritesFieldTypeForModelField) {
     std::filesystem::remove(output_path);
 }
 
-TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
-    const std::string output_path = "tests/TMP_WRITER_MATRIX.RES";
+TEST(Reader_Writer, WritesUnprefixedElementNodalFieldThroughHandler) {
+    const std::string output_path = "tests/TMP_WRITER_MATRIX.res";
     std::filesystem::remove(output_path);
 
     model::Model model;
@@ -111,8 +113,14 @@ TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
     field.set_zero();
 
     {
-        io::writer::ResWriter writer(output_path);
-        writer.write_field(field, "LOCAL_SECTION_FORCES", model._data.get());
+        io::writer::ResultWriters writer("tests/TMP_WRITER_MATRIX", {true, false, false});
+        io::writer::OutputRequestHandler output;
+        output.bind(&model);
+        output.request(io::writer::OutputField::LOCAL_SECTION_FORCES, model::FieldDomain::ELEMENT_NODAL);
+        output.begin_frame();
+        output.provide(io::writer::OutputField::LOCAL_SECTION_FORCES, field);
+        writer.add_loadcase(1);
+        output.write_frame(writer, model._data.get());
     }
 
     const std::string text = read_text(output_path);
@@ -160,11 +168,15 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
         fem::io::writer::FrdWriter writer(output_path);
         writer.write_model_data(*model._data);
         writer.write_field(nodal_resultants, "SHELLRESULTANTS", model._data.get());
+        writer.write_field(element_resultants, "SHELL_RESULTANTS", model._data.get());
     }
 
     const std::string text = read_text(output_path);
     EXPECT_NE(text.find(" -4  SHR         8    1"), std::string::npos);
     EXPECT_NE(text.find(" -5  QY"), std::string::npos);
+    const auto first = text.find(" -4  SHR         8    1");
+    ASSERT_NE(first, std::string::npos);
+    EXPECT_NE(text.find(" -4  SHR         8    1", first + 1), std::string::npos);
 
     std::filesystem::remove(output_path);
 }
