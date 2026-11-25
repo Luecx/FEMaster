@@ -158,10 +158,10 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 /**
  * Recover multipliers from C^T*lambda=f-K*u using damped LSMR.
  *
- * The damping squared matches the previous normal-equation regularization,
- * but neither C*C^T nor a sparse factorization is constructed. Identity
- * preconditioning preserves the original multiplier coordinates even for
- * redundant constraints.
+ * Right-scale the augmented least-squares operator [C^T; sqrt(r)*I]
+ * by its inverse column norms. Scaling both blocks preserves the original
+ * regularized objective and multiplier coordinates, including redundant rows.
+ * Neither C*C^T nor a sparse factorization is constructed.
  */
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
@@ -188,22 +188,67 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
     const Precision regularization = std::max<Precision>(
         Precision(1e-14), Precision(1e-12) * max_diagonal);
 
-    const SparseMatrix transpose = system_.C.transpose();
+    // A right scaling D must also act on the regularization block:
+    // min_y ||C^T D y - b||^2 + r ||D y||^2, lambda = D y.
+    // Using scalar LSMR damping after scaling would change the objective.
+    const DynamicVector scale =
+        (row_norm_squared.array() + regularization).sqrt().inverse().matrix();
+    logging::error(scale.allFinite() && (scale.array() > Precision(0)).all(),
+        "[LSMR] invalid column scaling");
+
+    const Precision damping = std::sqrt(regularization);
+    const Index n = system_.dofs;
+    const Index m = system_.equations;
+    SparseMatrix augmented(n + m, m);
+    {
+        TripletList entries;
+        entries.reserve(static_cast<std::size_t>(system_.C.nonZeros()) +
+                        static_cast<std::size_t>(m));
+        for (Index column = 0; column < system_.C.outerSize(); ++column) {
+            for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
+                entries.emplace_back(column, entry.row(), entry.value() * scale[entry.row()]);
+            }
+        }
+        for (Index row = 0; row < m; ++row) {
+            entries.emplace_back(n + row, row, damping * scale[row]);
+        }
+        augmented.setFromTriplets(entries.begin(), entries.end());
+    }
+    augmented.makeCompressed();
+
+    DynamicVector rhs = DynamicVector::Zero(n + m);
+    rhs.head(n) = equilibrium_rhs;
     Eigen::LSMR<SparseMatrix, Eigen::IdentityPreconditioner> solver;
     const Precision tolerance = std::max<Precision>(
-        Precision(1e-10), Precision(10) * std::numeric_limits<Precision>::epsilon());
+        Precision(1e-8), Precision(10) * std::numeric_limits<Precision>::epsilon());
     solver.setTolerance(tolerance);
     solver.setToleranceA(tolerance);
     solver.setToleranceB(tolerance);
-    solver.setDamping(std::sqrt(regularization));
-    solver.setMaxIterations(2000);
-    solver.compute(transpose);
+    solver.setMaxIterations(4000);
+    solver.compute(augmented);
     logging::error(solver.info() == Eigen::Success, "[LSMR] setup failed");
 
-    DynamicVector multipliers = solver.solve(equilibrium_rhs);
+    const DynamicVector scaled_solution = solver.solve(rhs);
+    DynamicVector multipliers = scale.cwiseProduct(scaled_solution);
     logging::info(true, "[LSMR] iterations: ", solver.iterations(),
                   ", estimated error: ", solver.error());
     logging::error(multipliers.allFinite(), "[LSMR] nonfinite multipliers");
+
+    // Check the original, unscaled equations independently of Eigen's estimate.
+    const DynamicVector residual = equilibrium_rhs - system_.C.transpose() * multipliers;
+    const DynamicVector normal_residual = system_.C * residual - regularization * multipliers;
+    const Precision rhs_norm = equilibrium_rhs.norm();
+    const Precision normal_rhs_norm = (system_.C * equilibrium_rhs).norm();
+    logging::error(residual.allFinite() && normal_residual.allFinite(),
+        "[LSMR] nonfinite recovery residual");
+    logging::info(true, "[LSMR] row norm range: ", std::sqrt(row_norm_squared.minCoeff()),
+                  " to ", std::sqrt(row_norm_squared.maxCoeff()));
+    logging::info(true, "[LSMR] regularization: ", regularization);
+    logging::info(true, "[LSMR] relative equilibrium residual: ",
+                  rhs_norm > Precision(0) ? residual.norm() / rhs_norm : residual.norm());
+    logging::info(true, "[LSMR] relative regularized normal residual: ",
+                  normal_rhs_norm > Precision(0)
+                      ? normal_residual.norm() / normal_rhs_norm : normal_residual.norm());
     logging::error(solver.info() == Eigen::Success,
         "[LSMR] multiplier recovery did not converge");
     return multipliers;
