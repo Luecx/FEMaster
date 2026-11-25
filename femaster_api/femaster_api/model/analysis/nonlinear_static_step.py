@@ -17,7 +17,7 @@ class NonlinearStaticStep:
     loads: tuple[LoadCollector, ...] = ()
     supports: tuple[SupportCollector, ...] = ()
     solver: SolverControl | None = None
-    constraint_method: ConstraintMethod | None = ConstraintMethod.NULLSPACE
+    constraint_method: ConstraintMethod | None = ConstraintMethod.ELIMINATION
     control: str = "LOAD"
     increments: int | None = None
     max_increments: int | None = None

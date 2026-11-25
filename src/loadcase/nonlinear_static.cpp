@@ -185,8 +185,8 @@ void NonlinearStatic::run() {
         "NONLINEARSTATIC requires SLOW_ITERATIONS >= FAST_ITERATIONS");
     logging::error(maximum_cutbacks > 0,
         "NONLINEARSTATIC requires MAXIMUM_CUTBACKS > 0");
-    logging::error(constraint_method == ConstraintTransformer::Method::NullSpace,
-        "NONLINEARSTATIC currently supports only NULLSPACE constraints");
+    logging::error(constraint_method != ConstraintTransformer::Method::Lagrange,
+        "NONLINEARSTATIC supports only NULLSPACE and ELIMINATION constraints");
     logging::error(method == solver::DIRECT,
         "NONLINEARSTATIC currently supports only DIRECT solver method");
     logging::error(model->_data->positions != nullptr,

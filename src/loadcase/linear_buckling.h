@@ -30,6 +30,7 @@
 #pragma once
 
 #include "loadcase.h"
+#include "../constraints/transformer/constraint_transformer.h"
 #include "../solve/sparse/solve_sparse.h"
 
 namespace fem { namespace loadcase {
@@ -57,6 +58,9 @@ struct LinearBuckling : public LoadCase {
     /// If non-empty, write geometric stiffness (Kg, B) here.
     /// Will be suffixed "_Kg.mtx", "_B.mtx".
     std::string geom_file;
+
+    using Method = constraint::ConstraintTransformer::Method;
+    Method constraint_method = Method::Elimination;
 
     // Solver selection
     solver::SolverDevice device = solver::CPU;

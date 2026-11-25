@@ -63,10 +63,10 @@ struct NonlinearStatic : public LoadCase {
     /**
      * @brief Method used to enforce linear constraints.
      *
-     * The default is a null-space transformation, i.e. the constrained problem
+     * The default is elimination, i.e. the constrained problem
      * is projected into an unconstrained reduced coordinate space.
      */
-    ConstraintMethod constraint_method = ConstraintMethod::NullSpace;
+    ConstraintMethod constraint_method = ConstraintMethod::Elimination;
 
     /**
      * @brief Nonlinear path control method.

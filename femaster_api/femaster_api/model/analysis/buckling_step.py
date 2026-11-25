@@ -19,6 +19,6 @@ class BucklingStep:
     number_of_modes: int = 10
     sigma: float | None = None
     solver: SolverControl | None = None
-    constraint_method: ConstraintMethod | None = ConstraintMethod.NULLSPACE
+    constraint_method: ConstraintMethod | None = ConstraintMethod.ELIMINATION
     request_stiffness: str | None = None
     request_stgeom: str | None = None

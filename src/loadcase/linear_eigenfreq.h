@@ -18,6 +18,7 @@
 #pragma once
 
 #include "loadcase.h"
+#include "../constraints/transformer/constraint_transformer.h"
 #include "../solve/sparse/solve_sparse.h"
 
 namespace fem {
@@ -43,6 +44,9 @@ struct LinearEigenfrequency : public LoadCase {
     bool      use_eigenvalue_range = false;
     Precision min_eigenvalue       = 0;
     Precision max_eigenvalue       = 0;
+
+    using Method = constraint::ConstraintTransformer::Method;
+    Method constraint_method = Method::Elimination;
 
     // Solver selection
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.

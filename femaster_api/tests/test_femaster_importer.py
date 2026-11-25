@@ -125,3 +125,28 @@ def test_writer_output_roundtrips_through_importer(tmp_path) -> None:
     assert len(imported.nodes) == 4
     assert len(imported.elements) == 1
     assert imported.elements[0].node_ids == (0, 1, 2, 3)
+
+
+def test_reduced_analysis_constraint_methods() -> None:
+    from femaster_api.model.analysis import ConstraintMethod
+    from femaster_api.export.serializers.analysis import write_steps
+
+    model = load_model_from_inp(
+        """
+        *LOADCASE, TYPE=EIGENFREQ, NAME=modal_default
+        *NUMEIGENVALUES
+        3
+        *END
+        *LOADCASE, TYPE=LINEARBUCKLING, NAME=buckling_override
+        *CONSTRAINTMETHOD, TYPE=NULLSPACE
+        *NUMEIGENVALUES
+        2
+        *END
+        *LOADCASE, TYPE=NONLINEARSTATIC, NAME=nonlinear_default
+        *END
+        """.splitlines()
+    )
+    expected = [ConstraintMethod.ELIMINATION, ConstraintMethod.NULLSPACE, ConstraintMethod.ELIMINATION]
+    assert [step.constraint_method for step in model.steps.all()] == expected
+    imported = load_model_from_inp(write_steps(model.steps).splitlines())
+    assert [step.constraint_method for step in imported.steps.all()] == expected

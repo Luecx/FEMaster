@@ -25,6 +25,7 @@
 #include "../src/loadcase/linear_static.h"
 #include "../src/loadcase/linear_eigenfreq.h"
 #include "../src/loadcase/linear_buckling.h"
+#include "../src/loadcase/linear_harmonic.h"
 #include "../src/loadcase/nonlinear_static.h"
 #include "../src/material/orthotropic_elasticity.h"
 #include "../src/material/strain/shell_material_strain.h"
@@ -874,4 +875,50 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     EXPECT_NEAR(shear(1, 1), 23.0, 1e-12);
     EXPECT_NEAR(shear(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(shear(1, 0), 0.0, 1e-12);
+}
+
+
+TEST(Reader_ConstraintMethod, ReducedAnalysisDefaults) {
+    using Method = constraint::ConstraintTransformer::Method;
+    EXPECT_EQ(loadcase::LinearStatic{}.constraint_method, Method::Elimination);
+    EXPECT_EQ(loadcase::LinearBuckling{}.constraint_method, Method::Elimination);
+    EXPECT_EQ(loadcase::LinearEigenfrequency{}.constraint_method, Method::Elimination);
+    EXPECT_EQ(loadcase::NonlinearStatic{}.constraint_method, Method::Elimination);
+    EXPECT_EQ(loadcase::LinearHarmonic{}.constraint_method, Method::Elimination);
+}
+
+TEST(Reader_ConstraintMethod, BucklingAndFrequencyAllowNullspaceOverride) {
+    using Method = constraint::ConstraintTransformer::Method;
+    for (const bool buckling : {true, false}) {
+        const std::string path = "tests/TMP_REDUCED_CONSTRAINT_METHOD.INP";
+        {
+            std::ofstream out(path);
+            ASSERT_TRUE(out.is_open());
+            out << "*STEP, PERTURBATION\n";
+            out << (buckling ? "*BUCKLE\n" : "*FREQUENCY\n");
+            out << "2\n*CONSTRAINTMETHOD, TYPE=NULLSPACE\n*END STEP\n";
+        }
+        io::reader::Parser parser;
+        io::dsl::File file(path);
+        io::dsl::DeckParser deck_parser(parser.registry());
+        const auto deck = deck_parser.parse(file);
+        const auto steps = deck.root().children("STEP");
+        ASSERT_EQ(steps.size(), 1u);
+        steps.front()->enter();
+        const auto procedures = steps.front()->children(buckling ? "BUCKLE" : "FREQUENCY");
+        ASSERT_EQ(procedures.size(), 1u);
+        procedures.front()->enter();
+        ASSERT_NE(parser.active_loadcase(), nullptr);
+        procedures.front()->execute_children("CONSTRAINTMETHOD");
+        if (buckling) {
+            auto* lc = parser.active_loadcase()->as<loadcase::LinearBuckling>();
+            ASSERT_NE(lc, nullptr);
+            EXPECT_EQ(lc->constraint_method, Method::NullSpace);
+        } else {
+            auto* lc = parser.active_loadcase()->as<loadcase::LinearEigenfrequency>();
+            ASSERT_NE(lc, nullptr);
+            EXPECT_EQ(lc->constraint_method, Method::NullSpace);
+        }
+        std::filesystem::remove(path);
+    }
 }
