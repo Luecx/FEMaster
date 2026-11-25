@@ -232,3 +232,39 @@ TEST(Constraints_Reactions, LsmrRedundantSupportAndMpc) {
     EXPECT_NEAR(reactions[0], -5.0, 1e-6);
     EXPECT_NEAR(reactions[1], 0.0, 1e-6);
 }
+
+
+// Right scaling must not alter the regularized solution in the original
+// multiplier coordinates when redundant equations use different scales.
+TEST(Constraints_Reactions, LsmrScaledRedundantSupportAndMpc) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 1.0}}, 0.0},
+        {{{0, 0, 10.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    equations[1].source = constraint::EquationSourceKind::Mpc;
+
+    model::SystemDofs dofs(2, 6);
+    dofs.activate(0, 0);
+    dofs.activate(1, 0);
+    dofs.numerate();
+
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 2, options);
+    ASSERT_EQ(transformer.rank(), 1);
+    ASSERT_EQ(transformer.system().equations, 2);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    const SparseMatrix K = eye(2);
+    DynamicVector f(2);
+    f << 10.0, 3.0;
+    DynamicVector q(1);
+    q << 3.0;
+
+    const DynamicVector reactions = transformer.support_reactions(K, f, q);
+    // In original coordinates, lambda = 10*[1,10]/(101+r).
+    EXPECT_NEAR(reactions[0], -10.0 / (101.0 + 1e-10), 1e-6);
+    EXPECT_NEAR(reactions[1], 0.0, 1e-6);
+}
