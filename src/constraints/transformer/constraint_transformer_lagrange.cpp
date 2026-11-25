@@ -20,11 +20,14 @@
 #include "../../mattools/append_sparse_block.h"
 #include "../../mattools/max_abs_diagonal.h"
 
-#include <Eigen/IterativeLinearSolvers>
+#include <Eigen/QR>
+#include <Eigen/SparseQR>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numeric>
+#include <vector>
 
 namespace fem {
 namespace constraint {
@@ -156,101 +159,219 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 }
 
 /**
- * Recover multipliers from C^T*lambda=f-K*u using damped LSMR.
+ * Recover support-connected multipliers from C^T*lambda = f-K*u.
  *
- * Right-scale the augmented least-squares operator [C^T; sqrt(r)*I]
- * by its inverse column norms. Scaling both blocks preserves the original
- * regularized objective and multiplier coordinates, including redundant rows.
- * Neither C*C^T nor a sparse factorization is constructed.
+ * Rows of C sharing a nonzero column belong to one connected component.
+ * Components without support rows cannot contribute to support reactions,
+ * even when equations are redundant. Solve the original regularized objective
+ * independently on the remaining components without forming C*C^T.
  */
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
                                                        const DynamicVector& u) const {
-    if (system_.equations == 0) {
-        return DynamicVector::Zero(0);
+    const Index m = system_.equations;
+    DynamicVector multipliers = DynamicVector::Zero(m);
+    if (m == 0) {
+        return multipliers;
+    }
+    logging::error(system_.row_sources.size() == static_cast<std::size_t>(m),
+        "[Support reactions] constraint source count mismatch");
+
+    const auto is_support = [&](Index row) {
+        return system_.row_sources[row] == EquationSourceKind::Support;
+    };
+    if (std::none_of(system_.row_sources.begin(), system_.row_sources.end(),
+                     [](EquationSourceKind source) { return source == EquationSourceKind::Support; })) {
+        return multipliers;
     }
 
     const DynamicVector equilibrium_rhs = f - K * u;
     logging::error(equilibrium_rhs.allFinite(),
-        "[LSMR] nonfinite equilibrium residual");
+        "[Support reactions] nonfinite equilibrium residual");
 
-    // diag(C*C^T) consists of squared row norms; compute it in O(nnz(C)).
-    DynamicVector row_norm_squared = DynamicVector::Zero(system_.equations);
+    // Union-find over constraint rows, with union by size and path compression.
+    // Each column induces a clique, but only a spanning star is needed.
+    std::vector<Index> parent(m);
+    std::vector<Index> size(m, 1);
+    std::iota(parent.begin(), parent.end(), Index(0));
+    const auto root = [&](Index row) {
+        while (parent[row] != row) {
+            parent[row] = parent[parent[row]];
+            row = parent[row];
+        }
+        return row;
+    };
+    const auto unite = [&](Index lhs, Index rhs) {
+        lhs = root(lhs);
+        rhs = root(rhs);
+        if (lhs == rhs) return;
+        if (size[lhs] < size[rhs]) std::swap(lhs, rhs);
+        parent[rhs] = lhs;
+        size[lhs] += size[rhs];
+    };
+
+    DynamicVector row_norm_squared = DynamicVector::Zero(m);
     for (Index column = 0; column < system_.C.outerSize(); ++column) {
+        Index first = m;
         for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
-            row_norm_squared[entry.row()] += entry.value() * entry.value();
+            if (entry.value() == Precision(0)) continue;
+            const Index row = entry.row();
+            row_norm_squared[row] += entry.value() * entry.value();
+            if (first == m) first = row;
+            else unite(first, row);
         }
     }
+    logging::error(row_norm_squared.allFinite(),
+        "[Support reactions] nonfinite constraint row norm");
+
+    // Preserve the previous global regularization convention, including
+    // for disconnected components with very different coefficient scales.
     Precision max_diagonal = row_norm_squared.maxCoeff();
-    if (!std::isfinite(max_diagonal) || max_diagonal <= Precision(0)) {
-        max_diagonal = Precision(1);
-    }
+    if (max_diagonal <= Precision(0)) max_diagonal = Precision(1);
     const Precision regularization = std::max<Precision>(
         Precision(1e-14), Precision(1e-12) * max_diagonal);
-
-    // A right scaling D must also act on the regularization block:
-    // min_y ||C^T D y - b||^2 + r ||D y||^2, lambda = D y.
-    // Using scalar LSMR damping after scaling would change the objective.
-    const DynamicVector scale =
-        (row_norm_squared.array() + regularization).sqrt().inverse().matrix();
-    logging::error(scale.allFinite() && (scale.array() > Precision(0)).all(),
-        "[LSMR] invalid column scaling");
-
     const Precision damping = std::sqrt(regularization);
-    const Index n = system_.dofs;
-    const Index m = system_.equations;
-    SparseMatrix augmented(n + m, m);
-    {
-        TripletList entries;
-        entries.reserve(static_cast<std::size_t>(system_.C.nonZeros()) +
-                        static_cast<std::size_t>(m));
-        for (Index column = 0; column < system_.C.outerSize(); ++column) {
-            for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
-                entries.emplace_back(column, entry.row(), entry.value() * scale[entry.row()]);
-            }
-        }
-        for (Index row = 0; row < m; ++row) {
-            entries.emplace_back(n + row, row, damping * scale[row]);
-        }
-        augmented.setFromTriplets(entries.begin(), entries.end());
+
+    std::vector<char> has_support(m, false);
+    for (Index row = 0; row < m; ++row) {
+        parent[row] = root(row);
+        if (is_support(row)) has_support[parent[row]] = true;
     }
-    augmented.makeCompressed();
 
-    DynamicVector rhs = DynamicVector::Zero(n + m);
-    rhs.head(n) = equilibrium_rhs;
-    Eigen::LSMR<SparseMatrix, Eigen::IdentityPreconditioner> solver;
-    const Precision tolerance = std::max<Precision>(
-        Precision(1e-8), Precision(10) * std::numeric_limits<Precision>::epsilon());
-    solver.setTolerance(tolerance);
-    solver.setToleranceA(tolerance);
-    solver.setToleranceB(tolerance);
-    solver.setMaxIterations(4000);
-    solver.compute(augmented);
-    logging::error(solver.info() == Eigen::Success, "[LSMR] setup failed");
+    struct Component {
+        std::vector<Index> rows;
+        std::vector<Precision> rhs;
+        TripletList entries;
+    };
+    std::vector<Component> blocks;
+    std::vector<Index> block_id(m, m);
+    std::vector<Index> local_row(m, m);
+    Index component_count = 0;
+    Index support_components = 0;
+    Index selected_rows = 0;
+    Index singleton_count = 0;
+    Index largest_component = 0;
 
-    const DynamicVector scaled_solution = solver.solve(rhs);
-    DynamicVector multipliers = scale.cwiseProduct(scaled_solution);
-    logging::info(true, "[LSMR] iterations: ", solver.iterations(),
-                  ", estimated error: ", solver.error());
-    logging::error(multipliers.allFinite(), "[LSMR] nonfinite multipliers");
+    for (Index row = 0; row < m; ++row) {
+        if (parent[row] != row) continue;
+        ++component_count;
+        if (!has_support[row]) continue;
+        ++support_components;
+        selected_rows += size[row];
+        largest_component = std::max(largest_component, size[row]);
+        if (size[row] == 1) {
+            ++singleton_count;
+            continue;
+        }
+        block_id[row] = static_cast<Index>(blocks.size());
+        blocks.emplace_back();
+        blocks.back().rows.reserve(size[row]);
+    }
 
-    // Check the original, unscaled equations independently of Eigen's estimate.
-    const DynamicVector residual = equilibrium_rhs - system_.C.transpose() * multipliers;
-    const DynamicVector normal_residual = system_.C * residual - regularization * multipliers;
-    const Precision rhs_norm = equilibrium_rhs.norm();
-    const Precision normal_rhs_norm = (system_.C * equilibrium_rhs).norm();
-    logging::error(residual.allFinite() && normal_residual.allFinite(),
-        "[LSMR] nonfinite recovery residual");
-    logging::info(true, "[LSMR] row norm range: ", std::sqrt(row_norm_squared.minCoeff()),
-                  " to ", std::sqrt(row_norm_squared.maxCoeff()));
-    logging::info(true, "[LSMR] regularization: ", regularization);
-    logging::info(true, "[LSMR] relative equilibrium residual: ",
-                  rhs_norm > Precision(0) ? residual.norm() / rhs_norm : residual.norm());
-    logging::info(true, "[LSMR] relative regularized normal residual: ",
-                  normal_rhs_norm > Precision(0)
-                      ? normal_residual.norm() / normal_rhs_norm : normal_residual.norm());
-    logging::error(solver.info() == Eigen::Success,
-        "[LSMR] multiplier recovery did not converge");
+    for (Index row = 0; row < m; ++row) {
+        const Index id = block_id[parent[row]];
+        if (id == m) continue;
+        auto& block = blocks[id];
+        local_row[row] = static_cast<Index>(block.rows.size());
+        block.rows.push_back(row);
+    }
+
+    logging::info(true, "[Support reactions] components: ", component_count,
+                  ", with supports: ", support_components,
+                  ", singleton: ", singleton_count);
+    logging::info(true, "[Support reactions] selected rows: ", selected_rows,
+                  " / ", m, ", largest selected component: ", largest_component);
+
+    // Extract compact local operators directly from C's column-major storage.
+    // Each nonzero column belongs to exactly one component. Singleton support
+    // rows use the closed form lambda = C_i*b/(||C_i||^2 + regularization).
+    for (Index column = 0; column < system_.C.outerSize(); ++column) {
+        Index local_dof = 0;
+        bool added_column = false;
+        for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
+            if (entry.value() == Precision(0)) continue;
+            const Index row = entry.row();
+            const Index representative = parent[row];
+            if (!has_support[representative]) break;
+            if (size[representative] == 1) {
+                multipliers[row] += entry.value() * equilibrium_rhs[column];
+                break;
+            }
+
+            auto& block = blocks[block_id[representative]];
+            if (!added_column) {
+                local_dof = static_cast<Index>(block.rhs.size());
+                block.rhs.push_back(equilibrium_rhs[column]);
+                added_column = true;
+            }
+            // Store A = C_local^T, scaled by inverse augmented column norms.
+            const Precision scale = Precision(1) /
+                std::sqrt(row_norm_squared[row] + regularization);
+            block.entries.emplace_back(local_dof, local_row[row], entry.value() * scale);
+        }
+    }
+
+    for (Index row = 0; row < m; ++row) {
+        if (has_support[parent[row]] && size[parent[row]] == 1) {
+            multipliers[row] /= row_norm_squared[row] + regularization;
+        }
+    }
+
+    Index dense_solves = 0;
+    Index sparse_solves = 0;
+    Index largest_dof_count = 0;
+    for (auto& block : blocks) {
+        const Index n_local = static_cast<Index>(block.rhs.size());
+        const Index m_local = static_cast<Index>(block.rows.size());
+        largest_dof_count = std::max(largest_dof_count, n_local);
+
+        // Right scaling both blocks keeps the original Tikhonov objective:
+        // min_y ||C_local^T D y-b||^2 + regularization*||D y||^2.
+        DynamicVector scale(m_local);
+        for (Index i = 0; i < m_local; ++i) {
+            scale[i] = Precision(1) /
+                std::sqrt(row_norm_squared[block.rows[i]] + regularization);
+            block.entries.emplace_back(n_local + i, i, damping * scale[i]);
+        }
+
+        DynamicVector rhs = DynamicVector::Zero(n_local + m_local);
+        for (Index i = 0; i < n_local; ++i) rhs[i] = block.rhs[i];
+
+        DynamicVector y;
+        if (m_local <= 32 && n_local <= 256) {
+            // Avoid sparse ordering/factorization overhead for tiny components.
+            ++dense_solves;
+            DynamicMatrix A = DynamicMatrix::Zero(n_local + m_local, m_local);
+            for (const auto& entry : block.entries) {
+                A(entry.row(), entry.col()) += entry.value();
+            }
+            y = A.householderQr().solve(rhs);
+        } else {
+            ++sparse_solves;
+            SparseMatrix A(n_local + m_local, m_local);
+            A.setFromTriplets(block.entries.begin(), block.entries.end());
+            A.makeCompressed();
+            Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
+            qr.setPivotThreshold(Precision(0));
+            qr.compute(A);
+            logging::error(qr.info() == Eigen::Success &&
+                           static_cast<Index>(qr.rank()) == m_local,
+                "[Support reactions] local SparseQR factorization failed");
+            y = qr.solve(rhs);
+            logging::error(qr.info() == Eigen::Success,
+                "[Support reactions] local SparseQR solve failed");
+        }
+        logging::error(y.allFinite(), "[Support reactions] nonfinite local solution");
+        for (Index i = 0; i < m_local; ++i) {
+            multipliers[block.rows[i]] = scale[i] * y[i];
+        }
+        // Release each component's assembly storage after solving it.
+        block = Component{};
+    }
+    logging::error(multipliers.allFinite(), "[Support reactions] nonfinite multipliers");
+    logging::info(true, "[Support reactions] dense QR solves: ", dense_solves,
+                  ", sparse QR solves: ", sparse_solves,
+                  ", largest QR component DOFs: ", largest_dof_count);
     return multipliers;
 }
 
