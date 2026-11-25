@@ -70,6 +70,7 @@ def _write_topology_static(step: TopologyStaticStep) -> str:
 def _write_modal(step: ModalStep) -> str:
     lines = [keyword("LOADCASE", TYPE="EIGENFREQ", NAME=step.name)]
     _write_supports(lines, step.supports)
+    _write_constraint_method(lines, step)
     lines.append(keyword("NUMEIGENVALUES"))
     lines.append(csv((step.number_of_modes,)))
     return block(lines)
@@ -80,6 +81,7 @@ def _write_buckling(step: BucklingStep) -> str:
     _write_supports(lines, step.supports)
     _write_loads(lines, step.loads)
     _write_solver(lines, step)
+    _write_constraint_method(lines, step)
     lines.append(keyword("NUMEIGENVALUES"))
     lines.append(csv((step.number_of_modes,)))
     if step.sigma is not None:

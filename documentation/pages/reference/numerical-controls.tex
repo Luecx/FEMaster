@@ -70,7 +70,7 @@ when used inside an Abaqus-compatible \cmd{STEP}.
 \[
 Cu=d
 \]
-are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Linear static, topology-static and steady-state heat-transfer analyses default to \val{ELIMINATION}; nonlinear and harmonic analyses retain \val{NULLSPACE} and currently support only that method. In heat transfer, the equations constrain the scalar nodal temperatures.
+are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Linear static, topology-static, nonlinear static, buckling, eigenfrequency, harmonic and steady-state heat-transfer analyses default to \val{ELIMINATION}. Nonlinear static, buckling, eigenfrequency and harmonic support \val{NULLSPACE} and \val{ELIMINATION}, but not \val{LAGRANGE}. Linear transient currently retains its fixed nullspace transformation. In heat transfer, the equations constrain the scalar nodal temperatures.
 
 \paragraph*{Nullspace projection}
 

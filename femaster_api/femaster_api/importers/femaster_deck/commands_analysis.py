@@ -54,7 +54,7 @@ def cmd_loadcase(parser, header: Header) -> None:
         "supports": (),
         "solver": None,
         "constraint_method": (
-            ConstraintMethod.ELIMINATION if lc_type in {"LINEARSTATIC", "LINEARSTATICTOPO"}
+            ConstraintMethod.ELIMINATION if lc_type in {"LINEARSTATIC", "LINEARSTATICTOPO", "NONLINEARSTATIC", "EIGENFREQ", "LINEARBUCKLING"}
             else ConstraintMethod.NULLSPACE
         ),
         "inertia_relief": False,
@@ -110,10 +110,12 @@ def _parse_loadcase_subcommand(parser, lc_type: str, state: dict, header: Header
             SolverMethod[header.params.get("METHOD", "DIRECT").upper()],
         )
     elif keyword == "CONSTRAINTMETHOD":
-        if lc_type not in {"LINEARSTATIC", "LINEARSTATICTOPO", "NONLINEARSTATIC"}:
+        if lc_type not in {"LINEARSTATIC", "LINEARSTATICTOPO", "NONLINEARSTATIC", "EIGENFREQ", "LINEARBUCKLING"}:
             raise FEMasterInputError("*CONSTRAINTMETHOD is not supported for this loadcase type")
         _reject_data(parser, "*CONSTRAINTMETHOD")
         state["constraint_method"] = ConstraintMethod[header.params.get("TYPE", state["constraint_method"].value).upper()]
+        if lc_type in {"NONLINEARSTATIC", "EIGENFREQ", "LINEARBUCKLING"} and state["constraint_method"] == ConstraintMethod.LAGRANGE:
+            raise FEMasterInputError(f"*CONSTRAINTMETHOD, TYPE=LAGRANGE is not supported for {lc_type}")
     elif keyword == "INERTIARELIEF":
         _require(lc_type == "LINEARSTATIC", "*INERTIARELIEF only valid for LINEARSTATIC")
         _reject_data(parser, "*INERTIARELIEF")
@@ -209,7 +211,7 @@ def _make_step(lc_type: str, state: dict):
             state["constraint_method"],
         )
     if lc_type == "EIGENFREQ":
-        return ModalStep(state["name"], state["supports"], state["number_of_modes"])
+        return ModalStep(state["name"], state["supports"], state["number_of_modes"], state["constraint_method"])
     if lc_type == "LINEARBUCKLING":
         return BucklingStep(
             state["name"],
@@ -218,7 +220,7 @@ def _make_step(lc_type: str, state: dict):
             state["number_of_modes"],
             state["sigma"],
             state["solver"],
-            None,
+            state["constraint_method"],
             state["request_stiffness"],
             state["request_stgeom"],
         )

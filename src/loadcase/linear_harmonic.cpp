@@ -259,8 +259,8 @@ void LinearHarmonic::run() {
             return std::isfinite(frequency) && frequency >= 0.0;
         }),
         "LinearHarmonic: frequencies must be finite and non-negative");
-    logging::error(constraint_method == ConstraintTransformer::Method::NullSpace,
-        "LinearHarmonic: only NULLSPACE constraints are currently supported");
+    logging::error(constraint_method != ConstraintTransformer::Method::Lagrange,
+        "LinearHarmonic: only NULLSPACE and ELIMINATION constraints are supported");
     logging::error(method == solver::DIRECT,
         "LinearHarmonic: only DIRECT solver method is currently supported");
 

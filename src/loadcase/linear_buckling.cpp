@@ -118,6 +118,9 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
  * stress recovery and geometric-stiffness assembly for the eigenproblem.
  */
 void LinearBuckling::run() {
+    logging::error(constraint_method != ConstraintTransformer::Method::Lagrange,
+        "LinearBuckling: only NULLSPACE and ELIMINATION constraints are supported");
+
     // Apply step-specific defaults only when no output variables were requested
     if (output.empty()) {
         using io::writer::OutputField;
@@ -201,6 +204,7 @@ void LinearBuckling::run() {
     auto CT = Timer::measure(
         [&]() {
             ConstraintTransformer::Options copt;
+            copt.method = constraint_method;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 system_dofs,          // system DOF map
@@ -218,6 +222,7 @@ void LinearBuckling::run() {
     logging::info(true, "m (rows of C)     : ", CT->report().equations);
     logging::info(true, "n (cols of C)     : ", CT->report().dofs);
     logging::info(true, "rank(C)           : ", CT->rank());
+    logging::info(true, "method            : ", CT->method_name());
     logging::info(true, "solver unknowns   : ", CT->unknowns());
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");

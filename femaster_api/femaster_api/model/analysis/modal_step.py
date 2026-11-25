@@ -14,4 +14,4 @@ class ModalStep:
     name: str
     supports: tuple[SupportCollector, ...] = ()
     number_of_modes: int = 10
-    constraint_method: ConstraintMethod | None = ConstraintMethod.NULLSPACE
+    constraint_method: ConstraintMethod | None = ConstraintMethod.ELIMINATION

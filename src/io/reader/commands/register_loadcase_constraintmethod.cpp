@@ -23,6 +23,8 @@
 
 #include "../parser.h"
 
+#include "../../../loadcase/linear_buckling.h"
+#include "../../../loadcase/linear_eigenfreq.h"
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
@@ -35,7 +37,8 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
         command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS", "HEATTRANSFER"}));
         command.doc(
             "Select constraint backend for supported structural loadcases: NULLSPACE, LAGRANGE or ELIMINATION.\n"
-            "LINEARHARMONIC currently accepts only NULLSPACE during execution.\n"
+            "ELIMINATION is the default for static, topology-static, nonlinear, buckling, eigenfrequency, harmonic and steady-state heat transfer.\n"
+            "Nonlinear, buckling, eigenfrequency and harmonic accept only NULLSPACE or ELIMINATION.\n"
             "\n"
             "Constraint | Backend   | DIRECT       | INDIRECT\n"
             "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
@@ -79,10 +82,26 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
                 return;
             }
             if (auto* lc = base->as<loadcase::NonlinearStatic>()) {
+                logging::error(method != constraint::ConstraintTransformer::Method::Lagrange,
+                    "CONSTRAINTMETHOD: LAGRANGE not supported for " + base->type_name());
                 lc->constraint_method = method;
                 return;
             }
             if (auto* lc = base->as<loadcase::LinearHarmonic>()) {
+                logging::error(method != constraint::ConstraintTransformer::Method::Lagrange,
+                    "CONSTRAINTMETHOD: LAGRANGE not supported for " + base->type_name());
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = base->as<loadcase::LinearBuckling>()) {
+                logging::error(method != constraint::ConstraintTransformer::Method::Lagrange,
+                    "CONSTRAINTMETHOD: LAGRANGE not supported for " + base->type_name());
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = base->as<loadcase::LinearEigenfrequency>()) {
+                logging::error(method != constraint::ConstraintTransformer::Method::Lagrange,
+                    "CONSTRAINTMETHOD: LAGRANGE not supported for " + base->type_name());
                 lc->constraint_method = method;
                 return;
             }

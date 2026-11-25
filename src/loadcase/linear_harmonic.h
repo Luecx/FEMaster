@@ -59,7 +59,7 @@ struct LinearHarmonic : public LoadCase {
 
     // Homogeneous supports are reduced by the null-space transformation
     constraint::ConstraintTransformer::Method constraint_method =
-        constraint::ConstraintTransformer::Method::NullSpace;
+        constraint::ConstraintTransformer::Method::Elimination;
 
     // Rayleigh damping coefficients and optional modal residual reduction
     tools::RayleighDamping damping;
