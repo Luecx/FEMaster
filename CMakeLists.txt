@@ -34,7 +34,7 @@ option(FEMASTER_TIME_REPORT "Enable compiler timing diagnostics where supported"
 
 set(FEMASTER_CUDSS_ROOT "$ENV{CUDSS_DIR}" CACHE PATH "Root of an NVIDIA cuDSS installation")
 
-set(FEMASTER_EIGEN_VERSION "5.0.1")
+set(FEMASTER_EIGEN_VERSION "master")
 set(FEMASTER_SPECTRA_VERSION "v1.2.0")
 set(FEMASTER_ARGPARSE_VERSION "v3.2")
 set(FEMASTER_LZ4_VERSION "v1.10.0")
