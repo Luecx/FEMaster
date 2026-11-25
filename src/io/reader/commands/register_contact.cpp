@@ -27,7 +27,7 @@ namespace fem::io::reader::commands {
 
 void register_contact(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("CONTACT", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("MASTER").required()
@@ -40,20 +40,24 @@ void register_contact(fem::io::dsl::Registry& registry, model::Model& model) {
             const std::string master = keys.raw("MASTER");
             const std::string slave  = keys.raw("SLAVE");
 
-            logging::error(model._data->compiled,
-                "CONTACT: constraints require a compiled model");
-            logging::error(model._data->surface_sets.has(master),
+            // Part-scoped contacts run before compile() and stay part-local
+            const bool local        = !model._data->compiled;
+            const auto part         = model._data->parts.get();
+            auto&      surface_sets = local ? part->surface_sets : model._data->surface_sets;
+            auto&      contacts     = local ? part->contacts     : model._data->contacts;
+
+            logging::error(surface_sets.has(master),
                 "CONTACT: master surface set ", master, " does not exist");
-            logging::error(model._data->surface_sets.get(master) && model._data->surface_sets.get(master)->size() > 0,
+            logging::error(surface_sets.get(master) && surface_sets.get(master)->size() > 0,
                 "CONTACT: master surface set ", master, " is empty");
-            logging::error(model._data->surface_sets.has(slave),
+            logging::error(surface_sets.has(slave),
                 "CONTACT: slave surface set ", slave, " does not exist");
-            logging::error(model._data->surface_sets.get(slave) && model._data->surface_sets.get(slave)->size() > 0,
+            logging::error(surface_sets.get(slave) && surface_sets.get(slave)->size() > 0,
                 "CONTACT: slave surface set ", slave, " is empty");
 
-            model._data->contacts.emplace_back(
-                model._data->surface_sets.get(master),
-                model._data->surface_sets.get(slave),
+            contacts.emplace_back(
+                surface_sets.get(master),
+                surface_sets.get(slave),
                 keys.get<Precision>("PENALTY"),
                 keys.get<Precision>("CLEARANCE"),
                 keys.get<bool>("FLIP")

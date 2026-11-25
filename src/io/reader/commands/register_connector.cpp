@@ -47,8 +47,9 @@ namespace dsl = fem::io::dsl;
  */
 void register_connector(dsl::Registry& registry, model::Model& model) {
     registry.command("CONNECTOR", [&](dsl::Command& command) {
-        // Connector endpoints use compiled assembly node sets at root scope
-        command.allow_if(dsl::Condition::parent_is("ROOT"));
+        // Connector endpoints use part-local node sets in PART scope and compiled
+        // assembly node sets at ROOT and ASSEMBLY scope
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
 
         // Expose the supported formulations and endpoint requirements in the registry documentation
         command.doc(
@@ -89,21 +90,25 @@ void register_connector(dsl::Registry& registry, model::Model& model) {
                 connector_type = constraint::ConnectorType::JoinRx;
             }
 
-            // Validate the compiled state, formulation and referenced definitions
-            logging::error(model._data->compiled,
-                "CONNECTOR: constraints require a compiled model");
+            // Part-scoped connectors run before compile() and stay part-local
+            const bool local      = !model._data->compiled;
+            const auto part       = model._data->parts.get();
+            auto&      node_sets  = local ? part->node_sets  : model._data->node_sets;
+            auto&      connectors = local ? part->connectors : model._data->connectors;
+
+            // Validate the formulation and referenced definitions
             logging::error(connector_type != constraint::ConnectorType::None,
                 "CONNECTOR: unsupported type ", type);
-            logging::error(model._data->node_sets.has(node_set_1_name),
+            logging::error(node_sets.has(node_set_1_name),
                 "CONNECTOR: node set ", node_set_1_name, " does not exist");
-            logging::error(model._data->node_sets.has(node_set_2_name),
+            logging::error(node_sets.has(node_set_2_name),
                 "CONNECTOR: node set ", node_set_2_name, " does not exist");
             logging::error(model._data->coordinate_systems.has(coordinate_system_name),
                 "CONNECTOR: coordinate system ", coordinate_system_name, " does not exist");
 
             // Resolve the validated references once for cardinality checks and construction
-            const auto node_set_1        = model._data->node_sets.get(node_set_1_name);
-            const auto node_set_2        = model._data->node_sets.get(node_set_2_name);
+            const auto node_set_1        = node_sets.get(node_set_1_name);
+            const auto node_set_2        = node_sets.get(node_set_2_name);
             const auto coordinate_system = model._data->coordinate_systems.get(coordinate_system_name);
 
             logging::error(node_set_1 != nullptr && node_set_1->size() == 1,
@@ -112,7 +117,7 @@ void register_connector(dsl::Registry& registry, model::Model& model) {
                 "CONNECTOR: node set ", node_set_2_name, " must contain exactly one node");
 
             // Store the connector; equation construction is deferred to constraint collection
-            model._data->connectors.emplace_back(
+            connectors.emplace_back(
                 node_set_1->first(),
                 node_set_2->first(),
                 coordinate_system,

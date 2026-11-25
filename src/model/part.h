@@ -5,8 +5,8 @@
  * A `Part` owns local topology, named regions and section assignments that may
  * be instantiated multiple times in one `Model`. Node and element identifiers
  * are local to the part and therefore need not form dense ranges. Surfaces and
- * lines retain the same local node connectivity, while sections reference local
- * element regions.
+ * lines retain the same local node connectivity, while sections and constraints
+ * reference local nodes and regions.
  *
  * `Instance` adds only placement information and never duplicates the part
  * definition. `Model::compile()` expands every instance into the dense,
@@ -22,6 +22,14 @@
 
 #pragma once
 
+#include "../constraints/types/connector.h"
+#include "../constraints/types/contact.h"
+#include "../constraints/types/coupling.h"
+#include "../constraints/types/equation.h"
+#include "../constraints/types/mpc.h"
+#include "../constraints/types/rbm.h"
+#include "../constraints/types/rigid_body.h"
+#include "../constraints/types/tie.h"
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
 #include "../core/namable.h"
@@ -81,6 +89,17 @@ struct Part : public fem::Namable {
     // receives an independent compiled section whose region and any spatial
     // properties are transformed or remapped into assembly space.
     std::vector<Section::Ptr> sections;
+
+    // Constraints defined on local nodes and regions. Every instance receives
+    // an independent copy remapped into assembly space by Model::compile().
+    std::vector<constraint::Connector> connectors;
+    std::vector<constraint::Mpc>       mpcs;
+    std::vector<constraint::Coupling>  couplings;
+    std::vector<constraint::RigidBody> rigid_bodies;
+    std::vector<constraint::Tie>       ties;
+    std::vector<constraint::Contact>   contacts;
+    std::vector<constraint::Rbm>       rbms;
+    std::vector<constraint::Equation>  equations;
 
     // Construction of an empty named part. Topology, regions and sections are
     // populated by the parser or public model interface before the one-way model

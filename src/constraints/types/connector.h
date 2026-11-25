@@ -22,6 +22,7 @@
 
 namespace fem {
 namespace model {
+struct Model;
 struct ModelData;
 }
 }
@@ -50,6 +51,9 @@ enum ConnectorType : int {
  * @brief Couples two nodes according to a connector type and local frame.
  */
 class Connector {
+    // Model::compile() remaps part-local copies into assembly space
+    friend struct model::Model;
+
     fem::cos::CoordinateSystem::Ptr coordinate_system_; ///< Local coordinate system for projection.
     ConnectorType connector_type_; ///< Connector type describing constrained DOFs.
     Dofs constrained_dofs_;        ///< Per-DOF constraint mask.

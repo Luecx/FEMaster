@@ -58,15 +58,13 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
 
         auto ctx = std::make_shared<Context>();
 
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.doc("Define Abaqus linear constraint equations.");
 
-        // EQUATION is interpreted after topology compilation, so all node and NSET
-        // references can be resolved immediately into the global assembly namespace.
-        command.on_enter([&model, ctx](const fem::io::dsl::Keys&) {
-            logging::error(model._data->compiled,
-                "EQUATION: requires a compiled model");
-
+        // ROOT/ASSEMBLY equations are interpreted after compilation and resolve
+        // into the assembly namespace. PART equations run before compilation and
+        // stay in the local namespace of the active part.
+        command.on_enter([ctx](const fem::io::dsl::Keys&) {
             ctx->remaining    = 0;
             ctx->first_is_set = false;
             ctx->equations.clear();
@@ -112,6 +110,10 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                     logging::error(ctx->remaining > 0,
                         "EQUATION: term data provided before term count");
 
+                    const bool local     = !model._data->compiled;
+                    const auto part      = model._data->parts.get();
+                    auto&      node_sets = local ? part->node_sets : model._data->node_sets;
+
                     Index terms_on_line = 0;
 
                     for (std::size_t i = 0; i < data.size() && !data[i].empty(); i += 3) {
@@ -138,13 +140,13 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                             "EQUATION: coefficient must be finite");
 
                         const Dim  equation_dof = static_cast<Dim>(dof - 1);
-                        const bool is_set       = model._data->node_sets.has(data[i]);
+                        const bool is_set       = node_sets.has(data[i]);
 
                         if (ctx->equations.empty()) {
                             ctx->first_is_set = is_set;
 
                             if (is_set) {
-                                const auto set = model._data->node_sets.get(data[i]);
+                                const auto set = node_sets.get(data[i]);
                                 logging::error(set != nullptr && set->size() > 0,
                                     "EQUATION: first node set is empty");
 
@@ -155,14 +157,14 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                             } else {
                                 ctx->equations.resize(1);
                                 ctx->equations[0].entries.push_back({
-                                    model.compiled_node_id(data[i]), equation_dof, coefficient
+                                    model.node_id(data[i]), equation_dof, coefficient
                                 });
                             }
                         } else if (is_set) {
                             logging::error(ctx->first_is_set,
                                 "EQUATION: node sets are only valid when the first target is a node set");
 
-                            const auto set = model._data->node_sets.get(data[i]);
+                            const auto set = node_sets.get(data[i]);
                             logging::error(set != nullptr && set->size() == ctx->equations.size(),
                                 "EQUATION: node set ", data[i], " has incompatible size");
 
@@ -170,7 +172,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                                 ctx->equations[j].entries.push_back({set->at(j), equation_dof, coefficient});
                             }
                         } else {
-                            const ID node = model.compiled_node_id(data[i]);
+                            const ID node = model.node_id(data[i]);
                             for (auto& equation : ctx->equations) {
                                 equation.entries.push_back({node, equation_dof, coefficient});
                             }
@@ -185,9 +187,10 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                     ctx->remaining -= terms_on_line;
                     if (ctx->remaining != 0) return;
 
+                    auto& equations = local ? part->equations : model._data->equations;
                     for (auto& equation : ctx->equations) {
                         equation.source = constraint::EquationSourceKind::Manual;
-                        model._data->equations.push_back(std::move(equation));
+                        equations.push_back(std::move(equation));
                     }
                     ctx->equations.clear();
                 })
