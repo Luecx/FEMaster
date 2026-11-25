@@ -1077,8 +1077,7 @@ void FrdWriter::write_field(const model::Field& field,
     }
 
     const bool nodal = field.domain == model::FieldDomain::NODE;
-    const bool element_nodal = field.domain == model::FieldDomain::ELEMENT_NODAL
-        && field_name.rfind("ELEMENT_NODAL_", 0) == 0;
+    const bool element_nodal = field.domain == model::FieldDomain::ELEMENT_NODAL;
 
     if (!nodal && !element_nodal) return;
 
