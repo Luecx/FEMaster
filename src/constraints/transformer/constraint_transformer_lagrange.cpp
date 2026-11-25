@@ -20,11 +20,11 @@
 #include "../../mattools/append_sparse_block.h"
 #include "../../mattools/max_abs_diagonal.h"
 
-#include <Eigen/SparseCholesky>
-#include <Eigen/SparseQR>
+#include <Eigen/IterativeLinearSolvers>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace fem {
 namespace constraint {
@@ -156,19 +156,12 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 }
 
 /**
- * Recovers multipliers satisfying C^T*lambda=f-K*u in full-system coordinates.
+ * Recover multipliers from C^T*lambda=f-K*u using damped LSMR.
  *
- * Solve the regularized normal equations (C*C^T+r*I)*lambda=C*(f-K*u)
- * using sparse LDLT. Scale r from the largest absolute normal-matrix diagonal
- * with a unit fallback for an unusable scale. If factorization or finite
- * solution recovery fails, solve C^T*lambda=f-K*u through sparse QR instead.
- * An unconstrained system returns an empty vector. Inputs and transformer
- * state are unchanged.
- *
- * @param K Full-system structural stiffness.
- * @param f Full-system external force vector.
- * @param u Full-system displacement vector.
- * @return Multipliers in the original, unscaled constraint row coordinates.
+ * The damping squared matches the previous normal-equation regularization,
+ * but neither C*C^T nor a sparse factorization is constructed. Identity
+ * preconditioning preserves the original multiplier coordinates even for
+ * redundant constraints.
  */
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
@@ -178,42 +171,42 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
     }
 
     const DynamicVector equilibrium_rhs = f - K * u;
-    const DynamicVector normal_rhs      = system_.C * equilibrium_rhs;
+    logging::error(equilibrium_rhs.allFinite(),
+        "[LSMR] nonfinite equilibrium residual");
 
-    SparseMatrix normal = system_.C * system_.C.transpose();
-    normal.makeCompressed();
-
-    // Measure the diagonal scale; retain the local fallback for unusable values.
-    Precision max_diagonal = mattools::max_abs_diagonal(normal);
+    // diag(C*C^T) consists of squared row norms; compute it in O(nnz(C)).
+    DynamicVector row_norm_squared = DynamicVector::Zero(system_.equations);
+    for (Index column = 0; column < system_.C.outerSize(); ++column) {
+        for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
+            row_norm_squared[entry.row()] += entry.value() * entry.value();
+        }
+    }
+    Precision max_diagonal = row_norm_squared.maxCoeff();
     if (!std::isfinite(max_diagonal) || max_diagonal <= Precision(0)) {
         max_diagonal = Precision(1);
     }
-
     const Precision regularization = std::max<Precision>(
-        Precision(1e-14),
-        Precision(1e-12) * max_diagonal
-    );
-    for (Index row = 0; row < system_.equations; ++row) {
-        normal.coeffRef(row, row) += regularization;
-    }
-    normal.makeCompressed();
-
-    Eigen::SimplicialLDLT<SparseMatrix> ldlt{};
-    ldlt.compute(normal);
-    if (ldlt.info() == Eigen::Success) {
-        DynamicVector multipliers = ldlt.solve(normal_rhs);
-        if (ldlt.info() == Eigen::Success && multipliers.allFinite()) {
-            return multipliers;
-        }
-    }
+        Precision(1e-14), Precision(1e-12) * max_diagonal);
 
     const SparseMatrix transpose = system_.C.transpose();
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr{};
-    qr.setPivotThreshold(Precision(0));
-    qr.compute(transpose);
-    logging::error(qr.info() == Eigen::Success,
-        "[Lagrange] QR(C^T) factorization failed");
-    return qr.solve(equilibrium_rhs);
+    Eigen::LSMR<SparseMatrix, Eigen::IdentityPreconditioner> solver;
+    const Precision tolerance = std::max<Precision>(
+        Precision(1e-10), Precision(10) * std::numeric_limits<Precision>::epsilon());
+    solver.setTolerance(tolerance);
+    solver.setToleranceA(tolerance);
+    solver.setToleranceB(tolerance);
+    solver.setDamping(std::sqrt(regularization));
+    solver.setMaxIterations(2000);
+    solver.compute(transpose);
+    logging::error(solver.info() == Eigen::Success, "[LSMR] setup failed");
+
+    DynamicVector multipliers = solver.solve(equilibrium_rhs);
+    logging::info(true, "[LSMR] iterations: ", solver.iterations(),
+                  ", estimated error: ", solver.error());
+    logging::error(multipliers.allFinite(), "[LSMR] nonfinite multipliers");
+    logging::error(solver.info() == Eigen::Success,
+        "[LSMR] multiplier recovery did not converge");
+    return multipliers;
 }
 
 DynamicVector ConstraintTransformer::support_constraint_forces(const DynamicVector& multipliers,
