@@ -1,3 +1,4 @@
+#include "../src/mattools/extract_connected_rows.h"
 #include "../src/mattools/mask_field.h"
 #include "../src/model/system_dofs.h"
 
@@ -94,4 +95,36 @@ TEST(MattoolsMaskField, KeepsSelectedEntriesAndMasksTheRest) {
     EXPECT_TRUE(std::isnan(masked(1, 0)));
     EXPECT_EQ(masked(1, 1), Precision(5));
     EXPECT_TRUE(std::isnan(masked(1, 2)));
+}
+
+
+// Rows 0-1-2 form a chain over shared columns, row 3 is isolated and row 4
+// only touches row 3. Seeding row 2 must select exactly the chain.
+TEST(MattoolsExtractConnectedRows, SelectsTransitiveChain) {
+    TripletList triplets = {
+        {0, 0, 1.0},
+        {1, 0, -1.0}, {1, 1, 1.0},
+        {2, 1, -1.0}, {2, 2, 2.0},
+        {3, 3, 1.0},
+        {4, 3, -1.0}, {4, 4, 1.0}
+    };
+    SparseMatrix C(5, 5);
+    C.setFromTriplets(triplets.begin(), triplets.end());
+
+    std::vector<Index> rows;
+    const SparseMatrix sub = mattools::extract_connected_rows(C, {2, 2}, rows);
+
+    ASSERT_EQ(rows, (std::vector<Index>{0, 1, 2}));
+    ASSERT_EQ(sub.rows(), 3);
+    ASSERT_EQ(sub.cols(), 5);
+    EXPECT_EQ(sub.coeff(0, 0), Precision(1));
+    EXPECT_EQ(sub.coeff(1, 0), Precision(-1));
+    EXPECT_EQ(sub.coeff(1, 1), Precision(1));
+    EXPECT_EQ(sub.coeff(2, 1), Precision(-1));
+    EXPECT_EQ(sub.coeff(2, 2), Precision(2));
+    EXPECT_EQ(sub.nonZeros(), 5);
+
+    const SparseMatrix empty = mattools::extract_connected_rows(C, {}, rows);
+    EXPECT_TRUE(rows.empty());
+    EXPECT_EQ(empty.rows(), 0);
 }

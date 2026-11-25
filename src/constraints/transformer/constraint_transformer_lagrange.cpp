@@ -18,6 +18,7 @@
 
 #include "../../core/logging.h"
 #include "../../mattools/append_sparse_block.h"
+#include "../../mattools/extract_connected_rows.h"
 #include "../../mattools/max_abs_diagonal.h"
 
 #include <Eigen/SparseCholesky>
@@ -25,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace fem {
 namespace constraint {
@@ -156,14 +158,15 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 }
 
 /**
- * Recovers multipliers satisfying C^T*lambda=f-K*u in full-system coordinates.
+ * Recovers support multipliers satisfying C^T*lambda=f-K*u in full-system coordinates.
  *
- * Solve the regularized normal equations (C*C^T+r*I)*lambda=C*(f-K*u)
- * using sparse LDLT. Scale r from the largest absolute normal-matrix diagonal
- * with a unit fallback for an unusable scale. If factorization or finite
- * solution recovery fails, solve C^T*lambda=f-K*u through sparse QR instead.
- * An unconstrained system returns an empty vector. Inputs and transformer
- * state are unchanged.
+ * Only rows connected to a support row through shared columns can carry
+ * support force. Extract this block C_s from C and solve the regularized normal
+ * equations (C_s*C_s^T+r*I)*lambda_s=C_s*(f-K*u) using sparse LDLT. Scale r
+ * from the largest absolute normal-matrix diagonal with a unit fallback for an
+ * unusable scale. If factorization or finite solution recovery fails, solve
+ * C_s^T*lambda_s=f-K*u through sparse QR instead. Multipliers of rows outside
+ * the support block remain zero. Inputs and transformer state are unchanged.
  *
  * @param K Full-system structural stiffness.
  * @param f Full-system external force vector.
@@ -173,14 +176,29 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
                                                        const DynamicVector& u) const {
-    if (system_.equations == 0) {
-        return DynamicVector::Zero(0);
+    logging::error(system_.row_sources.size() == static_cast<std::size_t>(system_.equations),
+        "[Lagrange] constraint source count mismatch");
+
+    DynamicVector multipliers = DynamicVector::Zero(system_.equations);
+
+    std::vector<Index> support_rows;
+    for (Index row = 0; row < system_.equations; ++row) {
+        if (system_.row_sources[row] == EquationSourceKind::Support) {
+            support_rows.push_back(row);
+        }
+    }
+    if (support_rows.empty()) {
+        return multipliers;
     }
 
-    const DynamicVector equilibrium_rhs = f - K * u;
-    const DynamicVector normal_rhs      = system_.C * equilibrium_rhs;
+    std::vector<Index> rows;
+    const SparseMatrix C = mattools::extract_connected_rows(system_.C, support_rows, rows);
+    const Index        m = static_cast<Index>(rows.size());
 
-    SparseMatrix normal = system_.C * system_.C.transpose();
+    const DynamicVector equilibrium_rhs = f - K * u;
+    const DynamicVector normal_rhs      = C * equilibrium_rhs;
+
+    SparseMatrix normal = C * C.transpose();
     normal.makeCompressed();
 
     // Measure the diagonal scale; retain the local fallback for unusable values.
@@ -193,27 +211,31 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
         Precision(1e-14),
         Precision(1e-12) * max_diagonal
     );
-    for (Index row = 0; row < system_.equations; ++row) {
+    for (Index row = 0; row < m; ++row) {
         normal.coeffRef(row, row) += regularization;
     }
     normal.makeCompressed();
 
+    DynamicVector local{};
     Eigen::SimplicialLDLT<SparseMatrix> ldlt{};
     ldlt.compute(normal);
     if (ldlt.info() == Eigen::Success) {
-        DynamicVector multipliers = ldlt.solve(normal_rhs);
-        if (ldlt.info() == Eigen::Success && multipliers.allFinite()) {
-            return multipliers;
-        }
+        local = ldlt.solve(normal_rhs);
+    }
+    if (ldlt.info() != Eigen::Success || !local.allFinite()) {
+        const SparseMatrix transpose = C.transpose();
+        Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr{};
+        qr.setPivotThreshold(Precision(0));
+        qr.compute(transpose);
+        logging::error(qr.info() == Eigen::Success,
+            "[Lagrange] QR(C^T) factorization failed");
+        local = qr.solve(equilibrium_rhs);
     }
 
-    const SparseMatrix transpose = system_.C.transpose();
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr{};
-    qr.setPivotThreshold(Precision(0));
-    qr.compute(transpose);
-    logging::error(qr.info() == Eigen::Success,
-        "[Lagrange] QR(C^T) factorization failed");
-    return qr.solve(equilibrium_rhs);
+    for (Index i = 0; i < m; ++i) {
+        multipliers[rows[i]] = local[i];
+    }
+    return multipliers;
 }
 
 DynamicVector ConstraintTransformer::support_constraint_forces(const DynamicVector& multipliers,

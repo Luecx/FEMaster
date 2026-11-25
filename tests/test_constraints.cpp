@@ -16,6 +16,7 @@
  */
 
 #include "../src/constraints/transformer/constraint_system.h"
+#include "../src/constraints/transformer/constraint_transformer.h"
 #include "../src/constraints/transformer/null_space.h"
 #include "../src/constraints/types/connector.h"
 #include "../src/constraints/types/coupling.h"
@@ -194,4 +195,69 @@ TEST(Constraints_Coupling, DistributingRejectsMasterInsideCloud) {
     auto         coupling = distributing_coupling(mdl, true);
     auto         ids      = all_dofs_active(5);
     EXPECT_THROW(coupling.get_equations(ids, *mdl._data), std::runtime_error);
+}
+
+
+// Identical support and MPC rows share the multiplier; only the support part
+// is reported as reaction.
+TEST(Constraints_Reactions, RedundantSupportAndMpc) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 1.0}}, 0.0},
+        {{{0, 0, 1.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    equations[1].source = constraint::EquationSourceKind::Mpc;
+
+    model::SystemDofs dofs(2, 6);
+    dofs.activate(0, 0);
+    dofs.activate(1, 0);
+    dofs.numerate();
+
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 2, options);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    DynamicVector f(2);
+    f << 10.0, 3.0;
+    DynamicVector q(1);
+    q << 3.0;
+
+    const DynamicVector r = transformer.support_reactions(eye(2), f, q);
+    EXPECT_NEAR(r[0], -5.0, 1e-6);
+    EXPECT_NEAR(r[1],  0.0, 1e-6);
+}
+
+
+// A support recovers force along an indirect tie chain; a disconnected tie
+// carries no support force.
+TEST(Constraints_Reactions, TransitiveSupportComponent) {
+    using Transformer = constraint::ConstraintTransformer;
+    constraint::Equations equations = {
+        {{{0, 0, 1.0}}, 0.0},
+        {{{0, 0, -1.0}, {1, 0, 1.0}}, 0.0},
+        {{{1, 0, -1.0}, {2, 0, 1.0}}, 0.0},
+        {{{3, 0, -1.0}, {4, 0, 1.0}}, 0.0}
+    };
+    equations[0].source = constraint::EquationSourceKind::Support;
+    for (Index i = 1; i < 4; ++i)
+        equations[i].source = constraint::EquationSourceKind::Tie;
+
+    model::SystemDofs dofs(5, 6);
+    for (Index i = 0; i < 5; ++i) dofs.activate(i, 0);
+    dofs.numerate();
+
+    Transformer::Options options;
+    options.method = Transformer::Method::Elimination;
+    Transformer transformer(equations, dofs, 5, options);
+    ASSERT_EQ(transformer.unknowns(), 1);
+
+    DynamicVector f(5);
+    f << 0.0, 0.0, 12.0, 5.0, -5.0;
+    const DynamicVector q = DynamicVector::Zero(1);
+
+    const DynamicVector r = transformer.support_reactions(eye(5), f, q);
+    EXPECT_NEAR(r[0], -12.0, 1e-6);
+    EXPECT_NEAR(r.tail(4).norm(), 0.0, 1e-6);
 }
