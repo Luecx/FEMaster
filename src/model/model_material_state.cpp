@@ -109,13 +109,13 @@ void Model::initialize_material_state(Field& state) const {
             logging::error(state_size <= state.components,
                 "Material state size ", state_size,
                 " exceeds field width ", state.components,
-                " for element ", element->elem_id);
+                " for element ", element->label());
 
             for (Index ip = 0; ip < static_cast<Index>(element->num_ip()); ++ip) {
                 const Index row = element->mp_index(ip, mp);
                 logging::error(row < state.rows,
                     "Material point row ", row,
-                    " is out of range for element ", element->elem_id);
+                    " is out of range for element ", element->label());
 
                 elasticity->initialize_state(state.data() + row * state.components);
             }

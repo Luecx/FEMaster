@@ -73,11 +73,11 @@ std::string T3::type_name() const {
  */
 TrussSection* T3::get_section() {
     logging::error(this->_section != nullptr,
-        "T3: missing section for element ", this->elem_id);
+        "T3: missing section for element ", this->label());
 
     auto* section = this->_section->template as<TrussSection>();
     logging::error(section != nullptr,
-        "T3: section is not a truss section for element ", this->elem_id);
+        "T3: section is not a truss section for element ", this->label());
     return section;
 }
 
@@ -89,7 +89,7 @@ TrussSection* T3::get_section() {
 material::MaterialPtr T3::get_material() {
     TrussSection* section = get_section();
     logging::error(section->material_ != nullptr,
-        "T3: no material set for element ", this->elem_id);
+        "T3: no material set for element ", this->label());
     return section->material_;
 }
 
@@ -105,7 +105,7 @@ material::MaterialPtr T3::get_material() {
 material::Elasticity* T3::get_elasticity() {
     auto mat = get_material();
     logging::error(mat->has_elasticity(),
-        "T3: material has no elasticity for element ", this->elem_id);
+        "T3: material has no elasticity for element ", this->label());
     return mat->elasticity().get();
 }
 
@@ -117,9 +117,9 @@ material::Elasticity* T3::get_elasticity() {
  */
 Vec3 T3::node_position_reference(Index local_node) const {
     logging::error(local_node < N,
-        "T3: local node index out of range in element ", this->elem_id);
+        "T3: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
-        "T3: no model data assigned to element ", this->elem_id);
+        "T3: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions_reference != nullptr,
         "T3: reference positions field not set in model data");
 
@@ -139,9 +139,9 @@ Vec3 T3::node_position_reference(Index local_node) const {
  */
 Vec3 T3::node_position_current(Index local_node) const {
     logging::error(local_node < N,
-        "T3: local node index out of range in element ", this->elem_id);
+        "T3: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
-        "T3: no model data assigned to element ", this->elem_id);
+        "T3: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions != nullptr,
         "T3: current positions field not set in model data");
 
@@ -183,7 +183,7 @@ Precision T3::length_current() const {
 Vec3 T3::direction_reference() const {
     const Precision L0 = length_reference();
     logging::error(L0 > Precision(0),
-        "T3: zero reference length in element ", this->elem_id);
+        "T3: zero reference length in element ", this->label());
 
     return (node_position_reference(1) - node_position_reference(0)) / L0;
 }

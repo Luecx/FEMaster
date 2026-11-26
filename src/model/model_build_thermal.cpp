@@ -94,7 +94,7 @@ SystemDofs Model::build_thermal_dofs() {
             for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
                 const ID node_id = element->nodes()[local_node];
                 logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
-                    "Model: thermal element ", element->elem_id,
+                    "Model: thermal element ", element->label(),
                     " references node ", node_id, " outside the compiled node domain");
 
                 active_nodes[static_cast<std::size_t>(node_id)].store(

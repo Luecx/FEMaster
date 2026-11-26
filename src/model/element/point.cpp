@@ -89,7 +89,7 @@ ElDofs PointElement::dofs() const {
     // An assigned point section must use the dedicated point-mass formulation.
     const auto* section = _section->as<PointMassSection>();
     logging::error(section != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Translational mass activates all translational DOFs. Individual spring,
     // rotary-inertia and rotary-spring properties activate their corresponding
@@ -199,9 +199,9 @@ MapMatrix PointElement::evaluate(
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Point springs are linear, temperature-independent and carry no persistent
     // constitutive history. Their response is therefore independent of the base
@@ -281,9 +281,9 @@ MapMatrix PointElement::mass(Precision* buffer) {
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Initialize the complete local mass matrix.
     MapMatrix result(buffer, 6, 6);
@@ -333,9 +333,9 @@ Precision PointElement::integrate_scalar_field(
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Evaluate the field exactly at the point and multiply by the complete mass.
     return section->mass_ * field(node_position(0));
@@ -368,9 +368,9 @@ Vec3 PointElement::integrate_vector_field(
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Evaluate the supplied vector field exactly at the connected point.
     return section->mass_ * field(node_position(0));
@@ -408,9 +408,9 @@ void PointElement::integrate_vector_field(
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Evaluate the complete concentrated resultant at the connected point.
     const Index node  = static_cast<Index>(node_ids[0]);
@@ -440,9 +440,9 @@ DynamicMatrix PointElement::integrate_shape_products(bool scale_by_density) {
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     return DynamicMatrix::Constant(1, 1, section->mass_);
 }
@@ -475,9 +475,9 @@ Mat3 PointElement::integrate_tensor_field(
     const PointMassSection* section = nullptr;
 
     logging::error(_section != nullptr,
-        "PointElement: no section assigned to element ", elem_id);
+        "PointElement: no section assigned to element ", label());
     logging::error((section = _section->as<PointMassSection>()) != nullptr,
-        "PointElement: section is not a PointMassSection for element ", elem_id);
+        "PointElement: section is not a PointMassSection for element ", label());
 
     // Evaluate the tensor field exactly at the connected point.
     return section->mass_ * field(node_position(0));

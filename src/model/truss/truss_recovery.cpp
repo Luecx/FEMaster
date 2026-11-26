@@ -136,10 +136,10 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
     auto elasticity = get_elasticity();
 
     logging::error(L0 > Precision(0),
-        "T3: zero reference length in evaluate_axial_response for element ", this->elem_id);
+        "T3: zero reference length in evaluate_axial_response for element ", this->label());
     logging::error(length_base > Precision(0),
         "T3: zero length at the linearization state in evaluate_axial_response for element ",
-        this->elem_id);
+        this->label());
 
     // -------------------------------------------------------------------------
     // exact state at the linearization point u0

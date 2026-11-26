@@ -235,7 +235,7 @@ void SolidElement<N>::compute_stress_strain(
     // natural coordinates using the topology-specific constant operator.
     const RowMatrix& E      = this->extrapolation_matrix();
     logging::error(E.rows() == rst.rows() && E.cols() == static_cast<Eigen::Index>(scheme.count()),
-        "SolidElement: invalid extrapolation matrix for element ", this->elem_id);
+        "SolidElement: invalid extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_strain = E * ip_strain;
     const RowMatrix nodal_stress = E * ip_stress;
@@ -302,7 +302,7 @@ bool SolidElement<N>::compute_peeq(Field& peeq) {
     // Extrapolate the scalar integration-point history to the element nodes.
     const RowMatrix& E      = this->extrapolation_matrix();
     logging::error(E.rows() == N && E.cols() == static_cast<Eigen::Index>(scheme.count()),
-        "SolidElement: invalid PEEQ extrapolation matrix for element ", this->elem_id);
+        "SolidElement: invalid PEEQ extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_peeq = E * ip_peeq;
     for (Index node = 0; node < N; ++node) {
@@ -637,7 +637,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
 
     const Index offset = static_cast<Index>(this->elem_nodal_offset);
     logging::error(offset + N <= heat_flux.rows,
-        "SolidElement: heat-flux field is too small for element ", this->elem_id);
+        "SolidElement: heat-flux field is too small for element ", this->label());
 
     // Gather reference geometry, scalar nodal temperatures and conductivity once
     // for the complete recovery operation.
@@ -646,7 +646,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
     auto*                    section           = this->get_section();
 
     logging::error(section->material_->has_thermal_conductivity(),
-        "Material has no thermal conductivity at element ", this->elem_id);
+        "Material has no thermal conductivity at element ", this->label());
     const Precision conductivity = section->material_->get_thermal_conductivity();
 
     // Evaluate Fourier's law only in local temporary storage at the formulation's
@@ -678,11 +678,11 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
     // potentially singular nodal Jacobian directly.
     const RowMatrix& E      = this->extrapolation_matrix();
     logging::error(E.rows() == static_cast<Eigen::Index>(N) && E.cols() == static_cast<Eigen::Index>(scheme.count()),
-        "SolidElement: invalid heat-flux extrapolation matrix for element ", this->elem_id);
+        "SolidElement: invalid heat-flux extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_flux = E * ip_flux;
     logging::error(nodal_flux.allFinite(),
-        "SolidElement: nodal heat flux contains NaN or Inf at element ", this->elem_id);
+        "SolidElement: nodal heat flux contains NaN or Inf at element ", this->label());
 
     // Write only the element-owned disjoint rows. Model-level OpenMP recovery can
     // therefore evaluate different elements without synchronization.

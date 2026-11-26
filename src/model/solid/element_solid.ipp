@@ -38,10 +38,10 @@ template<Index N>
 SolidSection* SolidElement<N>::get_section() {
     // Validate the assigned section before exposing its constitutive data
     logging::error(this->_section != nullptr,
-        "Section not set for element ", this->elem_id);
+        "Section not set for element ", this->label());
     auto section = this->_section->template as<SolidSection>();
     logging::error(section != nullptr,
-        "Section is not a solid section for element ", this->elem_id);
+        "Section is not a solid section for element ", this->label());
     return section;
 }
 
@@ -80,7 +80,7 @@ Mat3 SolidElement<N>::additional_material_rotation() const {
 template<Index N>
 auto SolidElement<N>::node_coords_reference() -> StaticMatrix<N, D> {
     logging::error(this->_model_data != nullptr,
-        "no model data assigned to element ", this->elem_id);
+        "no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions_reference != nullptr,
         "reference positions field not set in model data");
 
@@ -107,7 +107,7 @@ auto SolidElement<N>::node_coords_reference() -> StaticMatrix<N, D> {
 template<Index N>
 auto SolidElement<N>::node_coords_current() -> StaticMatrix<N, D> {
     logging::error(this->_model_data != nullptr,
-        "no model data assigned to element ", this->elem_id);
+        "no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions != nullptr,
         "current positions field not set in model data");
 
@@ -221,7 +221,7 @@ auto SolidElement<N>::shape_derivatives_reference(
 
     if (check_det) {
         logging::error(det > 0,
-            "negative reference determinant encountered in element ", elem_id, "\ndet        : ", det,
+            "negative reference determinant encountered in element ", label(), "\ndet        : ", det,
             "\nCoordinates: ", reference_coords, "\nJacobi     : ", J0);
     }
 
@@ -392,16 +392,16 @@ Mat3 SolidElement<N>::deformation_gradient(
     const Precision det_current   = J_current.determinant();
 
     logging::error(det_reference > Precision(0),
-        "non-positive reference determinant encountered in element ", elem_id, "\ndet        : ", det_reference,
+        "non-positive reference determinant encountered in element ", label(), "\ndet        : ", det_reference,
         "\nCoordinates: ", reference_coords, "\nJacobi     : ", J_reference);
     logging::error(det_current > Precision(0),
-        "non-positive current determinant encountered in element ", elem_id, "\ndet        : ", det_current,
+        "non-positive current determinant encountered in element ", label(), "\ndet        : ", det_current,
         "\nCoordinates: ", current_coords, "\nJacobi     : ", J_current);
 
     const Mat3 F          = J_current.transpose() * J_reference.inverse().transpose();
     const Precision det_F = F.determinant();
     logging::error(det_F > Precision(0),
-        "non-positive deformation gradient determinant in element ", elem_id, "\ndet(F): ", det_F, "\nF     : ", F);
+        "non-positive deformation gradient determinant in element ", label(), "\ndet(F): ", det_F, "\nF     : ", F);
     return F;
 }
 
@@ -459,7 +459,7 @@ MapMatrix SolidElement<N>::conductivity(Precision* buffer) {
     auto* section = this->get_section();
 
     logging::error(section->material_->has_thermal_conductivity(),
-        "Material has no thermal conductivity at element ", elem_id);
+        "Material has no thermal conductivity at element ", label());
 
     auto cond = section->material_->get_thermal_conductivity();
 
@@ -499,9 +499,9 @@ MapMatrix SolidElement<N>::capacity(Precision* buffer) {
     auto* section = this->get_section();
 
     logging::error(section->material_->has_density(),
-        "Material has no density at element ", elem_id);
+        "Material has no density at element ", label());
     logging::error(section->material_->has_thermal_specific_heat(),
-        "Material has no specific heat at element ", elem_id);
+        "Material has no specific heat at element ", label());
 
     const Precision rho = section->material_->get_density();
     const Precision cp  = section->material_->get_thermal_specific_heat();
@@ -545,9 +545,9 @@ template<Index N>
 MapMatrix SolidElement<N>::mass(Precision* buffer) {
     // Require material density before constructing the inertial operator
     logging::error(material() != nullptr,
-        "no material assigned to element ", elem_id);
+        "no material assigned to element ", label());
     logging::error(material()->has_density(),
-        "material has no density assigned at element ", elem_id);
+        "material has no density assigned at element ", label());
 
     Precision density = material()->get_density();
 

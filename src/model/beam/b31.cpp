@@ -129,9 +129,9 @@ Mat3 right_jacobian_inverse_directional(
 
 Vec3 B31::node_position_reference(Index local_node) const {
     logging::error(local_node < N,
-        "B31: local node index out of range in element ", this->elem_id);
+        "B31: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
-        "B31: no model data assigned to element ", this->elem_id);
+        "B31: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions_reference != nullptr,
         "B31: reference positions field is not initialized");
 
@@ -147,14 +147,14 @@ Mat3 B31::reference_frame() {
     const Vec3 axis = node_position_reference(1) - node_position_reference(0);
     const Precision length = axis.norm();
     logging::error(length > Precision(0),
-        "B31: zero reference length in element ", this->elem_id);
+        "B31: zero reference length in element ", this->label());
 
     const Vec3 e1 = axis / length;
     const Vec3 n1 = orientation_direction();
     const Vec3 cross = e1.cross(n1);
     logging::error(cross.norm() > Precision(1e-12),
         "B31: beam orientation is parallel to the reference axis in element ",
-        this->elem_id);
+        this->label());
 
     const Vec3 e3 = cross.normalized();
     const Vec3 e2 = e3.cross(e1).normalized();
@@ -229,7 +229,7 @@ B31::Kinematics B31::kinematics(const Vec12& q, bool with_B) {
 
     logging::error(relative_angle < Precision(3.14159265358979323846) - Precision(1e-7),
         "B31: relative nodal rotation is too close to 180 degrees in element ",
-        this->elem_id);
+        this->label());
 
     const Vec3 curvature = relative_vector / L;
     const Mat3 Jrinv = with_B
@@ -439,7 +439,7 @@ B31::Mat12 B31::geometric_tangent_from_resultants(
     logging::error(
         relative_angle < Precision(3.14159265358979323846) - Precision(1e-7),
         "B31: relative nodal rotation is too close to 180 degrees in element ",
-        this->elem_id
+        this->label()
     );
 
     const Mat3 Jrinv = right_jacobian_inverse(relative_vector);

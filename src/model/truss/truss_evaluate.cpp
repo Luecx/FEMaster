@@ -190,9 +190,9 @@ MapMatrix T3::evaluate(
          target_temperature == base_temperature),
         "T3: material state requires an exact evaluation at the base state");
     logging::error(L0 > Precision(0),
-        "T3: zero reference length for element ", this->elem_id);
+        "T3: zero reference length for element ", this->label());
     logging::error(length_base > Precision(0),
-        "T3: zero length at the linearization state for element ", this->elem_id);
+        "T3: zero length at the linearization state for element ", this->label());
 
     // -----------------------------------------------------------------------------
     // displacement increment from u0 to u

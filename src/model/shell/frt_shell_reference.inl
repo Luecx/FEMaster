@@ -105,7 +105,7 @@ template<Index N>
 const typename FRTShell<N>::ReferenceData& FRTShell<N>::reference_data() const {
     logging::error(
         reference_data_ != nullptr,
-        "FRTShell: reference data has not been initialized for element ", this->elem_id,
+        "FRTShell: reference data has not been initialized for element ", this->label(),
         ". Call step_begin() before evaluating the element."
     );
 
@@ -120,7 +120,7 @@ const typename FRTShell<N>::ReferenceData& FRTShell<N>::reference_data() const {
 template<Index N>
 typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_node_coords() const {
     logging::error(this->_model_data != nullptr,
-        "FRTShell: no model data assigned to element ", this->elem_id);
+        "FRTShell: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions_reference != nullptr,
         "FRTShell: POSITION_REFERENCE field is not set");
 
@@ -174,7 +174,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(const MatN3& X
             director = normals.row_vec3(row);
             logging::error(director.allFinite() && director.norm() > Precision(0),
                 "FRTShell: invalid element-nodal shell normal for element ",
-                this->elem_id
+                this->label()
             );
         } else {
             // Recover the normal from the actual topology-specific
@@ -196,7 +196,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(const MatN3& X
             director = X_rs.col(0).cross(X_rs.col(1));
             logging::error(director.allFinite() && director.norm() > Precision(1e-14),
                 "FRTShell: singular reference geometry at node ", node,
-                " of element ", this->elem_id
+                " of element ", this->label()
             );
         }
 
@@ -258,7 +258,7 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     point.detJ        = normal.norm();
 
     logging::error(point.detJ > Precision(1e-14) && std::isfinite(point.detJ),
-        "FRTShell: singular reference surface Jacobian in element ", this->elem_id,
+        "FRTShell: singular reference surface Jacobian in element ", this->label(),
         " at (", r, ", ", s, ")");
 
     // Construct the pointwise right-handed orthonormal reference basis:
@@ -290,7 +290,7 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     logging::error(std::abs(detJ - point.detJ) <= Precision(1e-10) * point.detJ,
         "FRTShell: inconsistent reference Jacobian");
     logging::error(std::abs(detJ) > Precision(1e-14),
-        "FRTShell: singular local reference mapping in element ", this->elem_id,
+        "FRTShell: singular local reference mapping in element ", this->label(),
         " at (", r, ", ", s, ")");
 
     // storing the inverse for mapping (r,s) -> (a,b) space
@@ -415,9 +415,9 @@ const typename FRTShell<N>::ReferencePoint* FRTShell<N>::cached_reference_point(
 template<Index N>
 ShellSection* FRTShell<N>::shell_section() const {
     logging::error(this->_section != nullptr,
-        "FRTShell: section not set for element ", this->elem_id);
+        "FRTShell: section not set for element ", this->label());
     logging::error(this->_section->template as<ShellSection>() != nullptr,
-        "FRTShell: section is not a shell section for element ", this->elem_id);
+        "FRTShell: section is not a shell section for element ", this->label());
 
     return this->_section->template as<ShellSection>();
 }

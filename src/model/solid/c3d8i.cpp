@@ -85,9 +85,9 @@ C3D8I::EnhancedModes C3D8I::enhanced_gradient_modes(
     const Precision j0 = J0.determinant();
 
     logging::error(std::isfinite(j) && j > Precision(0),
-        "C3D8I: invalid reference determinant in element ", elem_id, "\ndet(J): ", j);
+        "C3D8I: invalid reference determinant in element ", label(), "\ndet(J): ", j);
     logging::error(std::isfinite(j0) && j0 > Precision(0),
-        "C3D8I: invalid center reference determinant in element ", elem_id, "\ndet(J0): ", j0);
+        "C3D8I: invalid center reference determinant in element ", label(), "\ndet(J0): ", j0);
 
     const Precision                scale                = j0 / j;
     const Mat3                     natural_to_reference = J0.inverse().transpose();
@@ -193,7 +193,7 @@ C3D8I::Vector13 C3D8I::solve_linear_modes(const Vector24& displacement) {
     const Vector13 residual = system.kau * displacement;
     Eigen::FullPivLU<Matrix13> solver(system.kaa);
     logging::error(solver.isInvertible(),
-        "C3D8I: singular reference enhanced tangent in element ", elem_id);
+        "C3D8I: singular reference enhanced tangent in element ", label());
     return -solver.solve(residual);
 }
 
@@ -359,7 +359,7 @@ MapMatrix C3D8I::stiffness_geom(
     // Differentiate the enhanced stationarity equation at the base state.
     Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
     logging::error(solver.isInvertible(),
-        "C3D8I: singular enhanced base tangent in element ", elem_id);
+        "C3D8I: singular enhanced base tangent in element ", label());
 
     const Vector13 enhanced_residual = system_base.kau * displacement_increment;
     const Vector13 alpha_increment = -solver.solve(enhanced_residual);
@@ -575,7 +575,7 @@ C3D8I::NonlinearPoints C3D8I::nonlinear_points(
         // Reject an inverted compatible configuration before any local material query
         const Precision determinant = point.compatible.determinant();
         logging::error(std::isfinite(determinant) && determinant > Precision(0),
-            "C3D8I: non-positive compatible deformation gradient in element ", elem_id, "\ndet(F_c): ", determinant);
+            "C3D8I: non-positive compatible deformation gradient in element ", label(), "\ndet(F_c): ", determinant);
     }
     return points;
 }
@@ -654,7 +654,7 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
         const Mat3 F                = compatible_F * enhancement;
         const Precision determinant = F.determinant();
         logging::error(std::isfinite(determinant) && determinant > Precision(0),
-            "C3D8I: non-positive enhanced deformation gradient in element ", elem_id, "\ndet(F): ", determinant);
+            "C3D8I: non-positive enhanced deformation gradient in element ", label(), "\ndet(F): ", determinant);
 
         // Transform the compatible nodal deformation-gradient variations through
         // the same right enhancement used by the total deformation gradient
@@ -816,7 +816,7 @@ C3D8I::Vector13 C3D8I::solve_nonlinear_modes(
 
         Eigen::FullPivLU<Matrix13> solver(system.kaa);
         logging::error(solver.isInvertible(),
-            "C3D8I: singular local EAS tangent in element ", elem_id);
+            "C3D8I: singular local EAS tangent in element ", label());
 
         // Apply the local Newton correction without exposing alpha globally
         const Vector13 delta = solver.solve(-system.ra);
@@ -830,7 +830,7 @@ C3D8I::Vector13 C3D8I::solve_nonlinear_modes(
     }
 
     logging::error(false,
-        "C3D8I: local incompatible-mode Newton did not converge in element ", elem_id);
+        "C3D8I: local incompatible-mode Newton did not converge in element ", label());
     return alpha;
 }
 
@@ -966,7 +966,7 @@ MapMatrix C3D8I::evaluate(
     if (need_complete_tangent) {
         Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
         logging::error(solver.isInvertible(),
-            "C3D8I: singular converged local EAS tangent in element ", elem_id);
+            "C3D8I: singular converged local EAS tangent in element ", label());
         complete = system_base.kuu - system_base.kua * solver.solve(system_base.kau);
     }
 
@@ -1123,7 +1123,7 @@ void C3D8I::compute_stress_strain(
         const Vector13 residual = system_base.kau * delta_u;
         Eigen::FullPivLU<Matrix13> solver(system_base.kaa);
         logging::error(solver.isInvertible(),
-            "C3D8I: singular enhanced recovery tangent in element ", elem_id);
+            "C3D8I: singular enhanced recovery tangent in element ", label());
         delta_alpha = -solver.solve(residual);
     }
 
