@@ -76,6 +76,11 @@ struct SolidSection : Section {
         Precision*                 new_state
     ) const;
 
+    // Instance copy with remapped region and rigidly placed orientation
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     // Report material, region and optional orientation through the logger and a
     // compact stable string representation.
     void info() override;

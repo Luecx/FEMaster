@@ -174,7 +174,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 "COUPLING: master node set ", ctx->master, " must contain exactly one node");
             ctx->master_node = ctx->master_region->first();
         } else {
-            ctx->master_node = local ? static_cast<ID>(std::stoi(ctx->master)) : model.compiled_node_id(ctx->master);
+            ctx->master_node = model.resolve_node_id(ctx->master);
         }
 
         // Resolve the common slave target once. A geometric surface wins if
@@ -293,7 +293,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                     "RIGIDBODY: reference node set ", reference, " must contain exactly one node");
                 ref_node = ref_region->first();
             } else {
-                ref_node = local ? static_cast<ID>(std::stoi(reference)) : model.compiled_node_id(reference);
+                ref_node = model.resolve_node_id(reference);
             }
 
             model::ElementRegion::Ptr elements  = nullptr;

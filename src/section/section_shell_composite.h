@@ -86,6 +86,11 @@ struct CompositeShellSection : ShellSection {
         const Mat3&                   deformation_gradient_increment
     ) const override;
 
+    // Instance copy with remapped region and rigidly placed orientation
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     // Layer-wise material point lookup, state width and thickness-averaged density
     [[nodiscard]] material::Material::Ptr material_at(Index mp) const override;
     [[nodiscard]] Index                   material_state_size() const override;

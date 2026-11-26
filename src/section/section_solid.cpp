@@ -24,6 +24,7 @@
 #include "../core/logging.h"
 
 #include <sstream>
+#include <utility>
 
 namespace fem {
 
@@ -288,4 +289,14 @@ std::string SolidSection::str() const {
 
     return os.str();
 }
+// Copies the section for one compiled instance; the copy keeps the section id
+Section::Ptr SolidSection::instantiate(model::ElementRegion::Ptr region,
+                                       const Mat3&               rotation,
+                                       const Vec3&               translation) const {
+    auto copy          = std::make_shared<SolidSection>(*this);
+    copy->region_      = std::move(region);
+    copy->orientation_ = orientation_ ? orientation_->transformed(rotation, translation) : nullptr;
+    return copy;
+}
+
 } // namespace fem

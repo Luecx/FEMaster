@@ -100,10 +100,11 @@ struct ModelData {
     Dict<Instance> instances;
     bool           compiled = false;
 
-    // mapping global node back to local instance nodes
-    std::vector<std::tuple<Instance::Ptr, Index>> node_mapping;
-    // mapping global element back to local instance elements
-    std::vector<std::tuple<Instance::Ptr, Index>> element_mapping;
+    // Dense-to-semantic maps filled by compile(). Row i holds the owning
+    // Instance and the part-local id of dense node/element i; the inverse maps
+    // are stored in every Instance.
+    std::vector<std::tuple<Instance::Ptr, ID>> node_mapping;
+    std::vector<std::tuple<Instance::Ptr, ID>> element_mapping;
 
     // Dense assembly topology produced by Model::compile(). Vector indices are
     // global identifiers, while each Instance retains the corresponding map from

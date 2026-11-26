@@ -188,7 +188,7 @@ void read_res(const std::string&           filename,
  * so unlike RES no field-name-based reconstruction is required. Only the first
  * nodal DISP record for each selected step/frame pair is used. The FRD node
  * numbering scheme encodes its instance and part-local node identifiers as
- * 100000000 * instance_id + local_id.
+ * given by `Instance::external_id()`.
  *
  * @param filename Source FRD path.
  * @param step Analysis step to read.
@@ -208,15 +208,14 @@ void read_frd(const std::string&           filename,
         "IMPERFECTION: cannot open FRD file ", filename);
 
     // Reconstruct the same external node labels used by the FRD writer
-    std::unordered_map<ID, ID> nodes;
+    std::unordered_map<ExternalID, ID> nodes;
     for (std::size_t row = 0; row < model._data->node_mapping.size(); ++row) {
         const auto& [instance, local] = model._data->node_mapping[row];
 
         logging::error(instance != nullptr,
             "IMPERFECTION: invalid compiled node mapping");
 
-        const ID external = static_cast<ID>(100000000) * instance->instance_id + local;
-        nodes.emplace(external, static_cast<ID>(row));
+        nodes.emplace(instance->external_id(local), static_cast<ID>(row));
     }
 
     // Track active FRD block metadata and avoid importing duplicate DISP fields
@@ -272,9 +271,9 @@ void read_frd(const std::string&           filename,
         if (!read_field || line.rfind(" -1", 0) != 0) continue;
 
         // Parse the first three Cartesian displacement components of a nodal row
-        const bool complete = line.size() >= 49;
-        const ID   external = complete ? static_cast<ID>(std::stoll(line.substr(3, 10))) : -1;
-        const auto node     = nodes.find(external);
+        const bool       complete = line.size() >= 49;
+        const ExternalID external = complete ? static_cast<ExternalID>(std::stoll(line.substr(3, 10))) : -1;
+        const auto       node     = nodes.find(external);
 
         Vec3 displacement = Vec3::Zero();
         if (complete) {

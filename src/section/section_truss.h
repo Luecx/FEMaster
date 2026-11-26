@@ -25,6 +25,11 @@ struct TrussSection : Section {
                  model::ElementRegion::Ptr region,
                  Precision                 area);
 
+    // Instance copy with remapped region
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     /**
      * @brief Outputs truss section details through the logger.
      */

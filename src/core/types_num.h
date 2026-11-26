@@ -22,6 +22,9 @@ using ID    = std::int32_t;  ///< Identifier type for nodes, elements, etc.
 using Dim   = std::uint8_t;  ///< Spatial dimension (2 or 3).
 using Index = std::uint64_t; ///< Generic index type for large arrays.
 
+// Wide identifier for external entity labels that combine an instance and a local id
+using ExternalID = std::int64_t;
+
 #ifdef DOUBLE_PRECISION
 using Precision = double; ///< CPU precision type (double).
 #else

@@ -73,6 +73,11 @@ struct IntegratedShellSection : ShellSection {
         const Mat3&                   deformation_gradient_increment
     ) const override;
 
+    // Instance copy with remapped region and rigidly placed orientation
+    Section::Ptr instantiate(model::ElementRegion::Ptr region,
+                             const Mat3&               rotation,
+                             const Vec3&               translation) const override;
+
     // Five composite-Simpson material points are enumerated for every in-plane
     // shell integration point and stored as consecutive state rows.
     [[nodiscard]] Index num_mp_per_ip() const override { return 5; }

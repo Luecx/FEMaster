@@ -17,13 +17,13 @@
  * Section orientations require the same rigid placement as their owning part.
  * A compiled section therefore receives an independent transformed coordinate
  * system: orientation axes rotate with the instance and spatial origins also
- * receive the instance translation. Point-mass sections contain no spatial
- * orientation and are copied by value after their element region is remapped.
+ * receive the instance translation. The type-specific copy is performed by
+ * `Section::instantiate()`.
  *
- * Dense identifiers are deterministic: instance names and every part-local
- * entity identifier are sorted before enumeration. The resulting Instance maps
- * remain available for resolving qualified local references after the model has
- * crossed the one-way compilation boundary.
+ * Dense identifiers are deterministic: instances are enumerated by instance id
+ * and every part-local entity identifier is sorted before enumeration. The
+ * resulting Instance maps remain available for resolving qualified local
+ * references after the model has crossed the one-way compilation boundary.
  *
  * @see Model
  * @see ModelData
@@ -35,14 +35,6 @@
  */
 
 #include "model.h"
-
-#include "../section/section_beam.h"
-#include "../section/section_point_mass.h"
-#include "../section/section_shell_abd.h"
-#include "../section/section_shell_composite.h"
-#include "../section/section_shell_integrated.h"
-#include "../section/section_solid.h"
-#include "../section/section_truss.h"
 
 #include <algorithm>
 #include <charconv>
@@ -108,8 +100,7 @@ Model::Model()
     // Unqualified deck entities live in the default part. The corresponding
     // default instance is its identity embedding into the final assembly.
     const auto default_part = _data->parts.activate(DEFAULT_PART_NAME);
-    _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part);
-    _data->instances.get(DEFAULT_INSTANCE_NAME)->instance_id = 0;
+    _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part, ID{0});
 }
 
 /**
@@ -165,14 +156,15 @@ void Model::add_instance(const std::string& name,
     logging::error(!_data->instances.has(name),
         "Model: instance ", name, " is already defined");
 
-    // Store the semantic placement without duplicating its referenced topology
+    // Store the semantic placement without duplicating its referenced topology.
+    // Instance ids follow creation order after the default instance (id 0).
     _data->instances.add(std::make_shared<Instance>(
         name,
         _data->parts.get(part_name),
+        static_cast<ID>(_data->instances.size()),
         translation,
         rotation
     ));
-    _data->instances.get(name)->instance_id = _data->instances.size() - 1;
 }
 
 /**
@@ -300,8 +292,8 @@ void Model::add_section(Section::Ptr section) {
  *
  * Compilation validates every rigid instance, determines exact assembly sizes
  * and allocates dense node, element, surface and line storage. Instances are
- * processed by sorted name; every local entity family is likewise enumerated by
- * sorted identifier. Nodes are transformed by `x = R X + t`, polymorphic
+ * processed by instance id; every local entity family is enumerated by sorted
+ * identifier. Nodes are transformed by `x = R X + t`, polymorphic
  * topology objects are copied and rewired through instance maps, and inherited
  * regions receive qualified assembly names.
  *
@@ -322,8 +314,8 @@ void Model::compile() {
         "Model: compile() may only be called once");
 
     // Collect deterministic instance order and exact dense assembly dimensions
-    std::vector<std::string> instance_names;
-    instance_names.reserve(_data->instances._data.size());
+    std::vector<Instance::Ptr> instances;
+    instances.reserve(_data->instances._data.size());
 
     Index total_nodes    = 0;
     Index total_elements = 0;
@@ -335,7 +327,7 @@ void Model::compile() {
     const Precision rotation_tolerance =
         Precision(100) * std::sqrt(std::numeric_limits<Precision>::epsilon());
 
-    // Validate every rigid placement and reset its compile-output identifier maps
+    // Validate every rigid placement and accumulate the dense assembly size
     for (const auto& [name, instance] : _data->instances) {
         logging::error(instance != nullptr && instance->part != nullptr,
             "Model: instance ", name, " does not reference a part");
@@ -348,28 +340,18 @@ void Model::compile() {
         logging::error(std::abs(instance->rotation.determinant() - Precision(1)) <= rotation_tolerance,
             "Model: instance ", name, " rotation must have determinant +1");
 
-        // The local-to-global maps are output of compile(). Clearing them here
-        // makes the single pass deterministic even for a freshly reused object,
-        // while the compiled guard still forbids an actual second invocation.
-        instance->node_ids   .clear();
-        instance->element_ids.clear();
-        instance->surface_ids.clear();
-        instance->line_ids   .clear();
-
         total_nodes    += static_cast<Index>(instance->part->nodes   .size());
         total_elements += static_cast<Index>(instance->part->elements.size());
         total_surfaces += static_cast<Index>(instance->part->surfaces.size());
         total_lines    += static_cast<Index>(instance->part->lines   .size());
-        instance_names.push_back(name);
+        instances.push_back(instance);
     }
 
-    // sort by instance id so that the default instance (id = 0) is first, also relevant for output.
-    std::sort(instance_names.begin(), instance_names.end(),
-        [&](const std::string& a, const std::string& b) {
-            const auto instance_a = _data->instances.get(a);
-            const auto instance_b = _data->instances.get(b);
-
-            return instance_a->instance_id < instance_b->instance_id;
+    // Enumerate instances by id so that the default instance (id 0) comes first
+    // and the dense numbering follows the input order of the instances.
+    std::sort(instances.begin(), instances.end(),
+        [](const Instance::Ptr& a, const Instance::Ptr& b) {
+            return a->instance_id < b->instance_id;
         });
 
     // Dense solver arrays are allocated exactly once from the semantic assembly
@@ -379,8 +361,8 @@ void Model::compile() {
     _data->lines   .assign(static_cast<std::size_t>(total_lines), nullptr);
     _data->sections.clear();
 
-    // node mapping to map back to instance + local id
-    _data->node_mapping.resize(static_cast<std::size_t>(total_nodes));
+    // Dense-to-semantic maps used by writers and readers to recover instance + local id
+    _data->node_mapping   .resize(static_cast<std::size_t>(total_nodes));
     _data->element_mapping.resize(static_cast<std::size_t>(total_elements));
 
     // Rebuild the compiled set namespaces. Each Sets container automatically
@@ -406,16 +388,28 @@ void Model::compile() {
     ID next_surface = 0;
     ID next_line    = 0;
 
-    // Materialize every instance in deterministic semantic-name order
-    for (const std::string& instance_name : instance_names) {
-        const auto instance   = _data->instances.get(instance_name);
-        const auto source     = instance->part;
-        const bool is_default = instance_name == DEFAULT_INSTANCE_NAME;
+    // Part-local identifiers of one entity family in ascending order. Sorting
+    // makes the dense numbering independent of the unordered_map storage in Part.
+    auto sorted_ids = [](const auto& entities) {
+        std::vector<ID> ids;
+        ids.reserve(entities.size());
+        for (const auto& entry : entities) {
+            ids.push_back(entry.first);
+        }
+        std::sort(ids.begin(), ids.end());
+        return ids;
+    };
+
+    // Materialize every instance in instance-id order
+    for (const auto& instance : instances) {
+        const auto& source     = instance->part;
+        const auto& name       = instance->name;
+        const bool  is_default = instance->instance_id == 0;
 
         // The default instance owns the unqualified assembly namespace. Explicit
         // instances prefix inherited part sets with "INSTANCE.".
         auto qualified_name = [&](const std::string& local_name) {
-            return is_default ? local_name : instance_name + "." + local_name;
+            return is_default ? local_name : name + "." + local_name;
         };
 
         // A section orientation belongs to the part reference configuration and
@@ -433,28 +427,66 @@ void Model::compile() {
         auto& surface_map = instance->surface_ids;
         auto& line_map    = instance->line_ids;
 
-        // Sort semantic identifiers before assigning dense ids so compiled output
-        // is deterministic despite unordered_map storage in Part.
-        std::vector<ID> node_ids;
-        node_ids.reserve(source->nodes.size());
-        for (const auto& [id, position] : source->nodes) {
-            (void) position;
-            node_ids.push_back(id);
-        }
-        std::sort(node_ids.begin(), node_ids.end());
+        // Copies one part-local element, surface or line family into dense
+        // storage. Every copy is rewired through the node map and registered in
+        // the dense *ALL region and the local-to-dense map. prepare() performs
+        // the family-specific setup of the copy and returns its node count.
+        auto compile_entities = [&](const auto& entities,
+                                    auto&       target,
+                                    const auto& all,
+                                    auto&       id_map,
+                                    ID&         next_id,
+                                    const char* entity,
+                                    auto&&      prepare) {
+            for (const ID local_id : sorted_ids(entities)) {
+                const ID    global_id = next_id++;
+                auto        copy      = entities.at(local_id)->copy();
+                const Index n_nodes   = prepare(copy, global_id, local_id);
+
+                for (Index local = 0; local < n_nodes; ++local) {
+                    const ID   local_node = copy->nodes()[local];
+                    const auto it         = node_map.find(local_node);
+                    logging::error(it != node_map.end(),
+                        "Model: ", entity, " ", local_id, " in part ", source->name,
+                        " references undefined node ", local_node);
+                    copy->nodes()[local] = it->second;
+                }
+
+                target[static_cast<std::size_t>(global_id)] = std::move(copy);
+                all->add(global_id);
+                id_map.emplace(local_id, global_id);
+            }
+        };
+
+        // Materializes inherited part-local regions as qualified dense regions.
+        // The default *ALL regions are already global parents and must not be
+        // replaced by a second same-named default-part collection.
+        auto compile_sets = [&](const auto&        local_sets,
+                                auto&              target_sets,
+                                const std::string& all_name,
+                                const auto&        id_map,
+                                const char*        entity) {
+            for (const auto& [local_name, local_set] : local_sets) {
+                if (is_default && local_name == all_name) continue;
+
+                auto target = target_sets.activate(qualified_name(local_name));
+                for (const ID local_id : *local_set) {
+                    const auto it = id_map.find(local_id);
+                    logging::error(it != id_map.end(),
+                        "Model: ", entity, " set ", local_name, " in part ", source->name,
+                        " references undefined ", entity, " ", local_id);
+                    target->add(it->second);
+                }
+            }
+        };
 
         // Transform local nodal coordinates and establish the dense node map
-        for (const ID local_id : node_ids) {
-            const ID global_id = next_node++;
-            const Vec3 position =
-                instance->rotation * source->nodes.at(local_id) + instance->translation;
+        for (const ID local_id : sorted_ids(source->nodes)) {
+            const ID   global_id = next_node++;
+            const Vec3 position  = instance->rotation * source->nodes.at(local_id) + instance->translation;
 
             node_map.emplace(local_id, global_id);
-
-            _data->node_mapping[static_cast<std::size_t>(global_id)] = {
-                instance,
-                local_id
-            };
+            _data->node_mapping[static_cast<std::size_t>(global_id)] = {instance, local_id};
 
             for (Dim d = 0; d < 3; ++d) {
                 (*_data->positions          )(static_cast<Index>(global_id), d) = position(d);
@@ -463,240 +495,48 @@ void Model::compile() {
             _data->node_sets.all()->add(global_id);
         }
 
-        // Sort local elements before assigning deterministic dense identifiers
-        std::vector<ID> element_ids;
-        element_ids.reserve(source->elements.size());
-        for (const auto& [id, element] : source->elements) {
-            (void) element;
-            element_ids.push_back(id);
-        }
-        std::sort(element_ids.begin(), element_ids.end());
+        // copy() preserves the concrete element type and topology-specific
+        // configuration. Assembly-owned ids, offsets, section assignment and
+        // ModelData binding are always rebuilt explicitly here.
+        compile_entities(source->elements, _data->elements, _data->elem_sets.all(), element_map, next_element, "element",
+            [&](ElementPtr& element, ID global_id, ID local_id) {
+                element->elem_id           = global_id;
+                element->elem_nodal_offset = 0;
+                element->elem_ip_offset    = 0;
+                element->elem_mp_offset    = 0;
+                element->_section          = nullptr;
+                element->_model_data       = _data.get();
 
-        // Copy concrete elements and rewire their connectivity through the node map
-        for (const ID local_id : element_ids) {
-            const auto source_element = source->elements.at(local_id);
-            const ID global_id        = next_element++;
-            auto element              = source_element->copy();
+                _data->element_mapping[static_cast<std::size_t>(global_id)] = {instance, local_id};
+                return static_cast<Index>(element->n_nodes());
+            });
 
-            // copy() preserves the concrete element type and topology-specific
-            // configuration. Assembly-owned ids, offsets, section assignment and
-            // ModelData binding are always rebuilt explicitly here.
-            element->elem_id           = global_id;
-            element->elem_nodal_offset = 0;
-            element->elem_ip_offset    = 0;
-            element->elem_mp_offset    = 0;
-            element->_section          = nullptr;
-            element->_model_data       = _data.get();
+        compile_sets(source->node_sets, _data->node_sets, SET_NODE_ALL, node_map   , "node");
+        compile_sets(source->elem_sets, _data->elem_sets, SET_ELEM_ALL, element_map, "element");
 
-            // Replace every part-local node reference by its dense assembly id
-            for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
-                const ID local_node = source_element->nodes()[local];
-                const auto node_it  = node_map.find(local_node);
-                logging::error(node_it != node_map.end(),
-                    "Model: element ", local_id, " in part ", source->name,
-                    " references undefined node ", local_node);
-                element->nodes()[local] = node_it->second;
-            }
+        compile_entities(source->surfaces, _data->surfaces, _data->surface_sets.all(), surface_map, next_surface, "surface",
+            [](SurfacePtr& surface, ID, ID) { return static_cast<Index>(surface->n_nodes); });
+        compile_sets(source->surface_sets, _data->surface_sets, SET_SURF_ALL, surface_map, "surface");
 
-            _data->elements[static_cast<std::size_t>(global_id)] = std::move(element);
-            _data->element_mapping[static_cast<std::size_t>(global_id)] = {
-                instance,
-                local_id
-            };
-            _data->elem_sets.all()->add(global_id);
-            element_map.emplace(local_id, global_id);
-        }
-
-        // Materialize all inherited part-local node and element sets. The
-        // default *ALL sets are already global parents and must not be replaced by
-        // a second same-named default-part collection.
-        for (const auto& [local_name, local_set] : source->node_sets) {
-            if (is_default && local_name == SET_NODE_ALL) continue;
-
-            auto target = _data->node_sets.activate(qualified_name(local_name));
-            for (const ID local_id : *local_set) {
-                const auto it = node_map.find(local_id);
-                logging::error(it != node_map.end(),
-                    "Model: node set ", local_name, " in part ", source->name,
-                    " references undefined node ", local_id);
-                target->add(it->second);
-            }
-        }
-
-        for (const auto& [local_name, local_set] : source->elem_sets) {
-            if (is_default && local_name == SET_ELEM_ALL) continue;
-
-            auto target = _data->elem_sets.activate(qualified_name(local_name));
-            for (const ID local_id : *local_set) {
-                const auto it = element_map.find(local_id);
-                logging::error(it != element_map.end(),
-                    "Model: element set ", local_name, " in part ", source->name,
-                    " references undefined element ", local_id);
-                target->add(it->second);
-            }
-        }
-
-        // Sort and copy part-local surfaces into dense assembly topology
-        std::vector<ID> surface_ids;
-        surface_ids.reserve(source->surfaces.size());
-        for (const auto& [id, surface] : source->surfaces) {
-            (void) surface;
-            surface_ids.push_back(id);
-        }
-        std::sort(surface_ids.begin(), surface_ids.end());
-
-        // Rewire copied surface connectivity through the instance node map
-        for (const ID local_id : surface_ids) {
-            const auto source_surface = source->surfaces.at(local_id);
-            const ID global_id        = next_surface++;
-            auto surface              = source_surface->copy();
-
-            for (Index local = 0; local < surface->n_nodes; ++local) {
-                const ID local_node = source_surface->nodes()[local];
-                const auto node_it  = node_map.find(local_node);
-                logging::error(node_it != node_map.end(),
-                    "Model: surface ", local_id, " in part ", source->name,
-                    " references undefined node ", local_node);
-                surface->nodes()[local] = node_it->second;
-            }
-
-            _data->surfaces[static_cast<std::size_t>(global_id)] = std::move(surface);
-            _data->surface_sets.all()->add(global_id);
-            surface_map.emplace(local_id, global_id);
-        }
-
-        // Materialize qualified surface regions through the dense surface map
-        for (const auto& [local_name, local_set] : source->surface_sets) {
-            if (is_default && local_name == SET_SURF_ALL) continue;
-
-            auto target = _data->surface_sets.activate(qualified_name(local_name));
-            for (const ID local_id : *local_set) {
-                const auto it = surface_map.find(local_id);
-                logging::error(it != surface_map.end(),
-                    "Model: surface set ", local_name, " in part ", source->name,
-                    " references undefined surface ", local_id);
-                target->add(it->second);
-            }
-        }
-
-        // Sort and copy part-local lines into dense assembly topology
-        std::vector<ID> line_ids;
-        line_ids.reserve(source->lines.size());
-        for (const auto& [id, line] : source->lines) {
-            (void) line;
-            line_ids.push_back(id);
-        }
-        std::sort(line_ids.begin(), line_ids.end());
-
-        // Rewire copied line connectivity through the instance node map
-        for (const ID local_id : line_ids) {
-            const auto source_line = source->lines.at(local_id);
-            const ID global_id     = next_line++;
-            auto line              = source_line->copy();
-
-            for (Index local = 0; local < source_line->n_nodes; ++local) {
-                const ID local_node = source_line->nodes()[local];
-                const auto node_it  = node_map.find(local_node);
-                logging::error(node_it != node_map.end(),
-                    "Model: line ", local_id, " in part ", source->name,
-                    " references undefined node ", local_node);
-                line->nodes()[local] = node_it->second;
-            }
-
-            _data->lines[static_cast<std::size_t>(global_id)] = std::move(line);
-            _data->line_sets.all()->add(global_id);
-            line_map.emplace(local_id, global_id);
-        }
-
-        // Materialize qualified line regions through the dense line map
-        for (const auto& [local_name, local_set] : source->line_sets) {
-            if (is_default && local_name == SET_LINE_ALL) continue;
-
-            auto target = _data->line_sets.activate(qualified_name(local_name));
-            for (const ID local_id : *local_set) {
-                const auto it = line_map.find(local_id);
-                logging::error(it != line_map.end(),
-                    "Model: line set ", local_name, " in part ", source->name,
-                    " references undefined line ", local_id);
-                target->add(it->second);
-            }
-        }
+        compile_entities(source->lines, _data->lines, _data->line_sets.all(), line_map, next_line, "line",
+            [](LinePtr& line, ID, ID) { return static_cast<Index>(line->n_nodes); });
+        compile_sets(source->line_sets, _data->line_sets, SET_LINE_ALL, line_map, "line");
 
         // Sections are definitions on the source part but assignments in the
-        // compiled assembly. Their regions and spatial orientations therefore
-        // need instance-specific copies.
+        // compiled assembly. Every instance receives its own copy with a remapped
+        // element region and rigidly placed spatial section data.
         for (const Section::Ptr& source_section : source->sections) {
-            auto region = std::make_shared<ElementRegion>(
-                qualified_name(source_section->region_->name));
+            auto region = std::make_shared<ElementRegion>(qualified_name(source_section->region_->name));
 
             for (const ID local_id : *source_section->region_) {
                 const auto it = element_map.find(local_id);
                 logging::error(it != element_map.end(),
-                    "Model: section region ", source_section->region_->name,
-                    " in part ", source->name,
+                    "Model: section region ", source_section->region_->name, " in part ", source->name,
                     " references undefined element ", local_id);
                 region->add(it->second);
             }
 
-            // Copy the concrete section and transform spatial data where needed.
-            Section::Ptr section = nullptr;
-            if (auto* solid = source_section->as<SolidSection>()) {
-                auto copy = std::make_shared<SolidSection>();
-                copy->material_    = solid->material_;
-                copy->region_      = region;
-                copy->orientation_ = transformed_orientation(solid->orientation_);
-                section = std::move(copy);
-            } else if (auto* beam = source_section->as<BeamSection>()) {
-                auto copy = std::make_shared<BeamSection>();
-                copy->material_  = beam->material_;
-                copy->region_    = region;
-                copy->direction_ = instance->rotation * beam->direction_;
-                copy->profile_   = beam->profile_;
-                section = std::move(copy);
-            } else if (auto* truss = source_section->as<TrussSection>()) {
-                section = std::make_shared<TrussSection>(
-                    truss->material_, region, truss->area_);
-            } else if (auto* point = source_section->as<PointMassSection>()) {
-                section = std::make_shared<PointMassSection>(
-                    region,
-                    point->mass_,
-                    point->rotary_inertia_,
-                    point->spring_constants_,
-                    point->rotary_spring_constants_
-                );
-            } else if (auto* shell = source_section->as<IntegratedShellSection>()) {
-                section = std::make_shared<IntegratedShellSection>(
-                    shell->material_,
-                    region,
-                    shell->thickness_,
-                    transformed_orientation(shell->orientation_),
-                    shell->csys_axis_
-                );
-            } else if (auto* shell = source_section->as<CompositeShellSection>()) {
-                section = std::make_shared<CompositeShellSection>(
-                    shell->layers_,
-                    region,
-                    transformed_orientation(shell->orientation_),
-                    shell->csys_axis_
-                );
-            } else if (auto* shell = source_section->as<ABDShellSection>()) {
-                section = std::make_shared<ABDShellSection>(
-                    shell->material_,
-                    region,
-                    shell->thickness_,
-                    shell->abd_,
-                    shell->shear_,
-                    transformed_orientation(shell->orientation_),
-                    shell->csys_axis_
-                );
-            }
-
-            logging::error(section != nullptr,
-                "Model: unsupported section type in part ", source->name);
-
-            // Instance copies keep the id of their source definition
-            section->id_ = source_section->id_;
-            _data->sections.push_back(std::move(section));
+            _data->sections.push_back(source_section->instantiate(std::move(region), instance->rotation, instance->translation));
         }
 
         // Part-local constraints are copied once per instance. Nodes are mapped
@@ -824,6 +664,40 @@ ID Model::compiled_element_id(const std::string& reference) const {
 ID Model::compiled_surface_id(const std::string& reference) const {
     const auto [instance, id] = split_compiled_reference(reference, "surface");
     return compiled_surface_id(id, instance);
+}
+
+/**
+ * Resolves a scalar line reference in an Instance namespace.
+ *
+ * @param reference Local `ID` or qualified `INSTANCE.ID` line reference.
+ * @return Dense compiled line identifier.
+ */
+ID Model::compiled_line_id(const std::string& reference) const {
+    const auto [instance, id] = split_compiled_reference(reference, "line");
+    return compiled_line_id(id, instance);
+}
+
+/**
+ * Resolves a node reference on the current side of the compile boundary.
+ *
+ * Part-scoped commands run before compilation and keep part-local node ids, so
+ * the reference must be an unqualified integer there. Assembly-scoped commands
+ * run afterwards and resolve `ID` or `INSTANCE.ID` through the Instance maps.
+ *
+ * @param reference Node reference as given in the input.
+ * @return Part-local id before compile(), dense compiled id afterwards.
+ */
+ID Model::resolve_node_id(const std::string& reference) const {
+    logging::error(_data != nullptr,
+        "Model: model data is not initialized");
+
+    if (_data->compiled) {
+        return compiled_node_id(reference);
+    }
+
+    logging::error(reference.find('.') == std::string::npos,
+        "Model: node reference '", reference, "' cannot be instance-qualified inside a part");
+    return split_compiled_reference(reference, "node").second;
 }
 
 /**
