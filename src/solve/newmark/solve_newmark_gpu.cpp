@@ -91,13 +91,13 @@ SparseMatrix compressed_copy(const SparseMatrix& matrix) {
 }
 
 void copy_device_vector(cuda::CudaArray<CudaPrecision>& history,
-                        std::size_t offset,
+                        Index offset,
                         cuda::CudaVector& vector,
-                        std::size_t n)
+                        Index n)
 {
     runtime_check_cuda(cudaMemcpy(static_cast<CudaPrecision*>(history) + offset,
                                   static_cast<CudaPrecision*>(vector),
-                                  n * sizeof(CudaPrecision),
+                                  static_cast<std::size_t>(n) * sizeof(CudaPrecision),
                                   cudaMemcpyDeviceToDevice));
 }
 
@@ -157,7 +157,7 @@ struct GpuSpmv {
                                                    CUDA_P_TYPE,
                                                    CUSPARSE_SPMV_CSR_ALG1,
                                                    &buffer_size));
-        buffer = std::make_unique<cuda::CudaArray<char>>(std::max<std::size_t>(1, buffer_size));
+        buffer = std::make_unique<cuda::CudaArray<char>>(std::max<Index>(1, static_cast<Index>(buffer_size)));
     }
 
     ~GpuSpmv() {
@@ -302,24 +302,24 @@ private:
 };
 
 struct ForceBasisGpu {
-    int n = 0;
-    int n_basis = 0;
+    int   n       = 0;
+    Index n_basis = 0;
     cuda::CudaArray<CudaPrecision> alpha_values;
     std::vector<std::unique_ptr<cuda::CudaVector>> force_vectors;
 
     ForceBasisGpu(const NewmarkForceBasis& basis,
                   int n_in,
-                  int n_steps,
+                  Index n_steps,
                   double t_start,
                   double dt)
         : n(n_in),
-          n_basis(static_cast<int>(basis.size())),
-          alpha_values(static_cast<std::size_t>(basis.size()) * static_cast<std::size_t>(n_steps + 1))
+          n_basis(static_cast<Index>(basis.size())),
+          alpha_values(n_basis * (n_steps + 1))
     {
         std::vector<CudaPrecision> alpha_host(alpha_values.size(), CudaPrecision(0));
         force_vectors.reserve(basis.size());
 
-        for (std::size_t basis_idx = 0; basis_idx < basis.size(); ++basis_idx) {
+        for (Index basis_idx = 0; basis_idx < n_basis; ++basis_idx) {
             const auto& amplitude = basis[basis_idx].first;
             const auto& force = basis[basis_idx].second;
 
@@ -330,10 +330,10 @@ struct ForceBasisGpu {
             force_gpu->upload(force.data());
             force_vectors.emplace_back(std::move(force_gpu));
 
-            for (int step = 0; step <= n_steps; ++step) {
-                const double time = t_start + step * dt;
+            for (Index step = 0; step <= n_steps; ++step) {
+                const double time = t_start + static_cast<double>(step) * dt;
                 const Precision scale = amplitude ? amplitude->evaluate(time) : Precision(1);
-                alpha_host[static_cast<std::size_t>(step) * basis.size() + basis_idx] =
+                alpha_host[step * n_basis + basis_idx] =
                     static_cast<CudaPrecision>(scale);
             }
         }
@@ -341,14 +341,14 @@ struct ForceBasisGpu {
         alpha_values.upload(alpha_host.data());
     }
 
-    void assemble_step(int step, cuda::CudaVector& force) {
+    void assemble_step(Index step, cuda::CudaVector& force) {
         force.clear();
         runtime_check_cuda(cublasSetPointerMode(cuda::manager.handle_cublas, CUBLAS_POINTER_MODE_DEVICE));
-        for (int basis_idx = 0; basis_idx < n_basis; ++basis_idx) {
+        for (Index basis_idx = 0; basis_idx < n_basis; ++basis_idx) {
             const CudaPrecision* alpha =
-                static_cast<CudaPrecision*>(alpha_values) + static_cast<std::size_t>(step) * n_basis + basis_idx;
+                static_cast<CudaPrecision*>(alpha_values) + step * n_basis + basis_idx;
             runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, n, alpha,
-                                           *force_vectors[static_cast<std::size_t>(basis_idx)], 1,
+                                           *force_vectors[basis_idx], 1,
                                            force, 1));
         }
         runtime_check_cuda(cublasSetPointerMode(cuda::manager.handle_cublas, CUBLAS_POINTER_MODE_HOST));
@@ -440,18 +440,18 @@ newmark_linear_gpu(const SparseMatrix& M,
     const double a5 = dt * (gamma / (2.0 * beta) - 1.0);
 
     const double Tspan = std::max(0.0, t_end - t_start);
-    const int n_steps = static_cast<int>(std::ceil(Tspan / dt));
-    const std::size_t n_history = static_cast<std::size_t>(n) * static_cast<std::size_t>(n_steps + 1);
+    const Index n_steps   = static_cast<Index>(std::ceil(Tspan / dt));
+    const Index n_history = static_cast<Index>(n) * (n_steps + 1);
 
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
     logging::info(true, "IMPLICIT NEWMARK-β GPU (fixed Δt) — linear transient");
     logging::info(true, "-----------------------------------------------------------------------------------------------");
     logging::info(true, "n dof  : ", n);
-    logging::info(true, "basis  : ", static_cast<int>(force_basis.size()));
-    logging::info(true, "nnz(M) : ", static_cast<long long>(M.nonZeros()));
-    logging::info(true, "nnz(C) : ", static_cast<long long>(C.nonZeros()));
-    logging::info(true, "nnz(K) : ", static_cast<long long>(K.nonZeros()));
+    logging::info(true, "basis  : ", static_cast<Index>(force_basis.size()));
+    logging::info(true, "nnz(M) : ", M.nonZeros());
+    logging::info(true, "nnz(C) : ", C.nonZeros());
+    logging::info(true, "nnz(K) : ", K.nonZeros());
     logging::info(true, "steps  : ", n_steps);
     logging::info(true, "dt      : ", std::scientific, std::setprecision(6), dt);
     logging::info(true, "t_start : ", std::scientific, std::setprecision(6), t_start);
@@ -470,7 +470,7 @@ newmark_linear_gpu(const SparseMatrix& M,
     SparseMatrix A_cpu = K_cpu + static_cast<Precision>(a0) * M_cpu + static_cast<Precision>(a1) * C_cpu;
     A_cpu.makeCompressed();
     tBuild.stop();
-    logging::info(true, "A built: nnz(A) = ", static_cast<long long>(A_cpu.nonZeros()),
+    logging::info(true, "A built: nnz(A) = ", A_cpu.nonZeros(),
                        ", time = ", tBuild.elapsed(), " ms.");
 
     cuda::CudaVector u(n);
@@ -518,9 +518,9 @@ newmark_linear_gpu(const SparseMatrix& M,
     cuda::CudaArray<CudaPrecision> hist_v{n_history};
     cuda::CudaArray<CudaPrecision> hist_a{n_history};
 
-    copy_device_vector(hist_u, 0, u, static_cast<std::size_t>(n));
-    copy_device_vector(hist_v, 0, v, static_cast<std::size_t>(n));
-    copy_device_vector(hist_a, 0, a, static_cast<std::size_t>(n));
+    copy_device_vector(hist_u, 0, u, n);
+    copy_device_vector(hist_v, 0, v, n);
+    copy_device_vector(hist_a, 0, a, n);
 
     const CudaPrecision ca0 = static_cast<CudaPrecision>(a0);
     const CudaPrecision ca1 = static_cast<CudaPrecision>(a1);
@@ -533,7 +533,7 @@ newmark_linear_gpu(const SparseMatrix& M,
     const CudaPrecision neg_one = CudaPrecision(-1);
     const CudaPrecision neg_a2 = -ca2;
     const CudaPrecision neg_a3 = -ca3;
-    const int print_stride = std::max(1, n_steps / 20);
+    const Index print_stride = std::max<Index>(1, n_steps / 20);
 
     logging::info(true, "");
     logging::info(true, "Starting Newmark GPU time marching (", n_steps, " steps) ...");
@@ -543,8 +543,8 @@ newmark_linear_gpu(const SparseMatrix& M,
     Timer tLoop{};
     tLoop.start();
 
-    for (int step = 0; step < n_steps; ++step) {
-        const double tnp1 = t_start + (step + 1) * dt;
+    for (Index step = 0; step < n_steps; ++step) {
+        const double tnp1 = t_start + static_cast<double>(step + 1) * dt;
 
         force_basis_gpu.assemble_step(step + 1, rhs);
 
@@ -570,10 +570,10 @@ newmark_linear_gpu(const SparseMatrix& M,
         v.copy(vn);
         a.copy(an);
 
-        const std::size_t offset = static_cast<std::size_t>(step + 1) * static_cast<std::size_t>(n);
-        copy_device_vector(hist_u, offset, u, static_cast<std::size_t>(n));
-        copy_device_vector(hist_v, offset, v, static_cast<std::size_t>(n));
-        copy_device_vector(hist_a, offset, a, static_cast<std::size_t>(n));
+        const Index offset = (step + 1) * n;
+        copy_device_vector(hist_u, offset, u, n);
+        copy_device_vector(hist_v, offset, v, n);
+        copy_device_vector(hist_a, offset, a, n);
 
         if (((step + 1) % print_stride) == 0 || (step + 1) == n_steps) {
             logging::info(true, "Newmark step ",
@@ -598,14 +598,14 @@ newmark_linear_gpu(const SparseMatrix& M,
     out.v.reserve(n_steps + 1);
     out.a.reserve(n_steps + 1);
 
-    for (int step = 0; step <= n_steps; ++step) {
-        out.t.push_back(t_start + step * dt);
+    for (Index step = 0; step <= n_steps; ++step) {
+        out.t.push_back(t_start + static_cast<double>(step) * dt);
 
         DynamicVector u_step(n);
         DynamicVector v_step(n);
         DynamicVector a_step(n);
-        const std::size_t offset = static_cast<std::size_t>(step) * static_cast<std::size_t>(n);
-        for (int row = 0; row < n; ++row) {
+        const Index offset = step * n;
+        for (Index row = 0; row < n; ++row) {
             u_step[row] = static_cast<Precision>(hist_u_host[offset + row]);
             v_step[row] = static_cast<Precision>(hist_v_host[offset + row]);
             a_step[row] = static_cast<Precision>(hist_a_host[offset + row]);

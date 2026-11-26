@@ -42,11 +42,11 @@ struct Section : public fem::Printable, public Castable {
 
     // Positive section id. It is created once per section definition and kept
     // by instance copies during model compilation, e.g. for the FRD group field.
-    ID id_ = create_id();
+    Index id_ = create_id();
 
     // Creates a new unique positive section id, starting at 1
-    static ID create_id() {
-        static ID next_id = 0;
+    static Index create_id() {
+        static Index next_id = 0;
         return ++next_id;
     }
 

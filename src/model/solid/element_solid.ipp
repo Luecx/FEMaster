@@ -65,7 +65,7 @@ Mat3 SolidElement<N>::additional_material_rotation() const {
     logging::error(angles_field->components == 3,
         "Field '", angles_field->name, "': material orientation requires 3 components");
 
-    const Vec3 angles = angles_field->row_vec3(static_cast<Index>(this->elem_id));
+    const Vec3 angles = angles_field->row_vec3(this->elem_id);
     return cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3::Zero());
 }
 
@@ -89,7 +89,7 @@ auto SolidElement<N>::node_coords_reference() -> StaticMatrix<N, D> {
     StaticMatrix<N, D> coords {};
 
     for (Index i = 0; i < N; ++i) {
-        coords.row(i) = positions.row_vec3(static_cast<Index>(this->node_ids[i])).transpose();
+        coords.row(i) = positions.row_vec3(this->node_ids[i]).transpose();
     }
 
     return coords;
@@ -116,7 +116,7 @@ auto SolidElement<N>::node_coords_current() -> StaticMatrix<N, D> {
     StaticMatrix<N, D> coords {};
 
     for (Index i = 0; i < N; ++i) {
-        coords.row(i) = positions.row_vec3(static_cast<Index>(this->node_ids[i])).transpose();
+        coords.row(i) = positions.row_vec3(this->node_ids[i]).transpose();
     }
 
     return coords;
@@ -140,7 +140,7 @@ Precision SolidElement<N>::element_stiffness_scale() const {
     auto scale_field                       = this->_model_data->element_stiffness_scale;
     logging::error(scale_field->components == 1,
         "Field '", scale_field->name, "': element stiffness scale requires 1 component");
-    return (*scale_field)(static_cast<Index>(this->elem_id));
+    return (*scale_field)(this->elem_id);
 }
 
 template<Index N>
@@ -166,9 +166,9 @@ auto SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_gl
 
     // Insert each node gradient into the normal and engineering-shear rows
     for (Index j = 0; j < N; j++) {
-        Dim r1 = j * 3;
-        Dim r2 = r1 + 1;
-        Dim r3 = r1 + 2;
+        Index r1 = j * 3;
+        Index r2 = r1 + 1;
+        Index r3 = r1 + 2;
 
         B(0, r1) = shape_der_global(j, 0);
         B(1, r2) = shape_der_global(j, 1);
@@ -251,7 +251,7 @@ auto SolidElement<N>::green_lagrange_strain_displacement(
 
     // Differentiate E = (F^T F - I)/2 with respect to each nodal translation
     for (Index a = 0; a < N; ++a) {
-        for (Dim p = 0; p < D; ++p) {
+        for (Index p = 0; p < D; ++p) {
             const Index col = D * a + p;
 
             B(0, col) = F(p, 0) * dN_dX(a, 0);
@@ -312,7 +312,7 @@ auto SolidElement<N>::material_tangent_reference(
  * @return Interpolated component vector.
  */
 template<Index N>
-template<Dim K>
+template<Index K>
 StaticVector<K> SolidElement<N>::interpolate(
     StaticMatrix<N, K> data,
     Precision          r,
@@ -351,10 +351,10 @@ auto SolidElement<N>::jacobian(
     StaticMatrix<D, D> jacobian {};
 
     // Contract nodal coordinates with natural derivatives to form dx_j/dxi_i
-    for (Dim m = 0; m < D; m++) {
-        for (Dim n = 0; n < D; n++) {
+    for (Index m = 0; m < D; m++) {
+        for (Index n = 0; n < D; n++) {
             Precision dxn_drm = 0;
-            for (Dim k = 0; k < N; k++) {
+            for (Index k = 0; k < N; k++) {
                 dxn_drm += node_coords(k, n) * local_shape_derivative(k, m);
             }
             jacobian(m, n) = dxn_drm;
@@ -418,7 +418,7 @@ Mat3 SolidElement<N>::deformation_gradient(
  * @return N-by-K element-local nodal values.
  */
 template<Index N>
-template<Dim K>
+template<Index K>
 StaticMatrix<N, K> SolidElement<N>::nodal_data(
     const Field& full_data,
     Index        offset,
@@ -431,10 +431,10 @@ StaticMatrix<N, K> SolidElement<N>::nodal_data(
     );
 
     // Gather global field rows in connectivity order with the selected component spacing
-    for (Dim m = 0; m < N; m++) {
-        for (Dim j = 0; j < K; j++) {
+    for (Index m = 0; m < N; m++) {
+        for (Index j = 0; j < K; j++) {
             Index n   = j * stride + offset;
-            res(m, j) = full_data(static_cast<Index>(node_ids[m]), n);
+            res(m, j) = full_data(node_ids[m], n);
         }
     }
 
@@ -567,7 +567,7 @@ MapMatrix SolidElement<N>::mass(Precision* buffer) {
 
             for (Index i = 0; i < N; i++) {
                 for (Index j = 0; j < N; j++) {
-                    for (Dim d = 0; d < D; d++) {
+                    for (Index d = 0; d < D; d++) {
                         mass_local(D * i + d, D * j + d) = shape_func_mass(i, j);
                     }
                 }

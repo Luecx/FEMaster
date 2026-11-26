@@ -48,11 +48,11 @@ namespace fem::model {
 template<Index N>
 struct SolidElement : StructuralElement, ThermalElement{
     // Spatial dimension and engineering-Voigt strain size
-    static constexpr Dim D        = 3;
-    static constexpr Dim n_strain = 6;
+    static constexpr Index D        = 3;
+    static constexpr Index n_strain = 6;
 
     // Global connectivity in the topology shape-function order
-    std::array<ID, N> node_ids {};
+    std::array<Index, N> node_ids {};
 
 protected:
     // Topology-specific reference-space recovery from constitutive integration
@@ -61,20 +61,20 @@ protected:
 
 public:
     // Construct the persistent connectivity; the model supplies section and field bindings
-    SolidElement(ID elem_id, std::array<ID, N> node_ids)
+    SolidElement(Index elem_id, std::array<Index, N> node_ids)
         : StructuralElement(elem_id),
           node_ids         (node_ids) {}
 
     ~SolidElement() override = default;
 
-    ElDofs    dofs() const override;
-    Dim       dimensions() const override;
-    Dim       n_nodes() const override;
-    Dim       num_ip() const override;
-    const ID* nodes() const override;
-    bool      is_solid() const override { return true; }
+    ElDofs       dofs() const override;
+    Index        dimensions() const override;
+    Index        n_nodes() const override;
+    Index        num_ip() const override;
+    const Index* nodes() const override;
+    bool         is_solid() const override { return true; }
 
-    SurfacePtr surface(ID surface_id) override = 0;
+    SurfacePtr surface(Index surface_id) override = 0;
 
     // Element geometry and interpolation. Concrete topologies define natural
     // node coordinates, shape functions and quadrature; the base gathers
@@ -124,7 +124,7 @@ public:
 
     // Interpolate element-local nodal values at natural coordinates. The data
     // rows use the same ordering as the topology shape functions.
-    template<Dim K>
+    template<Index K>
     StaticVector<K> interpolate(
         StaticMatrix<N, K> data,
         Precision          r,
@@ -133,7 +133,7 @@ public:
 
     // Gather global nodal field components in connectivity order, optionally
     // selecting a component offset and stride.
-    template<Dim K>
+    template<Index K>
     StaticMatrix<N, K> nodal_data(
         const Field& full_data,
         Index        offset = 0,

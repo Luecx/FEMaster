@@ -93,7 +93,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
         std::string surface;
         std::string type;
 
-        ID master_node = -1;
+        Index master_node = -1;
 
         model::NodeRegion::Ptr    master_region  = nullptr;
         model::NodeRegion::Ptr    slave_nodes    = nullptr;
@@ -141,7 +141,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                                   const char* command) {
         logging::error(first >= 1 && first <= 6,
             command, ": first DOF must be between 1 and 6");
-        if (last >= static_cast<Index>(-1)) last = first;
+        if (last < 0) last = first;
         logging::error(last >= first && last <= 6,
             command, ": last DOF must be between first DOF and 6");
 
@@ -230,7 +230,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
                 .bind([ctx, emit](const std::array<fem::Precision, 6>& raw) {
                     Dofs dofs;
                     for (Index i = 0; i < 6; ++i) {
-                        dofs(i) = raw[static_cast<std::size_t>(i)] > Precision(0);
+                        dofs(i) = raw[i] > Precision(0);
                     }
 
                     const auto type = ctx->type == "KINEMATIC"
@@ -286,7 +286,7 @@ void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
             // Reference node from a one-node set or a direct node reference
             const std::string reference = keys.raw("REFNODE");
             model::NodeRegion::Ptr ref_region = nullptr;
-            ID ref_node = -1;
+            Index ref_node = -1;
             if (node_sets.has(reference)) {
                 ref_region = node_sets.get(reference);
                 logging::error(ref_region != nullptr && ref_region->size() == 1,

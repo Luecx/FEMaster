@@ -35,7 +35,7 @@ using math::normalized;
  * @param nodes Element node identifiers in topology-specific ordering.
  */
 template<Index N>
-FRTShell<N>::FRTShell(ID id, const std::array<ID, N>& nodes)
+FRTShell<N>::FRTShell(Index id, const std::array<Index, N>& nodes)
     : ShellElement<N>(id, nodes) {}
 
 /**
@@ -61,7 +61,7 @@ void FRTShell<N>::step_begin() {
     reference_data_ = std::move(data);
 
     const auto& scheme = this->integration_scheme();
-    reference_data_->ip_points.reserve(static_cast<std::size_t>(scheme.count()));
+    reference_data_->ip_points.reserve(scheme.count());
 
     // Cache the complete curved geometry and accumulate the physical area at
     // every numerical integration point
@@ -129,7 +129,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_node_coords() const {
 
     // Gather the global reference positions in local element-node ordering
     for (Index node = 0; node < num_nodes; ++node) {
-        X.row(node) = positions.row_vec3(static_cast<Index>(this->node_ids[node])).transpose();
+        X.row(node) = positions.row_vec3(this->node_ids[node]).transpose();
     }
 
     return X;
@@ -168,7 +168,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(const MatN3& X
             // Use explicitly supplied element-nodal normals when available
             const Field& normals = *this->_model_data->shell_element_nodal_normals;
             // convert local node index to global element-nodal index
-            const Index row      = static_cast<Index>(this->elem_nodal_offset) + node;
+            const Index row      = this->elem_nodal_offset + node;
 
             // quick sanity check
             director = normals.row_vec3(row);
@@ -438,7 +438,7 @@ Precision FRTShell<N>::topology_stiffness_scale() const {
         const auto field = this->_model_data->element_stiffness_scale;
         logging::error(field->components == 1,
             "Field '", field->name, "': element stiffness scale requires one component");
-        scale = (*field)(static_cast<Index>(this->elem_id));
+        scale = (*field)(this->elem_id);
     }
 
     return scale;
@@ -478,8 +478,8 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
 
     for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
         const Precision distance =
-            (r - points[static_cast<std::size_t>(ip)].r) * (r - points[static_cast<std::size_t>(ip)].r)
-            + (s - points[static_cast<std::size_t>(ip)].s) * (s - points[static_cast<std::size_t>(ip)].s);
+            (r - points[ip].r) * (r - points[ip].r)
+            + (s - points[ip].s) * (s - points[ip].s);
         if (distance < state_distance) {
             state_ip       = ip;
             state_distance = distance;

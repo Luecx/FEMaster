@@ -127,18 +127,18 @@ void ModelData::initialize_element_enumeration() {
         (*element_ip_offsets)(row)    = static_cast<Precision>(ip_offset);
         (*element_mp_offsets)(row)    = static_cast<Precision>(mp_offset);
 
-        const auto& element = elements[static_cast<std::size_t>(row)];
+        const auto& element = elements[row];
         if (!element) {
             continue;
         }
 
-        element->elem_nodal_offset = static_cast<ID>(nodal_offset);
-        element->elem_ip_offset    = static_cast<ID>(ip_offset);
-        element->elem_mp_offset    = static_cast<ID>(mp_offset);
+        element->elem_nodal_offset = nodal_offset;
+        element->elem_ip_offset    = ip_offset;
+        element->elem_mp_offset    = mp_offset;
 
-        nodal_offset += static_cast<Index>(element->n_nodes());
-        ip_offset    += static_cast<Index>(element->num_ip());
-        mp_offset    += static_cast<Index>(element->num_ip()) * element->num_mp_per_ip();
+        nodal_offset += element->n_nodes();
+        ip_offset    += element->num_ip();
+        mp_offset    += element->num_ip() * element->num_mp_per_ip();
     }
 
     // Close the final element ranges and expose the total domain sizes
@@ -151,8 +151,8 @@ void ModelData::initialize_element_enumeration() {
     for (const auto& element : point_elements) {
         if (!element) continue;
 
-        element->elem_nodal_offset = static_cast<ID>(nodal_offset + point_nodal_rows);
-        point_nodal_rows          += static_cast<Index>(element->n_nodes());
+        element->elem_nodal_offset = nodal_offset + point_nodal_rows;
+        point_nodal_rows          += element->n_nodes();
     }
 
     // Material history is initialized after sections are assigned, immediately

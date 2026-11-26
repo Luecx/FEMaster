@@ -119,10 +119,10 @@ void register_initial_condition(fem::io::dsl::Registry& registry, model::Model& 
                         // Resolve the node and validate the active field layout first.
                         logging::error(*field != nullptr,
                             "INITIALCONDITION: field not initialized");
-                        const ID node = model.compiled_node_id(target);
-                        logging::error(node >= 0 && static_cast<Index>(node) < (*field)->rows,
+                        const Index node = model.compiled_node_id(target);
+                        logging::error(node >= 0 && node < (*field)->rows,
                             "INITIALCONDITION: node ", target, " is out of bounds");
-                        for (Index component = (*field)->components; component < values.size(); ++component) {
+                        for (Index component = (*field)->components; component < static_cast<Index>(values.size()); ++component) {
                             logging::error(values[component] == skip_token,
                                 "INITIALCONDITION: too many components for ", (*field)->name);
                         }
@@ -147,7 +147,7 @@ void register_initial_condition(fem::io::dsl::Registry& registry, model::Model& 
                                     "INITIALCONDITION: failed to parse value '", token, "'");
                             }
 
-                            (**field)(static_cast<Index>(node), component) = value;
+                            (**field)(node, component) = value;
                         }
                     })
                 )

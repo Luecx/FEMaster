@@ -58,8 +58,8 @@ namespace {
  */
 void append_string(std::string& buffer,
                    std::string_view value,
-                   std::size_t width = 16) {
-    if (value.size() < width) {
+                   Index width = 16) {
+    if (static_cast<Index>(value.size()) < width) {
         buffer.append(width - value.size(), ' ');
     }
 
@@ -75,7 +75,7 @@ void append_string(std::string& buffer,
 template<typename T>
 void append_integer(std::string& buffer,
                     T value,
-                    std::size_t width = 16) {
+                    Index width = 16) {
     char tmp[32];
 
     const auto [end, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
@@ -83,7 +83,7 @@ void append_integer(std::string& buffer,
     logging::error(ec == std::errc{},
         "ResWriter: failed to format integer");
 
-    const std::size_t length = static_cast<std::size_t>(end - tmp);
+    const Index length = end - tmp;
 
     if (length < width) {
         buffer.append(width - length, ' ');
@@ -100,7 +100,7 @@ void append_integer(std::string& buffer,
  */
 void append_precision(std::string& buffer,
                       Precision value,
-                      std::size_t width = 16) {
+                      Index width = 16) {
     char tmp[64];
 
     const auto [end, ec] = std::to_chars(
@@ -114,7 +114,7 @@ void append_precision(std::string& buffer,
     logging::error(ec == std::errc{},
         "ResWriter: failed to format floating-point value");
 
-    const std::size_t length = static_cast<std::size_t>(end - tmp);
+    const Index length = end - tmp;
 
     if (length < width) {
         buffer.append(width - length, ' ');
@@ -143,24 +143,24 @@ void append_field_values(std::string& buffer,
  * overhead. Large fields use at most one worker per 4096 work items and never
  * exceed either the configured FEMaster thread count or 32 writer threads.
  */
-ID output_thread_count(Index work_items) {
+Index output_thread_count(Index work_items) {
 #ifndef _OPENMP
     (void) work_items;
     return 1;
 #else
-    const ID useful_threads = static_cast<ID>(
+    const Index useful_threads = static_cast<Index>(
         std::min<Index>(std::max<Index>(1, work_items / 4096), 32)
     );
 
-    return std::max<ID>(1, std::min<ID>(global_config.max_threads, useful_threads));
+    return std::max<Index>(1, std::min<Index>(global_config.max_threads, useful_threads));
 #endif
 }
 
 /**
  * Creates one independent output buffer for every formatting worker.
  */
-std::vector<std::string> create_thread_buffers(ID num_threads) {
-    std::vector<std::string> buffers(static_cast<std::size_t>(num_threads));
+std::vector<std::string> create_thread_buffers(Index num_threads) {
+    std::vector<std::string> buffers(num_threads);
 
     for (auto& buffer : buffers) {
         buffer.reserve(16 * 1024 * 1024);
@@ -204,8 +204,8 @@ const char* field_domain_to_string(model::FieldDomain domain) {
 void write_dense_field_header(std::ofstream& file_path,
                               const std::string& field_name,
                               model::FieldDomain domain,
-                              int cols,
-                              int rows) {
+                              Index cols,
+                              Index rows) {
     file_path << "FIELD, NAME=" << field_name
               << ", TYPE=" << field_domain_to_string(domain)
               << ", COLS=" << cols
@@ -218,9 +218,9 @@ void write_dense_field_header(std::ofstream& file_path,
 void write_indexed_field_header(std::ofstream& file_path,
                                 const std::string& field_name,
                                 model::FieldDomain domain,
-                                int index_cols,
-                                int value_cols,
-                                int rows) {
+                                Index index_cols,
+                                Index value_cols,
+                                Index rows) {
     file_path << "FIELD, NAME=" << field_name
               << ", TYPE=" << field_domain_to_string(domain)
               << ", INDEX_COLS=" << index_cols
@@ -245,18 +245,18 @@ void write_dense_field(std::ofstream& file_path,
         file_path,
         field_name,
         field.domain,
-        static_cast<int>(field.components),
-        static_cast<int>(field.rows)
+        field.components,
+        field.rows
     );
 
     // Allocate one contiguous output buffer for every formatting worker
-    const ID num_threads = output_thread_count(field.rows);
+    const Index num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format contiguous row ranges independently
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = field.rows * thread       / num_threads;
             const Index end   = field.rows * (thread + 1) / num_threads;
@@ -289,7 +289,7 @@ void write_indexed_field(std::ofstream& file_path,
                          const model::Field& field,
                          const std::string& field_name,
                          const std::vector<std::string>& ids) {
-    logging::error(ids.size() == static_cast<std::size_t>(field.rows),
+    logging::error(static_cast<Index>(ids.size()) == field.rows,
         "ResWriter: id mapping does not match rows of field '", field_name, "'");
 
     write_indexed_field_header(
@@ -297,24 +297,24 @@ void write_indexed_field(std::ofstream& file_path,
         field_name,
         field.domain,
         1,
-        static_cast<int>(field.components),
-        static_cast<int>(field.rows)
+        field.components,
+        field.rows
     );
 
     // Allocate one contiguous output buffer for every formatting worker
-    const ID num_threads = output_thread_count(field.rows);
+    const Index num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format all node rows, preserving component-wise NaNs in the result
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = field.rows * thread       / num_threads;
             const Index end   = field.rows * (thread + 1) / num_threads;
 
             for (Index row = begin; row < end; ++row) {
-                append_string(buffer, ids[static_cast<std::size_t>(row)]);
+                append_string(buffer, ids[row]);
                 append_field_values(buffer, field, row);
             }
         });
@@ -368,24 +368,24 @@ void write_element_location_field(std::ofstream& file_path,
         field_name,
         field.domain,
         2,
-        static_cast<int>(field.components),
-        static_cast<int>(dense_rows)
+        field.components,
+        dense_rows
     );
 
     // Keep complete element ranges together inside one formatting worker
-    const ID num_threads = output_thread_count(element_count);
+    const Index num_threads = output_thread_count(element_count);
     auto thread_buffers = create_thread_buffers(num_threads);
 
     // Format each contiguous element range into its private output buffer
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index start_index = element_count * thread       / num_threads;
             const Index end_index   = element_count * (thread + 1) / num_threads;
 
             for (Index elem_row = start_index; elem_row < end_index; ++elem_row) {
-                const auto& element = model_data.elements[static_cast<std::size_t>(elem_row)];
+                const auto& element = model_data.elements[elem_row];
                 if (!element) continue;
 
                 const Index begin = static_cast<Index>(offsets(elem_row, 0));
@@ -395,7 +395,7 @@ void write_element_location_field(std::ofstream& file_path,
                     "ResWriter: invalid ", offset_name, " span for element ", elem_row);
 
                 const std::string& elem_id =
-                    element_ids[static_cast<std::size_t>(elem_row)];
+                    element_ids[elem_row];
 
                 for (Index local = 0; local < end - begin; ++local) {
                     const Index row = begin + local;
@@ -487,7 +487,7 @@ void ResWriter::close() {
 /**
  * Starts a new result loadcase.
  */
-void ResWriter::add_loadcase(int id, WriterStepType step_type) {
+void ResWriter::add_loadcase(Index id, WriterStepType step_type) {
     (void) step_type;
 
     logging::error(file_path.is_open(),
@@ -514,7 +514,7 @@ void ResWriter::initialize_ids(const model::ModelData& model_data) {
 
     // Build dense node -> semantic node identifier
     node_ids.resize(model_data.node_mapping.size());
-    for (std::size_t row = 0; row < model_data.node_mapping.size(); ++row) {
+    for (Index row = 0; row < static_cast<Index>(model_data.node_mapping.size()); ++row) {
         const auto& [instance, local_id] = model_data.node_mapping[row];
 
         logging::error(instance != nullptr,
@@ -525,7 +525,7 @@ void ResWriter::initialize_ids(const model::ModelData& model_data) {
 
     // Build dense element -> semantic element identifier
     element_ids.assign(model_data.elements.size(), "");
-    for (std::size_t row = 0; row < model_data.element_mapping.size(); ++row) {
+    for (Index row = 0; row < static_cast<Index>(model_data.element_mapping.size()); ++row) {
         if (!model_data.elements[row]) continue;
 
         const auto& [instance, local_id] = model_data.element_mapping[row];

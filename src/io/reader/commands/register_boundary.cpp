@@ -93,13 +93,13 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET")
-                    .one<int>().name("FIRST_DOF")
-                    .one<int>().name("LAST_DOF").on_missing(-1).on_empty(-1)
+                    .one<Index>().name("FIRST_DOF")
+                    .one<Index>().name("LAST_DOF").on_missing(-1).on_empty(-1)
                     .one<Precision>().name("MAGNITUDE").on_missing(Precision{0}).on_empty(Precision{0})
                 )
                 .bind([&parser, amplitude](const std::string& target,
-                                           int first_dof,
-                                           int last_dof,
+                                           Index first_dof,
+                                           Index last_dof,
                                            Precision magnitude) {
                     if (last_dof < 0) last_dof = first_dof;
                     logging::error((first_dof >= 1 && first_dof <= 6
@@ -145,11 +145,11 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
 
                     Vec6 values;
                     values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
-                    for (int dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
+                    for (Index dof = first_dof; dof <= last_dof; ++dof) values[dof - 1] = magnitude;
 
                     std::array<std::vector<bc::Condition::Ptr>, 6> replacements;
 
-                    const auto add_node = [&](ID node_id) {
+                    const auto add_node = [&](Index node_id) {
                         cos::CoordinateSystem::Ptr orientation = nullptr;
                         const auto transform = parser.node_transforms.find(node_id);
                         if (transform != parser.node_transforms.end()) {
@@ -161,7 +161,7 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                         auto region = std::make_shared<model::NodeRegion>("INTERNAL");
                         region->add(node_id);
 
-                        for (Dim dof = 0; dof < 6; ++dof) {
+                        for (Index dof = 0; dof < 6; ++dof) {
                             if (std::isnan(values[dof])) continue;
 
                             Vec6 component_values = Vec6::Constant(NAN);
@@ -173,14 +173,14 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                     };
 
                     if (model._data->node_sets.has(target)) {
-                        for (const ID node_id : *model._data->node_sets.get(target)) add_node(node_id);
+                        for (const Index node_id : *model._data->node_sets.get(target)) add_node(node_id);
                     } else {
                         add_node(model.compiled_node_id(target));
                     }
 
                     // A node set is one logical source for each DOF, even when
                     // individual nodes use different TRANSFORM bases.
-                    for (Dim dof = 0; dof < 6; ++dof) {
+                    for (Index dof = 0; dof < 6; ++dof) {
                         if (replacements[dof].empty()) continue;
                         parser.modify_conditions(bc::SUPPORT, identifier, std::move(replacements[dof]));
                     }

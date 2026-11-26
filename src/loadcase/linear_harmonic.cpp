@@ -183,7 +183,7 @@ SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
         "LinearHarmonic: A and B size mismatch");
 
     // Reserve all four blocks before embedding real and imaginary coefficients.
-    const Index n = static_cast<Index>(A.rows());
+    const Index n = A.rows();
     TripletList triplets;
     triplets.reserve(2 * (A.nonZeros() + B.nonZeros()));
 
@@ -388,7 +388,7 @@ void LinearHarmonic::run() {
 
             // Normalize eigenvectors with respect to the reduced mass matrix
             for (Index mode = 0; mode < eigenmode_count; ++mode) {
-                const DynamicVector& eigenvector = eigenpairs[static_cast<std::size_t>(mode)].vector;
+                const DynamicVector& eigenvector = eigenpairs[mode].vector;
                 const Precision      mode_mass   = eigenvector.dot(Mr * eigenvector);
 
                 logging::error(std::isfinite(mode_mass) && mode_mass > 0,
@@ -424,7 +424,7 @@ void LinearHarmonic::run() {
             DynamicMatrix reduced_loads(Kr.rows(), pattern_count);
 
             for (Index pattern = 0; pattern < pattern_count; ++pattern) {
-                const auto& source = load_patterns[static_cast<std::size_t>(pattern)].second;
+                const auto& source = load_patterns[pattern].second;
                 const DynamicVector force = system_dofs.reduce(source);
 
                 reduced_loads.col(pattern) = transformer->assemble_system_rhs(K, force);
@@ -454,7 +454,7 @@ void LinearHarmonic::run() {
                         "LinearHarmonic: static response mass norm must be finite and non-negative");
                     if (static_mass == 0) continue;
 
-                    for (int pass = 0; pass < 2; ++pass) {
+                    for (Index pass = 0; pass < 2; ++pass) {
                         const DynamicVector coefficients = reduction_basis.transpose() * (Mr * residual);
                         residual -= reduction_basis * coefficients;
                     }
@@ -510,7 +510,7 @@ void LinearHarmonic::run() {
     // The matrices and Ritz space remain fixed throughout the entire sweep;
     // only the frequency-dependent load and dynamic stiffness change.
     for (Index i = 0; i < static_cast<Index>(frequencies.size()); ++i) {
-        const Precision frequency = frequencies[static_cast<std::size_t>(i)];
+        const Precision frequency = frequencies[i];
         const Precision omega     = 2 * math::pi * frequency;
 
         DynamicVector u_real;
@@ -529,7 +529,7 @@ void LinearHarmonic::run() {
             if (reduction_basis.cols() > 0) {
                 // Galerkin projection produces a complex system of dimension r,
                 // represented here as a real 2r x 2r dense block matrix.
-                const Index basis_size = static_cast<Index>(reduction_basis.cols());
+                const Index basis_size = reduction_basis.cols();
                 const DynamicMatrix A  = projected_stiffness - omega * omega * projected_mass;
                 const DynamicMatrix B  = omega * projected_damping;
 
@@ -571,7 +571,7 @@ void LinearHarmonic::run() {
                 const DynamicVector solution = solve(
                     device, method, block_matrix, rhs, solver::DirectSolverMatrixType::General);
 
-                const Index reduced_size = static_cast<Index>(reduced_force.size());
+                const Index reduced_size = reduced_force.size();
                 q_real = solution.head(reduced_size);
                 q_imag = solution.tail(reduced_size);
             }

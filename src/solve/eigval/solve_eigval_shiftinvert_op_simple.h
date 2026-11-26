@@ -77,8 +77,8 @@ public:
     ShiftInvertOpSimple(const SparseMatrix& A, Scalar sigma);
 
     // Spectra operator dimensions
-    int rows() const;
-    int cols() const;
+    Index rows() const;
+    Index cols() const;
 
     // Shift control. Changing the shift invalidates the cached factorization
     // logically; the new factorization is built lazily on the next application.

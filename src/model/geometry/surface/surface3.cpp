@@ -20,7 +20,7 @@ namespace fem::model {
  *
  * @param node_ids Global identifiers of the three surface nodes.
  */
-Surface3::Surface3(const std::array<ID, 3>& node_ids)
+Surface3::Surface3(const std::array<Index, 3>& node_ids)
     : Surface<3>(node_ids) {}
 
 /**
@@ -140,7 +140,7 @@ Vec2 Surface3::closest_point_on_boundary(const Vec3&               global,
     Field node_field("SURFACE3_BOUNDARY", FieldDomain::NODE, 3, 3);
 
     for (Index local_id = 0; local_id < 3; ++local_id) {
-        for (Dim component = 0; component < 3; ++component) {
+        for (Index component = 0; component < 3; ++component) {
             node_field(local_id, component) = node_coords(local_id, component);
         }
     }

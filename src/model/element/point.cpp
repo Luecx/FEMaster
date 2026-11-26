@@ -45,7 +45,7 @@ namespace fem::model {
  * @param elem_id Element identifier.
  * @param nodes One-entry array containing the connected node.
  */
-PointElement::PointElement(ID elem_id, std::array<ID, N> nodes)
+PointElement::PointElement(Index elem_id, std::array<Index, N> nodes)
     : StructuralElement(elem_id), node_ids(nodes) {}
 
 /**
@@ -111,7 +111,7 @@ ElDofs PointElement::dofs() const {
  *
  * @return Pointer to the one-entry connectivity array.
  */
-const ID* PointElement::nodes() const {
+const Index* PointElement::nodes() const {
     return node_ids.data();
 }
 
@@ -221,8 +221,8 @@ MapMatrix PointElement::evaluate(
         logging::error(target_displacement != nullptr,
             "PointElement: internal force evaluation requires displacement");
 
-        const Index node = static_cast<Index>(node_ids[0]);
-        const Index row  = static_cast<Index>(elem_nodal_offset);
+        const Index node = node_ids[0];
+        const Index row  = elem_nodal_offset;
 
         for (Index dof = 0; dof < 3; ++dof) {
             (*internal_force)(row, dof    ) += section->spring_constants_       (dof) * (*target_displacement)(node, dof);
@@ -413,7 +413,7 @@ void PointElement::integrate_vector_field(
         "PointElement: section is not a PointMassSection for element ", label());
 
     // Evaluate the complete concentrated resultant at the connected point.
-    const Index node  = static_cast<Index>(node_ids[0]);
+    const Index node  = node_ids[0];
     const Vec3  value = section->mass_ * field(node_position(0));
 
     // The one-node topology requires no further distribution.

@@ -48,9 +48,9 @@ public:
     ScopedLinearAlgebraThreads& operator=(const ScopedLinearAlgebraThreads&) = delete;
 
     ~ScopedLinearAlgebraThreads() {
-        Eigen::setNbThreads(global_config.max_threads);
+        Eigen::setNbThreads(static_cast<int>(global_config.max_threads));
 #ifdef USE_MKL
-        mkl_set_num_threads(global_config.max_threads);
+        mkl_set_num_threads(static_cast<int>(global_config.max_threads));
 #endif
     }
 
@@ -77,20 +77,16 @@ public:
  * @param min_batch_size Optional minimum iterations per worker; zero by default.
  * @return Number of workers to allocate, always at least one.
  */
-template<typename Index>
-int worker_count(Index count, int max_threads, Index min_batch_size = 0) {
+inline Index worker_count(Index count, Index max_threads, Index min_batch_size = 0) {
 #ifdef _OPENMP
     if (count <= 0 || max_threads <= 1 || omp_in_parallel()) {
         return 1;
     }
 
     // Limit workers by the number of iterations available per worker
-    const Index minimum = std::max<Index>(Index(1), min_batch_size);
+    const Index minimum = std::max<Index>(1, min_batch_size);
     const Index useful  = count / minimum;
-    return static_cast<int>(std::max<Index>(
-        Index(1),
-        std::min<Index>(useful, static_cast<Index>(max_threads))
-    ));
+    return std::max<Index>(1, std::min(useful, max_threads));
 #else
     (void) count;
     (void) max_threads;
@@ -116,8 +112,8 @@ int worker_count(Index count, int max_threads, Index min_batch_size = 0) {
  * @param function Callback receiving the iteration index and worker index.
  * @param min_batch_size Optional minimum scheduling chunk size; zero by default.
  */
-template<typename Index, typename Function>
-void for_index(Index count, int max_threads, Function&& function, Index min_batch_size = 0) {
+template<typename Function>
+void for_index(Index count, Index max_threads, Function&& function, Index min_batch_size = 0) {
     if (count <= 0) {
         return;
     }
@@ -127,15 +123,12 @@ void for_index(Index count, int max_threads, Function&& function, Index min_batc
     const ScopedLinearAlgebraThreads threading;
 
 #ifdef _OPENMP
-    const int threads = worker_count(count, max_threads, min_batch_size);
+    const Index threads = worker_count(count, max_threads, min_batch_size);
 
     if (threads > 1) {
         // Aim for sixteen chunks per worker without shrinking below the minimum
-        const Index minimum   = std::max<Index>(Index(1), min_batch_size);
-        const Index batch_size = std::max<Index>(
-            minimum,
-            (count - Index(1)) / static_cast<Index>(threads) / Index(16) + Index(1)
-        );
+        const Index minimum    = std::max<Index>(1, min_batch_size);
+        const Index batch_size = std::max<Index>(minimum, (count - 1) / threads / 16 + 1);
 
         std::atomic_bool   failed{false};
         std::exception_ptr failure = nullptr;
@@ -149,7 +142,7 @@ void for_index(Index count, int max_threads, Function&& function, Index min_batc
             }
 
             try {
-                function(i, omp_get_thread_num());
+                function(i, static_cast<Index>(omp_get_thread_num()));
             } catch (...) {
                 std::lock_guard<std::mutex> lock(failure_mutex);
                 if (!failure) {
@@ -172,7 +165,7 @@ void for_index(Index count, int max_threads, Function&& function, Index min_batc
 
     // Avoid worker-team overhead for small loops and builds without OpenMP
     for (Index i = 0; i < count; ++i) {
-        function(i, 0);
+        function(i, Index(0));
     }
 }
 

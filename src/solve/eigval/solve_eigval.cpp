@@ -6,7 +6,7 @@
 namespace fem::solver {
 
 std::vector<EigvalPair>
-eigvals(SolverDevice device, const SparseMatrix& A, int k, const EigvalOpts& opts) {
+eigvals(SolverDevice device, const SparseMatrix& A, Index k, const EigvalOpts& opts) {
     logging::error(A.rows() == A.cols(),
         "Matrix must be square");
     logging::error(k > 0,
@@ -22,7 +22,7 @@ eigvals(SolverDevice device, const SparseMatrix& A, int k, const EigvalOpts& opt
 }
 
 std::vector<EigvalPair>
-eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts) {
+eigvals(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, Index k, const EigvalOpts& opts) {
     logging::error(A.rows() == A.cols(),
         "A must be square");
     logging::error(B.rows() == B.cols(),

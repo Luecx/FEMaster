@@ -88,11 +88,8 @@ using Mat42 = StaticMatrix<4, 2>;
 using Mat43 = StaticMatrix<4, 3>;
 
 // ============================================================================
-// Index and boolean types
+// Boolean types
 // ============================================================================
-
-using IndexVector   = Eigen::Matrix<ID, Eigen::Dynamic, 1>;
-using IndexMatrix   = Eigen::Matrix<ID, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 using BooleanVector = Eigen::Matrix<bool, Eigen::Dynamic, 1>;
 using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;

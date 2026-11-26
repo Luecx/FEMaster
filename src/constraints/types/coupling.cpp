@@ -29,7 +29,7 @@ namespace constraint {
  * Initializes the coupling constraint with the specified master node, slave nodes,
  * DOFs to couple, and the type of coupling.
  */
-Coupling::Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type)
+Coupling::Coupling(Index master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type)
     : master_node(master_node)
     , slave_nodes(slave_nodes)
     , coupled_dofs(coupled_dofs)
@@ -37,7 +37,7 @@ Coupling::Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coup
     // no-op: reporting pointers set by Model::add_coupling
 }
 
-Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type)
+Coupling::Coupling(Index master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type)
     : master_node(master_node)
     , slave_surfaces(slave_surfaces)
     , coupled_dofs(coupled_dofs)
@@ -63,15 +63,15 @@ Equations Coupling::get_equations(model::SystemDofs& system_nodal_dofs, model::M
 /**
  * @brief Collects the slave nodes of the coupling, sorted and without duplicates.
  */
-std::vector<ID> Coupling::slave_node_ids(model::ModelData& model_data) const {
-    std::vector<ID> ids{};
+std::vector<Index> Coupling::slave_node_ids(model::ModelData& model_data) const {
+    std::vector<Index> ids{};
     if (slave_nodes != nullptr) {
-        for (ID node_id : *slave_nodes) {
+        for (Index node_id : *slave_nodes) {
             ids.push_back(node_id);
         }
     } else {
-        for (ID surface_id : *slave_surfaces) {
-            for (ID node_id : *model_data.surfaces[surface_id]) {
+        for (Index surface_id : *slave_surfaces) {
+            for (Index node_id : *model_data.surfaces[surface_id]) {
                 ids.push_back(node_id);
             }
         }
@@ -94,10 +94,10 @@ Equations Coupling::kinematic_equations(model::SystemDofs& system_nodal_dofs, mo
         "positions field not set in model data");
     const auto& node_coords = *model_data.positions;
 
-    const std::vector<ID> ids = slave_node_ids(model_data);
+    const std::vector<Index> ids = slave_node_ids(model_data);
 
-    for (ID slave_node : ids) {
-        for (Dim i = 0; i < 6; i++) {
+    for (Index slave_node : ids) {
+        for (Index i = 0; i < 6; i++) {
             if (coupled_dofs(i)) {
                 if (i >= 3) {
                     // Rotational DOFs: couple with a single value
@@ -117,12 +117,12 @@ Equations Coupling::kinematic_equations(model::SystemDofs& system_nodal_dofs, mo
                     if (dof_slave < 0)
                         continue;
 
-                    Dim u_dof = (Dim) i;
-                    Dim r1_dof = (Dim) ((i + 1) % 3 + 3);
-                    Dim r2_dof = (Dim) ((i + 2) % 3 + 3);
+                    Index u_dof = (Index) i;
+                    Index r1_dof = (Index) ((i + 1) % 3 + 3);
+                    Index r2_dof = (Index) ((i + 2) % 3 + 3);
 
-                    const Index slave_idx = static_cast<Index>(slave_node);
-                    const Index master_idx = static_cast<Index>(master_node);
+                    const Index slave_idx = slave_node;
+                    const Index master_idx = master_node;
                     Precision dz            = node_coords(slave_idx, 2) - node_coords(master_idx, 2);
                     Precision dy            = node_coords(slave_idx, 1) - node_coords(master_idx, 1);
                     Precision dx            = node_coords(slave_idx, 0) - node_coords(master_idx, 0);
@@ -183,8 +183,8 @@ Equations Coupling::distributing_equations(model::SystemDofs& system_nodal_dofs,
         "COUPLING: reference positions field not set");
     const auto& positions = *model_data.positions_reference;
 
-    const std::vector<ID> ids = slave_node_ids(model_data);
-    const Index           n   = static_cast<Index>(ids.size());
+    const std::vector<Index> ids = slave_node_ids(model_data);
+    const Index              n   = static_cast<Index>(ids.size());
 
     logging::error(n > 0,
         "COUPLING: distributing coupling has no slave nodes");
@@ -197,7 +197,7 @@ Equations Coupling::distributing_equations(model::SystemDofs& system_nodal_dofs,
 
     for (Index k = 0; k < n; ++k) {
         const Mat3 lever = math::skew(positions.row_vec3(ids[k]) - master_pos);
-        for (Dim d = 0; d < 3; ++d) {
+        for (Index d = 0; d < 3; ++d) {
             if (system_nodal_dofs(ids[k], d) < 0) continue;
             A(d, 3 * k + d)             = Precision(1);
             A.block<3, 1>(3, 3 * k + d) = lever.col(d);
@@ -214,13 +214,13 @@ Equations Coupling::distributing_equations(model::SystemDofs& system_nodal_dofs,
         "COUPLING: distributing coupling coefficients are not finite");
 
     // q_m(c) - sum_k B(c, k) u_k = 0 for every coupled master DOF c
-    for (Dim c = 0; c < 6; ++c) {
+    for (Index c = 0; c < 6; ++c) {
         if (!coupled_dofs(c)) continue;
 
         Equation equation {};
         equation.entries.push_back(EquationEntry {master_node, c, Precision(1)});
         for (Index k = 0; k < n; ++k) {
-            for (Dim d = 0; d < 3; ++d) {
+            for (Index d = 0; d < 3; ++d) {
                 const Precision coeff = B(c, 3 * k + d);
                 if (coeff == Precision(0)) continue;
                 equation.entries.push_back(EquationEntry {ids[k], d, -coeff});
@@ -251,12 +251,12 @@ Dofs Coupling::master_dofs(const model::SystemDofs& system_dofs, model::ModelDat
         return coupled_dofs;
     }
 
-    Dofs                  slave_dofs = {false, false, false, false, false, false};
-    const std::vector<ID> ids        = slave_node_ids(model_data);
+    Dofs                     slave_dofs = {false, false, false, false, false, false};
+    const std::vector<Index> ids        = slave_node_ids(model_data);
 
     // Determine which DOFs are active for the slave nodes
-    for (ID slave_node : ids) {
-        for (int i = 0; i < 6; i++) {
+    for (Index slave_node : ids) {
+        for (Index i = 0; i < 6; i++) {
             slave_dofs(i) |= system_dofs.active(slave_node, i);
         }
     }
@@ -283,7 +283,7 @@ static inline std::string dofs_to_string(const Dofs& m) {
     static const char* labels[6] = {"Ux","Uy","Uz","Rx","Ry","Rz"};
     std::ostringstream oss;
     bool first = true;
-    for (int i = 0; i < 6; ++i) {
+    for (Index i = 0; i < 6; ++i) {
         if (m(i)) {
             if (!first) oss << ", ";
             oss << labels[i];

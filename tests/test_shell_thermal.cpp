@@ -25,7 +25,7 @@ namespace {
 
 template<typename Shell, std::size_t... I>
 void add_shell(fem::model::Model& model, std::index_sequence<I...>) {
-    model.set_element<Shell>(0, static_cast<fem::ID>(I)...);
+    model.set_element<Shell>(0, static_cast<fem::Index>(I)...);
 }
 
 /**
@@ -42,8 +42,8 @@ void check_uniform_thermal_load(
     using namespace fem;
 
     model::Model model;
-    for (std::size_t i = 0; i < N; ++i) {
-        model.set_node(static_cast<ID>(i), coords[i].x(), coords[i].y(), coords[i].z());
+    for (Index i = 0; i < N; ++i) {
+        model.set_node(i, coords[i].x(), coords[i].y(), coords[i].z());
     }
     add_shell<Shell>(model, std::make_index_sequence<N>{});
 
@@ -141,9 +141,9 @@ void check_uniform_thermal_load(
         };
         displacement.set_zero();
         for (Index node = 0; node < static_cast<Index>(N); ++node) {
-            displacement(node, 0) = free_strain * coords[static_cast<std::size_t>(node)].x();
-            displacement(node, 1) = free_strain * coords[static_cast<std::size_t>(node)].y();
-            displacement(node, 2) = free_strain * coords[static_cast<std::size_t>(node)].z();
+            displacement(node, 0) = free_strain * coords[node].x();
+            displacement(node, 1) = free_strain * coords[node].y();
+            displacement(node, 2) = free_strain * coords[node].z();
         }
 
         auto stress_strain =
@@ -156,7 +156,7 @@ void check_uniform_thermal_load(
         bool planar_xy = true;
         for (Index node = 1; node < static_cast<Index>(N); ++node) {
             planar_xy = planar_xy
-                && std::abs(coords[static_cast<std::size_t>(node)].z() - coords[0].z()) < 1e-12;
+                && std::abs(coords[node].z() - coords[0].z()) < 1e-12;
         }
 
         for (Index node = 0; node < static_cast<Index>(N); ++node) {
@@ -268,7 +268,7 @@ TEST(ShellPlasticity, PeeqUsesThicknessMaximumBeforeExtrapolation) {
 
     // Prescribe a bilinear in-plane PEEQ field. At each in-plane IP exactly one
     // of the five thickness points carries the target maximum; all others are lower.
-    for (Index ip = 0; ip < static_cast<Index>(ip_rst.rows()); ++ip) {
+    for (Index ip = 0; ip < ip_rst.rows(); ++ip) {
         const Precision r = ip_rst(ip, 0);
         const Precision s = ip_rst(ip, 1);
         const Precision expected = Precision(0.2) + Precision(0.03) * r
@@ -288,7 +288,7 @@ TEST(ShellPlasticity, PeeqUsesThicknessMaximumBeforeExtrapolation) {
     const model::Field peeq = model.compute_peeq_nodal();
     const RowMatrix nodal_rst = shell->stress_strain_nodal_rst();
 
-    for (Index node = 0; node < static_cast<Index>(nodal_rst.rows()); ++node) {
+    for (Index node = 0; node < nodal_rst.rows(); ++node) {
         const Precision r = nodal_rst(node, 0);
         const Precision s = nodal_rst(node, 1);
         const Precision expected = Precision(0.2) + Precision(0.03) * r

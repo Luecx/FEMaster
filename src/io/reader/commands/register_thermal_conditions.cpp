@@ -71,10 +71,10 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Node or compiled node set")
-                    .one<int>().name("DOF").desc("Temperature degree of freedom 11")
+                    .one<Index>().name("DOF").desc("Temperature degree of freedom 11")
                     .one<Precision>().name("POWER").desc("Power per target node")
                 )
-                .bind([&parser, amplitude](const std::string& target, int dof, Precision power) {
+                .bind([&parser, amplitude](const std::string& target, Index dof, Precision power) {
                     // Preserve target identity for replacement across steps
                     logging::error(dof == 11,
                         "CFLUX: only temperature DOF 11 is supported");
@@ -134,11 +134,11 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                         data.temperature_target->fill_nan();
                     }
                     const auto region = parser.model().resolve_node_region(target);
-                    for (const ID id : region->data()) {
+                    for (const Index id : region->data()) {
                         logging::error(id >= 0 &&
-                            static_cast<Index>(id) < data.temperature_target->rows,
+                            id < data.temperature_target->rows,
                             "TEMPERATURE: node index out of bounds: ", id);
-                        (*data.temperature_target)(static_cast<Index>(id), 0) = value;
+                        (*data.temperature_target)(id, 0) = value;
                     }
                 })
             )

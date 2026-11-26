@@ -53,7 +53,7 @@ struct LoadCase : public Castable {
     using Ptr = std::unique_ptr<LoadCase>;
 
     // Parser-assigned identity and shared analysis dependencies
-    ID                         id     = -1;
+    Index                      id     = -1;
     io::writer::ResultWriters* writer = nullptr;
     model::Model*              model  = nullptr;
 
@@ -96,7 +96,7 @@ struct LoadCase : public Castable {
     model::Field build_target_load_matrix(Precision time) const;
 
     // Assigned load-case identifier
-    ID get_id() const { return id; }
+    Index get_id() const { return id; }
 
 protected:
     // Log the equation origins and sizes collected from the current model state

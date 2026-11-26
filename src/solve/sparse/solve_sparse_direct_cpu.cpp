@@ -114,7 +114,7 @@ DynamicMatrix solve_direct_cpu(SparseMatrix& mat, const DynamicMatrix& rhs, Dire
 
 #if defined(USE_MKL)
     // Configure PARDISO threading from the global FEMaster solver configuration
-    mkl_set_num_threads(global_config.max_threads);
+    mkl_set_num_threads(static_cast<int>(global_config.max_threads));
     const int mkl_max_threads = mkl_get_max_threads();
 
     logging::info(true, "MKL max threads          : ", mkl_max_threads);

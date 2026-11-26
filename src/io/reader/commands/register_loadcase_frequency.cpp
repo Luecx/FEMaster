@@ -74,7 +74,7 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
 
                             const fem::Precision start = values[0];
                             const fem::Precision end   = values[1];
-                            const int points = static_cast<int>(std::llround(values[2]));
+                            const Index points = static_cast<Index>(std::llround(values[2]));
 
                             logging::error(std::isfinite(start) && std::isfinite(end),
                                 "FREQUENCIES bounds must be finite.");
@@ -94,7 +94,7 @@ void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parse
                             }
 
                             const fem::Precision increment = (end - start) / fem::Precision(points - 1);
-                            for (int i = 0; i < points; ++i) {
+                            for (Index i = 0; i < points; ++i) {
                                 lc->frequencies[i] = start + fem::Precision(i) * increment;
                             }
                         })

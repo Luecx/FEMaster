@@ -34,7 +34,7 @@ namespace constraint {
  * @param tie_nodes Optional node set following translations and rotations.
  * @param pin_nodes Optional node set following translations only.
  */
-RigidBody::RigidBody(ID                        ref_node,
+RigidBody::RigidBody(Index                     ref_node,
                      model::ElementRegion::Ptr elements,
                      model::NodeRegion::Ptr    tie_nodes,
                      model::NodeRegion::Ptr    pin_nodes)
@@ -46,7 +46,7 @@ RigidBody::RigidBody(ID                        ref_node,
         "RigidBody: requires an element set, a tie node set or a pin node set");
 
     if (this->tie_nodes && this->pin_nodes) {
-        for (ID node_id : *this->pin_nodes) {
+        for (Index node_id : *this->pin_nodes) {
             logging::error(std::find(this->tie_nodes->begin(), this->tie_nodes->end(), node_id) == this->tie_nodes->end(),
                 "RigidBody: node ", node_id, " is in both the tie and the pin node set");
         }
@@ -60,22 +60,22 @@ RigidBody::RigidBody(ID                        ref_node,
  * pin nodes. Empty node lists produce no coupling.
  */
 std::vector<Coupling> RigidBody::couplings(model::ModelData& model_data) const {
-    std::vector<ID> pin_ids;
+    std::vector<Index> pin_ids;
     if (pin_nodes) {
         pin_ids.assign(pin_nodes->begin(), pin_nodes->end());
     }
     std::sort(pin_ids.begin(), pin_ids.end());
 
-    std::vector<ID> tie_ids;
+    std::vector<Index> tie_ids;
     if (tie_nodes) {
         tie_ids.assign(tie_nodes->begin(), tie_nodes->end());
     }
     if (elements) {
-        for (ID elem_id : *elements) {
-            const auto& element = model_data.elements[static_cast<std::size_t>(elem_id)];
+        for (Index elem_id : *elements) {
+            const auto& element = model_data.elements[elem_id];
             logging::error(element != nullptr,
                 "RigidBody: element ", elem_id, " of set ", elements->name, " does not exist");
-            for (ID node_id : *element) {
+            for (Index node_id : *element) {
                 tie_ids.push_back(node_id);
             }
         }
@@ -85,7 +85,7 @@ std::vector<Coupling> RigidBody::couplings(model::ModelData& model_data) const {
 
     // Pin node types override the tie type of element-set nodes
     auto tie_region = std::make_shared<model::NodeRegion>("RIGIDBODY_TIE");
-    for (ID node_id : tie_ids) {
+    for (Index node_id : tie_ids) {
         if (!std::binary_search(pin_ids.begin(), pin_ids.end(), node_id)) {
             tie_region->add(node_id);
         }
@@ -116,7 +116,7 @@ Dofs RigidBody::master_dofs(const model::SystemDofs& system_dofs, model::ModelDa
     Dofs dofs{false, false, false, false, false, false};
     for (Coupling& coupling : couplings(model_data)) {
         const Dofs coupling_dofs = coupling.master_dofs(system_dofs, model_data);
-        for (Dim i = 0; i < 6; ++i) {
+        for (Index i = 0; i < 6; ++i) {
             dofs(i) = dofs(i) || coupling_dofs(i);
         }
     }

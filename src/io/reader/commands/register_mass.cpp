@@ -85,7 +85,7 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
                     logging::error(region != nullptr && region->size() > 0,
                         "MASS: element set ", *elset, " is empty in part ", part->name);
 
-                    for (const ID id : *region) {
+                    for (const Index id : *region) {
                         const auto it = part->elements.find(id);
                         logging::error(it != part->elements.end() && it->second != nullptr,
                             "MASS: element ", id, " does not exist in part ", part->name);
@@ -117,12 +117,12 @@ void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
                     logging::error(region != nullptr && region->size() > 0,
                         "MASS: compiled element set ", *elset, " is empty");
 
-                    for (const ID id : *region) {
+                    for (const Index id : *region) {
                         logging::error(id >= 0
-                                    && static_cast<std::size_t>(id) < model._data->elements.size()
-                                    && model._data->elements[static_cast<std::size_t>(id)] != nullptr,
+                                    && id < static_cast<Index>(model._data->elements.size())
+                                    && model._data->elements[id] != nullptr,
                             "MASS: compiled element ", id, " does not exist");
-                        logging::error(model._data->elements[static_cast<std::size_t>(id)]->as<model::PointElement>() != nullptr,
+                        logging::error(model._data->elements[id]->as<model::PointElement>() != nullptr,
                             "MASS: compiled element set ", *elset, " contains non-MASS element ", id);
                     }
 

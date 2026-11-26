@@ -34,12 +34,12 @@ struct PointElement : StructuralElement {
     static constexpr Index N = 1;
 
     // Single global node connected to the point element.
-    std::array<ID, N> node_ids{};
+    std::array<Index, N> node_ids{};
 
     // Construct the persistent point-element definition from element id and
     // connectivity. Section assignment, compiled offsets and ModelData binding
     // are supplied later during model compilation.
-    PointElement(ID elem_id, std::array<ID, N> nodes);
+    PointElement(Index elem_id, std::array<Index, N> nodes);
 
     ~PointElement() override = default;
 
@@ -50,13 +50,13 @@ struct PointElement : StructuralElement {
     ElDofs dofs() const override;
 
     // Zero-dimensional element topology.
-    Dim dimensions() const override { return 0; }
-    Dim n_nodes()    const override { return N; }
-    Dim num_ip()     const override { return 0; }
+    Index dimensions() const override { return 0; }
+    Index n_nodes()    const override { return N; }
+    Index num_ip()     const override { return 0; }
 
     // Connectivity and element identification.
-    const ID*   nodes()     const override;
-    std::string type_name() const override;
+    const Index* nodes()     const override;
+    std::string  type_name() const override;
 
     // A concentrated point property has no geometric volume.
     Precision volume() override;

@@ -41,7 +41,7 @@ std::string TrussSection::str() const {
        << ", region="
        << (region_   ? region_->name : std::string("-"))
        << " ("
-       << (region_   ? static_cast<int>(region_->size()) : 0)
+       << (region_   ? region_->size() : 0)
        << ")"
        << ", A="
        << area_;

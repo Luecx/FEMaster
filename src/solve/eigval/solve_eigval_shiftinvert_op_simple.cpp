@@ -31,8 +31,8 @@ ShiftInvertOpSimple::ShiftInvertOpSimple(const SparseMatrix& A, Scalar sigma)
     ensure_compressed(_A_ref);
 }
 
-int ShiftInvertOpSimple::rows() const { return static_cast<int>(_A_ref.rows()); }
-int ShiftInvertOpSimple::cols() const { return static_cast<int>(_A_ref.cols()); }
+Index ShiftInvertOpSimple::rows() const { return _A_ref.rows(); }
+Index ShiftInvertOpSimple::cols() const { return _A_ref.cols(); }
 
 void ShiftInvertOpSimple::set_shift(const Scalar& s) {
     _sigma = s;
@@ -50,11 +50,11 @@ void ShiftInvertOpSimple::_factorize_if_needed() const
     ensure_compressed(M);
 
     // Add (-σ) to the diagonal sparsely.
-    const int n = static_cast<int>(M.rows());
+    const Index n = M.rows();
     if (_sigma != Scalar(0)) {
         std::vector<Eigen::Triplet<Scalar>> trips;
-        trips.reserve(static_cast<size_t>(n));
-        for (int i = 0; i < n; ++i) trips.emplace_back(i, i, -_sigma);
+        trips.reserve(n);
+        for (Index i = 0; i < n; ++i) trips.emplace_back(i, i, -_sigma);
         SparseMatrix D(n, n);
         D.setFromTriplets(trips.begin(), trips.end());
         M += D;
@@ -74,18 +74,18 @@ void ShiftInvertOpSimple::perform_op(const Scalar* x_in, Scalar* y_out) const
 {
 #ifdef USE_MKL
     // Configure MKL threads from global config each apply (cheap).
-    mkl_set_num_threads(global_config.max_threads);
+    mkl_set_num_threads(static_cast<int>(global_config.max_threads));
 #endif
 
     _factorize_if_needed();
 
-    const int n = static_cast<int>(_A_ref.rows());
+    const Index n = _A_ref.rows();
     Eigen::Map<const Eigen::Matrix<Scalar, Eigen::Dynamic, 1>> x(x_in, n);
     Eigen::Matrix<Scalar, Eigen::Dynamic, 1> y = _ldl.solve(x);
     if (_ldl.info() != Eigen::Success) {
         throw std::runtime_error("ShiftInvertOpSimple: solve() failed");
     }
 
-    std::memcpy(y_out, y.data(), sizeof(Scalar) * static_cast<size_t>(n));
+    std::memcpy(y_out, y.data(), sizeof(Scalar) * n);
 }
 } // namespace fem::solver

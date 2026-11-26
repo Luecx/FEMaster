@@ -39,7 +39,7 @@ public:
     void numerate();
 
     // Global index of a component, or -1 if inactive. Unchecked for assembly loops.
-    int operator()(Index node, Index dof) const { return _ids(node, dof); }
+    Index operator()(Index node, Index dof) const { return _ids(node, dof); }
 
     bool  active   (Index node, Index dof) const { return _mask(node, dof); }
     bool  numerated()                      const { return _numerated; }
@@ -55,10 +55,10 @@ public:
     SparseMatrix  pattern(const std::vector<ElementPtr>& elements) const;
 
 private:
-    Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> _mask;
-    Eigen::Matrix<int,  Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> _ids;
-    Index                                                                _size      = 0;
-    bool                                                                 _numerated = false;
+    Eigen::Matrix<bool,  Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> _mask;
+    Eigen::Matrix<Index, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> _ids;
+    Index                                                                 _size      = 0;
+    bool                                                                  _numerated = false;
 };
 
 } // namespace fem::model

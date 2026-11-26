@@ -125,16 +125,16 @@ void Support::apply(
     Precision
 ) {
     // Validate the semantic target before traversing compiled topology
-    const int active_regions = static_cast<int>(node_region_    != nullptr)
-                             + static_cast<int>(element_region_ != nullptr)
-                             + static_cast<int>(surface_region_ != nullptr);
+    const Index active_regions = static_cast<Index>(node_region_  != nullptr)
+                             + static_cast<Index>(element_region_ != nullptr)
+                             + static_cast<Index>(surface_region_ != nullptr);
 
     logging::error(active_regions == 1,
         "SUPPORT: exactly one node, element or surface region must be configured");
 
     // A direct node target requires no topological expansion
     if (node_region_) {
-        for (ID node_id : *node_region_) {
+        for (Index node_id : *node_region_) {
             apply_to_node(model_data, constraints, node_id);
         }
         return;
@@ -144,15 +144,15 @@ void Support::apply(
     // uninitialized compiled entries violate the support's target invariant and
     // are reported explicitly rather than being silently ignored.
     if (element_region_) {
-        for (ID element_id : *element_region_) {
-            logging::error(element_id >= 0 && static_cast<Index>(element_id) < model_data.elements.size(),
+        for (Index element_id : *element_region_) {
+            logging::error(element_id >= 0 && element_id < static_cast<Index>(model_data.elements.size()),
                 "SUPPORT: element ", element_id, " is outside the compiled element domain");
 
-            auto& element = model_data.elements[static_cast<Index>(element_id)];
+            auto& element = model_data.elements[element_id];
             logging::error(element != nullptr,
                 "SUPPORT: element ", element_id, " is not initialized");
 
-            for (ID node_id : *element) {
+            for (Index node_id : *element) {
                 apply_to_node(model_data, constraints, node_id);
             }
         }
@@ -161,15 +161,15 @@ void Support::apply(
 
     // Expand every selected surface to its connected global nodes using the same
     // explicit validation of the compiled target
-    for (ID surface_id : *surface_region_) {
-        logging::error(surface_id >= 0 && static_cast<Index>(surface_id) < model_data.surfaces.size(),
+    for (Index surface_id : *surface_region_) {
+        logging::error(surface_id >= 0 && surface_id < static_cast<Index>(model_data.surfaces.size()),
             "SUPPORT: surface ", surface_id, " is outside the compiled surface domain");
 
-        auto surface = model_data.surfaces[static_cast<Index>(surface_id)];
+        auto surface = model_data.surfaces[surface_id];
         logging::error(surface != nullptr,
             "SUPPORT: surface ", surface_id, " is not initialized");
 
-        for (ID node_id : *surface) {
+        for (Index node_id : *surface) {
             apply_to_node(model_data, constraints, node_id);
         }
     }
@@ -198,23 +198,23 @@ void Support::apply(
  * @param equations Constraint collection receiving the generated rows.
  * @param node_id Global node identifier to constrain.
  */
-void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id) {
+void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, Index node_id) {
     // Validate the geometric field and node identifier before evaluating a
     // potentially position-dependent local coordinate system
     logging::error(model_data.positions != nullptr,
         "SUPPORT: positions field is not initialized");
-    logging::error(node_id >= 0 && static_cast<Index>(node_id) < model_data.positions->rows,
+    logging::error(node_id >= 0 && node_id < model_data.positions->rows,
         "SUPPORT: node ", node_id, " is outside the compiled node domain");
 
     // Evaluate the coordinate system at the global nodal position. The position
     // field may store generalized rows, but only the first three components are
     // geometric coordinates.
-    const Vec6 position_vec = model_data.positions->row_vec6(static_cast<Index>(node_id));
+    const Vec6 position_vec = model_data.positions->row_vec6(node_id);
     const Vec3 position     = position_vec.head<3>();
 
     // Traverse translations first and rotations second in the common structural
     // ordering [Ux, Uy, Uz, Rx, Ry, Rz]
-    for (Dim dof = 0; dof < 6; ++dof) {
+    for (Index dof = 0; dof < 6; ++dof) {
         // NaN is the semantic marker for an unconstrained component
         if (std::isnan(values_[dof])) {
             continue;
@@ -240,14 +240,14 @@ void Support::apply_to_node(model::ModelData& model_data, constraint::Equations&
 
         // The local axis index is shared by translational and rotational blocks.
         // The block offset selects [Ux,Uy,Uz] or [Rx,Ry,Rz] in global numbering.
-        const Dim  axis         = dof % 3;
-        const Dim  block_offset = (dof / 3) * 3;
-        const Vec3 direction    = axes.col(axis);
+        const Index axis         = dof % 3;
+        const Index block_offset = (dof / 3) * 3;
+        const Vec3  direction    = axes.col(axis);
 
         // Expand e_a^T u = value into the three corresponding global DOFs
-        const constraint::EquationEntry entry_x{node_id, static_cast<Dim>(block_offset + 0), direction[0]};
-        const constraint::EquationEntry entry_y{node_id, static_cast<Dim>(block_offset + 1), direction[1]};
-        const constraint::EquationEntry entry_z{node_id, static_cast<Dim>(block_offset + 2), direction[2]};
+        const constraint::EquationEntry entry_x{node_id, block_offset + 0, direction[0]};
+        const constraint::EquationEntry entry_y{node_id, block_offset + 1, direction[1]};
+        const constraint::EquationEntry entry_z{node_id, block_offset + 2, direction[2]};
 
         equations.emplace_back(
             std::initializer_list<constraint::EquationEntry>{entry_x, entry_y, entry_z},
@@ -288,7 +288,7 @@ std::string Support::str() const {
 
     // Print only finite prescriptions and avoid a trailing separator
     bool first = true;
-    for (Dim dof = 0; dof < 6; ++dof) {
+    for (Index dof = 0; dof < 6; ++dof) {
         if (std::isnan(values_[dof])) {
             continue;
         }

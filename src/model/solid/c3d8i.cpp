@@ -42,7 +42,7 @@
 
 namespace fem::model {
 
-C3D8I::C3D8I(ID elem_id, const std::array<ID, N>& node_ids)
+C3D8I::C3D8I(Index elem_id, const std::array<Index, N>& node_ids)
     : C3D8(elem_id, node_ids) {}
 
 std::string C3D8I::type_name() const {
@@ -229,7 +229,7 @@ void C3D8I::compute_compliance_angle_derivative(Field& displacement, Field& resu
     logging::error(angles_field->components == 3,
         "Field '", angles_field->name, "': material orientation requires 3 components");
 
-    const Index row    = static_cast<Index>(this->elem_id);
+    const Index row    = this->elem_id;
     const Vec3  angles = angles_field->row_vec3(row);
 
     const Mat3 additional_rotation = cos::RectangularSystem::euler(
@@ -376,7 +376,7 @@ MapMatrix C3D8I::stiffness_geom(
 
     // Recover Delta S at every material point and contract it with the same
     // second kinematic derivatives used by the complete finite tangent.
-    for (Index ip = 0; ip < points.size(); ++ip) {
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const auto& point = points[ip];
 
         Mat3 enhancement_base   = Mat3::Identity();
@@ -474,7 +474,7 @@ MapMatrix C3D8I::stiffness_geom(
                 const Vec3 enhanced_dNb     = enhanced_shape_derivatives.row(node_b).transpose();
                 const Precision coefficient = measure * enhanced_dNa.dot(stress_increment * enhanced_dNb);
 
-                for (Dim component = 0; component < D; ++component) {
+                for (Index component = 0; component < D; ++component) {
                     guu(D * node_a + component, D * node_b + component) += coefficient;
                 }
             }
@@ -484,7 +484,7 @@ MapMatrix C3D8I::stiffness_geom(
                 const Vec3 mixed_variation = F_stress_increment * (point.modes[mode].transpose() * dNa);
                 const Vec3 coefficient     = measure * (first_variation + mixed_variation);
 
-                for (Dim component = 0; component < D; ++component) {
+                for (Index component = 0; component < D; ++component) {
                     gua(D * node_a + component, mode) += coefficient(component);
                     gau(mode, D * node_a + component) += coefficient(component);
                 }
@@ -528,7 +528,7 @@ StaticVector<C3D8I::N> C3D8I::nodal_thermal_strain(const Field* temperature_fiel
 
     for (Index node = 0; node < N; ++node) {
         const Precision temperature =
-            (*temperature_field)(static_cast<Index>(node_ids[node]), 0);
+            (*temperature_field)(node_ids[node], 0);
         free(node) = alpha * (temperature - zero);
     }
 
@@ -556,11 +556,11 @@ C3D8I::NonlinearPoints C3D8I::nonlinear_points(
     const auto& scheme = this->integration_scheme_stiffness();
 
     // Preserve the full eight-point rule inherited from C3D8
-    logging::error(scheme.count() == points.size(),
+    logging::error(scheme.count() == static_cast<Index>(points.size()),
         "C3D8I: nonlinear evaluation requires eight integration points");
 
     // Prepare immutable geometry before Newton iterates on the enhanced parameters
-    for (Index ip = 0; ip < points.size(); ++ip) {
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const auto quadrature = scheme.get_point(ip);
         auto& point           = points[ip];
 
@@ -639,7 +639,7 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
     EnhancedSystem system;
 
     // Integrate all residual and tangent blocks over the reference element volume
-    for (Index ip = 0; ip < points.size(); ++ip) {
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const auto& point        = points[ip];
         const auto& dN_dX        = point.derivatives;
         const auto& compatible_F = point.compatible;
@@ -765,7 +765,7 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
                 const Vec3 enhanced_dNb     = enhanced_shape_derivatives.row(node_b).transpose();
                 const Precision coefficient = enhanced_dNa.dot(S * enhanced_dNb) * measure;
 
-                for (Dim component = 0; component < D; ++component) {
+                for (Index component = 0; component < D; ++component) {
                     system.kuu(D * node_a + component, D * node_b + component) += coefficient;
                 }
             }
@@ -776,7 +776,7 @@ C3D8I::EnhancedSystem C3D8I::assemble_nonlinear_system(
                 const Vec3 mixed_variation = FS * (modes[mode].transpose() * dNa);
                 const Vec3 coefficient     = measure * (first_variation + mixed_variation);
 
-                for (Dim component = 0; component < D; ++component) {
+                for (Index component = 0; component < D; ++component) {
                     system.kua(D * node_a + component, mode) += coefficient(component);
                     system.kau(mode, D * node_a + component) += coefficient(component);
                 }
@@ -848,7 +848,7 @@ C3D8I::Vector24 C3D8I::local_displacement(const Field& displacement) {
     Vector24 result                = Vector24::Zero();
 
     for (Index node = 0; node < N; ++node) {
-        for (Dim dof = 0; dof < D; ++dof) {
+        for (Index dof = 0; dof < D; ++dof) {
             result(D * node + dof) = local(node, dof);
         }
     }
@@ -872,8 +872,8 @@ void C3D8I::assemble_local_force(Field& node_forces, const Vector24& local_force
         "C3D8I: internal force output requires at least three components");
 
     for (Index node = 0; node < N; ++node) {
-        const Index row = static_cast<Index>(elem_nodal_offset) + node;
-        for (Dim dof = 0; dof < D; ++dof) {
+        const Index row = elem_nodal_offset + node;
+        for (Index dof = 0; dof < D; ++dof) {
             node_forces(row, dof) += local_force(D * node + dof);
         }
     }
@@ -1060,7 +1060,7 @@ void C3D8I::compute_stress_strain(
     const Field*     base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     const bool exact_displacement = base_displacement == &target_displacement;
 
@@ -1072,7 +1072,7 @@ void C3D8I::compute_stress_strain(
     logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
                 && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
         "C3D8I: stress/strain recovery requires ELEMENT_NODAL output");
-    logging::error(rst.rows() == static_cast<Eigen::Index>(N),
+    logging::error(rst.rows() == N,
         "C3D8I: stress/strain recovery requires element-nodal coordinates");
 
     const auto& scheme = this->integration_scheme_stiffness();
@@ -1222,8 +1222,8 @@ void C3D8I::compute_stress_strain(
     const RowMatrix nodal_stress = E * ip_stress;
 
     for (Eigen::Index row = 0; row < rst.rows(); ++row) {
-        const Index global_row = static_cast<Index>(offset + row);
-        for (Dim component = 0; component < 6; ++component) {
+        const Index global_row = offset + row;
+        for (Index component = 0; component < 6; ++component) {
             if (strain) (*strain)(global_row, component) = nodal_strain(row, component);
             if (stress) (*stress)(global_row, component) = nodal_stress(row, component);
         }

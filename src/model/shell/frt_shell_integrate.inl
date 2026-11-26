@@ -211,7 +211,7 @@ void FRTShell<N>::integrate_vector_field(
         // Distribute the integrated field consistently through the same shape
         // functions used by the shell geometry
         for (Index node = 0; node < num_nodes; ++node) {
-            const Index node_id = static_cast<Index>(this->node_ids[node]);
+            const Index node_id = this->node_ids[node];
 
             for (Index component = 0; component < 3; ++component) {
                 node_loads(node_id, component) +=
@@ -296,7 +296,7 @@ void FRTShell<N>::compute_compliance(Field& displacement, Field& result) {
     MapMatrix K = evaluate(buffer, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, false);
     const Vec6N u = element_displacement_vector(displacement);
 
-    result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);
+    result(this->elem_id, 0) = u.dot(K * u);
 }
 
 } // namespace fem::model

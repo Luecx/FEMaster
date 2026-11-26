@@ -198,19 +198,19 @@ void Transient::run() {
     auto result = solver::newmark_linear(Mr, Cr, A, ic, optsNm, reduced_force, reduced_force_basis);
 
     // (10) Write results with cadence
-    const int n_steps = static_cast<int>(std::ceil(std::max(0.0, t_end - t_start) / dt));
-    int write_stride = std::max(1, write_every_steps);
+    const Index n_steps = static_cast<Index>(std::ceil(std::max(0.0, t_end - t_start) / dt));
+    Index write_stride = std::max<Index>(1, write_every_steps);
     if (write_every_time > 0.0) {
-        write_stride = std::max(1, static_cast<int>(std::round(write_every_time / dt)));
+        write_stride = std::max<Index>(1, static_cast<Index>(std::round(write_every_time / dt)));
     }
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
 
-    for (int k = 0; k <= n_steps; ++k) {
+    for (Index k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
-        const auto& qk  = result.u[static_cast<size_t>(k)];
-        const auto& qvk = result.v[static_cast<size_t>(k)];
-        const auto& qak = result.a[static_cast<size_t>(k)];
+        const auto& qk  = result.u[k];
+        const auto& qvk = result.v[k];
+        const auto& qak = result.a[k];
         const Precision frame_time =
             static_cast<Precision>(t_start + static_cast<double>(k) * dt);
 

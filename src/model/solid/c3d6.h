@@ -28,7 +28,7 @@ namespace fem { namespace model {
  */
 struct C3D6 : public SolidElement<6> {
     // Construction and concrete element identity
-    C3D6(ID p_elem_id, const std::array<ID, 6>& p_node_ids);
+    C3D6(Index p_elem_id, const std::array<Index, 6>& p_node_ids);
 
     // Recreate only the persistent element topology. Instance-specific ids and
     // runtime bindings are assigned by Model::compile() afterwards.
@@ -38,7 +38,7 @@ struct C3D6 : public SolidElement<6> {
     const math::quadrature::Quadrature& integration_scheme() const override;
 
     // Boundary faces reuse the global connectivity for surface loads and constraints
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
 
     // Natural-coordinate interpolation. Node ordering matches connectivity
     // and the columns of the mechanical strain-displacement operator.

@@ -55,7 +55,7 @@ namespace constraint {
 // Physical nodal location of an active global displacement DOF.
 struct DofLocation {
     Index node{};
-    int   component{};
+    Index component{};
 };
 
 /**

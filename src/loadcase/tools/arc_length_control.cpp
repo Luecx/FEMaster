@@ -229,7 +229,7 @@ bool ArcLengthControl::solve(
                         const DynamicVector current_load = load_derivative
                             ? load_derivative(q, lambda)
                             : reference_load;
-                        logging::error(static_cast<Index>(current_load.size()) == n
+                        logging::error(current_load.size() == n
                                     && current_load.allFinite(),
                             "ArcLengthControl: load derivative has invalid size or values");
 
@@ -243,8 +243,8 @@ bool ArcLengthControl::solve(
                         SparseMatrix augmented(n + 1, n + 1);
                         TripletList  triplets;
                         triplets.reserve(
-                            static_cast<std::size_t>(tangent.nonZeros())
-                          + static_cast<std::size_t>(2 * n)
+                            tangent.nonZeros()
+                          + (2 * n)
                           + 1
                         );
 
@@ -275,7 +275,7 @@ bool ArcLengthControl::solve(
 
                         const DynamicMatrix solution = matrix_solve(augmented, rhs);
 
-                        logging::error(static_cast<Index>(solution.rows()) == n + 1 && solution.cols() == 1,
+                        logging::error(solution.rows() == n + 1 && solution.cols() == 1,
                             "ArcLengthControl: augmented solve returned an invalid shape");
                         logging::error(solution.allFinite(),
                             "ArcLengthControl: correction contains NaN/Inf entries");

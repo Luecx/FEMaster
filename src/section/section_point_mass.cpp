@@ -74,7 +74,7 @@ std::string PointMassSection::str() const {
 
     os << "PointMassSection: region="
        << (region_ ? region_->name : std::string("-"))
-       << " (" << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
+       << " (" << (region_ ? region_->size() : 0) << ")"
        << ", mass=" << mass_
        << ", inertia=[" << rotary_inertia_(0) << ", " << rotary_inertia_(1) << ", " << rotary_inertia_(2) << "]"
        << ", spring=[" << spring_constants_(0) << ", " << spring_constants_(1) << ", " << spring_constants_(2) << "]"

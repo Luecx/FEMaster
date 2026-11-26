@@ -68,7 +68,7 @@ struct Variant {
     std::vector<Segment> _segments;
 
     /** Selection priority. Higher rank values take precedence. */
-    int rank_ = 0;
+    Index rank_ = 0;
 
     /** Optional short description used by documentation printers. */
     std::string doc_;
@@ -100,7 +100,7 @@ struct Variant {
      * @param value Rank value to assign (default is 0 for unranked variants).
      * @return Reference to `*this` for fluent chaining.
      */
-    Variant& rank(int value) {
+    Variant& rank(Index value) {
         rank_ = value;
         return *this;
     }
@@ -129,7 +129,7 @@ struct Variant {
         }
 
         // Check all previously added segments for "no-overlap" constraints.
-        for (std::size_t i = 0; i < _segments.size(); ++i) {
+        for (Index i = 0; i < static_cast<Index>(_segments.size()); ++i) {
             const Segment& prev = _segments[i];
 
             // previous must not be multiline

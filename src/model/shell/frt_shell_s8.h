@@ -38,7 +38,7 @@ struct FRTShellS8 : FRTShell<8> {
 
     // Construct the MITC8 shell from one element identifier and eight nodal
     // identifiers in serendipity ordering.
-    FRTShellS8(ID id, const std::array<ID, 8>& nodes);
+    FRTShellS8(Index id, const std::array<Index, 8>& nodes);
 
     // Recreate the concrete FRT shell from persistent topology only. The unique
     // reference-geometry cache is analysis state and is initialized later by the
@@ -53,7 +53,7 @@ struct FRTShellS8 : FRTShell<8> {
     std::string type_name() const override;
 
     // Return one oriented quadratic serendipity surface representation.
-    std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
+    std::shared_ptr<SurfaceInterface> surface(Index surface_id) override;
 
     // Return the full 3 x 3 quadrilateral area quadrature.
     const math::quadrature::Quadrature& integration_scheme() const override;

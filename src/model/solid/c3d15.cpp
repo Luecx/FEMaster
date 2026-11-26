@@ -23,7 +23,7 @@
 namespace fem {
 namespace model {
 
-C3D15::C3D15(ID p_elem_id, const std::array<ID, 15>& p_node_ids)
+C3D15::C3D15(Index p_elem_id, const std::array<Index, 15>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 /**
  * Returns the static natural-domain volume integration rule.
@@ -46,24 +46,24 @@ const math::quadrature::Quadrature& C3D15::integration_scheme() const {
  * @param surface_id One-based face identifier.
  * @return Requested face, or nullptr when the identifier is invalid.
  */
-SurfacePtr C3D15::surface(ID surface_id) {
+SurfacePtr C3D15::surface(Index surface_id) {
     // Quadratic wedge faces use six-node triangles and eight-node quadrilaterals
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[0], node_ids[2], node_ids[1], node_ids[8], node_ids[7], node_ids[6]});    // Face 1: Triangle
+                std::array<Index, 6> {node_ids[0], node_ids[2], node_ids[1], node_ids[8], node_ids[7], node_ids[6]});    // Face 1: Triangle
         case 2:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[3], node_ids[4], node_ids[5], node_ids[9], node_ids[10], node_ids[11]});    // Face 2: Triangle
+                std::array<Index, 6> {node_ids[3], node_ids[4], node_ids[5], node_ids[9], node_ids[10], node_ids[11]});    // Face 2: Triangle
         case 3:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[0], node_ids[1], node_ids[4], node_ids[3], node_ids[6], node_ids[13], node_ids[9], node_ids[12]});    // Face 3: Quadrilateral
+                std::array<Index, 8> {node_ids[0], node_ids[1], node_ids[4], node_ids[3], node_ids[6], node_ids[13], node_ids[9], node_ids[12]});    // Face 3: Quadrilateral
         case 4:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[1], node_ids[2], node_ids[5], node_ids[4], node_ids[7], node_ids[14], node_ids[10], node_ids[13]});    // Face 4: Quadrilateral
+                std::array<Index, 8> {node_ids[1], node_ids[2], node_ids[5], node_ids[4], node_ids[7], node_ids[14], node_ids[10], node_ids[13]});    // Face 4: Quadrilateral
         case 5:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[2], node_ids[0], node_ids[3], node_ids[5], node_ids[8], node_ids[12], node_ids[11], node_ids[14]});    // Face 5: Quadrilateral
+                std::array<Index, 8> {node_ids[2], node_ids[0], node_ids[3], node_ids[5], node_ids[8], node_ids[12], node_ids[11], node_ids[14]});    // Face 5: Quadrilateral
         default: return nullptr;                                                    // Invalid surface ID
     }
 }

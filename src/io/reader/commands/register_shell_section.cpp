@@ -57,7 +57,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
             *elset       = keys.raw("ELSET");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             *thickness   = keys.get<Precision>("THICKNESS");
-            *csys_axis   = static_cast<Index>(keys.get<int>("CSYSAXIS") - 1);
+            *csys_axis   = keys.get<Index>("CSYSAXIS") - 1;
             layers->clear();
         });
 
@@ -71,10 +71,10 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Precision>().name("THICKNESS")
                         .on_missing(Precision{1}).on_empty(Precision{1})
-                    .one<int>().name("INTEGRATIONPOINTS")
+                    .one<Index>().name("INTEGRATIONPOINTS")
                         .on_missing(5).on_empty(5)
                 )
-                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness, int integration_points) {
+                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness, Index integration_points) {
                     const auto part = model._data->parts.get();
                     logging::error(integration_points == 5,
                         "SHELLSECTION: exactly 5 integration points are supported");
@@ -153,7 +153,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Precision>().name("THICKNESS")
-                    .one<int>().name("INTEGRATIONPOINTS")
+                    .one<Index>().name("INTEGRATIONPOINTS")
                         .on_missing(3).on_empty(3)
                     .one<std::string>().name("MATERIAL")
                     .one<Precision>().name("ANGLE")
@@ -162,7 +162,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
                 .bind([&model, layers](Precision          layer_thickness,
-                                       int                integration_points,
+                                       Index              integration_points,
                                        const std::string& layer_material,
                                        Precision          angle,
                                        const std::string& name) {
@@ -177,7 +177,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                         model._data->materials.get(layer_material),
                         layer_thickness,
                         angle,
-                        static_cast<Index>(integration_points),
+                        integration_points,
                         name
                     });
                 })

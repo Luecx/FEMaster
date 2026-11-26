@@ -20,7 +20,7 @@ namespace fem::model {
  *
  * @param node_ids Global identifiers of the four surface nodes.
  */
-Surface4::Surface4(const std::array<ID, 4>& node_ids)
+Surface4::Surface4(const std::array<Index, 4>& node_ids)
     : Surface<4>(node_ids) {}
 
 /**
@@ -156,7 +156,7 @@ Vec2 Surface4::closest_point_on_boundary(const Vec3&               global,
     Field node_field("SURFACE4_BOUNDARY", FieldDomain::NODE, 4, 3);
 
     for (Index local_id = 0; local_id < 4; ++local_id) {
-        for (Dim component = 0; component < 3; ++component) {
+        for (Index component = 0; component < 3; ++component) {
             node_field(local_id, component) = node_coords(local_id, component);
         }
     }

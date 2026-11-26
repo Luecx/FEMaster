@@ -76,8 +76,8 @@ public:
         // owned. The scope therefore points directly into the resulting tree.
         std::vector<ParsedCommand*> scope{deck.root_.get()};
 
-        auto pop_scope_to = [&](std::size_t new_size) {
-            while (scope.size() > new_size) scope.pop_back();
+        auto pop_scope_to = [&](Index new_size) {
+            while (static_cast<Index>(scope.size()) > new_size) scope.pop_back();
         };
 
         // Preserve the existing one-keyword lookahead and variant rewind behavior.
@@ -125,9 +125,9 @@ public:
             }
 
             // Climb to the nearest syntactic ancestor admitting this command.
-            const int parent_index = admit_command(*command, scope, self_keys);
+            const Index parent_index = admit_command(*command, scope, self_keys);
             if (parent_index < 0) throw_unadmitted(line, scope);
-            pop_scope_to(static_cast<std::size_t>(parent_index + 1));
+            pop_scope_to(parent_index + 1);
 
             ParsedCommand* parent = scope.back();
             const ParentInfo parent_info = command_info(*parent);
@@ -135,12 +135,12 @@ public:
             // Try all condition-compatible variants by rank with full input rewind.
             struct Candidate {
                 const Variant* variant = nullptr;
-                std::size_t    order   = 0;
+                Index          order   = 0;
             };
 
             std::vector<Candidate> candidates;
             candidates.reserve(command->variants_.size());
-            for (std::size_t index = 0; index < command->variants_.size(); ++index) {
+            for (Index index = 0; index < static_cast<Index>(command->variants_.size()); ++index) {
                 const Variant& variant = command->variants_[index];
                 if (variant.has_condition_ && !variant.condition_.eval(parent_info, self_keys)) continue;
                 candidates.push_back(Candidate{&variant, index});
@@ -181,7 +181,7 @@ public:
                     break;
                 } catch (const std::exception& e) {
                     last_error = e.what();
-                    for (std::size_t index = consumed.size(); index-- > 0;) {
+                    for (Index index = static_cast<Index>(consumed.size()); index-- > 0;) {
                         replay.push_front(consumed[index]);
                     }
                 }
@@ -213,7 +213,7 @@ public:
 
             // Terminators stay in the tree but immediately close their parent.
             if (command->closes_parent_) {
-                pop_scope_to(static_cast<std::size_t>(parent_index));
+                pop_scope_to(parent_index);
                 continue;
             }
 
@@ -240,7 +240,7 @@ private:
                                               const std::vector<ParsedCommand*>& scope) {
         std::ostringstream message;
         message << "Command '" << line.command() << "' not admitted in current scope (stack: ";
-        for (std::size_t index = 0; index < scope.size(); ++index) {
+        for (Index index = 0; index < static_cast<Index>(scope.size()); ++index) {
             if (index) message << " > ";
             message << scope[index]->command_->name_;
         }
@@ -248,11 +248,11 @@ private:
         throw_at(line.location(), message.str());
     }
 
-    static int admit_command(const Command& command,
-                             const std::vector<ParsedCommand*>& scope,
-                             const Keys& self_keys) {
-        for (int index = static_cast<int>(scope.size()) - 1; index >= 0; --index) {
-            if (command.admit_.eval(command_info(*scope[static_cast<std::size_t>(index)]), self_keys)) {
+    static Index admit_command(const Command& command,
+                               const std::vector<ParsedCommand*>& scope,
+                               const Keys& self_keys) {
+        for (Index index = static_cast<Index>(scope.size()) - 1; index >= 0; --index) {
+            if (command.admit_.eval(command_info(*scope[index]), self_keys)) {
                 return index;
             }
         }
@@ -282,11 +282,11 @@ private:
             const bool multiline = segment._pattern.is_multiline();
 
             if (!multiline) {
-                const std::size_t min_records = segment._range.min_;
-                const std::size_t max_records = segment._range.max_;
-                const std::size_t need_tokens = segment._pattern.required_tokens();
+                const Index min_records = segment._range.min_;
+                const Index max_records = segment._range.max_;
+                const Index need_tokens = segment._pattern.required_tokens();
 
-                std::size_t records = 0;
+                Index records = 0;
                 while (true) {
                     if (records >= max_records) break;
 
@@ -312,7 +312,7 @@ private:
                         std::vector<std::string> tokens;
                         data_line.append_values(tokens);
 
-                        if (tokens.size() > need_tokens) {
+                        if (static_cast<Index>(tokens.size()) > need_tokens) {
                             std::ostringstream message;
                             message << "Too many tokens for single-line segment of " << command_name
                                     << " (" << tokens.size() << " > " << need_tokens << ")";
@@ -325,7 +325,7 @@ private:
                             throw_at(data_line.location(), error + " of " + command_name);
                         }
 
-                        if (tokens.size() != need_tokens) {
+                        if (static_cast<Index>(tokens.size()) != need_tokens) {
                             std::ostringstream message;
                             message << "Incomplete tokens for single-line segment of " << command_name
                                     << " (" << tokens.size() << " != " << need_tokens << ")";
@@ -341,15 +341,15 @@ private:
                 continue;
             }
 
-            const std::size_t max_lines_per_record = segment._range.max_;
-            const std::size_t need_tokens          = segment._pattern.required_tokens();
+            const Index max_lines_per_record = segment._range.max_;
+            const Index need_tokens          = segment._pattern.required_tokens();
 
             while (true) {
                 std::vector<std::string> tokens;
-                std::size_t              lines_in_record = 0;
+                Index                    lines_in_record = 0;
                 SourceLocation           record_location;
 
-                while (tokens.size() < need_tokens) {
+                while (static_cast<Index>(tokens.size()) < need_tokens) {
                     if (lines_in_record >= max_lines_per_record) {
                         std::ostringstream message;
                         message << "Exceeded maximum lines (" << max_lines_per_record
@@ -367,7 +367,7 @@ private:
                             if (error.empty()) error = "Unexpected EOF while filling multiline record";
                             throw_at(record_location, error + " for " + command_name);
                         }
-                        if (tokens.size() != need_tokens) {
+                        if (static_cast<Index>(tokens.size()) != need_tokens) {
                             throw_at(record_location,
                                 "Unexpected EOF with incomplete multiline record for " + command_name);
                         }
@@ -389,7 +389,7 @@ private:
                             if (error.empty()) error = "Encountered next command before fulfilling multiline record";
                             throw_at(record_location, error + " for " + command_name);
                         }
-                        if (tokens.size() != need_tokens) {
+                        if (static_cast<Index>(tokens.size()) != need_tokens) {
                             throw_at(record_location,
                                 "Next command arrived with incomplete multiline record for " + command_name);
                         }
@@ -408,7 +408,7 @@ private:
                     }
                 }
 
-                if (tokens.size() > need_tokens) {
+                if (static_cast<Index>(tokens.size()) > need_tokens) {
                     std::ostringstream message;
                     message << "Too many tokens for multiline record of " << command_name
                             << " (" << tokens.size() << " > " << need_tokens << ")";
@@ -420,7 +420,7 @@ private:
                     if (error.empty()) error = "Token normalization failed for multiline record";
                     throw_at(record_location, error + " of " + command_name);
                 }
-                if (tokens.size() != need_tokens) {
+                if (static_cast<Index>(tokens.size()) != need_tokens) {
                     std::ostringstream message;
                     message << "Incomplete tokens for multiline record of " << command_name
                             << " (" << tokens.size() << " != " << need_tokens << ")";

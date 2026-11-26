@@ -63,12 +63,12 @@ SystemDofs Model::build_thermal_dofs() {
     // Several neighboring thermal elements may activate the same node
     // concurrently. Atomic flags make this idempotent write safe without one
     // complete nodal mask per worker.
-    std::vector<std::atomic_bool> active_nodes(static_cast<std::size_t>(node_count));
+    std::vector<std::atomic_bool> active_nodes(node_count);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        active_nodes[static_cast<std::size_t>(node)].store(
+        active_nodes[node].store(
             false,
             std::memory_order_relaxed
         );
@@ -86,18 +86,18 @@ SystemDofs Model::build_thermal_dofs() {
         }
 
         try {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            const auto& element = _data->elements[elem_idx];
             if (element == nullptr || element->as<ThermalElement>() == nullptr) {
                 continue;
             }
 
-            for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
-                const ID node_id = element->nodes()[local_node];
-                logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+            for (Index local_node = 0; local_node < element->n_nodes(); ++local_node) {
+                const Index node_id = element->nodes()[local_node];
+                logging::error(node_id >= 0 && node_id < node_count,
                     "Model: thermal element ", element->label(),
                     " references node ", node_id, " outside the compiled node domain");
 
-                active_nodes[static_cast<std::size_t>(node_id)].store(
+                active_nodes[node_id].store(
                     true,
                     std::memory_order_relaxed
                 );
@@ -124,7 +124,7 @@ SystemDofs Model::build_thermal_dofs() {
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        if (active_nodes[static_cast<std::size_t>(node)].load(std::memory_order_relaxed)) {
+        if (active_nodes[node].load(std::memory_order_relaxed)) {
             system_dofs.activate(node, Index(0));
         }
     }
@@ -155,7 +155,7 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
 ) {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.nodes()) == _data->positions->rows,
+    logging::error(system_dof_ids.nodes() == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.width() == 1,
         "Model: thermal DOF map must contain exactly one component");
@@ -164,15 +164,15 @@ SparseMatrix Model::build_thermal_conductivity_matrix(
     // vector avoids synchronized push_back operations; compaction is linear and
     // cheap compared with element integration and sparse assembly.
     const Index element_count = static_cast<Index>(_data->elements.size());
-    std::vector<ElementPtr> thermal_elements(static_cast<std::size_t>(element_count));
+    std::vector<ElementPtr> thermal_elements(element_count);
 
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static, 2048) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        const auto& element = _data->elements[elem_idx];
         if (element != nullptr && element->as<ThermalElement>() != nullptr) {
-            thermal_elements[static_cast<std::size_t>(elem_idx)] = element;
+            thermal_elements[elem_idx] = element;
         }
     }
 
@@ -262,12 +262,12 @@ SparseMatrix Model::build_thermal_boundary_matrix(const SystemDofs& system_dof_i
     // Validate the scalar equation numbering and compiled nodal domain
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.nodes()) == _data->positions->rows,
+    logging::error(system_dof_ids.nodes() == _data->positions->rows,
         "Model: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.width() == 1,
         "Model: thermal DOF map must contain exactly one component");
 
-    const int system_size = static_cast<int>(system_dof_ids.size());
+    const Index system_size = system_dof_ids.size();
     Field rhs = _data->create_field_("THERMAL_BOUNDARY_SOURCE", FieldDomain::NODE, 1, false);
     rhs.set_zero();
 

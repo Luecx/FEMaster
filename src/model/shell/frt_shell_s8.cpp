@@ -36,7 +36,7 @@ namespace fem::model {
  * @param id Element identifier.
  * @param nodes Eight nodal identifiers in quadratic serendipity ordering.
  */
-FRTShellS8::FRTShellS8(ID id, const std::array<ID, 8>& nodes)
+FRTShellS8::FRTShellS8(Index id, const std::array<Index, 8>& nodes)
     : FRTShell<8>       (id, nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_QUAD,
                           math::quadrature::Order::ORDER_QUINTIC) {}
@@ -58,12 +58,12 @@ std::string FRTShellS8::type_name() const {
  * @param surface_id Requested positive or negative shell side.
  * @return Oriented eight-node surface object.
  */
-std::shared_ptr<SurfaceInterface> FRTShellS8::surface(int surface_id) {
+std::shared_ptr<SurfaceInterface> FRTShellS8::surface(Index surface_id) {
     return std::make_shared<Surface8>(
         surface_id == 1
-            ? std::array<ID, 8>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
+            ? std::array<Index, 8>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
                                 this->nodes()[4], this->nodes()[5], this->nodes()[6], this->nodes()[7]}
-            : std::array<ID, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
+            : std::array<Index, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
                                 this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]}
     );
 }
@@ -340,12 +340,12 @@ void FRTShellS8::apply_mitc_natural(
 
         // Corner sampling tensors are taken directly from the compatible field
         for (Index corner = 0; corner < 4; ++corner) {
-            const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
+            const ReferencePoint& sample = tying_points[corner];
             const StaticMatrix<3, 3> transformation =
                 natural_to_directions(sample, point.basis.col(0), point.basis.col(1));
 
             sampled[corner] = transformation
-                            * data.tying_strain_nat[static_cast<std::size_t>(corner)]
+                            * data.tying_strain_nat[corner]
                                   .template segment<3>(start);
         }
 
@@ -356,7 +356,7 @@ void FRTShellS8::apply_mitc_natural(
                                        Index corner_1,
                                        Index corner_2,
                                        bool  keep_ss) {
-            const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+            const ReferencePoint& middle = tying_points[midside];
 
             logging::error(middle.X_rs.col(0).cross(middle.X_rs.col(1)).squaredNorm()
                            > Precision(1e-12) * middle.X_rs.col(0).squaredNorm() * middle.X_rs.col(1).squaredNorm(),
@@ -376,19 +376,19 @@ void FRTShellS8::apply_mitc_natural(
             }
 
             const StaticMatrix<3, 3> corner_1_to_basis =
-                natural_to_directions(tying_points[static_cast<std::size_t>(corner_1)], basis_1, basis_2);
+                natural_to_directions(tying_points[corner_1], basis_1, basis_2);
             const StaticMatrix<3, 3> corner_2_to_basis =
-                natural_to_directions(tying_points[static_cast<std::size_t>(corner_2)], basis_1, basis_2);
+                natural_to_directions(tying_points[corner_2], basis_1, basis_2);
             const StaticMatrix<3, 3> middle_to_basis =
                 natural_to_directions(middle, basis_1, basis_2);
 
             const StaticVector<3> average = Precision(0.5)
                 * (corner_1_to_basis
-                   * data.tying_strain_nat[static_cast<std::size_t>(corner_1)].template segment<3>(start)
+                   * data.tying_strain_nat[corner_1].template segment<3>(start)
                  + corner_2_to_basis
-                   * data.tying_strain_nat[static_cast<std::size_t>(corner_2)].template segment<3>(start));
+                   * data.tying_strain_nat[corner_2].template segment<3>(start));
             const StaticVector<3> direct = middle_to_basis
-                * data.tying_strain_nat[static_cast<std::size_t>(midside)].template segment<3>(start);
+                * data.tying_strain_nat[midside].template segment<3>(start);
 
             StaticVector<3> components;
 
@@ -432,12 +432,12 @@ void FRTShellS8::apply_mitc_natural(
             std::array<Mat3x6N, 8> sampled;
 
             for (Index corner = 0; corner < 4; ++corner) {
-                const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
+                const ReferencePoint& sample = tying_points[corner];
                 const StaticMatrix<3, 3> transformation =
                     natural_to_directions(sample, point.basis.col(0), point.basis.col(1));
 
                 sampled[corner] = transformation
-                    * data.tying_B_nat[static_cast<std::size_t>(corner)]
+                    * data.tying_B_nat[corner]
                           .template block<3, num_dofs>(start, 0);
             }
 
@@ -445,7 +445,7 @@ void FRTShellS8::apply_mitc_natural(
                                            Index corner_1,
                                            Index corner_2,
                                            bool  keep_ss) {
-                const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+                const ReferencePoint& middle = tying_points[midside];
 
                 Vec3 basis_1;
                 Vec3 basis_2;
@@ -461,21 +461,21 @@ void FRTShellS8::apply_mitc_natural(
                 }
 
                 const StaticMatrix<3, 3> corner_1_to_basis =
-                    natural_to_directions(tying_points[static_cast<std::size_t>(corner_1)], basis_1, basis_2);
+                    natural_to_directions(tying_points[corner_1], basis_1, basis_2);
                 const StaticMatrix<3, 3> corner_2_to_basis =
-                    natural_to_directions(tying_points[static_cast<std::size_t>(corner_2)], basis_1, basis_2);
+                    natural_to_directions(tying_points[corner_2], basis_1, basis_2);
                 const StaticMatrix<3, 3> middle_to_basis =
                     natural_to_directions(middle, basis_1, basis_2);
 
                 const Mat3x6N average = Precision(0.5)
                     * (corner_1_to_basis
-                       * data.tying_B_nat[static_cast<std::size_t>(corner_1)]
+                       * data.tying_B_nat[corner_1]
                              .template block<3, num_dofs>(start, 0)
                      + corner_2_to_basis
-                       * data.tying_B_nat[static_cast<std::size_t>(corner_2)]
+                       * data.tying_B_nat[corner_2]
                              .template block<3, num_dofs>(start, 0));
                 const Mat3x6N direct = middle_to_basis
-                    * data.tying_B_nat[static_cast<std::size_t>(midside)]
+                    * data.tying_B_nat[midside]
                           .template block<3, num_dofs>(start, 0);
 
                 Mat3x6N components;
@@ -562,7 +562,7 @@ void FRTShellS8::apply_mitc_natural(
                                             Index                 direction) {
         const auto dual = dual_vectors(sample);
 
-        const Vec3 contravariant = dual[static_cast<std::size_t>(direction)];
+        const Vec3 contravariant = dual[direction];
         const Vec3 sample_normal = sample.basis.col(2);
         const Vec3 target_normal = point.basis.col(2);
 
@@ -740,11 +740,11 @@ void FRTShellS8::pull_back_mitc_resultants(
         }
 
         for (Index corner = 0; corner < 4; ++corner) {
-            const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
+            const ReferencePoint& sample = tying_points[corner];
             const StaticMatrix<3, 3> transformation =
                 natural_to_directions(sample, point.basis.col(0), point.basis.col(1));
 
-            tying_weights[static_cast<std::size_t>(corner)].template segment<3>(start) +=
+            tying_weights[corner].template segment<3>(start) +=
                 transformation.transpose() * sampled_weights[corner];
         }
 
@@ -752,7 +752,7 @@ void FRTShellS8::pull_back_mitc_resultants(
                                            Index corner_1,
                                            Index corner_2,
                                            bool  keep_ss) {
-            const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+            const ReferencePoint& middle = tying_points[midside];
 
             logging::error(middle.X_rs.col(0).cross(middle.X_rs.col(1)).squaredNorm()
                            > Precision(1e-12) * middle.X_rs.col(0).squaredNorm() * middle.X_rs.col(1).squaredNorm(),
@@ -772,9 +772,9 @@ void FRTShellS8::pull_back_mitc_resultants(
             }
 
             const StaticMatrix<3, 3> corner_1_to_basis =
-                natural_to_directions(tying_points[static_cast<std::size_t>(corner_1)], basis_1, basis_2);
+                natural_to_directions(tying_points[corner_1], basis_1, basis_2);
             const StaticMatrix<3, 3> corner_2_to_basis =
-                natural_to_directions(tying_points[static_cast<std::size_t>(corner_2)], basis_1, basis_2);
+                natural_to_directions(tying_points[corner_2], basis_1, basis_2);
             const StaticMatrix<3, 3> middle_to_basis =
                 natural_to_directions(middle, basis_1, basis_2);
             const StaticMatrix<3, 3> to_target =
@@ -795,11 +795,11 @@ void FRTShellS8::pull_back_mitc_resultants(
                 average_weights(2) += component_weights(2);
             }
 
-            tying_weights[static_cast<std::size_t>(corner_1)].template segment<3>(start) +=
+            tying_weights[corner_1].template segment<3>(start) +=
                 Precision(0.5) * corner_1_to_basis.transpose() * average_weights;
-            tying_weights[static_cast<std::size_t>(corner_2)].template segment<3>(start) +=
+            tying_weights[corner_2].template segment<3>(start) +=
                 Precision(0.5) * corner_2_to_basis.transpose() * average_weights;
-            tying_weights[static_cast<std::size_t>(midside)].template segment<3>(start) +=
+            tying_weights[midside].template segment<3>(start) +=
                 middle_to_basis.transpose() * direct_weights;
         };
 
@@ -857,7 +857,7 @@ void FRTShellS8::pull_back_mitc_resultants(
                                             Index                 direction) {
         const auto dual = dual_vectors(sample);
 
-        const Vec3 contravariant = dual[static_cast<std::size_t>(direction)];
+        const Vec3 contravariant = dual[direction];
         const Vec3 sample_normal = sample.basis.col(2);
         const Vec3 target_normal = point.basis.col(2);
 

@@ -36,7 +36,7 @@ TEST(Elements_C3D8, ShapeFunctionsBasic) {
     for (auto &p : pts) {
         auto N = el.shape_function(p[0], p[1], p[2]);
         Precision s = 0;
-        for (int i=0;i<8;++i) s += N(i,0);
+        for (Index i=0;i<8;++i) s += N(i,0);
         EXPECT_NEAR(s, 1.0, 1e-12);
     }
 
@@ -44,9 +44,9 @@ TEST(Elements_C3D8, ShapeFunctionsBasic) {
         {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
         {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
     };
-    for (int n=0;n<8;++n){
+    for (Index n=0;n<8;++n){
         auto N = el.shape_function(corners[n][0], corners[n][1], corners[n][2]);
-        for (int i=0;i<8;++i) EXPECT_NEAR(N(i,0), i==n?1.0:0.0, 1e-12);
+        for (Index i=0;i<8;++i) EXPECT_NEAR(N(i,0), i==n?1.0:0.0, 1e-12);
     }
 }
 
@@ -59,7 +59,7 @@ TEST(Elements_C3D8, ShapeDerivativeFD) {
     auto Nr = el.shape_function(r+h,s,t);
     auto Ns = el.shape_function(r,s+h,t);
     auto Nt = el.shape_function(r,s,t+h);
-    for (int i=0;i<8;++i){
+    for (Index i=0;i<8;++i){
         EXPECT_NEAR((Nr(i,0)-N0(i,0))/h, dN(i,0), 1e-5);
         EXPECT_NEAR((Ns(i,0)-N0(i,0))/h, dN(i,1), 1e-5);
         EXPECT_NEAR((Nt(i,0)-N0(i,0))/h, dN(i,2), 1e-5);
@@ -94,7 +94,7 @@ TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
 
     fem::model::Field displacement("U", fem::model::FieldDomain::NODE, 8, 6);
     displacement.set_zero();
-    for (int node = 0; node < 8; ++node) {
+    for (Index node = 0; node < 8; ++node) {
         displacement(node, 0) = (node >= 4) ? 1.0 : 0.0;
     }
 
@@ -228,7 +228,7 @@ TEST(Elements_C3D8, UnifiedEvaluationAtDeformedLinearization) {
     StaticVector<24> delta    = StaticVector<24>::Zero();
 
     for (Index node = 0; node < 8; ++node) {
-        for (Dim dof = 0; dof < 3; ++dof) {
+        for (Index dof = 0; dof < 3; ++dof) {
             const Index local = 3 * node + dof;
             f_base(local) = base_force(node, dof);
             f_target(local) = target_force(node, dof);
@@ -411,7 +411,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
 
         StaticVector<24> result = StaticVector<24>::Zero();
         for (Index node = 0; node < 8; ++node) {
-            for (Dim dof = 0; dof < 3; ++dof) {
+            for (Index dof = 0; dof < 3; ++dof) {
                 result(3 * node + dof) = force(node, dof);
             }
         }
@@ -490,7 +490,7 @@ TEST(Elements_C3D8I, NonlinearCondensedTangentMatchesFiniteDifference) {
         model::C3D8I::Matrix24::Zero();
 
     for (Index node = 0; node < 8; ++node) {
-        for (Dim dof = 0; dof < 3; ++dof) {
+        for (Index dof = 0; dof < 3; ++dof) {
             base_force(3 * node + dof) = internal(node, dof);
             rotated_force(3 * node + dof) = rotated_internal(node, dof);
         }
@@ -581,7 +581,7 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
 
                     StaticVector<24> result;
                     for (Index node = 0; node < 8; ++node) {
-                        for (Dim component = 0; component < 3; ++component) {
+                        for (Index component = 0; component < 3; ++component) {
                             result(3 * node + component) = forces(node, component);
                         }
                     }
@@ -629,9 +629,9 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                     model::Field rotated = displacement;
                     StaticMatrix<24, 24> rotation = StaticMatrix<24, 24>::Zero();
                     for (Index node = 0; node < 8; ++node) {
-                        const Vec3 current = coords[node] + Vec3(displacement(node, 0), displacement(node, 1), displacement(node, 2));
-                        const Vec3 value   = Q * current + translation - coords[node];
-                        for (Dim component = 0; component < 3; ++component) {
+                        const Vec3 current   = coords[node] + Vec3(displacement(node, 0), displacement(node, 1), displacement(node, 2));
+                        const Vec3 value     = Q * current + translation - coords[node];
+                        for (Index component = 0; component < 3; ++component) {
                             rotated(node, component) = value(component);
                         }
                         rotation.block<3, 3>(3 * node, 3 * node) = Q;
@@ -771,14 +771,14 @@ TEST(Elements_C3D8I, PlasticHistoryAndAuxiliaryStateNeutrality) {
         EXPECT_NO_THROW(model.compute_stress(displacement, &displacement));
         EXPECT_NO_THROW(model.compute_stress(displacement, nullptr, nullptr, nullptr));
         for (Index row = 0; row < trial.rows; ++row) {
-            for (Dim component = 0; component < trial.components; ++component) {
+            for (Index component = 0; component < trial.components; ++component) {
                 EXPECT_DOUBLE_EQ((*model._data->material_state_old)(row, component), committed(row, component));
                 EXPECT_NEAR((*model._data->material_state_new)(row, component), trial(row, component), Precision(1e-12));
             }
             EXPECT_GE(trial(row, 6), committed(row, 6) - Precision(1e-12));
         }
         for (Index node = 0; node < 8; ++node) {
-            for (Dim component = 0; component < 3; ++component) {
+            for (Index component = 0; component < 3; ++component) {
                 EXPECT_NEAR(forces(node, component), original_force(node, component), Precision(1e-9));
             }
         }

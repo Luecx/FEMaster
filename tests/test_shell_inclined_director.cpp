@@ -32,7 +32,7 @@ Shell::ReferencePoint inclined_reference_point() {
 } // namespace
 
 TEST(ShellInclinedDirector, PureMembraneStrainDoesNotBecomeTransverseShear) {
-    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    Shell shell(0, std::array<fem::Index, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
@@ -53,7 +53,7 @@ TEST(ShellInclinedDirector, PureMembraneStrainDoesNotBecomeTransverseShear) {
 }
 
 TEST(ShellInclinedDirector, RecoversOrthonormalEngineeringShear) {
-    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    Shell shell(0, std::array<fem::Index, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
@@ -72,7 +72,7 @@ TEST(ShellInclinedDirector, RecoversOrthonormalEngineeringShear) {
 }
 
 TEST(ShellInclinedDirector, AppliesSameDeskewingToBMatrix) {
-    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    Shell shell(0, std::array<fem::Index, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
 
     Shell::Vec8 strain = Shell::Vec8::Zero();
@@ -92,7 +92,7 @@ TEST(ShellInclinedDirector, AppliesSameDeskewingToBMatrix) {
 }
 
 TEST(ShellInclinedDirector, VaryingDirectorsAreDeskewedBeforeMitcInterpolation) {
-    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    Shell shell(0, std::array<fem::Index, 4>{0, 1, 2, 3});
 
     const auto left  = reference_point(fem::Vec3(0.0,  0.6, 0.8));
     const auto right = reference_point(fem::Vec3(0.0, -0.8, 0.6));
@@ -103,8 +103,8 @@ TEST(ShellInclinedDirector, VaryingDirectorsAreDeskewedBeforeMitcInterpolation) 
     const fem::Precision epsilon_yy = 0.1;
     std::vector<Shell::Vec8> tying(4, Shell::Vec8::Zero());
 
-    for (const auto& sample : {std::pair<std::size_t, Shell::ReferencePoint>{2, left},
-                               std::pair<std::size_t, Shell::ReferencePoint>{3, right}}) {
+    for (const auto& sample : {std::pair<fem::Index, Shell::ReferencePoint>{2, left},
+                               std::pair<fem::Index, Shell::ReferencePoint>{3, right}}) {
         Shell::Vec8 compatible = Shell::Vec8::Zero();
         compatible(1) = epsilon_yy;
         compatible(7) = 2.0 * sample.second.D(1) * epsilon_yy;
@@ -126,7 +126,7 @@ TEST(ShellInclinedDirector, VaryingDirectorsAreDeskewedBeforeMitcInterpolation) 
 }
 
 TEST(ShellInclinedDirector, DeskewPullbackPreservesVirtualWork) {
-    Shell shell(0, std::array<fem::ID, 4>{0, 1, 2, 3});
+    Shell shell(0, std::array<fem::Index, 4>{0, 1, 2, 3});
     const auto point = inclined_reference_point();
     const Shell::Mat8 transform =
         shell.director_deskew_natural_transform(point);

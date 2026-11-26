@@ -103,14 +103,14 @@ void register_mpc(dsl::Registry& registry, model::Model& model) {
                         logging::error(second != nullptr && second->size() == first->size(),
                             "MPC: node set ", node_2, " has incompatible size");
 
-                        for (std::size_t i = 0; i < first->size(); ++i) {
+                        for (Index i = 0; i < first->size(); ++i) {
                             mpcs.emplace_back(first->at(i), second->at(i), mpc_type);
                         }
                         return;
                     }
 
-                    const ID master = model.resolve_node_id(node_2);
-                    for (std::size_t i = 0; i < first->size(); ++i) {
+                    const Index master = model.resolve_node_id(node_2);
+                    for (Index i = 0; i < first->size(); ++i) {
                         mpcs.emplace_back(first->at(i), master, mpc_type);
                     }
                 })

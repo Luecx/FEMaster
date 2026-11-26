@@ -29,7 +29,7 @@ namespace fem { namespace model {
  */
 struct C3D20R : public SolidElement<20> {
     // Construction and concrete element identity
-    C3D20R(ID p_elem_id, const std::array<ID, 20>& p_node_ids);
+    C3D20R(Index p_elem_id, const std::array<Index, 20>& p_node_ids);
 
     // Recreate only the persistent element topology. Dense assembly ids and
     // runtime bindings are assigned after cloning by Model::compile().
@@ -42,7 +42,7 @@ struct C3D20R : public SolidElement<20> {
     const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
 
     // Boundary faces reuse the global connectivity for surface loads and constraints
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
 
     // Natural-coordinate interpolation. Node ordering matches connectivity
     // and the columns of the mechanical strain-displacement operator.

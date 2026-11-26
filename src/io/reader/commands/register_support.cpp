@@ -105,8 +105,8 @@ void register_support(fem::io::dsl::Registry& registry, Parser& parser) {
                     // Unnamed native supports apply only in this analysis.
                     for (auto& [support_region, support_orientation] :
                          group_by_orientation(parser, std::move(region), *orientation)) {
-                        for (Dim dof = 0; dof < 6; ++dof) {
-                            const Precision value = values[static_cast<std::size_t>(dof)];
+                        for (Index dof = 0; dof < 6; ++dof) {
+                            const Precision value = values[dof];
                             if (std::isnan(value)) continue;
 
                             Vec6 constraint = Vec6::Constant(NAN);

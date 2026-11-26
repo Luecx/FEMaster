@@ -20,22 +20,22 @@ ElDofs SolidElement<N>::dofs() const {
 }
 
 template<Index N>
-Dim SolidElement<N>::dimensions() const {
+Index SolidElement<N>::dimensions() const {
     return D;
 }
 
 template<Index N>
-Dim SolidElement<N>::n_nodes() const {
-    return node_ids.size();
+Index SolidElement<N>::n_nodes() const {
+    return static_cast<Index>(node_ids.size());
 }
 
 template<Index N>
-const ID* SolidElement<N>::nodes() const {
+const Index* SolidElement<N>::nodes() const {
     return &node_ids[0];
 }
 
 template<Index N>
-Dim SolidElement<N>::num_ip() const {
+Index SolidElement<N>::num_ip() const {
     return integration_scheme_stiffness().count();
 }
 
@@ -51,7 +51,7 @@ template<Index N>
 RowMatrix SolidElement<N>::stress_strain_nodal_rst() {
     // Preserve connectivity order when exposing natural nodal recovery locations
     auto local = this->node_coords_local();
-    RowMatrix rst(static_cast<Index>(N), 3);
+    RowMatrix rst(N, 3);
     for (Index i = 0; i < N; ++i) {
         rst(i, 0) = local(i, 0);
         rst(i, 1) = local(i, 1);

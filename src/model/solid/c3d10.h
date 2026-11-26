@@ -28,7 +28,7 @@ namespace fem { namespace model {
  */
 struct C3D10 : public SolidElement<10> {
     // Construction and concrete element identity
-    C3D10(ID pElemId, const std::array<ID, 10>& pNodeIds);
+    C3D10(Index pElemId, const std::array<Index, 10>& pNodeIds);
 
     // Recreate only the persistent element topology. Instance-specific ids,
     // section assignment and runtime state are established by Model::compile().
@@ -43,7 +43,7 @@ struct C3D10 : public SolidElement<10> {
     StaticMatrix<10, 3> node_coords_local() override;
 
     // Boundary faces reuse the global connectivity for surface loads and constraints
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
 
     // Volume quadrature; a separate stiffness rule defines material-point storage
     const math::quadrature::Quadrature& integration_scheme() const override;

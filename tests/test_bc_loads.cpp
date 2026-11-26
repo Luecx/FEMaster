@@ -416,10 +416,10 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     // Native nodal point masses are auxiliary elements in compiled node space
     auto region  = std::make_shared<model::ElementRegion>("POINT_MASSES");
     auto section = std::make_shared<PointMassSection>(region, 2.0);
-    for (const ID node : *mdl._data->node_sets.get("NALL")) {
-        const ID id = -1 - static_cast<ID>(mdl._data->point_elements.size());
+    for (const Index node : *mdl._data->node_sets.get("NALL")) {
+        const Index id = -1 - static_cast<Index>(mdl._data->point_elements.size());
         region->add(id);
-        auto point = std::make_shared<model::PointElement>(id, std::array<ID, 1>{node});
+        auto point = std::make_shared<model::PointElement>(id, std::array<Index, 1>{node});
         point->_model_data = mdl._data.get();
         point->set_section(section);
         mdl._data->point_elements.push_back(point);
@@ -461,10 +461,10 @@ TEST(BC_Loads, InertiaReliefBalancesPointMassOnlyModel) {
     // Native nodal point masses are auxiliary elements in compiled node space
     auto region  = std::make_shared<model::ElementRegion>("POINT_MASSES");
     auto section = std::make_shared<PointMassSection>(region, 1.0);
-    for (const ID node : *mdl._data->node_sets.get("NALL")) {
-        const ID id = -1 - static_cast<ID>(mdl._data->point_elements.size());
+    for (const Index node : *mdl._data->node_sets.get("NALL")) {
+        const Index id = -1 - static_cast<Index>(mdl._data->point_elements.size());
         region->add(id);
-        auto point = std::make_shared<model::PointElement>(id, std::array<ID, 1>{node});
+        auto point = std::make_shared<model::PointElement>(id, std::array<Index, 1>{node});
         point->_model_data = mdl._data.get();
         point->set_section(section);
         mdl._data->point_elements.push_back(point);

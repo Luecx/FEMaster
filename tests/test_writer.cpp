@@ -39,7 +39,7 @@ std::string read_text(const std::string& path) {
 }
 
 template<typename T>
-T read_binary_value(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
+T read_binary_value(const std::vector<std::uint8_t>& bytes, Index offset) {
     T value{};
     std::memcpy(&value, bytes.data() + offset, sizeof(T));
     return value;
@@ -50,18 +50,18 @@ std::vector<std::pair<std::uint32_t, double>> read_femr_frames(const std::string
     const std::vector<std::uint8_t> bytes(
         std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>{});
     std::vector<std::pair<std::uint32_t, double>> frames;
-    std::size_t offset = 0;
-    constexpr std::size_t chunk_header_size = 32;
+    Index offset = 0;
+    constexpr Index chunk_header_size = 32;
     while (offset + chunk_header_size <= bytes.size()) {
         const std::string type(reinterpret_cast<const char*>(bytes.data() + offset), 4);
         const auto stored_size = read_binary_value<std::uint64_t>(bytes, offset + 8);
-        const std::size_t payload = offset + chunk_header_size;
+        const Index payload = offset + chunk_header_size;
         if (type == "FRAM") {
             const auto frame_id = read_binary_value<std::uint32_t>(bytes, payload + 4);
             const auto frame_value = read_binary_value<double>(bytes, payload + 8);
             frames.emplace_back(frame_id, frame_value);
         }
-        offset = payload + static_cast<std::size_t>(stored_size);
+        offset = payload + static_cast<Index>(stored_size);
     }
     return frames;
 }

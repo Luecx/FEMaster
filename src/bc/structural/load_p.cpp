@@ -98,7 +98,7 @@ void PLoad::apply(
     DynamicVector force;
     DynamicMatrix stiffness;
 
-    for (ID surface_id : *region_) {
+    for (Index surface_id : *region_) {
         const auto& surface = model_data.surfaces[surface_id];
         if (!surface) continue;
 
@@ -107,10 +107,10 @@ void PLoad::apply(
         surface->integrate_pressure(positions, pressure, force, tangent ? &stiffness : nullptr);
 
         // Scatter the local force into the global nodal load
-        const ID* nodes = surface->nodes();
+        const Index* nodes = surface->nodes();
 
         for (Index i = 0; i < surface->n_nodes; ++i) {
-            for (Dim d = 0; d < 3; ++d) {
+            for (Index d = 0; d < 3; ++d) {
                 load(nodes[i], d) += force(3 * i + d);
             }
         }
@@ -141,7 +141,7 @@ std::string PLoad::str() const {
     // Report the stored pressure without temporal scaling or integration.
     os << "PLOAD: target=SFSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << "), p=" << pressure_;
+       << (region_ ? region_->size() : 0) << "), p=" << pressure_;
 
     if (amplitude_) os << ", amplitude=" << amplitude_->name;
 

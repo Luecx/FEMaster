@@ -20,17 +20,17 @@
 namespace fem::solver::detail {
 
 std::vector<EigvalPair>
-eigval_general_cayley_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts)
+eigval_general_cayley_cpu(const SparseMatrix& A, const SparseMatrix& B, Index k, const EigvalOpts& opts)
 {
     using OpB = Spectra::SparseSymMatProd<Precision>;
 
-    const int n        = static_cast<int>(A.rows());
-    const int ncv_user = choose_ncv(n, k);
+    const Index n        = A.rows();
+    const Index ncv_user = choose_ncv(n, k);
 
     logging::info(true, "Eigval (gen): Cayley, sigma=", opts.sigma, ", ncv=", ncv_user);
 
     std::vector<EigvalPair> out;
-    out.reserve(static_cast<size_t>(k));
+    out.reserve(k);
 
     Timer t{}; t.start();
 
@@ -51,7 +51,7 @@ eigval_general_cayley_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, c
 
     DynamicVector evals = eig.eigenvalues();
     DynamicMatrix evecs = eig.eigenvectors();
-    for (int i = 0; i < evals.size(); ++i)
+    for (Index i = 0; i < evals.size(); ++i)
         out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
 
     t.stop();

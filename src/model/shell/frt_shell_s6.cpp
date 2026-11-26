@@ -25,7 +25,7 @@ namespace fem::model {
  * @param id Element identifier.
  * @param nodes Six nodal identifiers in quadratic triangular ordering.
  */
-FRTShellS6::FRTShellS6(ID id, const std::array<ID, 6>& nodes)
+FRTShellS6::FRTShellS6(Index id, const std::array<Index, 6>& nodes)
     : FRTShell<6>       (id, nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_TRI,
                           math::quadrature::Order::ORDER_QUARTIC) {}
@@ -48,12 +48,12 @@ std::string FRTShellS6::type_name() const {
  * @param surface_id Requested positive or negative shell side.
  * @return Oriented six-node surface object.
  */
-std::shared_ptr<SurfaceInterface> FRTShellS6::surface(int surface_id) {
+std::shared_ptr<SurfaceInterface> FRTShellS6::surface(Index surface_id) {
     return std::make_shared<Surface6>(
         surface_id == 1
-            ? std::array<ID, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2],
+            ? std::array<Index, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2],
                                 this->nodes()[3], this->nodes()[4], this->nodes()[5]}
-            : std::array<ID, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1],
+            : std::array<Index, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1],
                                 this->nodes()[5], this->nodes()[4], this->nodes()[3]}
     );
 }
@@ -240,7 +240,7 @@ void FRTShellS6::apply_mitc_natural(
     // strain and curvature
     auto interpolate_in_plane_values = [&](Index start) {
         const auto q_value = [&](Index tying) {
-            const Vec8& value = data.tying_strain_nat[static_cast<std::size_t>(tying)];
+            const Vec8& value = data.tying_strain_nat[tying];
             return Precision(0.5)
                  * (value(start + 0) + value(start + 1) - value(start + 2));
         };
@@ -463,9 +463,9 @@ void FRTShellS6::pull_back_mitc_resultants(
     const Precision s     = point.s;
 
     const auto add_q_weight = [&](Index tying, Index start, Precision weight) {
-        tying_weights[static_cast<std::size_t>(tying)](start + 0) += Precision(0.5) * weight;
-        tying_weights[static_cast<std::size_t>(tying)](start + 1) += Precision(0.5) * weight;
-        tying_weights[static_cast<std::size_t>(tying)](start + 2) -= Precision(0.5) * weight;
+        tying_weights[tying](start + 0) += Precision(0.5) * weight;
+        tying_weights[tying](start + 1) += Precision(0.5) * weight;
+        tying_weights[tying](start + 2) -= Precision(0.5) * weight;
     };
 
     const auto add_mean_slope = [&](Index tying_1,
@@ -473,9 +473,9 @@ void FRTShellS6::pull_back_mitc_resultants(
                                     Index component,
                                     Precision mean_weight,
                                     Precision slope_weight) {
-        tying_weights[static_cast<std::size_t>(tying_1)](component) +=
+        tying_weights[tying_1](component) +=
             Precision(0.5) * mean_weight - Precision(0.5) * sqrt3 * slope_weight;
-        tying_weights[static_cast<std::size_t>(tying_2)](component) +=
+        tying_weights[tying_2](component) +=
             Precision(0.5) * mean_weight + Precision(0.5) * sqrt3 * slope_weight;
     };
 

@@ -678,7 +678,7 @@ void Parser::end_loadcase() {
     pending_conditions_   = committed_conditions_;
     committed_collector_conditions_ = std::move(selected);
 
-    for (std::size_t i = 0; i < bc::N_CONDITION_FAMILIES; ++i) {
+    for (Index i = 0; i < bc::N_CONDITION_FAMILIES; ++i) {
         auto& inherited = inherited_conditions_[i];
         auto& current   = current_conditions_[i];
         for (auto& [identifier, entries] : current) {

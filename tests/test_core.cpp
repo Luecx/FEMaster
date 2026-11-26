@@ -70,7 +70,7 @@ TEST(CoreTimer, ElapsedPositiveAndMeasure) {
     EXPECT_GT(t.elapsed(), 0u);
 
     auto res = Timer::measure([](){
-        long long s = 0; for (int i = 0; i < 1000; ++i) s += i; return s;
+        long long s = 0; for (Index i = 0; i < 1000; ++i) s += i; return s;
     }, "sum");
     EXPECT_EQ(res, 999LL * 1000 / 2);
 }

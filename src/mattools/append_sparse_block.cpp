@@ -59,17 +59,17 @@ void append_sparse_block(TripletList&        triplets,
     const Index maximum_index = static_cast<Index>(std::numeric_limits<StorageIndex>::max());
     logging::error(row_offset <= maximum_index && col_offset <= maximum_index,
         "append_sparse_block: offsets exceed triplet storage index range");
-    logging::error(matrix.rows() == 0 || static_cast<Index>(matrix.rows() - 1) <= maximum_index - row_offset,
+    logging::error(matrix.rows() == 0 || (matrix.rows() - 1) <= maximum_index - row_offset,
         "append_sparse_block: row extent exceeds triplet storage index range");
-    logging::error(matrix.cols() == 0 || static_cast<Index>(matrix.cols() - 1) <= maximum_index - col_offset,
+    logging::error(matrix.cols() == 0 || (matrix.cols() - 1) <= maximum_index - col_offset,
         "append_sparse_block: column extent exceeds triplet storage index range");
 
     // Embed stored local entries into the destination coordinates. Leave
     // duplicate summation and sparse matrix construction to the caller.
     for (Eigen::Index col = 0; col < matrix.outerSize(); ++col) {
         for (SparseMatrix::InnerIterator entry(matrix, col); entry; ++entry) {
-            const StorageIndex row    = static_cast<StorageIndex>(row_offset + static_cast<Index>(entry.row()));
-            const StorageIndex column = static_cast<StorageIndex>(col_offset + static_cast<Index>(entry.col()));
+            const StorageIndex row    = static_cast<StorageIndex>(row_offset + entry.row());
+            const StorageIndex column = static_cast<StorageIndex>(col_offset + entry.col());
             triplets.emplace_back(row, column, factor * entry.value());
         }
     }

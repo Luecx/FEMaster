@@ -318,16 +318,16 @@ struct FRTShell : ShellElement<N> {
      */
     template<typename T>
     struct Span {
-        T*          data_ = nullptr;
-        std::size_t size_ = 0;
+        T*    data_ = nullptr;
+        Index size_ = 0;
 
         Span() = default;
 
         explicit Span(std::vector<T>& values)
             : data_(values.data()),
-              size_(values.size()) {}
+              size_(static_cast<Index>(values.size())) {}
 
-        T& operator[](std::size_t index) const {
+        T& operator[](Index index) const {
             return data_[index];
         }
 
@@ -339,7 +339,7 @@ struct FRTShell : ShellElement<N> {
             return data_ + size_;
         }
 
-        std::size_t size() const {
+        Index size() const {
             return size_;
         }
 
@@ -422,7 +422,7 @@ struct FRTShell : ShellElement<N> {
     // calls. step_end() releases only that persistent reference cache; reusable
     // thread-local evaluation workspaces are intentionally independent of the
     // element lifecycle.
-    FRTShell(ID id, const std::array<ID, N>& nodes);
+    FRTShell(Index id, const std::array<Index, N>& nodes);
     ~FRTShell() override = default;
     void step_begin() override;
     void step_end() override;

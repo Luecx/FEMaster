@@ -18,17 +18,17 @@
 namespace fem::solver::detail {
 
 std::vector<EigvalPair>
-eigval_simple_regular_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts)
+eigval_simple_regular_cpu(const SparseMatrix& A, Index k, const EigvalOpts& opts)
 {
     using OpA = Spectra::SparseSymMatProd<Precision>;
 
-    const int n   = static_cast<int>(A.rows());
-    const int ncv = choose_ncv(n, k);
+    const Index n   = A.rows();
+    const Index ncv = choose_ncv(n, k);
 
     logging::info(true, "Eigval (simple): Regular, ncv=", ncv);
 
     std::vector<EigvalPair> out;
-    out.reserve(static_cast<size_t>(k));
+    out.reserve(k);
 
     Timer t{}; t.start();
 
@@ -43,7 +43,7 @@ eigval_simple_regular_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts)
 
     DynamicVector evals = eig.eigenvalues();
     DynamicMatrix evecs = eig.eigenvectors();
-    for (int i = 0; i < evals.size(); ++i)
+    for (Index i = 0; i < evals.size(); ++i)
         out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
 
     t.stop();

@@ -28,7 +28,7 @@ namespace model {
  * @param elem_id Global element identifier.
  * @param node_ids_in Global identifiers of the two truss nodes.
  */
-T3::T3(ID elem_id, std::array<ID, N> node_ids_in)
+T3::T3(Index elem_id, std::array<Index, N> node_ids_in)
     : StructuralElement(elem_id),
       node_ids(node_ids_in) {}
 
@@ -36,23 +36,23 @@ ElDofs T3::dofs() const {
     return ElDofs{true, true, true, false, false, false};
 }
 
-Dim T3::dimensions() const {
+Index T3::dimensions() const {
     return 3;
 }
 
-Dim T3::n_nodes() const {
+Index T3::n_nodes() const {
     return N;
 }
 
-Dim T3::num_ip() const {
+Index T3::num_ip() const {
     return 1;
 }
 
-const ID* T3::nodes() const {
+const Index* T3::nodes() const {
     return node_ids.data();
 }
 
-SurfacePtr T3::surface(ID surface_id) {
+SurfacePtr T3::surface(Index surface_id) {
     (void) surface_id;
     return nullptr;
 }
@@ -123,7 +123,7 @@ Vec3 T3::node_position_reference(Index local_node) const {
     logging::error(this->_model_data->positions_reference != nullptr,
         "T3: reference positions field not set in model data");
 
-    return this->_model_data->positions_reference->row_vec3(static_cast<Index>(node_ids[local_node]));
+    return this->_model_data->positions_reference->row_vec3(node_ids[local_node]);
 }
 
 /**
@@ -145,7 +145,7 @@ Vec3 T3::node_position_current(Index local_node) const {
     logging::error(this->_model_data->positions != nullptr,
         "T3: current positions field not set in model data");
 
-    return this->_model_data->positions->row_vec3(static_cast<Index>(node_ids[local_node]));
+    return this->_model_data->positions->row_vec3(node_ids[local_node]);
 }
 
 /**

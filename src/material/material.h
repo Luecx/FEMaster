@@ -39,8 +39,8 @@ struct Material : public fem::Namable {
 
     // Unique positive material id, created once per material definition and
     // used e.g. for the FRD material field. Ids start at 1.
-    static ID create_id();
-    ID        id() const { return m_id; }
+    static Index create_id();
+    Index        id() const { return m_id; }
 
     /// Returns `true` when an elasticity model is associated with this material.
     bool has_elasticity() const;
@@ -83,7 +83,7 @@ struct Material : public fem::Namable {
 private:
 
     // Unique material id
-    ID m_id = create_id();
+    Index m_id = create_id();
 
     // elastic model used. Could be linear or nonlinear
     ElasticityPtr m_elastic = nullptr;

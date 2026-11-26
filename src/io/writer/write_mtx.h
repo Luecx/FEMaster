@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <Eigen/Sparse>
 
+#include "../../core/types_num.h"
+
 namespace fem {
 namespace io {
 namespace writer {
@@ -47,12 +49,12 @@ inline void write_mtx(const std::string& path,
     Eigen::SparseMatrix<Scalar> M = A;
     M.makeCompressed();
 
-    const auto R  = static_cast<long long>(M.rows());
-    const auto C  = static_cast<long long>(M.cols());
+    const Index R  = M.rows();
+    const Index C  = M.cols();
 
     // Pass 1: compute max absolute value among stored entries.
     long double max_abs = 0.0L;
-    for (int k = 0; k < M.outerSize(); ++k)
+    for (Index k = 0; k < M.outerSize(); ++k)
         for (typename Eigen::SparseMatrix<Scalar>::InnerIterator it(M, k); it; ++it)
         {
             long double v = static_cast<long double>(it.value());
@@ -64,8 +66,8 @@ inline void write_mtx(const std::string& path,
     const long double thr = (cutoff_rel > 0.0) ? static_cast<long double>(cutoff_rel) * max_abs : 0.0L;
 
     // Pass 2: count how many survive the cutoff.
-    long long kept_nnz = 0;
-    for (int k = 0; k < M.outerSize(); ++k)
+    Index kept_nnz = 0;
+    for (Index k = 0; k < M.outerSize(); ++k)
         for (typename Eigen::SparseMatrix<Scalar>::InnerIterator it(M, k); it; ++it)
         {
             long double a = it.value() >= 0 ? static_cast<long double>(it.value())
@@ -84,15 +86,15 @@ inline void write_mtx(const std::string& path,
     os << std::setprecision(precision);
 
     // Pass 3: write kept entries, 1-based.
-    for (int k = 0; k < M.outerSize(); ++k)
+    for (Index k = 0; k < M.outerSize(); ++k)
         for (typename Eigen::SparseMatrix<Scalar>::InnerIterator it(M, k); it; ++it)
         {
             long double a = it.value() >= 0 ? static_cast<long double>(it.value())
                                             : -static_cast<long double>(it.value());
             if (a < thr) continue;
 
-            long long r = static_cast<long long>(it.row()) + 1; // 1-based
-            long long c = static_cast<long long>(it.col()) + 1; // 1-based
+            const Index r = it.row() + 1; // 1-based
+            const Index c = it.col() + 1; // 1-based
             os << r << " " << c << " " << static_cast<long double>(it.value()) << "\n";
         }
 }

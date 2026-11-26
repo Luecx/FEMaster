@@ -242,7 +242,7 @@ void Surface<N>::integrate_vector_field(
         // Assemble the consistent nodal contribution
         // f_i += N_i(r,s) * field(x(r,s)) * dA
         for (Index local_id = 0; local_id < N; ++local_id) {
-            for (Dim dof = 0; dof < 3; ++dof) {
+            for (Index dof = 0; dof < 3; ++dof) {
                 target(nodeIds[local_id], dof) +=
                     shape[local_id] * value[dof] * weighted_area;
             }
@@ -334,7 +334,7 @@ void Surface<N>::integrate_triangular(
     const Vec2 origin = intersection[0];
 
     // Apply the triangle-fan decomposition
-    for (std::size_t i = 1; i + 1 < intersection.size(); ++i) {
+    for (Index i = 1; i + 1 < intersection.size(); ++i) {
         const Vec2 edge_r = intersection[i]     - origin;
         const Vec2 edge_s = intersection[i + 1] - origin;
 

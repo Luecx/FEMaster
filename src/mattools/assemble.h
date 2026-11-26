@@ -90,13 +90,13 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                              const SparseMatrix*                   pattern = nullptr) {
     const parallel::ScopedLinearAlgebraThreads threading;
 
-    constexpr std::size_t min_batch_size = 64;
-    constexpr int         capacity       = 128;
+    constexpr Index min_batch_size = 64;
+    constexpr Index capacity       = 128;
 
     // Select the number of workers according to the number of elements.
     // Small models remain serial to avoid unnecessary threading overhead.
-    const int num_threads = parallel::worker_count(
-        elements.size(), static_cast<int>(global_config.max_threads), min_batch_size);
+    const Index num_threads = parallel::worker_count(
+        static_cast<Index>(elements.size()), global_config.max_threads, min_batch_size);
 
     // ---------------------------------------------------------------------
     // 1. Validate inputs
@@ -165,7 +165,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
     //
     // The sparsity pattern remains fixed. Different workers may update the
     // same coefficient, but never modify the structure of the sparse matrix.
-    parallel::for_index(elements.size(), num_threads, [&](std::size_t e, int /*worker*/) {
+    parallel::for_index(static_cast<Index>(elements.size()), num_threads, [&](Index e, Index /*worker*/) {
         const auto& element = elements[e];
 
         if (!element) {
@@ -179,14 +179,14 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
         // global_dofs maps each local matrix row or column to its global
         // algebraic index. Negative indices identify inactive DOFs.
         alignas(64) Precision storage[capacity * capacity];
-        int global_dofs[capacity];
+        Index global_dofs[capacity];
 
         // Evaluate the local matrix exactly once. The callback may also
         // update material state and write element-nodal forces.
         auto local = compute_local_matrix(element, storage);
 
-        const int nodes = element->n_nodes();
-        const int size  = static_cast<int>(local.rows());
+        const Index nodes = element->n_nodes();
+        const Index size  = local.rows();
 
         // Validate the node-major local matrix layout before constructing
         // the local-to-global index mapping.
@@ -198,7 +198,7 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                     && local.cols() == size && size % nodes == 0,
             "Matrix assembly requires a square node-major local matrix of at most 128 DOFs");
 
-        const int dofs_per_node = size / nodes;
+        const Index dofs_per_node = size / nodes;
 
         logging::error(dofs_per_node <= indices.width(),
             "Matrix assembly local DOF layout exceeds the global mapping");
@@ -211,12 +211,12 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
         //
         // Grouping the mapping by node avoids repeated division and modulo
         // operations when retrieving the global index of each local DOF.
-        int k = 0;
+        Index k = 0;
 
-        for (int node = 0; node < nodes; ++node) {
-            const ID node_id = element->nodes()[node];
+        for (Index node = 0; node < nodes; ++node) {
+            const Index node_id = element->nodes()[node];
 
-            for (int dof = 0; dof < dofs_per_node; ++dof) {
+            for (Index dof = 0; dof < dofs_per_node; ++dof) {
                 global_dofs[k++] = indices(node_id, dof);
             }
         }
@@ -226,8 +226,8 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
         // column range for all entries belonging to one local column.
         //
         // Only active global DOFs contribute to the assembled system.
-        for (int j = 0; j < size; ++j) {
-            const int col = global_dofs[j];
+        for (Index j = 0; j < size; ++j) {
+            const Index col = global_dofs[j];
 
             if (col < 0) {
                 continue;
@@ -238,8 +238,8 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
             const auto* begin = inner + outer[col];
             const auto* end   = inner + outer[col + 1];
 
-            for (int i = 0; i < size; ++i) {
-                const int row = global_dofs[i];
+            for (Index i = 0; i < size; ++i) {
+                const Index row = global_dofs[i];
 
                 if (row < 0) {
                     continue;

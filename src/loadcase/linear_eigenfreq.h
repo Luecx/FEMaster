@@ -40,10 +40,10 @@ struct LinearEigenfrequency : public LoadCase {
     //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
-    int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
-    bool      use_eigenvalue_range = false;
-    Precision min_eigenvalue       = 0;
-    Precision max_eigenvalue       = 0;
+    Index num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
+    bool      use_eigenvalue_range   = false;
+    Precision min_eigenvalue         = 0;
+    Precision max_eigenvalue         = 0;
 
     using Method = constraint::ConstraintTransformer::Method;
     Method constraint_method = Method::Elimination;

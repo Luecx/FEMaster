@@ -43,14 +43,14 @@ void ConcentratedHeatFlux::apply(
         "CFLUX: target node region is not set");
     logging::error(load.domain == model::FieldDomain::NODE && load.components == 1,
         "CFLUX: target field must be a scalar NODE field");
-    logging::error(static_cast<Index>(system_dof_ids.nodes()) == load.rows && system_dof_ids.width() == 1,
+    logging::error(system_dof_ids.nodes() == load.rows && system_dof_ids.width() == 1,
         "CFLUX: thermal DOF numbering must match the scalar nodal domain");
     logging::error(std::isfinite(power_) && std::isfinite(power),
         "CFLUX: prescribed and scaled power must be finite");
 
     // Concentrated power is already a nodal load and needs no geometric measure
-    for (const ID node : region_->data()) {
-        logging::error(node >= 0 && static_cast<Index>(node) < load.rows,
+    for (const Index node : region_->data()) {
+        logging::error(node >= 0 && node < load.rows,
             "CFLUX: node is outside the thermal RHS domain: ", node);
         logging::error(system_dof_ids(node, 0) >= 0,
             "CFLUX: node has no active temperature DOF: ", node);

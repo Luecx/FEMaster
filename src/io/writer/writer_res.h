@@ -79,7 +79,7 @@ class ResWriter {
     void close();
 
     // Result organization
-    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void add_loadcase(Index id, WriterStepType step_type = WriterStepType::Static);
 
     // Field output
     void write_field(const model::Field& field,

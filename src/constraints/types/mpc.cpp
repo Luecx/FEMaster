@@ -34,7 +34,7 @@ namespace constraint {
  * @param node_2_id Independent master node identifier.
  * @param type Supported MPC relation.
  */
-Mpc::Mpc(ID node_1_id, ID node_2_id, Type type)
+Mpc::Mpc(Index node_1_id, Index node_2_id, Type type)
     : type_      (type),
       node_1_id_(node_1_id),
       node_2_id_(node_2_id) {}
@@ -67,9 +67,9 @@ Equations Mpc::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
 
     // PIN and TIE directly equate the selected active generalized DOFs
     if (type_ == Type::Pin || type_ == Type::Tie) {
-        const Dim n_dofs = type_ == Type::Pin ? Dim(3) : Dim(6);
+        const Index n_dofs = type_ == Type::Pin ? Index(3) : Index(6);
 
-        for (Dim dof = 0; dof < n_dofs; ++dof) {
+        for (Index dof = 0; dof < n_dofs; ++dof) {
             const auto dof_id_n1 = system_nodal_dofs(node_1_id_, dof);
             const auto dof_id_n2 = system_nodal_dofs(node_2_id_, dof);
             if (dof_id_n1 < 0 || dof_id_n2 < 0) {
@@ -90,7 +90,7 @@ Equations Mpc::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
         "MPC BEAM: POSITION field is not initialized");
 
     const auto& node_coords = *model_data.positions;
-    const Vec3 r = node_coords.row_vec3(static_cast<Index>(node_1_id_)) - node_coords.row_vec3(static_cast<Index>(node_2_id_));
+    const Vec3 r = node_coords.row_vec3(node_1_id_) - node_coords.row_vec3(node_2_id_);
 
     const Precision dx = r(0);
     const Precision dy = r(1);
@@ -98,13 +98,13 @@ Equations Mpc::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
 
     // Couple slave translations to the master translation and rotation using
     // u_slave = u_master + theta_master x r
-    for (Dim dof = 0; dof < 3; ++dof) {
+    for (Index dof = 0; dof < 3; ++dof) {
         if (system_nodal_dofs(node_1_id_, dof) < 0) {
             continue;
         }
 
-        const Dim rotation_1 = static_cast<Dim>((dof + 1) % 3 + 3);
-        const Dim rotation_2 = static_cast<Dim>((dof + 2) % 3 + 3);
+        const Index rotation_1 = (dof + 1) % 3 + 3;
+        const Index rotation_2 = (dof + 2) % 3 + 3;
 
         Precision coefficient_1 = Precision(0);
         Precision coefficient_2 = Precision(0);
@@ -130,7 +130,7 @@ Equations Mpc::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
 
     // Couple rotational DOFs only when both nodes expose the corresponding
     // generalized component
-    for (Dim dof = 3; dof < 6; ++dof) {
+    for (Index dof = 3; dof < 6; ++dof) {
         const auto dof_id_n1 = system_nodal_dofs(node_1_id_, dof);
         const auto dof_id_n2 = system_nodal_dofs(node_2_id_, dof);
         if (dof_id_n1 < 0 || dof_id_n2 < 0) {
@@ -162,8 +162,8 @@ Dofs Mpc::master_dofs(const model::SystemDofs& system_dofs) const {
 
     // PIN and TIE require a matching master component for every selected slave
     // component that already participates in the structural system
-    const Dim n_direct_dofs = type_ == Type::Pin ? Dim(3) : Dim(6);
-    for (Dim dof = 0; dof < n_direct_dofs; ++dof) {
+    const Index n_direct_dofs = type_ == Type::Pin ? Index(3) : Index(6);
+    for (Index dof = 0; dof < n_direct_dofs; ++dof) {
         required(dof) = system_dofs.active(node_1_id_, dof);
     }
 

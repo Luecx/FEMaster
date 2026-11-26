@@ -21,7 +21,7 @@
 namespace fem {
 namespace model {
 
-C3D20R::C3D20R(ID p_elem_id, const std::array<ID, 20>& p_node_ids)
+C3D20R::C3D20R(Index p_elem_id, const std::array<Index, 20>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 /**
  * Returns the static natural-domain volume integration rule.
@@ -56,26 +56,26 @@ const math::quadrature::Quadrature& C3D20R::integration_scheme_stiffness() const
  * @param surface_id One-based face identifier.
  * @return Requested face, or nullptr when the identifier is invalid.
  */
-SurfacePtr C3D20R::surface(ID surface_id) {
+SurfacePtr C3D20R::surface(Index surface_id) {
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[0], node_ids[3], node_ids[2], node_ids[1], node_ids[11], node_ids[10], node_ids[9], node_ids[8]});
+                std::array<Index, 8> {node_ids[0], node_ids[3], node_ids[2], node_ids[1], node_ids[11], node_ids[10], node_ids[9], node_ids[8]});
         case 2:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[4], node_ids[5], node_ids[6], node_ids[7], node_ids[12], node_ids[13], node_ids[14], node_ids[15]});
+                std::array<Index, 8> {node_ids[4], node_ids[5], node_ids[6], node_ids[7], node_ids[12], node_ids[13], node_ids[14], node_ids[15]});
         case 3:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[0], node_ids[1], node_ids[5], node_ids[4], node_ids[8], node_ids[17], node_ids[12], node_ids[16]});
+                std::array<Index, 8> {node_ids[0], node_ids[1], node_ids[5], node_ids[4], node_ids[8], node_ids[17], node_ids[12], node_ids[16]});
         case 4:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[1], node_ids[2], node_ids[6], node_ids[5], node_ids[9], node_ids[18], node_ids[13], node_ids[17]});
+                std::array<Index, 8> {node_ids[1], node_ids[2], node_ids[6], node_ids[5], node_ids[9], node_ids[18], node_ids[13], node_ids[17]});
         case 5:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[2], node_ids[3], node_ids[7], node_ids[6], node_ids[10], node_ids[19], node_ids[14], node_ids[18]});
+                std::array<Index, 8> {node_ids[2], node_ids[3], node_ids[7], node_ids[6], node_ids[10], node_ids[19], node_ids[14], node_ids[18]});
         case 6:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[3], node_ids[0], node_ids[4], node_ids[7], node_ids[11], node_ids[16], node_ids[15], node_ids[19]});
+                std::array<Index, 8> {node_ids[3], node_ids[0], node_ids[4], node_ids[7], node_ids[11], node_ids[16], node_ids[15], node_ids[19]});
         default: return nullptr;    // Invalid surface ID
     }
 }
@@ -104,7 +104,7 @@ StaticMatrix<20, 1> C3D20R::shape_function(Precision r, Precision s, Precision t
     Precision          tm = 1 - t;
 
     // first 8 nodes
-    for (int i = 0; i < 8; i++) {
+    for (Index i = 0; i < 8; i++) {
         Precision sign_r1 = (Precision) (((i + 1) / 2) % 2 == 0 ? -1 : 1);
         Precision sign_s1 = (Precision) ((i / 2) % 2 == 0 ? -1 : 1);
         Precision sign_t1 = (Precision) ((i / 4) % 2 == 0 ? -1 : 1);
@@ -122,7 +122,7 @@ StaticMatrix<20, 1> C3D20R::shape_function(Precision r, Precision s, Precision t
         res(i)         = (Precision) -1.0 / (Precision) 8.0 * sum_r * sum_s * sum_t * sum_1;
     }
     // remaining 12 nodes
-    for (int i = 8; i < 20; i++) {
+    for (Index i = 8; i < 20; i++) {
         Precision r1 = (((i + 1) / 2) % 2 == 0 ? rm : rp);
         Precision r2 = (((i % 2 == 0 && i < 16 ? (i % 4 == 0 ? rp : rm) : 1)));
         Precision s1 = (((i) / 2) % 2 == 0 ? sm : sp);
@@ -249,7 +249,7 @@ StaticMatrix<20, 3> C3D20R::shape_derivative(Precision r, Precision s, Precision
 StaticMatrix<20, 3> C3D20R::node_coords_local() {
     StaticMatrix<20, 3> res {};
     res.setZero();
-    for (int n = 0; n < 8; n++) {
+    for (Index n = 0; n < 8; n++) {
         Precision r1 = ((n + 1) / 2) % 2 == 0 ? -1 : 1;
         Precision s1 = ((n) / 2) % 2 == 0 ? -1 : 1;
         Precision t1 = n >= 4 ? 1 : -1;

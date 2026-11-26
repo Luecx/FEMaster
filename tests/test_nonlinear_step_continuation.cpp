@@ -75,7 +75,7 @@ void run_continuation(const std::string& label,
     ASSERT_NE(data.positions, nullptr);
     ASSERT_NE(data.positions_reference, nullptr);
 
-    const ID tip = parser.model().compiled_node_id(2);
+    const Index tip = parser.model().compiled_node_id(2);
     const Precision displacement =
         (*data.positions)(tip, 0) - (*data.positions_reference)(tip, 0);
     EXPECT_NEAR(displacement, expected_displacement, Precision(1e-4));

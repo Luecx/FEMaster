@@ -179,7 +179,7 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                     continue;
                 }
 
-                for (Dim dof = 0; dof < 6; ++dof) {
+                for (Index dof = 0; dof < 6; ++dof) {
                     if (std::isnan(values[dof])) continue;
 
                     auto load = std::make_shared<bc::CLoad>();
@@ -230,10 +230,10 @@ void register_cload(dsl::Registry& registry, Parser& parser) {
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
                     .one<std::string>().name("TARGET"   ).desc("Compiled node set or scalar node reference")
-                    .one<int        >().name("DOF"      ).desc("Loaded degree of freedom, 1 through 6")
+                    .one<Index      >().name("DOF"      ).desc("Loaded degree of freedom, 1 through 6")
                     .one<Precision  >().name("MAGNITUDE").desc("Load magnitude")
                 )
-                .bind([add_load](const std::string& target, int dof, Precision magnitude) {
+                .bind([add_load](const std::string& target, Index dof, Precision magnitude) {
                     // Abaqus numbers translations 1..3 and rotations 4..6.
                     // Validate before indexing the zero-based generalized vector.
                     logging::error(dof >= 1 && dof <= 6,

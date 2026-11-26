@@ -35,7 +35,7 @@ struct FRTShellS4 : FRTShell<4> {
 
     // Construct the MITC4 shell from one element identifier and four nodal
     // identifiers in positive surface ordering.
-    FRTShellS4(ID id, const std::array<ID, 4>& nodes);
+    FRTShellS4(Index id, const std::array<Index, 4>& nodes);
 
     // Recreate the concrete FRT shell from persistent topology only. The unique
     // reference-geometry cache is analysis state and is initialized later by the
@@ -50,7 +50,7 @@ struct FRTShellS4 : FRTShell<4> {
     std::string type_name() const override;
 
     // Return one oriented bilinear surface representation.
-    std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
+    std::shared_ptr<SurfaceInterface> surface(Index surface_id) override;
 
     // Return the cubic quadrilateral area quadrature used by this element.
     const math::quadrature::Quadrature& integration_scheme() const override;

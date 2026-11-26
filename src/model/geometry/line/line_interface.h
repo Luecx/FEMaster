@@ -30,14 +30,14 @@ struct LineInterface {
                                       const Field& node_coords_system,
                                       bool clip = false) const = 0;
 
-    virtual const ID* nodes() const = 0;
-    virtual ID* nodes() = 0;
+    virtual const Index* nodes() const = 0;
+    virtual Index* nodes() = 0;
     virtual LinePtr copy() const = 0;
 
-    const ID* begin() const { return nodes(); }
-    const ID* end() const { return nodes() + n_nodes; }
-    ID* begin() { return nodes(); }
-    ID* end() { return nodes() + n_nodes; }
+    const Index* begin() const { return nodes(); }
+    const Index* end() const { return nodes() + n_nodes; }
+    Index* begin() { return nodes(); }
+    Index* end() { return nodes() + n_nodes; }
 };
 
 } // namespace fem::model

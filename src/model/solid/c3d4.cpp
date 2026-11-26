@@ -27,7 +27,7 @@ namespace model {
  * @param pElemId The unique ID of the element.
  * @param pNodeIds Array containing IDs of the 4 nodes that define the element.
  */
-C3D4::C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds)
+C3D4::C3D4(Index pElemId, const std::array<Index, 4>& pNodeIds)
     : SolidElement(pElemId, pNodeIds) {}
 
 /**
@@ -145,12 +145,12 @@ const math::quadrature::Quadrature& C3D4::integration_scheme() const {
  * @param surface_id One-based face identifier.
  * @return Requested face, or nullptr when the identifier is invalid.
  */
-SurfacePtr C3D4::surface(ID surface_id) {
+SurfacePtr C3D4::surface(Index surface_id) {
     switch (surface_id) {
-        case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[2], node_ids[1]});
-        case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[3]});
-        case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[3]});
-        case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[2], node_ids[0], node_ids[3]});
+        case 1: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[0], node_ids[2], node_ids[1]});
+        case 2: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[0], node_ids[1], node_ids[3]});
+        case 3: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[1], node_ids[2], node_ids[3]});
+        case 4: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[2], node_ids[0], node_ids[3]});
         default: return nullptr;    // Invalid surface ID
     }
 }

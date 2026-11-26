@@ -31,6 +31,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "../../core/types_num.h"
+
 namespace fem {
 namespace io {
 namespace dsl {
@@ -38,7 +40,7 @@ namespace dsl {
 /** Source file and one-based line number of a parsed DSL line. */
 struct SourceLocation {
     std::shared_ptr<const std::string> source{};
-    std::size_t                        line = 0;
+    Index                              line = 0;
 
     std::string str() const {
         return source ? *source + ":" + std::to_string(line) : std::string{};
@@ -131,7 +133,7 @@ public:
                 std::string item;
                 if (std::getline(ss, _command, ',')) {
                     while (std::getline(ss, item, ',')) {
-                        size_t pos = item.find('=');
+                        std::size_t pos = item.find('=');
                         if (pos != std::string::npos)
                             _keys[item.substr(0,pos)] = item.substr(pos+1);
                         else
@@ -161,7 +163,7 @@ public:
      */
     const std::string& line() const { return _line; }
 
-    void set_location(std::shared_ptr<const std::string> source, std::size_t line) {
+    void set_location(std::shared_ptr<const std::string> source, Index line) {
         _location = SourceLocation{std::move(source), line};
     }
 
@@ -195,10 +197,10 @@ public:
     /**
      * @brief Returns the number of data tokens (only for `DATA_LINE`).
      */
-    std::size_t count_values() const {
+    Index count_values() const {
         if (_type != DATA_LINE)
             throw std::runtime_error("count_values only for DATA_LINE");
-        return _values.size();
+        return static_cast<Index>(_values.size());
     }
 
     /**
@@ -209,7 +211,7 @@ public:
      * @param def Default returned on conversion failure or out-of-range.
      */
     template<typename T>
-    T get_value(std::size_t index, const T& def) const {
+    T get_value(Index index, const T& def) const {
         if (_type != DATA_LINE)
             throw std::runtime_error("get_value only for DATA_LINE");
         if (index >= _values.size()) return def;
@@ -254,7 +256,7 @@ public:
                 os << std::setw(10) << p.first << ": " << p.second << "\n";
         } else if (line.type() == DATA_LINE) {
             os << "Values :\n";
-            for (std::size_t i=0; i<line._values.size(); ++i)
+            for (Index i=0; i<static_cast<Index>(line._values.size()); ++i)
                 os << std::setw(10) << i << ": " << line._values[i] << "\n";
         }
         return os;

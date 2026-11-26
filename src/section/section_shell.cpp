@@ -144,7 +144,7 @@ std::string ShellSection::str() const {
        << ", orientation="   << (orientation_ ? orientation_->name : std::string("-"))
        << ", csysaxis="      << (orientation_ ? std::to_string(csys_axis_ + 1) : std::string("-"))
        << ", region="        << (region_      ? region_      ->name : std::string("-"))
-       << " ("               << (region_      ? static_cast<int>(region_->size()) : 0) << ")";
+       << " ("               << (region_      ? region_->size() : 0) << ")";
 
     return os.str();
 }

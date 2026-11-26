@@ -66,13 +66,13 @@ public:
 
 private:
     // MPC definition
-    Type type_;
-    ID   node_1_id_;
-    ID   node_2_id_;
+    Type  type_;
+    Index node_1_id_;
+    Index node_2_id_;
 
 public:
     // Construction
-    Mpc(ID node_1_id, ID node_2_id, Type type);
+    Mpc(Index node_1_id, Index node_2_id, Type type);
 
     // Generate the homogeneous linear equations for the selected MPC type.
     // BEAM uses the current nodal positions to evaluate the master-to-slave
@@ -86,8 +86,8 @@ public:
 
     // Node identifiers follow Abaqus MPC ordering: node 1 is dependent and
     // node 2 is the independent master.
-    [[nodiscard]] ID node_1() const { return node_1_id_; }
-    [[nodiscard]] ID node_2() const { return node_2_id_; }
+    [[nodiscard]] Index node_1() const { return node_1_id_; }
+    [[nodiscard]] Index node_2() const { return node_2_id_; }
 };
 
 } // namespace constraint

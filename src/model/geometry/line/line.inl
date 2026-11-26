@@ -15,17 +15,17 @@ namespace fem {
 namespace model {
 
 template<Index N, IsoParametricLineRange CR>
-Line<N, CR>::Line(const std::array<ID, N>& node_ids)
+Line<N, CR>::Line(const std::array<Index, N>& node_ids)
     : LineInterface(N),
       node_ids    (node_ids) {}
 
 template<Index N, IsoParametricLineRange CR>
-const ID* Line<N, CR>::nodes() const {
+const Index* Line<N, CR>::nodes() const {
     return node_ids.data();
 }
 
 template<Index N, IsoParametricLineRange CR>
-ID* Line<N, CR>::nodes() {
+Index* Line<N, CR>::nodes() {
     return node_ids.data();
 }
 
@@ -49,7 +49,7 @@ StaticMatrix<N, 3> Line<N, CR>::node_coords_global(const Field& node_coords_syst
 
     // Gather the global coordinate row belonging to every local line node.
     for (Index i = 0; i < N; i++) {
-        const Index row = static_cast<Index>(node_ids[i]);
+        const Index row = node_ids[i];
         res.row(i) = node_coords_system.row_vec3(row).transpose();
     }
 
@@ -113,7 +113,7 @@ Precision Line<N, CR>::global_to_local(
     const Field& node_coords_system,
     bool         clip
 ) const {
-    constexpr int       max_iter = 32;
+    constexpr Index     max_iter = 32;
     constexpr Precision eps      = 1e-12;
     std::vector<Precision> initial_guesses;
 
@@ -228,7 +228,7 @@ constexpr Precision Line<N, CR>::max_r() const {
 }
 
 template<Index N, IsoParametricLineRange CR>
-const std::array<ID, N>& Line<N, CR>::get_node_ids() const {
+const std::array<Index, N>& Line<N, CR>::get_node_ids() const {
     return node_ids;
 }
 

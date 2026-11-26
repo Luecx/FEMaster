@@ -50,14 +50,14 @@ public:
         }
 
         void expand_point(const Vec3& p) {
-            for (int k = 0; k < 3; ++k) {
+            for (Index k = 0; k < 3; ++k) {
                 if (p(k) < lo(k)) lo(k) = p(k);
                 if (p(k) > hi(k)) hi(k) = p(k);
             }
         }
 
         void expand_aabb(const Aabb& o) {
-            for (int k = 0; k < 3; ++k) {
+            for (Index k = 0; k < 3; ++k) {
                 if (o.lo(k) < lo(k)) lo(k) = o.lo(k);
                 if (o.hi(k) > hi(k)) hi(k) = o.hi(k);
             }
@@ -68,7 +68,7 @@ public:
         Vec3 extent() const { return (hi - lo); }
 
         void inflate(Precision r) {
-            for (int k = 0; k < 3; ++k) {
+            for (Index k = 0; k < 3; ++k) {
                 lo(k) -= r;
                 hi(k) += r;
             }
@@ -108,7 +108,7 @@ public:
      * @param n_nodes     Number of nodes in this element
      */
     template <class NodeCoords>
-    void add_element(ID elem_id, const NodeCoords& node_coords, const ID* node_ids, int n_nodes) {
+    void add_element(Index elem_id, const NodeCoords& node_coords, const Index* node_ids, Index n_nodes) {
         if (node_ids == nullptr || n_nodes <= 0) {
             return;
         }
@@ -117,8 +117,8 @@ public:
         e.id  = elem_id;
         e.box = Aabb::invalid();
 
-        for (int i = 0; i < n_nodes; ++i) {
-            const ID nid = node_ids[i];
+        for (Index i = 0; i < n_nodes; ++i) {
+            const Index nid = node_ids[i];
 
             Vec3 p;
             p(0) = node_coords(nid, 0);
@@ -135,7 +135,7 @@ public:
         elems_.push_back(e);
     }
 
-    void add_aabb(ID elem_id, const Aabb& box) {
+    void add_aabb(Index elem_id, const Aabb& box) {
         Element e;
         e.id       = elem_id;
         e.box      = box;
@@ -151,7 +151,7 @@ public:
      *
      * @param leaf_size Desired maximum number of primitives per leaf (typical 2..8).
      */
-    void finalize(int leaf_size = 4) {
+    void finalize(Index leaf_size = 4) {
         nodes_.clear();
         perm_.clear();
         root_ = -1;
@@ -163,12 +163,12 @@ public:
         leaf_size_ = (leaf_size <= 0) ? 4 : leaf_size;
 
         perm_.resize(elems_.size());
-        for (std::size_t i = 0; i < elems_.size(); ++i) {
-            perm_[i] = static_cast<int>(i);
+        for (Index i = 0; i < static_cast<Index>(elems_.size()); ++i) {
+            perm_[i] = i;
         }
 
         nodes_.reserve(2 * elems_.size());
-        root_ = build_recursive(0, static_cast<int>(perm_.size()));
+        root_ = build_recursive(0, static_cast<Index>(perm_.size()));
     }
 
     /**
@@ -177,8 +177,8 @@ public:
      * @param p   Query point in global coordinates
      * @param out Optional output buffer to reuse allocations
      */
-    const std::vector<ID>& query_point(const Vec3& p, std::vector<ID>* out = nullptr) const {
-        std::vector<ID>& result = out ? *out : scratch_;
+    const std::vector<Index>& query_point(const Vec3& p, std::vector<Index>* out = nullptr) const {
+        std::vector<Index>& result = out ? *out : scratch_;
         result.clear();
 
         if (root_ < 0) {
@@ -186,22 +186,22 @@ public:
         }
 
         // Iterative stack. Depth is typically ~log2(N). 64 is safe for very large N.
-        int stack[64];
-        int sp = 0;
+        Index stack[64];
+        Index sp = 0;
         stack[sp++] = root_;
 
         while (sp > 0) {
-            const int ni = stack[--sp];
-            const Node& n = nodes_[static_cast<std::size_t>(ni)];
+            const Index ni = stack[--sp];
+            const Node& n = nodes_[ni];
 
             if (!n.box.contains_point(p)) {
                 continue;
             }
 
             if (n.is_leaf()) {
-                for (int i = n.begin; i < n.end; ++i) {
-                    const int ei = perm_[static_cast<std::size_t>(i)];
-                    result.push_back(elems_[static_cast<std::size_t>(ei)].id);
+                for (Index i = n.begin; i < n.end; ++i) {
+                    const Index ei = perm_[i];
+                    result.push_back(elems_[ei].id);
                 }
             } else {
                 if (n.left >= 0)  stack[sp++] = n.left;
@@ -212,30 +212,30 @@ public:
         return result;
     }
 
-    const std::vector<ID>& query_aabb(const Aabb& box, std::vector<ID>* out = nullptr) const {
-        std::vector<ID>& result = out ? *out : scratch_;
+    const std::vector<Index>& query_aabb(const Aabb& box, std::vector<Index>* out = nullptr) const {
+        std::vector<Index>& result = out ? *out : scratch_;
         result.clear();
 
         if (root_ < 0) {
             return result;
         }
 
-        int stack[64];
-        int sp = 0;
+        Index stack[64];
+        Index sp = 0;
         stack[sp++] = root_;
 
         while (sp > 0) {
-            const int ni = stack[--sp];
-            const Node& n = nodes_[static_cast<std::size_t>(ni)];
+            const Index ni = stack[--sp];
+            const Node& n = nodes_[ni];
 
             if (!n.box.intersects(box)) {
                 continue;
             }
 
             if (n.is_leaf()) {
-                for (int i = n.begin; i < n.end; ++i) {
-                    const int ei = perm_[static_cast<std::size_t>(i)];
-                    const Element& e = elems_[static_cast<std::size_t>(ei)];
+                for (Index i = n.begin; i < n.end; ++i) {
+                    const Index ei = perm_[i];
+                    const Element& e = elems_[ei];
                     if (e.box.intersects(box)) {
                         result.push_back(e.id);
                     }
@@ -253,33 +253,33 @@ public:
 
 private:
     struct Element {
-        ID   id = ID(-1);
-        Aabb box;
-        Vec3 centroid = Vec3::Zero();
+        Index id = Index(-1);
+        Aabb  box;
+        Vec3  centroid = Vec3::Zero();
     };
 
     struct Node {
         Aabb box;
-        int left  = -1;
-        int right = -1;
-        int begin = 0;
-        int end   = 0;
+        Index left  = -1;
+        Index right = -1;
+        Index begin = 0;
+        Index end   = 0;
 
         bool is_leaf() const { return left < 0 && right < 0; }
     };
 
-    int build_recursive(int begin, int end) {
-        const int count = end - begin;
+    Index build_recursive(Index begin, Index end) {
+        const Index count = end - begin;
 
-        const int node_idx = static_cast<int>(nodes_.size());
+        const Index node_idx = static_cast<Index>(nodes_.size());
         nodes_.push_back(Node{});
         Node& node = nodes_.back();
 
         // Node AABB = union of element AABBs in range
         node.box = Aabb::invalid();
-        for (int i = begin; i < end; ++i) {
-            const int ei = perm_[static_cast<std::size_t>(i)];
-            node.box.expand_aabb(elems_[static_cast<std::size_t>(ei)].box);
+        for (Index i = begin; i < end; ++i) {
+            const Index ei = perm_[i];
+            node.box.expand_aabb(elems_[ei].box);
         }
 
         if (count <= leaf_size_) {
@@ -290,23 +290,23 @@ private:
 
         // Split axis by widest extent
         const Vec3 ext = node.box.extent();
-        int axis = 0;
+        Index axis = 0;
         if (ext(1) > ext(0)) axis = 1;
         if (ext(2) > ext(axis)) axis = 2;
 
         // Median split by centroid along axis
-        const int mid = begin + count / 2;
+        const Index mid = begin + count / 2;
         std::nth_element(
             perm_.begin() + begin,
             perm_.begin() + mid,
             perm_.begin() + end,
-            [&](int a, int b) {
-                return elems_[static_cast<std::size_t>(a)].centroid(axis) <
-                       elems_[static_cast<std::size_t>(b)].centroid(axis);
+            [&](Index a, Index b) {
+                return elems_[a].centroid(axis) <
+                       elems_[b].centroid(axis);
             });
 
-        const int left  = build_recursive(begin, mid);
-        const int right = build_recursive(mid, end);
+        const Index left  = build_recursive(begin, mid);
+        const Index right = build_recursive(mid, end);
 
         node.left  = left;
         node.right = right;
@@ -315,14 +315,14 @@ private:
 
 private:
     Precision inflate_   = Precision(0);
-    int leaf_size_       = 4;
+    Index leaf_size_     = 4;
 
     std::vector<Element> elems_;
-    std::vector<int>     perm_;
+    std::vector<Index>   perm_;
     std::vector<Node>    nodes_;
-    int root_            = -1;
+    Index root_          = -1;
 
-    mutable std::vector<ID> scratch_;
+    mutable std::vector<Index> scratch_;
 };
 } // namespace constraint
 } // namespace fem

@@ -23,7 +23,7 @@ namespace fem::model {
  * @param id Element identifier.
  * @param nodes Four nodal identifiers in positive quadrilateral ordering.
  */
-FRTShellS4::FRTShellS4(ID id, const std::array<ID, 4>& nodes)
+FRTShellS4::FRTShellS4(Index id, const std::array<Index, 4>& nodes)
     : FRTShell<4>       (id, nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_QUAD,
                           math::quadrature::Order::ORDER_CUBIC) {}
@@ -43,14 +43,14 @@ std::string FRTShellS4::type_name() const {
  * @param surface_id Requested positive or negative shell side.
  * @return Oriented bilinear surface object.
  */
-std::shared_ptr<SurfaceInterface> FRTShellS4::surface(int surface_id) {
+std::shared_ptr<SurfaceInterface> FRTShellS4::surface(Index surface_id) {
     return std::make_shared<Surface4>(
         surface_id == 1
-            ? std::array<ID, 4>{
+            ? std::array<Index, 4>{
                   this->nodes()[0], this->nodes()[1],
                   this->nodes()[2], this->nodes()[3]
               }
-            : std::array<ID, 4>{
+            : std::array<Index, 4>{
                   this->nodes()[3], this->nodes()[2],
                   this->nodes()[1], this->nodes()[0]
               }

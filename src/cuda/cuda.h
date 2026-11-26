@@ -44,7 +44,7 @@ struct Manager {
     void create_cuda();
     void destroy_cuda();
 
-    std::size_t mem_free();
+    Index mem_free();
     bool is_loaded();
 
 private:

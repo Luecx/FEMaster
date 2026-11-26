@@ -97,11 +97,11 @@ void register_sfset(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(0))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START")
-                    .one<ID>().name("END")
-                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
+                    .one<Index>().name("START")
+                    .one<Index>().name("END")
+                    .one<Index>().name("INC").on_missing(Index{1}).on_empty(Index{1})
                 )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+                .bind([&model, ctx](Index first, Index last, Index inc) {
                     logging::error(ctx->instance.empty(),
                         "SFSET: INSTANCE is only valid at assembly level");
                     logging::error(inc != 0,
@@ -114,10 +114,10 @@ void register_sfset(dsl::Registry& registry, model::Model& model) {
                         "SFSET: no active part is available");
                     const auto destination = part->surface_sets.activate(ctx->name);
 
-                    for (ID id = first;; id += inc) {
+                    for (Index id = first;; id += inc) {
                         destination->add(id);
 
-                        const ID next = static_cast<ID>(id + inc);
+                        const Index next = id + inc;
                         if (inc > 0 ? next > last : next < last) break;
                     }
                 })
@@ -131,11 +131,11 @@ void register_sfset(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(0))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START")
-                    .one<ID>().name("END")
-                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
+                    .one<Index>().name("START")
+                    .one<Index>().name("END")
+                    .one<Index>().name("INC").on_missing(Index{1}).on_empty(Index{1})
                 )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+                .bind([&model, ctx](Index first, Index last, Index inc) {
                     logging::error(inc != 0,
                         "SFSET/GENERATE: increment must not be zero");
                     if (!model._data->compiled) return;
@@ -145,13 +145,13 @@ void register_sfset(dsl::Registry& registry, model::Model& model) {
                         "SFSET: instance ", ctx->instance, " is not defined");
                     const auto destination = model._data->surface_sets.activate(ctx->name);
 
-                    for (ID id = first;; id += inc) {
-                        const ID value = ctx->instance.empty()
+                    for (Index id = first;; id += inc) {
+                        const Index value = ctx->instance.empty()
                             ? model.compiled_surface_id(id)
                             : model.compiled_surface_id(id, ctx->instance);
                         destination->add(value);
 
-                        const ID next = static_cast<ID>(id + inc);
+                        const Index next = id + inc;
                         if (inc > 0 ? next > last : next < last) break;
                     }
                 })

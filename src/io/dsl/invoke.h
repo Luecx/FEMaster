@@ -35,6 +35,8 @@
 #include <utility>
 #include <functional>
 
+#include "../../core/types_num.h"
+
 namespace fem {
 namespace io {
 namespace dsl {
@@ -128,10 +130,10 @@ inline T parse_scalar(const std::string& s) {
  * @brief Parses `N` tokens into `std::array<U,N>`, advancing the index.
  */
 template<class U, std::size_t N>
-inline std::array<U,N> parse_array(const std::vector<std::string>& toks, std::size_t& i) {
+inline std::array<U,N> parse_array(const std::vector<std::string>& toks, Index& i) {
     std::array<U,N> a{};
-    for (std::size_t k = 0; k < N; ++k) {
-        if (i >= toks.size()) throw std::runtime_error("insufficient tokens for std::array");
+    for (Index k = 0; k < static_cast<Index>(N); ++k) {
+        if (i >= static_cast<Index>(toks.size())) throw std::runtime_error("insufficient tokens for std::array");
         a[k] = parse_scalar<U>(toks[i++]);
     }
     return a;
@@ -141,11 +143,11 @@ inline std::array<U,N> parse_array(const std::vector<std::string>& toks, std::si
  * @brief Consumes tokens to produce a value of type `T`, advancing the index.
  */
 template<class T>
-inline auto take(const std::vector<std::string>& toks, std::size_t& i) {
+inline auto take(const std::vector<std::string>& toks, Index& i) {
     using Decayed = std::remove_cv_t<std::remove_reference_t<T>>;
 
     if constexpr (std::is_same_v<Decayed, std::string> || std::is_arithmetic_v<Decayed>) {
-        if (i >= toks.size()) throw std::runtime_error("insufficient tokens for scalar/string");
+        if (i >= static_cast<Index>(toks.size())) throw std::runtime_error("insufficient tokens for scalar/string");
         return parse_scalar<Decayed>(toks[i++]);
     } else if constexpr (is_std_array_v<Decayed>) {
         using U = typename Decayed::value_type;
@@ -161,11 +163,11 @@ inline auto take(const std::vector<std::string>& toks, std::size_t& i) {
  *        1 for scalars/strings, `N` for `std::array<*,N>`.
  */
 template<class T>
-constexpr std::size_t token_count_for() {
+constexpr Index token_count_for() {
     using Decayed = std::remove_cv_t<std::remove_reference_t<T>>;
 
     if constexpr (is_std_array_v<Decayed>) {
-        return std::tuple_size<Decayed>::value;
+        return static_cast<Index>(std::tuple_size<Decayed>::value);
     } else {
         return 1;
     }
@@ -173,7 +175,7 @@ constexpr std::size_t token_count_for() {
 
 /** @brief Sum of token counts for a parameter pack. */
 template<class... Us>
-constexpr std::size_t token_count_for_pack() {
+constexpr Index token_count_for_pack() {
     return (token_count_for<Us>() + ... + 0);
 }
 
@@ -186,7 +188,7 @@ struct Invoker {
     static void run(F&& f, const std::vector<std::string>& toks) {
         using ArgsTuple = std::tuple<std::remove_cv_t<std::remove_reference_t<Us>>...>;
 
-        std::size_t i = 0;
+        Index i = 0;
         ArgsTuple args{};
         std::apply([&](auto&... arg) {
             ((arg = take<std::decay_t<decltype(arg)>>(toks, i)), ...);

@@ -18,24 +18,24 @@ ShellGeneralizedStrain::ShellGeneralizedStrain(const Vec8& values)
 
 // Map named components onto the underlying vector
 Precision& ShellGeneralizedStrain::operator[](Component component) {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 Precision ShellGeneralizedStrain::operator[](Component component) const {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 // Extract the three section-kinematic blocks
 Vec3 ShellGeneralizedStrain::membrane() const {
-    return values_.template segment<3>(static_cast<int>(Component::EpsilonXX));
+    return values_.template segment<3>(static_cast<Index>(Component::EpsilonXX));
 }
 
 Vec3 ShellGeneralizedStrain::curvature() const {
-    return values_.template segment<3>(static_cast<int>(Component::KappaXX));
+    return values_.template segment<3>(static_cast<Index>(Component::KappaXX));
 }
 
 Vec2 ShellGeneralizedStrain::transverse_shear() const {
-    return values_.template segment<2>(static_cast<int>(Component::GammaXZ));
+    return values_.template segment<2>(static_cast<Index>(Component::GammaXZ));
 }
 
 /**

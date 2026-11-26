@@ -53,7 +53,7 @@ struct Transient : public LoadCase {
     std::optional<tools::RayleighDamping> rayleigh;
 
     // Writing cadence
-    int    write_every_steps = 1;     ///< write every N steps (>=1)
+    Index  write_every_steps = 1;     ///< write every N steps (>=1)
     double write_every_time  = 0.0;   ///< if >0, overrides steps: write every Δt_write seconds
 
     // Solver selection
@@ -69,7 +69,7 @@ struct Transient : public LoadCase {
     Transient& set_newmark(double beta_, double gamma_) { beta = beta_; gamma = gamma_; return *this; }
     Transient& set_damping(const tools::RayleighDamping& r) { rayleigh = r; return *this; }
     Transient& clear_damping() { rayleigh.reset(); return *this; }
-    Transient& set_write_every(int steps) { write_every_steps = std::max(1, steps); return *this; }
+    Transient& set_write_every(Index steps) { write_every_steps = std::max<Index>(1, steps); return *this; }
     Transient& set_write_every_time(double dt_write) { write_every_time = std::max(0.0, dt_write); return *this; }
 
     // Diagnostics output (optional)

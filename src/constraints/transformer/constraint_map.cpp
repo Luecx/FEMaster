@@ -48,7 +48,7 @@ void ConstraintMap::recover(const DynamicVector& reduced, DynamicVector& full) c
     // Verify that the supplied reduced vector contains one entry for every
     // independent master DOF represented by the map.
     logging::warning(
-        reduced.size() == static_cast<Eigen::Index>(n_master()),
+        reduced.size() == n_master(),
         "[ConstraintMap::recover] reduced.size()=", reduced.size(),
         " n_master=", n_master()
     );
@@ -62,7 +62,7 @@ void ConstraintMap::recover(const DynamicVector& reduced, DynamicVector& full) c
     // directly to the full-system DOF stored in masters[i], so its contribution
     // is added without consulting the sparse slave transformation X.
     for (Index master_id = 0; master_id < n_master(); ++master_id) {
-        full[masters[static_cast<std::size_t>(master_id)]] += reduced[master_id];
+        full[masters[master_id]] += reduced[master_id];
     }
 
     // Add the dependent slave contributions.
@@ -74,15 +74,15 @@ void ConstraintMap::recover(const DynamicVector& reduced, DynamicVector& full) c
     // Eigen stores the sparse matrix column-wise, so every outer index selects
     // one reduced master coordinate and the inner iterator visits all slave
     // DOFs depending on that coordinate.
-    for (Index master_id = 0; master_id < static_cast<Index>(X.outerSize()); ++master_id) {
+    for (Index master_id = 0; master_id < X.outerSize(); ++master_id) {
         for (SparseMatrix::InnerIterator entry(X, master_id); entry; ++entry) {
             // The row of X is a slave-local index. Convert it through the
             // slave partition to the corresponding full-system DOF.
-            const Index slave_id = static_cast<Index>(entry.row());
+            const Index slave_id = entry.row();
 
             // Add X(slave_id, master_id) * q(master_id) to the physical slave
             // DOF. The affine contribution from u_p is already present.
-            full[slaves[static_cast<std::size_t>(slave_id)]] +=
+            full[slaves[slave_id]] +=
                 entry.value() * reduced[master_id];
         }
     }
@@ -99,7 +99,7 @@ void ConstraintMap::project(const DynamicVector& full, DynamicVector& reduced) c
     // Verify that the supplied vector is defined over the complete full-system
     // DOF space represented by the map.
     logging::warning(
-        full.size() == static_cast<Eigen::Index>(full_size),
+        full.size() == full_size,
         "[ConstraintMap::project] full.size()=", full.size(),
         " full_size=", full_size
     );
@@ -111,24 +111,24 @@ void ConstraintMap::project(const DynamicVector& full, DynamicVector& reduced) c
     // Apply the identity block of T^T. Each master row of the full vector
     // contributes directly to the associated reduced coordinate.
     for (Index master_id = 0; master_id < n_master(); ++master_id) {
-        reduced[master_id] += full[masters[static_cast<std::size_t>(master_id)]];
+        reduced[master_id] += full[masters[master_id]];
     }
 
     // Apply the transposed slave block X^T. For each reduced master coordinate,
     // accumulate the full-vector entries of all dependent slave DOFs weighted
     // by their transformation coefficients.
-    for (Index master_id = 0; master_id < static_cast<Index>(X.outerSize()); ++master_id) {
+    for (Index master_id = 0; master_id < X.outerSize(); ++master_id) {
         Precision contribution = Precision(0);
 
         // Traverse one column of X. Every entry identifies a slave DOF whose
         // full-space value contributes to the current reduced coordinate.
         for (SparseMatrix::InnerIterator entry(X, master_id); entry; ++entry) {
-            const Index slave_id = static_cast<Index>(entry.row());
+            const Index slave_id = entry.row();
 
             // Accumulate X(slave_id, master_id) multiplied by the corresponding
             // full-system vector entry.
             contribution += entry.value()
-                          * full[slaves[static_cast<std::size_t>(slave_id)]];
+                          * full[slaves[slave_id]];
         }
 
         // Add the complete X^T contribution to the direct master contribution
@@ -174,8 +174,8 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
     // T^T K T is exactly the principal submatrix K(masters, masters).
     bool ordered_masters = true;
     for (Index master = 1; master < n_master(); ++master) {
-        if (masters[static_cast<std::size_t>(master - 1)] >=
-            masters[static_cast<std::size_t>(master)]) {
+        if (masters[master - 1] >=
+            masters[master]) {
             ordered_masters = false;
             break;
         }
@@ -183,43 +183,43 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
 
     if (X.nonZeros() == 0 && ordered_masters) {
         logging::error(
-            matrix.rows() == static_cast<Eigen::Index>(full_size) &&
-            matrix.cols() == static_cast<Eigen::Index>(full_size),
+            matrix.rows() == full_size &&
+            matrix.cols() == full_size,
             "[ConstraintMap::reduce_matrix] matrix size does not match full constraint space"
         );
 
         // Map full-system indices to reduced coordinates. The full_size sentinel
         // marks constrained/slave rows that must be omitted from the principal block.
         const Index invalid = full_size;
-        std::vector<Index> full_to_reduced(static_cast<std::size_t>(full_size), invalid);
+        std::vector<Index> full_to_reduced(full_size, invalid);
         for (Index reduced_dof = 0; reduced_dof < n_master(); ++reduced_dof) {
-            const Index full_dof = masters[static_cast<std::size_t>(reduced_dof)];
+            const Index full_dof = masters[reduced_dof];
             logging::error(full_dof < full_size,
                 "[ConstraintMap::reduce_matrix] master DOF out of range: ", full_dof);
-            full_to_reduced[static_cast<std::size_t>(full_dof)] = reduced_dof;
+            full_to_reduced[full_dof] = reduced_dof;
         }
 
         // Count retained entries per reduced column so Eigen can allocate the
         // output sparsity exactly before the ordered insertion pass.
         Eigen::VectorXi nonzeros_per_column = Eigen::VectorXi::Zero(
-            static_cast<Eigen::Index>(n_master())
+            n_master()
         );
 
         for (Index reduced_col = 0; reduced_col < n_master(); ++reduced_col) {
-            const Index full_col = masters[static_cast<std::size_t>(reduced_col)];
-            int count = 0;
-            for (SparseMatrix::InnerIterator entry(matrix, static_cast<int>(full_col)); entry; ++entry) {
-                const Index full_row = static_cast<Index>(entry.row());
-                if (full_to_reduced[static_cast<std::size_t>(full_row)] != invalid) {
+            const Index full_col = masters[reduced_col];
+            Index count = 0;
+            for (SparseMatrix::InnerIterator entry(matrix, full_col); entry; ++entry) {
+                const Index full_row = entry.row();
+                if (full_to_reduced[full_row] != invalid) {
                     ++count;
                 }
             }
-            nonzeros_per_column[static_cast<Eigen::Index>(reduced_col)] = count;
+            nonzeros_per_column[reduced_col] = count;
         }
 
         SparseMatrix reduced(
-            static_cast<Eigen::Index>(n_master()),
-            static_cast<Eigen::Index>(n_master())
+            n_master(),
+            n_master()
         );
         reduced.reserve(nonzeros_per_column);
 
@@ -227,14 +227,14 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
         // row indices in ascending order. The mapped reduced rows are therefore
         // also inserted monotonically within each output column.
         for (Index reduced_col = 0; reduced_col < n_master(); ++reduced_col) {
-            const Index full_col = masters[static_cast<std::size_t>(reduced_col)];
-            for (SparseMatrix::InnerIterator entry(matrix, static_cast<int>(full_col)); entry; ++entry) {
-                const Index reduced_row = full_to_reduced[static_cast<std::size_t>(entry.row())];
+            const Index full_col = masters[reduced_col];
+            for (SparseMatrix::InnerIterator entry(matrix, full_col); entry; ++entry) {
+                const Index reduced_row = full_to_reduced[entry.row()];
                 if (reduced_row == invalid) continue;
 
                 reduced.insert(
-                    static_cast<Eigen::Index>(reduced_row),
-                    static_cast<Eigen::Index>(reduced_col)
+                    reduced_row,
+                    reduced_col
                 ) = entry.value();
             }
         }

@@ -57,7 +57,7 @@ namespace model {
 void Model::assign_sections() {
     // Apply each compiled section to all non-null elements in its dense region
     for (Section::Ptr ptr : _data->sections) {
-        for (ID elem_id : *ptr->region_) {
+        for (Index elem_id : *ptr->region_) {
             if (_data->elements[elem_id] != nullptr) {
                 _data->elements[elem_id]->set_section(ptr);
             }
@@ -124,9 +124,9 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 
     // Prepare global-node adjacency and one normal value per element-nodal row
     const Index node_count = _data->positions_reference->rows;
-    std::vector<std::vector<Index>> node_rows(static_cast<std::size_t>(node_count));
-    std::vector<Vec3>               row_normals(static_cast<std::size_t>(normals->rows), Vec3::Zero());
-    std::vector<bool>               prescribed_rows(static_cast<std::size_t>(normals->rows), false);
+    std::vector<std::vector<Index>> node_rows(node_count);
+    std::vector<Vec3>               row_normals(normals->rows, Vec3::Zero());
+    std::vector<bool>               prescribed_rows(normals->rows, false);
 
     // Evaluate or normalize the reference normal at every shell element node
     for (const ElementPtr& element : _data->elements) {
@@ -140,17 +140,17 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
             "Model: shell element ", structural->label(),
             " does not provide a reference surface");
 
-        const Index offset  = static_cast<Index>(structural->elem_nodal_offset);
-        const Index n_nodes = static_cast<Index>(structural->n_nodes());
+        const Index offset  = structural->elem_nodal_offset;
+        const Index n_nodes = structural->n_nodes();
 
         // Natural nodal coordinates must follow the shell connectivity ordering
         const DynamicMatrix natural_coords = surface->node_coords_natural();
-        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes && static_cast<Index>(natural_coords.cols()) == 2,
+        logging::error(natural_coords.rows() == n_nodes && natural_coords.cols() == 2,
             "Model: natural surface node coordinates do not match shell element ",
             structural->label());
 
         for (Index local_node = 0; local_node < n_nodes; ++local_node) {
-            const ID    node_id = structural->nodes()[local_node];
+            const Index node_id = structural->nodes()[local_node];
             const Index row     = offset + local_node;
 
             Vec3 normal = normals->row_vec3(row);
@@ -159,7 +159,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
             // Preserve supplied directions and reconstruct only missing rows
             if (prescribed) {
                 normal.normalize();
-                prescribed_rows[static_cast<std::size_t>(row)] = true;
+                prescribed_rows[row] = true;
             } else {
                 const Vec2 local = natural_coords.row(local_node).transpose();
                 normal = surface->normal(*_data->positions_reference, local);
@@ -170,8 +170,8 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
                 normal.normalize();
             }
 
-            row_normals[static_cast<std::size_t>(row)] = normal;
-            node_rows[static_cast<std::size_t>(node_id)].push_back(row);
+            row_normals[row] = normal;
+            node_rows[node_id].push_back(row);
         }
     }
 
@@ -181,17 +181,17 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
         std::vector<std::vector<Index>> cluster_rows;
 
         for (Index row : rows) {
-            const Vec3 normal = row_normals[static_cast<std::size_t>(row)];
+            const Vec3 normal = row_normals[row];
             bool added = false;
 
             for (Index cluster = 0; cluster < static_cast<Index>(cluster_sums.size()); ++cluster) {
                 const Vec3 cluster_normal =
-                    cluster_sums[static_cast<std::size_t>(cluster)].normalized();
+                    cluster_sums[cluster].normalized();
 
                 if (normal.dot(cluster_normal) < cos_equalize) continue;
 
-                cluster_sums[static_cast<std::size_t>(cluster)] += normal;
-                cluster_rows[static_cast<std::size_t>(cluster)].push_back(row);
+                cluster_sums[cluster] += normal;
+                cluster_rows[cluster].push_back(row);
                 added = true;
                 break;
             }
@@ -206,10 +206,10 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
         // Write each averaged cluster direction to its non-prescribed rows
         for (Index cluster = 0; cluster < static_cast<Index>(cluster_sums.size()); ++cluster) {
             const Vec3 equalized_normal =
-                cluster_sums[static_cast<std::size_t>(cluster)].normalized();
+                cluster_sums[cluster].normalized();
 
-            for (Index row : cluster_rows[static_cast<std::size_t>(cluster)]) {
-                if (prescribed_rows[static_cast<std::size_t>(row)]) continue;
+            for (Index row : cluster_rows[cluster]) {
+                if (prescribed_rows[row]) continue;
                 (*normals)(row, 0) = equalized_normal(0);
                 (*normals)(row, 1) = equalized_normal(1);
                 (*normals)(row, 2) = equalized_normal(2);
@@ -245,7 +245,7 @@ SystemDofs Model::build_structural_dofs() {
         if (element == nullptr) continue;
 
         const auto dofs = element->dofs();
-        for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
+        for (Index local_node = 0; local_node < element->n_nodes(); ++local_node) {
             system_dofs.activate(element->nodes()[local_node], dofs);
         }
     }
@@ -255,7 +255,7 @@ SystemDofs Model::build_structural_dofs() {
         if (element == nullptr) continue;
 
         const auto dofs = element->dofs();
-        for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
+        for (Index local_node = 0; local_node < element->n_nodes(); ++local_node) {
             system_dofs.activate(element->nodes()[local_node], dofs);
         }
     }
@@ -268,7 +268,7 @@ SystemDofs Model::build_structural_dofs() {
             logging::error(entry.node_id >= 0 && entry.node_id < system_dofs.nodes()
                         && entry.dof < 6 && std::isfinite(entry.coeff),
                 "Model: invalid manual equation term (node=", entry.node_id,
-                ", dof=", int(entry.dof), ", coefficient=", entry.coeff, ")");
+                ", dof=", entry.dof, ", coefficient=", entry.coeff, ")");
 
             if (entry.coeff != Precision(0)) {
                 system_dofs.activate(entry.node_id, entry.dof);
@@ -279,7 +279,7 @@ SystemDofs Model::build_structural_dofs() {
     // Add master-node components required by coupling and rigid-body kinematics.
     // Both may use each other's reference nodes as slaves, so repeat until no
     // further reference-node component is activated.
-    const auto activate_master = [&system_dofs](ID master_id, const Dofs& dofs) {
+    const auto activate_master = [&system_dofs](Index master_id, const Dofs& dofs) {
         bool changed = false;
         for (Index dof = 0; dof < system_dofs.width(); ++dof) {
             changed = changed || (dofs(dof) && !system_dofs.active(master_id, dof));
@@ -300,9 +300,9 @@ SystemDofs Model::build_structural_dofs() {
 
     // Activate constrained components at both nodes of every connector
     for (auto& connector : _data->connectors) {
-        const ID node1_id = connector.node_1();
-        const ID node2_id = connector.node_2();
-        const auto dofs   = connector.dofs();
+        const Index node1_id = connector.node_1();
+        const Index node2_id = connector.node_2();
+        const auto dofs      = connector.dofs();
 
         system_dofs.activate(node1_id, dofs);
         system_dofs.activate(node2_id, dofs);
@@ -569,7 +569,7 @@ SparseMatrix Model::build_stiffness_matrix(
                     "stiffness scale field must use ELEMENT domain");
                 logging::error(stiffness_scalar->components == 1,
                     "stiffness scale field must have 1 component");
-                stiffness *= (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
+                stiffness *= (*stiffness_scalar)(structural->elem_id, 0);
             }
             return stiffness;
         }
@@ -671,7 +671,7 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 
         // Point elements have negative ids and are never scaled
         if (stiffness_scalar && structural->elem_id >= 0) {
-            tangent *= (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
+            tangent *= (*stiffness_scalar)(structural->elem_id, 0);
         }
 
         return tangent;
@@ -723,13 +723,13 @@ void Model::build_internal_force(
 
     element_forces.set_zero();
 
-    const std::size_t regular_count = _data->elements.size();
-    const std::size_t element_count = regular_count + _data->point_elements.size();
+    const Index regular_count = static_cast<Index>(_data->elements.size());
+    const Index element_count = regular_count + static_cast<Index>(_data->point_elements.size());
 
     parallel::for_index(
         element_count,
-        static_cast<int>(global_config.max_threads),
-        [&](std::size_t element_index, int /*worker*/) {
+        global_config.max_threads,
+        [&](Index element_index, Index /*worker*/) {
             const ElementPtr& element =
                 element_index < regular_count
                     ? _data->elements[element_index]
@@ -748,7 +748,7 @@ void Model::build_internal_force(
                 update_state
             );
         },
-        std::size_t(64)
+        Index(64)
     );
 
     element_forces.check_finite("Internal force");
@@ -839,7 +839,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
                 logging::error(stiffness_scalar->components == 1,
                     "stiffness scale field must have 1 component");
                 geometric_stiffness *=
-                    (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
+                    (*stiffness_scalar)(structural->elem_id, 0);
             }
 
             return geometric_stiffness;

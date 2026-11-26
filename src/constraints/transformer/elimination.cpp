@@ -38,28 +38,28 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
     // Store equations by row and count each DOF's global participation
     std::vector<std::vector<std::pair<Index, Precision>>> rows(
-        static_cast<std::size_t>(system.equations)
+        system.equations
     );
-    std::vector<Index> column_count(static_cast<std::size_t>(system.dofs), 0);
+    std::vector<Index> column_count(system.dofs, 0);
 
-    for (int column = 0; column < system.C.outerSize(); ++column) {
+    for (Index column = 0; column < system.C.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(system.C, column); entry; ++entry) {
             if (std::abs(entry.value()) <= tolerance) {
                 continue;
             }
 
-            rows[static_cast<std::size_t>(entry.row())].emplace_back(column, entry.value());
-            ++column_count[static_cast<std::size_t>(column)];
+            rows[entry.row()].emplace_back(column, entry.value());
+            ++column_count[column];
         }
     }
 
-    std::vector<char> is_slave(static_cast<std::size_t>(system.dofs), 0);
-    std::vector<Precision> pivot_constant(static_cast<std::size_t>(system.dofs), Precision(0));
+    std::vector<char> is_slave(system.dofs, 0);
+    std::vector<Precision> pivot_constant(system.dofs, Precision(0));
     std::vector<std::vector<std::pair<Index, Precision>>> pivot_dependencies(
-        static_cast<std::size_t>(system.dofs)
+        system.dofs
     );
 
-    map.slaves.reserve(static_cast<std::size_t>(system.equations));
+    map.slaves.reserve(system.equations);
 
     struct Expanded {
         Precision constant = Precision(0);
@@ -68,16 +68,16 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
     // Express a DOF through the master DOFs available at the current row
     auto expand_current = [&](auto&& self, Index column) -> Expanded {
-        if (!is_slave[static_cast<std::size_t>(column)]) {
+        if (!is_slave[column]) {
             Expanded result{};
             result.coefficients[column] = Precision(1);
             return result;
         }
 
         Expanded result{};
-        result.constant = pivot_constant[static_cast<std::size_t>(column)];
+        result.constant = pivot_constant[column];
         for (const auto& [dependency, coefficient] :
-             pivot_dependencies[static_cast<std::size_t>(column)]) {
+             pivot_dependencies[column]) {
             const Expanded expanded_dependency = self(self, dependency);
             result.constant += coefficient * expanded_dependency.constant;
             for (const auto& [master, value] : expanded_dependency.coefficients) {
@@ -89,8 +89,8 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
     // Eliminate previously selected slave DOFs before choosing each new pivot
     for (Index row = 0; row < system.equations; ++row) {
-        const auto& entries = rows[static_cast<std::size_t>(row)];
-        Precision rhs = static_cast<Index>(system.d.size()) == system.equations
+        const auto& entries = rows[row];
+        Precision rhs = system.d.size() == system.equations
                             ? system.d[row]
                             : Precision(0);
 
@@ -132,11 +132,11 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
         Precision best_unit_distance = std::numeric_limits<Precision>::max();
 
         for (const auto& [column, coefficient] : reduced_entries) {
-            if (is_slave[static_cast<std::size_t>(column)]) {
+            if (is_slave[column]) {
                 continue;
             }
 
-            const Index     count         = column_count[static_cast<std::size_t>(column)];
+            const Index     count         = column_count[column];
             const Precision unit_distance = std::abs(std::abs(coefficient) - Precision(1));
             const bool better =
                 pivot_column == system.dofs ||
@@ -164,12 +164,12 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
         logging::error(std::abs(pivot_coefficient) > tolerance,
                        "[Elimination] pivot is numerically zero; try *CONSTRAINTMETHOD, TYPE=NULLSPACE");
 
-        is_slave[static_cast<std::size_t>(pivot_column)] = 1;
+        is_slave[pivot_column] = 1;
         map.slaves.push_back(pivot_column);
-        pivot_constant[static_cast<std::size_t>(pivot_column)] = rhs / pivot_coefficient;
+        pivot_constant[pivot_column] = rhs / pivot_coefficient;
 
         // Store u_pivot as an affine combination of the remaining DOFs
-        auto& dependencies = pivot_dependencies[static_cast<std::size_t>(pivot_column)];
+        auto& dependencies = pivot_dependencies[pivot_column];
         dependencies.reserve(reduced_entries.size());
         for (const auto& [column, coefficient] : reduced_entries) {
             if (column != pivot_column) {
@@ -224,7 +224,7 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
         }
 
         state = 2;
-        expanded_values[static_cast<std::size_t>(column)] = result;
+        expanded_values[column] = result;
         return result;
     };
 
@@ -236,11 +236,11 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
     map.particular = DynamicVector::Zero(system.dofs);
     for (Index column = 0; column < map.n_master(); ++column) {
-        t_entries.emplace_back(map.masters[static_cast<std::size_t>(column)], column, Precision(1));
+        t_entries.emplace_back(map.masters[column], column, Precision(1));
     }
 
     for (Index row = 0; row < map.n_slave(); ++row) {
-        const Index    slave = map.slaves[static_cast<std::size_t>(row)];
+        const Index    slave = map.slaves[row];
         const Expanded value = expand(slave);
         map.particular[slave] = value.constant;
 

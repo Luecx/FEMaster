@@ -174,7 +174,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
             logging::error(type.size() > prefix.size(),
                 "DLOAD: load type ", type, " requires a one-based element-face number");
 
-            ID face_id{};
+            Index face_id{};
             const char* begin = type.data() + prefix.size();
             const char* end   = type.data() + type.size();
             const auto [ptr, ec] = std::from_chars(begin, end, face_id);
@@ -184,7 +184,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
             return face_id;
         };
 
-        const auto materialize_face_region = [&parser](const std::string& target, ID face_id, bool shell_only) {
+        const auto materialize_face_region = [&parser](const std::string& target, Index face_id, bool shell_only) {
             auto& model    = parser.model();
             auto  elements = model.resolve_element_region(target);
 
@@ -196,11 +196,11 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
             std::vector<model::SurfacePtr> surfaces;
             surfaces.reserve(elements->size());
 
-            for (const ID element_id : *elements) {
-                logging::error(element_id >= 0 && element_id < static_cast<ID>(model._data->elements.size()),
+            for (const Index element_id : *elements) {
+                logging::error(element_id >= 0 && element_id < static_cast<Index>(model._data->elements.size()),
                     "DLOAD: compiled element ", element_id, " is out of range");
 
-                auto& element = model._data->elements[static_cast<std::size_t>(element_id)];
+                auto& element = model._data->elements[element_id];
                 logging::error(element != nullptr,
                     "DLOAD: compiled element ", element_id, " is not configured");
 
@@ -232,7 +232,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
 
                 // Connectivity ordering includes the face orientation and thus
                 // preserves the pressure-normal and traction integration basis.
-                ID surface_id = static_cast<ID>(std::distance(model._data->surfaces.begin(), existing));
+                Index surface_id = std::distance(model._data->surfaces.begin(), existing);
                 if (existing == model._data->surfaces.end()) {
                     model._data->surfaces.push_back(std::move(surface));
                 }
@@ -387,8 +387,8 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         logging::error(direction_omitted,
                             "DLOAD: ", type, " accepts no direction components");
 
-                        const bool shell_pressure = type == "P";
-                        const ID   face_id        = shell_pressure ? ID{2} : parse_face_id(type, "P");
+                        const bool  shell_pressure = type == "P";
+                        const Index face_id        = shell_pressure ? Index{2} : parse_face_id(type, "P");
 
                         auto load = std::make_shared<bc::PLoad>();
                         load->region_    = materialize_face_region(element_target, face_id, shell_pressure);

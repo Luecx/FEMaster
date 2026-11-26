@@ -86,7 +86,7 @@ public:
     [[nodiscard]] Index cols() const;
 
     // Returns the total number of stored scalar values
-    [[nodiscard]] std::size_t size() const;
+    [[nodiscard]] Index size() const;
 
     // Returns a matrix entry by mutable or constant access
     Precision& operator()(Index row, Index col);
@@ -106,7 +106,7 @@ public:
 
 private:
     // Converts a checked matrix index into a flat storage index
-    [[nodiscard]] std::size_t offset(Index row, Index col) const;
+    [[nodiscard]] Index offset(Index row, Index col) const;
 
     // Persistent dimensions and owned contiguous row-major scalar storage.
     Index                  rows_{};

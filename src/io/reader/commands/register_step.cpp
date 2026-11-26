@@ -94,7 +94,7 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             logging::error(!keys.has("AMPLITUDE"),
                 "STEP: AMPLITUDE is not supported; loads are ramped by default");
 
-            const int max_increments = keys.get<int>("INC");
+            const Index max_increments = keys.get<Index>("INC");
             logging::error(max_increments > 0,
                 "STEP requires INC > 0");
 
@@ -330,12 +330,12 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("NUM").desc("Number of eigenvalues")
+                    .one<Index>().name("NUM").desc("Number of eigenvalues")
                     .fixed<Precision, 5>().name("REST").desc("Unused Abaqus spectral controls")
                         .on_missing(std::numeric_limits<Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
-                .bind([&parser](int count, const std::array<Precision, 5>&) {
+                .bind([&parser](Index count, const std::array<Precision, 5>&) {
                     logging::error(count > 0,
                         "FREQUENCY requires a positive eigenvalue count");
                     auto* active_loadcase = parser.active_loadcase();
@@ -372,12 +372,12 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("NUM").desc("Number of buckling eigenvalues")
+                    .one<Index>().name("NUM").desc("Number of buckling eigenvalues")
                     .fixed<Precision, 4>().name("REST").desc("Unused Abaqus buckling controls")
                         .on_missing(std::numeric_limits<Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
-                .bind([&parser](int count, const std::array<Precision, 4>&) {
+                .bind([&parser](Index count, const std::array<Precision, 4>&) {
                     logging::error(count > 0,
                         "BUCKLE requires a positive eigenvalue count");
                     auto* active_loadcase = parser.active_loadcase();
@@ -506,9 +506,9 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                     logging::error(upper >= lower,
                         "Steady-state frequency range requires upper >= lower");
 
-                    int count = 20;
+                    Index count = 20;
                     if (!std::isnan(data[2])) {
-                        const int requested = static_cast<int>(std::llround(data[2]));
+                        const Index requested = static_cast<Index>(std::llround(data[2]));
                         logging::error(std::abs(data[2] - static_cast<Precision>(requested)) <= Precision(1e-12),
                             "Steady-state frequency point count must be an integer");
                         if (requested >= 2) {
@@ -519,7 +519,7 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
                     logging::error(*frequency_scale != "LOGARITHMIC" || lower > Precision(0),
                         "Logarithmic steady-state frequency ranges require a positive lower frequency");
 
-                    for (int i = 0; i < count; ++i) {
+                    for (Index i = 0; i < count; ++i) {
                         const Precision xi = static_cast<Precision>(i) /
                                              static_cast<Precision>(count - 1);
                         if (*frequency_scale == "LINEAR") {

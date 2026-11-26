@@ -170,7 +170,7 @@ TEST(Reader_Parser, LinearStaticUsesNamedAmplitudeAtStepTime) {
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
             linear->step_period, Precision(1), model::SystemDofs{}, nullptr);
-        const ID   node_id  = parser.model().compiled_node_id(1);
+        const Index node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
         EXPECT_DOUBLE_EQ(at_middle(node_id, 2), Precision(-250));
@@ -393,7 +393,7 @@ TEST(Reader_Parser, ShellSectionRequiresFiveIntegrationPoints) {
     const std::string output_path = "tests/TMP_SHELL_SECTION_IP.RES";
     io::reader::Parser parser;
 
-    const auto write_input = [&](int integration_points) {
+    const auto write_input = [&](Index integration_points) {
         std::ofstream out(input_path);
         out << "*MATERIAL, NAME=MAT\n*ELASTIC\n210000., 0.3\n";
         out << "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n3, 0, 1, 0\n";
@@ -530,8 +530,8 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
 
     // The two prescribed DOFs each generate one global and one transformed
     // fragment. No support may constrain both nodes in a single basis.
-    int global_count = 0;
-    int local_count  = 0;
+    Index global_count = 0;
+    Index local_count  = 0;
     const auto region = parser.model()._data->node_sets.get("BOTH");
     auto& model_data = *parser.model()._data;
     auto rhs = *model_data.positions;
@@ -583,8 +583,8 @@ TEST(Reader_Conditions, NativeSupportSplitsNodalTransformsAndReplacesAllFragment
     // Both old x fragments are replaced by one new x definition; y remains
     // independently active on its original two transformed fragments.
     ASSERT_EQ(parser.conditions().get(bc::SUPPORT).size(), 3u);
-    int x_count = 0;
-    int y_count = 0;
+    Index x_count = 0;
+    Index y_count = 0;
     for (const auto& condition : parser.conditions().get(bc::SUPPORT)) {
         const auto support = std::dynamic_pointer_cast<bc::Support>(condition);
         ASSERT_NE(support, nullptr);

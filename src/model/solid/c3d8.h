@@ -37,7 +37,7 @@ namespace model {
  */
 struct C3D8 : public SolidElement<8> {
     // Construction and element identification
-    C3D8(ID pElemId, const std::array<ID, 8>& pNodeIds);
+    C3D8(Index pElemId, const std::array<Index, 8>& pNodeIds);
 
     // Recreate the concrete element from persistent topology only. Dense ids,
     // sections, offsets and ModelData binding are instance-specific compile data.
@@ -51,7 +51,7 @@ struct C3D8 : public SolidElement<8> {
     StaticMatrix<8, 3> node_coords_local() override;
 
     // Boundary topology and element integration rule
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
 
 protected:

@@ -71,10 +71,10 @@ TEST(Elements_C3D5, CollapsedHexConnectivityPreservesPyramidType) {
     EXPECT_EQ(pyramid->n_nodes(), 8);
 
     // Four distinct base references; all upper hexahedral corners share the apex.
-    for (int i = 0; i < 4; ++i) {
+    for (fem::Index i = 0; i < 4; ++i) {
         EXPECT_EQ(pyramid->node_ids[i], model.compiled_node_id(10 + i));
     }
-    for (int i = 4; i < 8; ++i) {
+    for (fem::Index i = 4; i < 8; ++i) {
         EXPECT_EQ(pyramid->node_ids[i], model.compiled_node_id(14));
     }
 
@@ -112,7 +112,7 @@ TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
     ASSERT_EQ(shear_flow.components, 1);
 
     const fem::Precision expected[4] {-5.0, 5.0, -5.0, 5.0};
-    for (int i = 0; i < 4; ++i) {
+    for (fem::Index i = 0; i < 4; ++i) {
         EXPECT_NEAR(shear_flow(i, 0), expected[i], 1e-12);
     }
 
@@ -170,8 +170,8 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     EXPECT_TRUE(M.isApprox(M.transpose(), 1e-12));
 
     fem::Precision ux_mass = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
+    for (fem::Index i = 0; i < 4; ++i) {
+        for (fem::Index j = 0; j < 4; ++j) {
             ux_mass += M(6 * i, 6 * j);
         }
     }
@@ -219,10 +219,10 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     displacement(2, 0) = 1.0;
 
     auto resultants = model.compute_shell_resultants(displacement);
-    for (int node = 0; node < 4; ++node) {
+    for (fem::Index node = 0; node < 4; ++node) {
         EXPECT_NEAR(resultants(node, 0), 0.0, 1e-12);
         EXPECT_NEAR(resultants(node, 1), 1.0, 1e-12);
-        for (int col = 2; col < 8; ++col) {
+        for (fem::Index col = 2; col < 8; ++col) {
             EXPECT_NEAR(resultants(node, col), 0.0, 1e-12);
         }
     }
@@ -264,7 +264,7 @@ TEST(Elements_S4, TransverseShearResultantsFollowShellXThenY) {
     displacement(3, 2) = 1.0;
 
     auto resultants = model.compute_shell_resultants(displacement);
-    for (int node = 0; node < 4; ++node) {
+    for (fem::Index node = 0; node < 4; ++node) {
         EXPECT_NEAR(resultants(node, 6), 0.0, 1e-12);
         EXPECT_NEAR(resultants(node, 7), 3.0, 1e-12);
     }
@@ -315,7 +315,7 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
     ASSERT_EQ(section_forces.components, 6);
     EXPECT_NEAR(section_forces(0, 0), 12.0, 1e-12);
     EXPECT_NEAR(section_forces(1, 0), 12.0, 1e-12);
-    for (int col = 1; col < 6; ++col) {
+    for (fem::Index col = 1; col < 6; ++col) {
         EXPECT_NEAR(section_forces(0, col), 0.0, 1e-12);
         EXPECT_NEAR(section_forces(1, col), 0.0, 1e-12);
     }

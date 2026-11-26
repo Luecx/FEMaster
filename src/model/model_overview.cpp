@@ -59,7 +59,7 @@ void Model::print_overview() const {
 
     // Count registry entries without depending on their concrete storage type
     auto entry_count = [](const auto& entries) {
-        return static_cast<Index>(std::distance(entries.begin(), entries.end()));
+        return std::distance(entries.begin(), entries.end());
     };
 
     // Print one family of compiled regions. Region sizes count dense assembly

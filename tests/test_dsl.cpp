@@ -170,7 +170,7 @@ TEST(DSL_DeckParser, FailedVariantDoesNotCommitCallbacks) {
         os << "*NEXT\n";
     }
 
-    std::vector<int> calls;
+    std::vector<Index> calls;
     io::dsl::Registry reg;
     reg.command("CMD", [&](io::dsl::Command& command) {
         command.on_enter([&](const io::dsl::Keys&) {
@@ -181,15 +181,15 @@ TEST(DSL_DeckParser, FailedVariantDoesNotCommitCallbacks) {
             .rank(10)
             .segment(io::dsl::Segment::make()
                 .range(io::dsl::LineRange{}.min(1).max(1))
-                .pattern(io::dsl::Pattern::make().one<int>())
-                .bind([&](int) {
+                .pattern(io::dsl::Pattern::make().one<Index>())
+                .bind([&](Index) {
                     calls.push_back(100);
                 })
             )
             .segment(io::dsl::Segment::make()
                 .range(io::dsl::LineRange{}.min(1).max(1))
-                .pattern(io::dsl::Pattern::make().one<int>())
-                .bind([&](int) {
+                .pattern(io::dsl::Pattern::make().one<Index>())
+                .bind([&](Index) {
                     calls.push_back(200);
                 })
             )
@@ -198,8 +198,8 @@ TEST(DSL_DeckParser, FailedVariantDoesNotCommitCallbacks) {
         command.variant(io::dsl::Variant::make()
             .segment(io::dsl::Segment::make()
                 .range(io::dsl::LineRange{}.min(1).max(1))
-                .pattern(io::dsl::Pattern::make().one<int>())
-                .bind([&](int value) {
+                .pattern(io::dsl::Pattern::make().one<Index>())
+                .bind([&](Index value) {
                     calls.push_back(value);
                 })
             )
@@ -245,8 +245,8 @@ TEST(DSL_DeckParser, OnEnterDoesNotRunWhenNoVariantMatches) {
         os << "*NEXT\n";
     }
 
-    int enter_count = 0;
-    int callback_count = 0;
+    Index enter_count = 0;
+    Index callback_count = 0;
     io::dsl::Registry reg;
     reg.command("CMD", [&](io::dsl::Command& command) {
         command.on_enter([&](const io::dsl::Keys&) {
@@ -256,8 +256,8 @@ TEST(DSL_DeckParser, OnEnterDoesNotRunWhenNoVariantMatches) {
         command.variant(io::dsl::Variant::make()
             .segment(io::dsl::Segment::make()
                 .range(io::dsl::LineRange{}.min(1).max(1))
-                .pattern(io::dsl::Pattern::make().one<int>())
-                .bind([&](int) {
+                .pattern(io::dsl::Pattern::make().one<Index>())
+                .bind([&](Index) {
                     ++callback_count;
                 })
             )

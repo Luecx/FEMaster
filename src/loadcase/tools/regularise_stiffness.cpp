@@ -65,7 +65,7 @@ namespace fem {
  *
  * @return Number of matrix rows that received an additional diagonal term.
  */
-int regularise_stiffness(SparseMatrix& matrix, Precision alpha) {
+Index regularise_stiffness(SparseMatrix& matrix, Precision alpha) {
     // Treat a non-positive factor as disabled and avoid processing an empty
     // stiffness matrix
     if (alpha <= Precision(0) || matrix.rows() == 0) {
@@ -82,7 +82,7 @@ int regularise_stiffness(SparseMatrix& matrix, Precision alpha) {
 
     // Traverse the sparse matrix once. Eigen stores the matrix by outer
     // indices, which are columns for the default column-major SparseMatrix.
-    for (Index col = 0; col < static_cast<Index>(matrix.outerSize()); ++col) {
+    for (Index col = 0; col < matrix.outerSize(); ++col) {
         for (SparseMatrix::InnerIterator it(matrix, col); it; ++it) {
             const Precision absolute_value = std::abs(it.value());
 
@@ -134,7 +134,7 @@ int regularise_stiffness(SparseMatrix& matrix, Precision alpha) {
     // matrix. This avoids repeated sparse insertions during the row scan.
     TripletList additions{};
 
-    for (Index row = 0; row < static_cast<Index>(matrix.rows()); ++row) {
+    for (Index row = 0; row < matrix.rows(); ++row) {
         // Rows below the threshold receive exactly the currently missing
         // stiffness as an additional positive diagonal contribution
         if (row_sum(row) < min_row_stiffness) {
@@ -159,7 +159,7 @@ int regularise_stiffness(SparseMatrix& matrix, Precision alpha) {
     matrix += regularisation;
     matrix.makeCompressed();
 
-    return static_cast<int>(additions.size());
+    return static_cast<Index>(additions.size());
 }
 
 } // namespace fem

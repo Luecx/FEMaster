@@ -35,7 +35,7 @@ namespace model {
  * Constructs one C3D8 element from its global element id and eight global node
  * ids. Kinematic and constitutive behavior is inherited from `SolidElement`.
  */
-C3D8::C3D8(ID pElemId, const std::array<ID, 8>& pNodeIds)
+C3D8::C3D8(Index pElemId, const std::array<Index, 8>& pNodeIds)
     : SolidElement(pElemId, pNodeIds) {}
 
 /**
@@ -58,7 +58,7 @@ StaticMatrix<8, 1> C3D8::shape_function(Precision r, Precision s, Precision t) {
     const Precision tm = t - Precision(1);
 
     // Each node is represented by one sign and one factor in r, s and t.
-    for (int n = 0; n < 8; ++n) {
+    for (Index n = 0; n < 8; ++n) {
         const Precision sign = (n == 0 || n == 2 || n == 5 || n == 7) ? Precision(-1) : Precision(1);
         const Precision r1   = ((n + 1) / 2) % 2 == 1 ? rp : rm;
         const Precision s1   = (n / 2) % 2 == 1 ? sp : sm;
@@ -91,7 +91,7 @@ StaticMatrix<8, 3> C3D8::shape_derivative(Precision r, Precision s, Precision t)
 
     // Cache the sign and three natural-coordinate factors for all nodes.
     StaticMatrix<8, 4> factors {};
-    for (int n = 0; n < 8; ++n) {
+    for (Index n = 0; n < 8; ++n) {
         factors(n, 0) = (n == 0 || n == 2 || n == 5 || n == 7) ? Precision(-1) : Precision(1);
         factors(n, 1) = ((n + 1) / 2) % 2 == 1 ? rp : rm;
         factors(n, 2) = (n / 2) % 2 == 1 ? sp : sm;
@@ -99,7 +99,7 @@ StaticMatrix<8, 3> C3D8::shape_derivative(Precision r, Precision s, Precision t)
     }
 
     StaticMatrix<8, 3> derivative {};
-    for (int n = 0; n < 8; ++n) {
+    for (Index n = 0; n < 8; ++n) {
         derivative(n, 0) = factors(n, 0) * factors(n, 2) * factors(n, 3);
         derivative(n, 1) = factors(n, 0) * factors(n, 1) * factors(n, 3);
         derivative(n, 2) = factors(n, 0) * factors(n, 1) * factors(n, 2);
@@ -118,7 +118,7 @@ StaticMatrix<8, 3> C3D8::shape_derivative(Precision r, Precision s, Precision t)
 StaticMatrix<8, 3> C3D8::node_coords_local() {
     StaticMatrix<8, 3> res {};
 
-    for (int n = 0; n < 8; ++n) {
+    for (Index n = 0; n < 8; ++n) {
         const Precision r = ((n + 1) / 2) % 2 == 0 ? Precision(-1) : Precision(1);
         const Precision s = (n / 2) % 2 == 0 ? Precision(-1) : Precision(1);
         const Precision t = n >= 4 ? Precision(1) : Precision(-1);
@@ -143,20 +143,20 @@ StaticMatrix<8, 3> C3D8::node_coords_local() {
  * @return Surface representation of the requested face, or `nullptr` for an
  * invalid id.
  */
-SurfacePtr C3D8::surface(ID surface_id) {
+SurfacePtr C3D8::surface(Index surface_id) {
     switch (surface_id) {
         case 1:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
         case 2:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
         case 3:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[5], node_ids[4]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[0], node_ids[1], node_ids[5], node_ids[4]});
         case 4:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[1], node_ids[2], node_ids[6], node_ids[5]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[1], node_ids[2], node_ids[6], node_ids[5]});
         case 5:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[2], node_ids[3], node_ids[7], node_ids[6]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[2], node_ids[3], node_ids[7], node_ids[6]});
         case 6:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[3], node_ids[0], node_ids[4], node_ids[7]});
+            return std::make_shared<Surface4>(std::array<Index, 4> {node_ids[3], node_ids[0], node_ids[4], node_ids[7]});
         default:
             return nullptr;
     }

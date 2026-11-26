@@ -79,8 +79,8 @@ DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
         "general";
     logging::info(true, "Using cuDSS direct solver (", cudss_type_name, ")");
 
-    cuda::CudaArray<CudaPrecision> dense_rhs {static_cast<std::size_t>(rhs.size())};
-    cuda::CudaArray<CudaPrecision> dense_sol {static_cast<std::size_t>(rhs.size())};
+    cuda::CudaArray<CudaPrecision> dense_rhs {static_cast<Index>(rhs.size())};
+    cuda::CudaArray<CudaPrecision> dense_sol {static_cast<Index>(rhs.size())};
     dense_rhs.upload(rhs.data());
 
     cudssHandle_t handle {};

@@ -36,7 +36,7 @@ struct FRTShellS6 : FRTShell<6> {
 
     // Construct the MITC6-b shell from one element identifier and six nodal
     // identifiers in quadratic triangular ordering.
-    FRTShellS6(ID id, const std::array<ID, 6>& nodes);
+    FRTShellS6(Index id, const std::array<Index, 6>& nodes);
 
     // Recreate the concrete FRT shell from persistent topology only. The unique
     // reference-geometry cache is analysis state and is initialized later by the
@@ -51,7 +51,7 @@ struct FRTShellS6 : FRTShell<6> {
     std::string type_name() const override;
 
     // Return one oriented quadratic triangular surface representation.
-    std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
+    std::shared_ptr<SurfaceInterface> surface(Index surface_id) override;
 
     // Return the quartic triangular area quadrature used by this element.
     const math::quadrature::Quadrature& integration_scheme() const override;

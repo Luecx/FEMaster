@@ -66,10 +66,10 @@ void register_solid_section(fem::io::dsl::Registry& registry, model::Model& mode
             const auto part   = model._data->parts.get();
             const auto region = part->elem_sets.get(*elset);
 
-            std::vector<ID> solid_ids;
-            std::vector<ID> truss_ids;
+            std::vector<Index> solid_ids;
+            std::vector<Index> truss_ids;
 
-            for (const ID id : *region) {
+            for (const Index id : *region) {
                 const auto it = part->elements.find(id);
                 logging::error(it != part->elements.end() && it->second != nullptr,
                     "SOLIDSECTION: element ", id, " is not defined in part ", part->name);
@@ -107,8 +107,8 @@ void register_solid_section(fem::io::dsl::Registry& registry, model::Model& mode
 
                 solid_region = part->elem_sets.activate(solid_name);
                 truss_region = part->elem_sets.activate(truss_name);
-                for (const ID id : solid_ids) solid_region->add(id);
-                for (const ID id : truss_ids) truss_region->add(id);
+                for (const Index id : solid_ids) solid_region->add(id);
+                for (const Index id : truss_ids) truss_region->add(id);
             }
 
             const auto assigned_material = model._data->materials.get(*material);

@@ -51,7 +51,7 @@ Precision FRTShell<N>::thermal_strain_at(
     Precision free_strain = Precision(0);
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision temperature =
-            (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
+            (*temperature_field)(this->node_ids[node], 0);
         free_strain += shape(node) * alpha * (temperature - zero);
     }
 
@@ -280,7 +280,7 @@ void FRTShell<N>::physical_stress_strain_at(
     Precision state_distance = (r - points[0].r) * (r - points[0].r) + (s - points[0].s) * (s - points[0].s);
 
     for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
-        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+        const ReferencePoint& point = points[ip];
         const Precision distance = (r - point.r) * (r - point.r) + (s - point.s) * (s - point.s);
         if (distance < state_distance) {
             state_ip       = ip;
@@ -368,7 +368,7 @@ void FRTShell<N>::compute_stress_strain(
     const Field*     base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     logging::error(strain != nullptr || stress != nullptr,
         "FRTShell: compute_stress_strain requires at least one output field");
@@ -409,7 +409,7 @@ void FRTShell<N>::compute_stress_strain(
             stress_value
         );
 
-        const Index row = static_cast<Index>(offset) + point;
+        const Index row = offset + point;
 
         if (strain) {
             for (Index component = 0; component < strain->components; ++component) {
@@ -449,7 +449,7 @@ void FRTShell<N>::compute_stress_strain(
 template<Index N>
 bool FRTShell<N>::compute_peeq(Field& peeq) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "FRTShell: PEEQ recovery requires scalar ELEMENT_NODAL output");
@@ -475,7 +475,7 @@ bool FRTShell<N>::compute_peeq(Field& peeq) {
     const auto& state = this->_model_data->material_state_old;
     if (state) {
         // Reduce the through-thickness history to its maximum at each in-plane IP.
-        for (Index ip = 0; ip < static_cast<Index>(ip_rst.rows()); ++ip) {
+        for (Index ip = 0; ip < ip_rst.rows(); ++ip) {
             Precision maximum = Precision(0);
 
             for (Index mp = 0; mp < material_points; ++mp) {
@@ -537,7 +537,7 @@ bool FRTShell<N>::compute_peeq(Field& peeq) {
         nodal_peeq = E * ip_peeq;
     }
     for (Index node = 0; node < N; ++node) {
-        peeq(static_cast<Index>(offset) + node, 0) = nodal_peeq(node, 0);
+        peeq(offset + node, 0) = nodal_peeq(node, 0);
     }
 
     return true;
@@ -614,7 +614,7 @@ bool FRTShell<N>::compute_shell_section_forces(
             + (s - points[0].s) * (s - points[0].s);
 
         for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
-            const ReferencePoint& point_ip = points[static_cast<std::size_t>(ip)];
+            const ReferencePoint& point_ip = points[ip];
             const Precision distance =
                 (r - point_ip.r) * (r - point_ip.r)
                 + (s - point_ip.s) * (s - point_ip.s);
@@ -707,7 +707,7 @@ bool FRTShell<N>::compute_shell_section_forces(
         const Vec8 values = scale * resultants_shell.values();
 
         // Preserve one value per element-local node, even at shared nodes
-        const Index row = static_cast<Index>(this->elem_nodal_offset) + node;
+        const Index row = this->elem_nodal_offset + node;
         for (Index component = 0; component < num_strains; ++component) {
             resultants(row, component) = values(component);
         }

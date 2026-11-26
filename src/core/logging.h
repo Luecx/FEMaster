@@ -25,21 +25,23 @@
 #include <cstddef>
 #include <string>
 
+#include "types_num.h"
+
 namespace fem {
 namespace logging {
 
-extern int indentation_level; ///< Tracks the current indentation depth for log output.
+extern Index indentation_level; ///< Tracks the current indentation depth for log output.
 
 /**
  * @brief Set the assumed console width (in characters) for wrapping.
  *        Default is 100. Must be >= 20 to avoid pathological behavior.
  */
-void set_console_width(std::size_t cols);
+void set_console_width(Index cols);
 
 /**
  * @brief Get the currently configured console width.
  */
-std::size_t get_console_width();
+Index get_console_width();
 
 /**
  * @brief Enable informational and warning log output.

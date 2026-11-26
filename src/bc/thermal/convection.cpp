@@ -139,12 +139,12 @@ void Convection::apply_rhs(
     Precision*  rhs_data      = rhs.data();
 
 #ifdef _OPENMP
-    const int worker_count = std::max(
+    const Index worker_count = std::max<Index>(
         1,
-        std::min(global_config.max_threads, static_cast<int>(std::max<Index>(surface_count, 1)))
+        std::min(global_config.max_threads, std::max<Index>(surface_count, 1))
     );
 #else
-    const int worker_count = 1;
+    const Index worker_count = 1;
 #endif
 
     std::atomic_bool   failed{false};
@@ -161,12 +161,12 @@ void Convection::apply_rhs(
         }
 
         try {
-            const ID surface_id = surface_ids[static_cast<std::size_t>(surface_index)];
+            const Index surface_id = surface_ids[surface_index];
             logging::error(surface_id >= 0
-                        && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                        && surface_id < static_cast<Index>(model_data.surfaces.size()),
                 "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
 
-            const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+            const auto& surface = model_data.surfaces[surface_id];
             logging::error(surface != nullptr,
                 "CONVECTION: surface ", surface_id, " is not initialized");
 
@@ -175,12 +175,12 @@ void Convection::apply_rhs(
                 [source](const Vec3&) -> Precision { return source; }
             );
 
-            logging::error(static_cast<Index>(local.size()) == surface->n_nodes && local.allFinite(),
+            logging::error(local.size() == surface->n_nodes && local.allFinite(),
                 "CONVECTION: local ambient source is invalid on surface ", surface_id);
 
             for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
-                const ID node_id = surface->nodes()[local_node];
-                logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+                const Index node_id = surface->nodes()[local_node];
+                logging::error(node_id >= 0 && node_id < node_count,
                     "CONVECTION: surface references node ", node_id,
                     " outside the thermal RHS domain");
 
@@ -188,7 +188,7 @@ void Convection::apply_rhs(
 #ifdef _OPENMP
                 #pragma omp atomic update
 #endif
-                rhs_data[static_cast<std::size_t>(node_id)] += contribution;
+                rhs_data[node_id] += contribution;
             }
         } catch (...) {
             failed.store(true, std::memory_order_relaxed);
@@ -238,7 +238,7 @@ void Convection::apply_matrix(
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "CONVECTION: reference positions are not initialized");
-    logging::error(static_cast<Index>(system_dof_ids.nodes()) == model_data.positions_reference->rows,
+    logging::error(system_dof_ids.nodes() == model_data.positions_reference->rows,
         "CONVECTION: thermal DOF map does not match the nodal domain");
     logging::error(system_dof_ids.width() == 1,
         "CONVECTION: thermal DOF map must contain exactly one component");
@@ -251,18 +251,18 @@ void Convection::apply_matrix(
     const Index surface_count = static_cast<Index>(surface_ids.size());
 
 #ifdef _OPENMP
-    const int worker_count = std::max(
+    const Index worker_count = std::max<Index>(
         1,
-        std::min(global_config.max_threads, static_cast<int>(std::max<Index>(surface_count, 1)))
+        std::min(global_config.max_threads, std::max<Index>(surface_count, 1))
     );
 #else
-    const int worker_count = 1;
+    const Index worker_count = 1;
 #endif
 
     // Each OpenMP worker owns a sparse triplet buffer, avoiding synchronized
     // matrix insertion. Shared-node contributions produce duplicate entries,
     // which are subsequently summed during global sparse assembly.
-    std::vector<TripletList> thread_triplets(static_cast<std::size_t>(worker_count));
+    std::vector<TripletList> thread_triplets(worker_count);
 
     std::atomic_bool   failed{false};
     std::exception_ptr failure = nullptr;
@@ -279,16 +279,16 @@ void Convection::apply_matrix(
 #ifdef _OPENMP
             const int worker = omp_get_thread_num();
 #else
-            const int worker = 0;
+            const Index worker = 0;
 #endif
-            auto& local_triplets = thread_triplets[static_cast<std::size_t>(worker)];
+            auto& local_triplets = thread_triplets[static_cast<Index>(worker)];
 
-            const ID surface_id = surface_ids[static_cast<std::size_t>(surface_index)];
+            const Index surface_id = surface_ids[surface_index];
             logging::error(surface_id >= 0
-                        && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                        && surface_id < static_cast<Index>(model_data.surfaces.size()),
                 "CONVECTION: surface ", surface_id, " is outside the compiled surface domain");
 
-            const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+            const auto& surface = model_data.surfaces[surface_id];
             logging::error(surface != nullptr,
                 "CONVECTION: surface ", surface_id, " is not initialized");
 
@@ -297,35 +297,35 @@ void Convection::apply_matrix(
                 [h](const Vec3&) -> Precision { return h; }
             );
 
-            logging::error(static_cast<Index>(local.rows()) == surface->n_nodes
-                        && static_cast<Index>(local.cols()) == surface->n_nodes,
+            logging::error(local.rows() == surface->n_nodes
+                        && local.cols() == surface->n_nodes,
                 "CONVECTION: local boundary matrix does not match surface connectivity");
             logging::error(local.allFinite(),
                 "CONVECTION: local boundary matrix contains NaN or Inf");
 
             for (Index i = 0; i < surface->n_nodes; ++i) {
-                const ID node_i = surface->nodes()[i];
+                const Index node_i = surface->nodes()[i];
                 logging::error(node_i >= 0
-                            && static_cast<Eigen::Index>(node_i) < system_dof_ids.nodes(),
+                            && node_i < system_dof_ids.nodes(),
                     "CONVECTION: surface references invalid node ", node_i);
 
-                const int row = system_dof_ids(static_cast<Eigen::Index>(node_i), 0);
+                const Index row = system_dof_ids(node_i, 0);
                 logging::error(row >= 0,
                     "CONVECTION: surface references thermally inactive node ", node_i);
 
                 for (Index j = 0; j < surface->n_nodes; ++j) {
-                    const ID node_j = surface->nodes()[j];
+                    const Index node_j = surface->nodes()[j];
                     logging::error(node_j >= 0
-                                && static_cast<Eigen::Index>(node_j) < system_dof_ids.nodes(),
+                                && node_j < system_dof_ids.nodes(),
                         "CONVECTION: surface references invalid node ", node_j);
 
-                    const int col = system_dof_ids(static_cast<Eigen::Index>(node_j), 0);
+                    const Index col = system_dof_ids(node_j, 0);
                     logging::error(col >= 0,
                         "CONVECTION: surface references thermally inactive node ", node_j);
 
                     const Precision value = local(
-                        static_cast<Eigen::Index>(i),
-                        static_cast<Eigen::Index>(j)
+                        i,
+                        j
                     );
 
                     if (value != Precision(0)) {
@@ -352,9 +352,9 @@ void Convection::apply_matrix(
 
     // Merge thread-local triplets; duplicate global (row, column) entries are
     // intentionally retained for the subsequent sparse matrix construction.
-    std::size_t additional = 0;
+    Index additional = 0;
     for (const auto& local : thread_triplets) {
-        additional += local.size();
+        additional += static_cast<Index>(local.size());
     }
     matrix.reserve(matrix.size() + additional);
 
@@ -376,7 +376,7 @@ std::string Convection::str() const {
     // Report the nominal convection parameters, before amplitude scaling.
     os << "CONVECTION: target=SFSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
+       << (region_ ? region_->size() : 0) << ")"
        << ", h=" << film_coefficient_
        << ", ambient=" << ambient_temperature_;
 

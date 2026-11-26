@@ -56,10 +56,10 @@ struct Surface : public SurfaceInterface {
     static constexpr Index num_nodes_per_edge = N > 4 ? 3 : 2;
 
     // Global node identifiers of the surface
-    std::array<ID, N> nodeIds{};
+    std::array<Index, N> nodeIds{};
 
     // Construction
-    explicit Surface(const std::array<ID, N>& node_ids);
+    explicit Surface(const std::array<Index, N>& node_ids);
 
     ~Surface() override = default;
 
@@ -79,8 +79,8 @@ struct Surface : public SurfaceInterface {
     StaticMatrix<N, 3> node_coords_global(const Field& node_coords) const;
 
     // Return contiguous mutable connectivity storage
-    ID* nodes() override;
-    const ID* nodes() const override;
+    Index* nodes() override;
+    const Index* nodes() const override;
 
     // Boundary projection delegated to the concrete surface implementation
     virtual Vec2 closest_point_on_boundary(

@@ -95,7 +95,7 @@ struct NonlinearStatic : public LoadCase {
      * once the load factor reaches one. For ArcLength it limits the number of
      * accepted path-following steps.
      */
-    int max_increments = 100;
+    Index max_increments = 100;
 
     /**
      * @brief Initial nonlinear step size.
@@ -144,22 +144,22 @@ struct NonlinearStatic : public LoadCase {
     /**
      * @brief Iteration count up to which an accepted increment is enlarged.
      */
-    int fast_iterations = 6;
+    Index fast_iterations = 6;
 
     /**
      * @brief Iteration count from which an accepted increment is reduced.
      */
-    int slow_iterations = 10;
+    Index slow_iterations = 10;
 
     /**
      * @brief Maximum number of consecutive cutbacks for one increment.
      */
-    int maximum_cutbacks = 20;
+    Index maximum_cutbacks = 20;
 
     /**
      * @brief Maximum number of nonlinear iterations per increment.
      */
-    int max_iterations = 20;
+    Index max_iterations = 20;
 
     /**
      * @brief Convergence tolerance for the nonlinear residual.

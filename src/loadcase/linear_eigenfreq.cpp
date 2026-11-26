@@ -143,8 +143,8 @@ static DynamicMatrix build_mass_weighted_rigid_body_directions(const model::Syst
         directions(2, 4) = -x;
 
         // Scatter only existing DOFs; solid nodes have no explicit rotations
-        for (int dof = 0; dof < 6; ++dof) {
-            const int gid = dofs(node, dof);
+        for (Index dof = 0; dof < 6; ++dof) {
+            const Index gid = dofs(node, dof);
             if (gid >= 0) R.row(gid) = directions.row(dof);
         }
     }
@@ -195,24 +195,24 @@ static DynamicMatrix build_mass_weighted_rigid_body_directions(const model::Syst
  * @brief Compute a power-of-ten scaling exponent so that reported participations
  *        are O(1). If all participations are zero, returns 0.
  */
-static int compute_scaling_exponent(const std::vector<ModalMode>& modes) {
+static Index compute_scaling_exponent(const std::vector<ModalMode>& modes) {
     Precision max_abs = 0;
     for (const auto& m : modes) {
-        for (int i = 0; i < 6; ++i)
+        for (Index i = 0; i < 6; ++i)
             max_abs = std::max(max_abs, std::abs(m.participation(i)));
     }
     if (max_abs <= Precision(0)) return 0;
     // choose e = ceil(-log10(max_abs)) so that max_abs * 10^e <= 1
     const double e = std::ceil(-std::log10(static_cast<double>(max_abs)));
     // clamp a bit to avoid silly exponents if values are already order 1
-    return static_cast<int>(e);
+    return static_cast<Index>(e);
 }
 
 /**
  * @brief Pretty-print a summary table (lambda, frequency, participations).
  */
 static void display_eigen_summary(const std::vector<ModalMode>& modes) {
-    const int       exp10 = compute_scaling_exponent(modes);
+    const Index     exp10 = compute_scaling_exponent(modes);
     const Precision scale = std::pow(Precision(10), exp10);
 
     logging::info(true, "");
@@ -225,7 +225,7 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
                   std::setw(12), "x",  std::setw(8), "y",  std::setw(8), "z",
                   std::setw(8),  "rx", std::setw(8), "ry", std::setw(8), "rz");
 
-    for (size_t i = 0; i < modes.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
         const auto& m = modes[i];
         logging::info(true,
             std::setw(4),  i + 1,
@@ -252,7 +252,7 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
 static void write_results(std::vector<ModalMode>& modes,
                           io::writer::OutputRequestHandler& output,
                           io::writer::ResultWriters* writer,
-                          int loadcase_id,
+                          Index loadcase_id,
                           model::Model* mdl)
 {
     using io::writer::OutputField;
@@ -267,7 +267,7 @@ static void write_results(std::vector<ModalMode>& modes,
     model::Field participation {"PARTICIPATION",    model::FieldDomain::UNKNOWN, num_modes, 6};
 
     for (Index i = 0; i < num_modes; ++i) {
-        const auto index = static_cast<std::size_t>(i);
+        const auto index = i;
 
         eigenvalues(i) = modes[index].lambda;
         eigenfreqs (i) = modes[index].freq * 2 * pi;
@@ -443,7 +443,7 @@ void LinearEigenfrequency::run() {
     logging::info(true, use_diagonal_fallback ? "Diagonal omega^2 scale = " : "Quadratic Ritz omega^2 estimate = ",
         lambda_estimate, ", shift sigma = ", eigopt.sigma);
 
-    const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
+    const Index k_req = std::max<Index>(1, std::min(num_eigenvalues, A.rows()));
     auto eig_pairs = Timer::measure(
         [&]() {
             if (use_eigenvalue_range) {
@@ -463,7 +463,7 @@ void LinearEigenfrequency::run() {
     // (7) Recover all eigenvectors in the full active DOF space
     DynamicMatrix Phi(K.rows(), static_cast<Index>(modes.size()));
     for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
-        auto& m = modes[static_cast<std::size_t>(i)];
+        auto& m = modes[i];
 
         // Recover the physical mode and preserve the existing nodal writer output
         DynamicVector u_mode = CT->recover_displacement(m.q_mode);
@@ -484,7 +484,7 @@ void LinearEigenfrequency::run() {
     // Project all mass-normalized modes onto the six rigid-body directions
     const DynamicMatrix P = Phi.transpose() * MR;
     for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
-        modes[static_cast<std::size_t>(i)].participation = P.row(i).transpose();
+        modes[i].participation = P.row(i).transpose();
     }
 
     // (9) Print + write

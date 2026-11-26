@@ -74,14 +74,14 @@ void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser& parse
                 "NONLINEAR is only supported for NONLINEARSTATIC loadcases");
 
             if (keys.has("INCREMENTS")) {
-                const int increments = keys.get<int>("INCREMENTS");
+                const Index increments = keys.get<Index>("INCREMENTS");
                 logging::error(increments > 0,
                     "NONLINEAR requires INCREMENTS > 0");
                 lc->initial_increment = Precision(1) / static_cast<Precision>(increments);
             }
 
             if (keys.has("MAX_INCREMENTS")) {
-                lc->max_increments = keys.get<int>("MAX_INCREMENTS");
+                lc->max_increments = keys.get<Index>("MAX_INCREMENTS");
             }
             if (keys.has("INITIAL_INCREMENT")) {
                 lc->initial_increment = keys.get<Precision>("INITIAL_INCREMENT");
@@ -100,10 +100,10 @@ void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser& parse
             lc->adaptive_increments                  = keys.get<bool>("ADAPTIVE");
             lc->growth_factor                        = keys.get<Precision>("GROWTH_FACTOR");
             lc->cutback_factor                       = keys.get<Precision>("CUTBACK_FACTOR");
-            lc->fast_iterations                      = keys.get<int>("FAST_ITERATIONS");
-            lc->slow_iterations                      = keys.get<int>("SLOW_ITERATIONS");
-            lc->maximum_cutbacks                     = keys.get<int>("MAXIMUM_CUTBACKS");
-            lc->max_iterations                       = keys.get<int>("MAXITER");
+            lc->fast_iterations                      = keys.get<Index>("FAST_ITERATIONS");
+            lc->slow_iterations                      = keys.get<Index>("SLOW_ITERATIONS");
+            lc->maximum_cutbacks                     = keys.get<Index>("MAXIMUM_CUTBACKS");
+            lc->max_iterations                       = keys.get<Index>("MAXITER");
             lc->tolerance                            = keys.get<Precision>("TOL");
             lc->regularize_zero_stiffness_rows       = keys.get<bool>("REGULARIZE_ZERO_ROWS");
             lc->zero_stiffness_regularization_alpha = keys.get<Precision>("REGULARIZATION_ALPHA");

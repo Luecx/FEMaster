@@ -111,7 +111,7 @@ void Model::initialize_material_state(Field& state) const {
                 " exceeds field width ", state.components,
                 " for element ", element->label());
 
-            for (Index ip = 0; ip < static_cast<Index>(element->num_ip()); ++ip) {
+            for (Index ip = 0; ip < element->num_ip(); ++ip) {
                 const Index row = element->mp_index(ip, mp);
                 logging::error(row < state.rows,
                     "Material point row ", row,

@@ -168,7 +168,7 @@ void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_de
         Vec3 f_ip = field(x_ip) * (rho * w * detJ);
 
         for (Index i = 0; i < N; ++i) {
-            const ID n_id       = this->node_ids[i];
+            const Index n_id    = this->node_ids[i];
             const Precision a   = Nvals(i);
             node_loads(n_id, 0) += a * f_ip(0);
             node_loads(n_id, 1) += a * f_ip(1);

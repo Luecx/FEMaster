@@ -37,8 +37,8 @@ SparseMatrix extract_connected_rows(const SparseMatrix&       matrix,
                                     std::vector<Index>&       rows) {
     using RowMajorMatrix = Eigen::SparseMatrix<Precision, Eigen::RowMajor>;
 
-    const Index n_rows = static_cast<Index>(matrix.rows());
-    const Index n_cols = static_cast<Index>(matrix.cols());
+    const Index n_rows = matrix.rows();
+    const Index n_cols = matrix.cols();
 
     std::vector<bool> row_visited(n_rows, false);
     std::vector<bool> col_visited(n_cols, false);
@@ -53,14 +53,14 @@ SparseMatrix extract_connected_rows(const SparseMatrix&       matrix,
     }
 
     const RowMajorMatrix by_row = matrix;
-    for (std::size_t next = 0; next < rows.size(); ++next) {
-        for (RowMajorMatrix::InnerIterator row_entry(by_row, static_cast<Eigen::Index>(rows[next])); row_entry; ++row_entry) {
-            const Index col = static_cast<Index>(row_entry.col());
+    for (Index next = 0; next < static_cast<Index>(rows.size()); ++next) {
+        for (RowMajorMatrix::InnerIterator row_entry(by_row, rows[next]); row_entry; ++row_entry) {
+            const Index col = row_entry.col();
             if (row_entry.value() == Precision(0) || col_visited[col]) continue;
             col_visited[col] = true;
 
-            for (SparseMatrix::InnerIterator col_entry(matrix, static_cast<Eigen::Index>(col)); col_entry; ++col_entry) {
-                const Index row = static_cast<Index>(col_entry.row());
+            for (SparseMatrix::InnerIterator col_entry(matrix, col); col_entry; ++col_entry) {
+                const Index row = col_entry.row();
                 if (col_entry.value() == Precision(0) || row_visited[row]) continue;
                 row_visited[row] = true;
                 rows.push_back(row);
@@ -78,7 +78,7 @@ SparseMatrix extract_connected_rows(const SparseMatrix&       matrix,
     TripletList triplets;
     for (Eigen::Index col = 0; col < matrix.outerSize(); ++col) {
         for (SparseMatrix::InnerIterator entry(matrix, col); entry; ++entry) {
-            const Index row = static_cast<Index>(entry.row());
+            const Index row = entry.row();
             if (!row_visited[row]) continue;
             triplets.emplace_back(static_cast<SparseMatrix::StorageIndex>(local_row[row]),
                                   static_cast<SparseMatrix::StorageIndex>(col),

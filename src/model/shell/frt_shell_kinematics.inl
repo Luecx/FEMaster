@@ -88,7 +88,7 @@ typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
     // Gather the element rows once in local nodal ordering
     for (Index node = 0; node < num_nodes; ++node) {
         values.row(node) = positions.row_vec6(
-            static_cast<Index>(this->node_ids[node])
+            this->node_ids[node]
         ).transpose();
     }
 
@@ -136,7 +136,7 @@ typename FRTShell<N>::CurrentState FRTShell<N>::current_state_from_displacement(
 
     // Build the complete trial state in local element-node ordering
     for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        const Index node_id = this->node_ids[node];
         const Vec6  q       = displacement.row_vec6(node_id);
         const Vec3  x       = ref.X.row(node).transpose() + q.template head<3>();
         const Vec3  theta   = q.template tail<3>();
@@ -171,7 +171,7 @@ typename FRTShell<N>::Vec6N FRTShell<N>::element_displacement_vector(
 
     // Gather the six nodal components without intermediate dynamic storage
     for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        const Index node_id = this->node_ids[node];
         q.template segment<6>(dofs_per_node * node) = displacement.row_vec6(node_id);
     }
 
@@ -553,8 +553,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
 
     const auto& ref = reference_data();
 
-    const std::size_t num_ip    = ref.ip_points.size();
-    const std::size_t num_tying = ref.tying_points.size();
+    const Index num_ip    = static_cast<Index>(ref.ip_points.size());
+    const Index num_tying = static_cast<Index>(ref.tying_points.size());
 
     // One workspace exists for each executing thread and shell topology.
     // The vectors retain capacity between calls, so after the first sufficiently
@@ -631,7 +631,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
             const Index state_stride = this->_model_data->material_state_old->components;
 
             for (Index ip = 0; ip < static_cast<Index>(reference_data_->ip_points.size()); ++ip) {
-                ReferencePoint& point = reference_data_->ip_points[static_cast<std::size_t>(ip)];
+                ReferencePoint& point = reference_data_->ip_points[ip];
                 ShellGeneralizedStrain zero_strain(Vec8::Zero());
                 ShellStressResultants  zero_resultants;
                 Mat8                   H0;
@@ -648,8 +648,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
         });
 
         const Precision stiffness_scale = std::abs(topology_stiffness_scale());
-        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            const std::size_t id = static_cast<std::size_t>(ip);
+        for (Index ip = 0; ip < num_ip; ++ip) {
+            const Index id = ip;
             data.ip_drill_stiffness[id] = stiffness_scale * ref.ip_points[id].drill_stiffness_base;
         }
     }
@@ -657,8 +657,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     // Linear/reference evaluations request B without physical resultants. Fill
     // their constitutive tangent from a zero-strain, state-neutral section call.
     if (with_B && !with_resultants) {
-        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            const std::size_t     id    = static_cast<std::size_t>(ip);
+        for (Index ip = 0; ip < num_ip; ++ip) {
+            const Index           id    = ip;
             const ReferencePoint& point = ref.ip_points[id];
             data.ip_tangent[id] = resultant_stiffness(point.r, point.s);
         }
@@ -667,8 +667,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     if (with_strain) {
         // MITC interpolation at the integration points depends on compatible
         // values at all tying points, so finish the tying loop first.
-        for (Index tying = 0; tying < static_cast<Index>(num_tying); ++tying) {
-            const std::size_t id = static_cast<std::size_t>(tying);
+        for (Index tying = 0; tying < num_tying; ++tying) {
+            const Index id = tying;
             compute_natural_strain(
                 data,
                 ref.tying_points[id],
@@ -691,8 +691,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
 
         // Reconstruct the complete MITC generalized strain/B field at every
         // physical integration point and transform it into the local shell basis.
-        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            const std::size_t     id    = static_cast<std::size_t>(ip);
+        for (Index ip = 0; ip < num_ip; ++ip) {
+            const Index           id    = ip;
             const ReferencePoint& point = ref.ip_points[id];
 
             Vec8&    strain = data.ip_strain[id];

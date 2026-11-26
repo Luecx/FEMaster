@@ -75,9 +75,9 @@ struct T3 : StructuralElement {
     static constexpr Index N = 2;
 
     // Element connectivity in global node-id space
-    std::array<ID, N> node_ids {};
+    std::array<Index, N> node_ids {};
 
-    T3(ID elem_id, std::array<ID, N> node_ids);
+    T3(Index elem_id, std::array<Index, N> node_ids);
     ~T3() override = default;
 
     // Recreate only id and connectivity for Instance expansion. Section,
@@ -86,13 +86,13 @@ struct T3 : StructuralElement {
 
     // Element topology and identification. The truss exposes three translational
     // DOFs at each of its two nodes, one material point and no surface topology.
-    ElDofs      dofs() const override;
-    Dim         dimensions() const override;
-    Dim         n_nodes() const override;
-    Dim         num_ip() const override;
-    const ID*   nodes() const override;
-    SurfacePtr  surface(ID surface_id) override;
-    std::string type_name() const override;
+    ElDofs       dofs() const override;
+    Index        dimensions() const override;
+    Index        n_nodes() const override;
+    Index        num_ip() const override;
+    const Index* nodes() const override;
+    SurfacePtr   surface(Index surface_id) override;
+    std::string  type_name() const override;
 
     // Resolve the assigned truss section, material and elasticity. These access
     // functions validate the compiled element definition before returning the

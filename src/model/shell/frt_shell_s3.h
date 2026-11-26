@@ -39,7 +39,7 @@ struct FRTShellS3 : FRTShell<3> {
 
     // Construct the MITC3 shell from one element identifier and three nodal
     // identifiers in counter-clockwise positive-surface ordering.
-    FRTShellS3(ID id, const std::array<ID, 3>& nodes);
+    FRTShellS3(Index id, const std::array<Index, 3>& nodes);
 
     // Recreate the concrete FRT shell from persistent topology only. The unique
     // reference-geometry cache is analysis state and is initialized later by the
@@ -55,7 +55,7 @@ struct FRTShellS3 : FRTShell<3> {
 
     // Return one oriented triangular surface representation for contact,
     // coupling and distributed surface operations.
-    std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
+    std::shared_ptr<SurfaceInterface> surface(Index surface_id) override;
 
     // Return the cubic triangular area quadrature used by this element.
     const math::quadrature::Quadrature& integration_scheme() const override;

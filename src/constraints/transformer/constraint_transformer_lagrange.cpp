@@ -33,7 +33,7 @@ namespace constraint {
 
 void ConstraintTransformer::initialize_lagrange() {
     DynamicVector row_norm_squared = DynamicVector::Zero(system_.equations);
-    for (int column = 0; column < system_.C.outerSize(); ++column) {
+    for (Index column = 0; column < system_.C.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
             row_norm_squared[entry.row()] += entry.value() * entry.value();
         }
@@ -100,19 +100,19 @@ Precision ConstraintTransformer::lagrange_regularization(const SparseMatrix& K) 
  * @return Coupled displacement/multiplier matrix.
  */
 SparseMatrix ConstraintTransformer::assemble_lagrange_matrix(const SparseMatrix& K) const {
-    logging::error(static_cast<Index>(K.rows()) == system_.dofs && static_cast<Index>(K.cols()) == system_.dofs,
+    logging::error(K.rows() == system_.dofs && K.cols() == system_.dofs,
         "[Lagrange] stiffness matrix size mismatch");
 
     const Index total_size = system_.dofs + system_.equations;
     TripletList entries{};
-    entries.reserve(static_cast<std::size_t>(
+    entries.reserve(static_cast<Index>(
         K.nonZeros() + 2 * system_.C.nonZeros() + system_.equations
     ));
 
     // Embed structural stiffness in the displacement block of the saddle-point system.
     mattools::append_sparse_block(entries, K);
 
-    for (int column = 0; column < system_.C.outerSize(); ++column) {
+    for (Index column = 0; column < system_.C.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
             const Precision value = lagrange_row_scale_[entry.row()] * entry.value();
             entries.emplace_back(column, system_.dofs + entry.row(), value);
@@ -134,7 +134,7 @@ SparseMatrix ConstraintTransformer::assemble_lagrange_matrix(const SparseMatrix&
 }
 
 DynamicVector ConstraintTransformer::assemble_lagrange_rhs(const DynamicVector& f) const {
-    logging::error(static_cast<Index>(f.size()) == system_.dofs,
+    logging::error(f.size() == system_.dofs,
         "[Lagrange] load vector size mismatch");
 
     DynamicVector rhs = DynamicVector::Zero(system_.dofs + system_.equations);
@@ -146,13 +146,13 @@ DynamicVector ConstraintTransformer::assemble_lagrange_rhs(const DynamicVector& 
 }
 
 DynamicVector ConstraintTransformer::extract_lagrange_displacement(const DynamicVector& solution) const {
-    logging::error(static_cast<Index>(solution.size()) == system_.dofs + system_.equations,
+    logging::error(solution.size() == system_.dofs + system_.equations,
         "[Lagrange] solution size mismatch");
     return solution.head(system_.dofs);
 }
 
 DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicVector& solution) const {
-    logging::error(static_cast<Index>(solution.size()) == system_.dofs + system_.equations,
+    logging::error(solution.size() == system_.dofs + system_.equations,
         "[Lagrange] solution size mismatch");
     return solution.tail(system_.equations);
 }
@@ -176,7 +176,7 @@ DynamicVector ConstraintTransformer::extract_lagrange_multipliers(const DynamicV
 DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
                                                        const DynamicVector& f,
                                                        const DynamicVector& u) const {
-    logging::error(system_.row_sources.size() == static_cast<std::size_t>(system_.equations),
+    logging::error(static_cast<Index>(system_.row_sources.size()) == system_.equations,
         "[Lagrange] constraint source count mismatch");
 
     DynamicVector multipliers = DynamicVector::Zero(system_.equations);
@@ -240,15 +240,15 @@ DynamicVector ConstraintTransformer::solve_multipliers(const SparseMatrix& K,
 
 DynamicVector ConstraintTransformer::support_constraint_forces(const DynamicVector& multipliers,
                                                                bool scaled_rows) const {
-    logging::error(static_cast<Index>(multipliers.size()) == system_.equations,
+    logging::error(multipliers.size() == system_.equations,
         "[Lagrange] multiplier size mismatch");
-    logging::error(system_.row_sources.size() == static_cast<std::size_t>(system_.equations),
+    logging::error(static_cast<Index>(system_.row_sources.size()) == system_.equations,
                    "[Lagrange] constraint source count mismatch");
 
     DynamicVector forces = DynamicVector::Zero(system_.dofs);
-    for (int column = 0; column < system_.C.outerSize(); ++column) {
+    for (Index column = 0; column < system_.C.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(system_.C, column); entry; ++entry) {
-            if (system_.row_sources[static_cast<std::size_t>(entry.row())] != EquationSourceKind::Support) {
+            if (system_.row_sources[entry.row()] != EquationSourceKind::Support) {
                 continue;
             }
 

@@ -144,8 +144,8 @@ MapMatrix T3::evaluate(
     StaticMatrix<N, 3> disp_base = StaticMatrix<N, 3>::Zero();
 
     if (base_displacement) {
-        disp_base.row(0) = base_displacement->row_vec3(static_cast<Index>(node_ids[0])).transpose();
-        disp_base.row(1) = base_displacement->row_vec3(static_cast<Index>(node_ids[1])).transpose();
+        disp_base.row(0) = base_displacement->row_vec3(node_ids[0]).transpose();
+        disp_base.row(1) = base_displacement->row_vec3(node_ids[1]).transpose();
     }
 
     // -----------------------------------------------------------------------------
@@ -206,8 +206,8 @@ MapMatrix T3::evaluate(
     StaticMatrix<N, 3> disp_delta = StaticMatrix<N, 3>::Zero();
 
     if (target_displacement) {
-        disp_delta.row(0) = target_displacement->row_vec3(static_cast<Index>(node_ids[0])).transpose() - disp_base.row(0);
-        disp_delta.row(1) = target_displacement->row_vec3(static_cast<Index>(node_ids[1])).transpose() - disp_base.row(1);
+        disp_delta.row(0) = target_displacement->row_vec3(node_ids[0]).transpose() - disp_base.row(0);
+        disp_delta.row(1) = target_displacement->row_vec3(node_ids[1]).transpose() - disp_base.row(1);
     }
 
     // Only relative nodal motion contributes to axial deformation:
@@ -275,7 +275,7 @@ MapMatrix T3::evaluate(
 
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*temperature_field)(static_cast<Index>(node_ids[node]), 0);
+            temperature += (*temperature_field)(node_ids[node], 0);
         }
 
         temperature /= static_cast<Precision>(N);
@@ -447,10 +447,10 @@ MapMatrix T3::evaluate(
         }
 
         // Scatter the six element force components to the element-nodal rows.
-        const Index row0 = static_cast<Index>(elem_nodal_offset);
+        const Index row0 = elem_nodal_offset;
         const Index row1 = row0 + 1;
 
-        for (Dim d = 0; d < 3; ++d) {
+        for (Index d = 0; d < 3; ++d) {
             (*internal_force)(row0, d) += force(d);
             (*internal_force)(row1, d) += force(3 + d);
         }
