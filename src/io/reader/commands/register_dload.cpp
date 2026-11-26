@@ -5,7 +5,7 @@
  * FEMaster rows prescribe a traction vector directly on a compiled surface
  * region as TARGET, tx, ty, tz. Abaqus-compatible rows address elements and
  * dispatch by load label: BX/BY/BZ create volume force densities, GRAV creates
- * a density-scaled gravity load, and P<n> creates normal pressure. TRVEC<n>
+ * a density-scaled gravity load, and P / P<n> create normal pressure. TRVEC<n>
  * is currently rejected by the input reader.
  *
  * FOLLOWER=YES evaluates tractions, pressures and gravity in the current
@@ -74,9 +74,11 @@ namespace dsl = fem::io::dsl;
  * orientation. GRAV maps the prescribed gravity vector to the translational
  * acceleration of bc::InertialLoad so density scaling remains part of the load
  * integration. An empty GRAV target includes all compiled elements and auxiliary
- * point masses; explicit targets select only their element region. P<n> and
- * P<n> extracts face n from every target element and creates a private compiled
- * surface region for bc::PLoad. TRVEC<n> is currently rejected.
+ * point masses; explicit targets select only their element region. P<n>
+ * extracts face n from every target element and creates a private compiled
+ * surface region for bc::PLoad. Bare P is the Abaqus shell pressure, positive
+ * along the positive element normal, and is accepted for shell elements only.
+ * TRVEC<n> is currently rejected.
  *
  * NAME identifies reusable collector storage and is required outside an analysis.
  * Unnamed analysis rows replace matching DLOAD targets; OP=NEW first clears only
@@ -93,7 +95,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
         command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Create FEMaster surface tractions or Abaqus-compatible element-based "
-            "BX/BY/BZ, GRAV and P<n> loads (TRVEC unsupported)."
+            "BX/BY/BZ, GRAV, shell P and P<n> loads (TRVEC unsupported)."
         );
 
         // Resolved modifiers are reset on entry and shared by this occurrence's rows.
@@ -182,7 +184,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
             return face_id;
         };
 
-        const auto materialize_face_region = [&parser](const std::string& target, ID face_id) {
+        const auto materialize_face_region = [&parser](const std::string& target, ID face_id, bool shell_only) {
             auto& model    = parser.model();
             auto  elements = model.resolve_element_region(target);
 
@@ -201,6 +203,10 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                 auto& element = model._data->elements[static_cast<std::size_t>(element_id)];
                 logging::error(element != nullptr,
                     "DLOAD: compiled element ", element_id, " is not configured");
+
+                logging::error(!shell_only || (element->as<model::StructuralElement>() != nullptr &&
+                                               element->as<model::StructuralElement>()->is_shell()),
+                    "DLOAD: P requires shell elements, element ", element->label(), " (", element->type_name(), ") is not a shell; use P<n>");
 
                 auto surface = element->surface(face_id);
                 logging::error(surface != nullptr,
@@ -371,17 +377,21 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                         return;
                     }
 
-                    // P<n> addresses face n of every target element. Follower
+                    // P<n> addresses face n of every target element. Bare P is the
+                    // Abaqus shell pressure, positive along the positive element
+                    // normal. Shell face 2 reverses the connectivity, so its
+                    // traction t = -p n acts along the element normal. Follower
                     // pressure follows the current normal and area and requires
                     // the load tangent of a nonlinear analysis.
-                    if (type.size() > 1 && type[0] == 'P') {
+                    if (!type.empty() && type[0] == 'P') {
                         logging::error(direction_omitted,
                             "DLOAD: ", type, " accepts no direction components");
 
-                        const ID face_id = parse_face_id(type, "P");
+                        const bool shell_pressure = type == "P";
+                        const ID   face_id        = shell_pressure ? ID{2} : parse_face_id(type, "P");
 
                         auto load = std::make_shared<bc::PLoad>();
-                        load->region_    = materialize_face_region(element_target, face_id);
+                        load->region_    = materialize_face_region(element_target, face_id, shell_pressure);
                         load->pressure_  = magnitude;
                         load->amplitude_ = *amplitude;
                         load->follower_  = *follower;
@@ -395,7 +405,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                     }
 
                     logging::error(false,
-                        "DLOAD: supported Abaqus load types are BX, BY, BZ, GRAV and P<n>");
+                        "DLOAD: supported Abaqus load types are BX, BY, BZ, GRAV, P and P<n>");
                 })
             )
         );
