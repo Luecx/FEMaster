@@ -251,6 +251,51 @@ void register_step(fem::io::dsl::Registry& registry, Parser& parser) {
     });
 
     // ---------------------------------------------------------------------
+    // Load subcases of a static perturbation step
+    // ---------------------------------------------------------------------
+    // Each SUBCASE adds its own loads to a copy of the step-level target. All
+    // subcases share supports, tangent and factorization and are solved as
+    // multiple right-hand sides. Supports stay at step level.
+    registry.command("SUBCASE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("STATIC"));
+        command.doc("Begin a named load set of a STATIC, PERTURBATION step.");
+
+        command.keyword(
+            fem::io::dsl::KeywordSpec::make()
+                .key("NAME").optional().doc("Subcase name; numbered by default")
+        );
+
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
+            logging::error(parser.step_state().perturbation,
+                "SUBCASE is only supported in a STATIC, PERTURBATION step");
+
+            auto* active = parser.active_loadcase();
+            auto* linear = active != nullptr ? active->as<loadcase::LinearStatic>() : nullptr;
+            logging::error(linear != nullptr,
+                "SUBCASE requires a linear STATIC perturbation procedure");
+
+            const std::string name = keys.has("NAME")
+                ? keys.raw("NAME")
+                : std::to_string(linear->subcases.size() + 1);
+            parser.begin_subcase(name);
+        });
+
+        command.variant(fem::io::dsl::Variant::make());
+    });
+
+    registry.command("ENDSUBCASE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("SUBCASE"));
+        command.closes_parent();
+        command.doc("Finish the active load subcase.");
+
+        command.on_enter([&parser](const fem::io::dsl::Keys&) {
+            parser.end_subcase();
+        });
+
+        command.variant(fem::io::dsl::Variant::make());
+    });
+
+    // ---------------------------------------------------------------------
     // Uncoupled stationary heat transfer
     // ---------------------------------------------------------------------
     registry.command("HEATTRANSFER", [&](fem::io::dsl::Command& command) {

@@ -52,7 +52,7 @@ namespace fem::io::reader::commands {
 void register_inertialload(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("INERTIALOAD", [&](fem::io::dsl::Command& command) {
         // Inertial loads require compiled elements and may belong to an active analysis.
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Create FEMaster rigid-body inertial loads; Abaqus-compatible gravity "
             "is available through DLOAD, GRAV."

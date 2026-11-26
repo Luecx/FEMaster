@@ -98,6 +98,8 @@ void LinearStatic::run() {
         "LINEARSTATIC PERTURBATION: inertia relief and rebalancing are not supported");
     logging::error(!perturbation || method == solver::DIRECT,
         "LINEARSTATIC PERTURBATION: a DIRECT solver is required for general tangents");
+    logging::error(subcases.empty() || perturbation,
+        "LINEARSTATIC: SUBCASE requires a PERTURBATION step");
     logging::error(constraint_method != Method::Lagrange || method != solver::INDIRECT,
         "LAGRANGE constraints require a DIRECT solver");
     logging::error(!inertia_relief || (model->_data->elem_sets.has("EALL") && model->_data->elem_sets.get("EALL") != nullptr),
@@ -123,10 +125,25 @@ void LinearStatic::run() {
         [&]() { return model->build_structural_dofs(); },
         "numbering structural degrees of freedom");
 
-    // Assemble step initial/target conditions and selected collectors
-    auto global_load_mat = Timer::measure(
-        [&]() { return build_step_load_matrix(step_period, Precision(1), model::SystemDofs{}, nullptr); },
+    // Assemble step initial/target conditions and selected collectors. Each
+    // subcase evaluates its own load target against the common initial state.
+    auto load_mats = Timer::measure(
+        [&]() {
+            std::vector<model::Field> mats;
+            if (subcases.empty()) {
+                mats.push_back(build_step_load_matrix(step_period, Precision(1), model::SystemDofs{}, nullptr));
+            }
+            for (const auto& [name, conditions] : subcases) {
+                mats.push_back(model->build_load_matrix(
+                    initial_conditions, conditions, step_period, Precision(1), model::SystemDofs{}, nullptr));
+            }
+            return mats;
+        },
         "constructing load matrix (node x 6)");
+
+    // Inertia relief and rebalancing are rejected for perturbations and
+    // therefore only ever act on the single non-subcase load field.
+    auto& global_load_mat = load_mats.front();
 
     if (inertia_relief) {
         // Inertia relief adds one temporary RBM directly to the same
@@ -206,20 +223,17 @@ void LinearStatic::run() {
     model::Field reference_nodal = reference_internal.nodal_sum(*model->_data);
     model->build_contact_force(system_dofs, reference_nodal, &K);
 
-    auto f_external = Timer::measure(
-        [&]() { return system_dofs.reduce(global_load_mat); },
-        "reducing external load matrix -> active vector");
+    const Index n_rhs = static_cast<Index>(load_mats.size());
 
     auto f_reference = Timer::measure(
         [&]() { return system_dofs.reduce(reference_nodal); },
         "reducing reference internal force -> active vector");
 
-    // General linear statics: K0 u = F - fint(0,Ttarget).
-    // Perturbation: K(u0,T0) du = dF - [fint(u0,Ttarget)-fint(u0,T0)].
-    DynamicVector f = f_external - f_reference;
+    // Perturbations linearize about the committed base. Its internal force
+    // and the committed start load are shared by every right-hand side.
     DynamicVector f_base_internal = f_reference;
+    DynamicVector f_start         = DynamicVector::Zero(f_reference.size());
     if (perturbation) {
-        DynamicVector f_start = DynamicVector::Zero(f_external.size());
         if (step_start_load) {
             f_start = system_dofs.reduce(*step_start_load);
         }
@@ -231,12 +245,26 @@ void LinearStatic::run() {
             &base_displacement, base_temperature, false);
         f_base_internal =
             system_dofs.reduce(base_internal.nodal_sum(*model->_data));
-        f = (f_external - f_start) - (f_reference - f_base_internal);
     }
+
+    // General linear statics: K0 u = F - fint(0,Ttarget).
+    // Perturbation: K(u0,T0) du = dF - [fint(u0,Ttarget)-fint(u0,T0)].
+    DynamicMatrix f = Timer::measure(
+        [&]() {
+            DynamicMatrix rhs(f_reference.size(), n_rhs);
+            for (Index i = 0; i < n_rhs; ++i) {
+                const DynamicVector f_external = system_dofs.reduce(load_mats[i]);
+                rhs.col(i) = perturbation
+                    ? DynamicVector((f_external - f_start) - (f_reference - f_base_internal))
+                    : DynamicVector(f_external - f_reference);
+            }
+            return rhs;
+        },
+        "reducing external load matrices -> active vectors");
 
     // Convert external forces to increments for perturbation output
     if (perturbation && step_start_load) {
-        global_load_mat -= *step_start_load;
+        for (auto& load_mat : load_mats) load_mat -= *step_start_load;
     }
 
     // Only perturbations may inherit a prestressed/indefinite tangent.
@@ -268,6 +296,7 @@ void LinearStatic::run() {
     logging::info(true, "homogeneous          : ", transformer->homogeneous() ? "true" : "false");
     logging::info(true, "feasible             : ", transformer->feasible   () ? "true" : "false");
     logging::info(true, "residual ||C u - d|| : ", transformer->feasible   () ? "within tolerance" : std::to_string(transformer->report().residual_norm));
+    logging::info(true, "right-hand sides     : ", n_rhs);
     logging::down();
 
     // Remove the temporary inertia-relief RBM after constraint collection
@@ -279,7 +308,13 @@ void LinearStatic::run() {
         "assembling constraint system matrix");
 
     auto b = Timer::measure(
-        [&]() { return transformer->assemble_system_rhs(K, f); },
+        [&]() {
+            DynamicMatrix rhs(transformer->unknowns(), n_rhs);
+            for (Index i = 0; i < n_rhs; ++i) {
+                rhs.col(i) = transformer->assemble_system_rhs(K, DynamicVector(f.col(i)));
+            }
+            return rhs;
+        },
         "assembling constraint system RHS");
 
     // Reject nonfinite system coefficients before passing them to the solver.
@@ -288,39 +323,10 @@ void LinearStatic::run() {
     logging::error(b.allFinite(),
         "b contains NaN/Inf entries");
 
+    // One factorization serves every subcase right-hand side.
     auto q = Timer::measure(
         [&]() { return solve(device, method, A, b, direct_matrix_type); },
         "solving constraint system");
-
-    auto u = Timer::measure(
-        [&]() { return transformer->recover_displacement(q); },
-        "recovering full displacement vector u");
-
-    // The solver's affine internal forces are the only force outputs.
-    // Perturbations emit their increment, not the prestressed base force.
-    auto internal_active = Timer::measure(
-        [&]() {
-            return perturbation
-                ? DynamicVector(f_reference - f_base_internal + K * u)
-                : DynamicVector(f_reference + K * u);
-        },
-        "computing affine internal nodal forces");
-
-    auto r_support = Timer::measure(
-        [&]() { return transformer->support_reactions(K, f, q); },
-        "computing support reactions");
-
-    auto global_disp_mat = Timer::measure(
-        [&]() { return system_dofs.expand(u); },
-        "expanding solved displacement to nodal field");
-
-    auto global_react_mat = Timer::measure(
-        [&]() { return system_dofs.expand(r_support); },
-        "expanding support reactions to matrix form");
-
-    auto global_internal_mat = Timer::measure(
-        [&]() { return system_dofs.expand(internal_active); },
-        "expanding internal nodal forces to matrix form");
 
     // export stiffness files in .mtx format
     if (!stiffness_file.empty()) {
@@ -329,41 +335,90 @@ void LinearStatic::run() {
         io::writer::write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
-    auto reaction_masked = mattools::mask_field(
-        global_react_mat, groups.support_mask(system_dofs), "REACTION_FORCES"
-    );
+    const auto support_mask = groups.support_mask(system_dofs);
 
-    Timer::measure(
-        [&]() {
-            using io::writer::OutputField;
+    writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
-            writer->add_loadcase(id, io::writer::WriterStepType::Static);
+    // Recover results consistently with the linearization used for K.
+    if (perturbation) {
+        output.set_perturbation_base(&base_displacement);
+    } else {
+        output.set_linearization_base(&base_displacement, base_temperature);
+    }
 
-            // Recover results consistently with the linearization used for K.
-            if (perturbation) {
-                output.set_perturbation_base(&base_displacement);
-            } else {
-                output.set_linearization_base(&base_displacement, base_temperature);
-            }
-            output.begin_frame();
-            output.provide(OutputField::DISPLACEMENT   , global_disp_mat);
-            output.provide(OutputField::EXTERNAL_FORCES, global_load_mat);
-            output.provide(OutputField::INTERNAL_FORCES, global_internal_mat);
-            output.provide(OutputField::REACTION_FORCES, reaction_masked);
-            if (target_temperature) {
-                output.provide(OutputField::TEMPERATURE,*target_temperature);
-            }
+    for (Index i = 0; i < n_rhs; ++i) {
+        const DynamicVector f_i = f.col(i);
+        const DynamicVector q_i = q.col(i);
 
-            output.write_frame(*writer, model->_data.get());
-        },
-        "resolving and writing requested result fields");
+        if (!subcases.empty()) {
+            logging::info(true, "");
+            logging::info(true, "Subcase ", i + 1, ": ", subcases[i].first);
+        }
 
-    transformer->post_check_static(K, f, q);
+        auto u = Timer::measure(
+            [&]() { return transformer->recover_displacement(q_i); },
+            "recovering full displacement vector u");
 
-    // Commit the total displacement only for ordinary linear statics.
-    if (!perturbation) {
-        commit_state(global_disp_mat);
-        committed_structural_load = std::make_shared<model::Field>(global_load_mat);
+        // The solver's affine internal forces are the only force outputs.
+        // Perturbations emit their increment, not the prestressed base force.
+        auto internal_active = Timer::measure(
+            [&]() {
+                return perturbation
+                    ? DynamicVector(f_reference - f_base_internal + K * u)
+                    : DynamicVector(f_reference + K * u);
+            },
+            "computing affine internal nodal forces");
+
+        auto r_support = Timer::measure(
+            [&]() { return transformer->support_reactions(K, f_i, q_i); },
+            "computing support reactions");
+
+        auto global_disp_mat = Timer::measure(
+            [&]() { return system_dofs.expand(u); },
+            "expanding solved displacement to nodal field");
+
+        auto global_react_mat = Timer::measure(
+            [&]() { return system_dofs.expand(r_support); },
+            "expanding support reactions to matrix form");
+
+        auto global_internal_mat = Timer::measure(
+            [&]() { return system_dofs.expand(internal_active); },
+            "expanding internal nodal forces to matrix form");
+
+        auto reaction_masked = mattools::mask_field(
+            global_react_mat, support_mask, "REACTION_FORCES"
+        );
+
+        Timer::measure(
+            [&]() {
+                using io::writer::OutputField;
+
+                // Subcases are written as numbered frames of one load case
+                if (subcases.empty()) {
+                    output.begin_frame();
+                } else {
+                    output.begin_frame(Precision(i + 1), "_" + std::to_string(i + 1));
+                }
+                output.provide(OutputField::DISPLACEMENT   , global_disp_mat);
+                output.provide(OutputField::EXTERNAL_FORCES, load_mats[i]);
+                output.provide(OutputField::INTERNAL_FORCES, global_internal_mat);
+                output.provide(OutputField::REACTION_FORCES, reaction_masked);
+                if (target_temperature) {
+                    output.provide(OutputField::TEMPERATURE,*target_temperature);
+                }
+
+                output.write_frame(*writer, model->_data.get());
+            },
+            "resolving and writing requested result fields");
+
+        transformer->post_check_static(K, f_i, q_i);
+
+        // Commit the total displacement only for ordinary linear statics,
+        // which never carry subcases and therefore solve exactly once.
+        if (!perturbation) {
+            commit_state(global_disp_mat);
+            committed_structural_load = std::make_shared<model::Field>(load_mats[i]);
+        }
     }
     model->step_end();
 }

@@ -27,6 +27,8 @@
 #include "../solve/sparse/solve_sparse.h"
 
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace fem {
 namespace loadcase {
@@ -66,6 +68,11 @@ struct LinearStatic : public LoadCase {
     bool inertia_relief_consider_point_masses = true;
     bool rebalance_loads                      = false;
 
+    // Optional named load sets of a static perturbation step. All subcases
+    // share supports, tangent and factorization; each one contributes one
+    // right-hand side and one result frame. Empty means a single solve with
+    // target_conditions.
+    std::vector<std::pair<std::string, bc::ConditionState>> subcases;
 
     // Analysis identity and execution
     std::string type_name() const override { return "LINEARSTATIC"; }

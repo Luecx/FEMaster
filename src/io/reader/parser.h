@@ -145,6 +145,15 @@ class Parser {
     model::Field::Ptr committed_structural_load_;
     bool last_committed_static_nonlinear_ = false;
 
+    // Step-level target, identifiers and selections stashed while one SUBCASE
+    // edits its own copy. Restored on END SUBCASE so every subcase starts from
+    // the same step state.
+    bool                                                            subcase_active_ = false;
+    bc::ConditionState                                              subcase_step_conditions_;
+    std::array<IdentifierMap, bc::N_CONDITION_FAMILIES>             subcase_step_inherited_;
+    std::array<IdentifierMap, bc::N_CONDITION_FAMILIES>             subcase_step_current_;
+    std::vector<std::pair<bc::ConditionFamily, bc::Condition::Ptr>> subcase_step_selected_;
+
 
 public:
     // we allow *TRANSFORM to be parsed but we don't really transform the DOFs. Instead,
@@ -174,6 +183,10 @@ public:
     // Active load-case ownership used by LOADCASE/STEP command callbacks
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
+
+    // Named load sets of the active static perturbation step
+    void begin_subcase(const std::string& name);
+    void end_subcase();
     loadcase::LoadCase* active_loadcase();
     StepState& step_state();
     const StepState& step_state() const;
