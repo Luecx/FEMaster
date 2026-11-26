@@ -204,11 +204,9 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                 logging::error(element != nullptr,
                     "DLOAD: compiled element ", element_id, " is not configured");
 
-                if (shell_only) {
-                    const auto* structural = element->as<model::StructuralElement>();
-                    logging::error(structural != nullptr && structural->is_shell(),
-                        "DLOAD: P requires shell elements, element ", element->label(), " (", element->type_name(), ") is not a shell; use P<n>");
-                }
+                logging::error(!shell_only || (element->as<model::StructuralElement>() != nullptr &&
+                                               element->as<model::StructuralElement>()->is_shell()),
+                    "DLOAD: P requires shell elements, element ", element->label(), " (", element->type_name(), ") is not a shell; use P<n>");
 
                 auto surface = element->surface(face_id);
                 logging::error(surface != nullptr,
