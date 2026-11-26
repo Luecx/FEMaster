@@ -92,7 +92,7 @@ namespace dsl = fem::io::dsl;
 void register_dload(dsl::Registry& registry, Parser& parser) {
     registry.command("DLOAD", [&](dsl::Command& command) {
         // Distributed loads operate on compiled regions in model or analysis scope.
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Create FEMaster surface tractions or Abaqus-compatible element-based "
             "BX/BY/BZ, GRAV, shell P and P<n> loads (TRVEC unsupported)."

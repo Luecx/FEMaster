@@ -408,6 +408,35 @@ S, E, SF
 The perturbation procedure requires \key{RESUME=YES}. Contact linearization,
 free-body rebalancing and inertia relief are not supported in this mode.
 
+\paragraph*{Perturbation subcases}
+
+A \cmd{STATIC} perturbation procedure may contain several named load sets
+between \cmd{SUBCASE} and \cmd{END SUBCASE}. Each subcase starts from the
+step-level load state and adds its own \cmd{CLOAD}, \cmd{DLOAD},
+\cmd{DSLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{INERTIALOAD} or \cmd{LOADS}
+definitions; \key{OP=MOD}/\key{OP=NEW} act only within the subcase. Supports,
+temperatures and output requests are shared and belong to the step level
+before the first subcase. The tangent is factorized once and all subcases are
+solved as multiple right-hand sides. Results are written as numbered frames
+of one load case. \key{NAME} is optional; subcases are numbered by default.
+\cmd{SUBCASE} is not available in other procedures.
+
+\begin{inputdeck}
+*STEP, PERTURBATION
+*STATIC
+*BOUNDARY
+FIX, 1, 6
+*SUBCASE, NAME=LC1
+*CLOAD
+TIP, 1, 1000.
+*END SUBCASE
+*SUBCASE, NAME=LC2
+*CLOAD
+TIP, 2, 1000.
+*END SUBCASE
+*END STEP
+\end{inputdeck}
+
 \paragraph*{Nonlinear arc-length analysis}
 \begin{inputdeck}
 *STEP, NAME=POSTBUCKLING, NLGEOM=YES, INC=200

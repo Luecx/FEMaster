@@ -68,7 +68,7 @@ namespace dsl = fem::io::dsl;
 void register_cload(dsl::Registry& registry, Parser& parser) {
     registry.command("CLOAD", [&](dsl::Command& command) {
         // Loads require compiled nodes and may be declared inside an analysis.
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Create concentrated nodal loads using FEMaster vector components or an "
             "Abaqus-compatible DOF and magnitude. NAME is required outside LOADCASE."

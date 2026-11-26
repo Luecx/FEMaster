@@ -27,9 +27,16 @@ void register_collector_selection(dsl::Registry& registry, Parser& parser,
     const std::string command_name = supports ? "SUPPORTS" : "LOADS";
 
     registry.command(command_name, [&parser, family, supports, command_name](dsl::Command& command) {
-        command.allow_if(dsl::Condition::parent_is({
-            "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"
-        }));
+        // Supports are shared by all subcases; only loads may be selected per SUBCASE
+        if (supports) {
+            command.allow_if(dsl::Condition::parent_is({
+                "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"
+            }));
+        } else {
+            command.allow_if(dsl::Condition::parent_is({
+                "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"
+            }));
+        }
         command.doc(supports
             ? "Assign named support collectors to the active analysis step."
             : "Assign named load collectors to the active analysis step.");

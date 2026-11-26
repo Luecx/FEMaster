@@ -53,7 +53,7 @@ namespace dsl = fem::io::dsl;
 void register_vload(dsl::Registry& registry, Parser& parser) {
     registry.command("VLOAD", [&](dsl::Command& command) {
         // Distributed loads operate on compiled regions in model or analysis scope.
-        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Create FEMaster volume force densities; Abaqus-compatible BX/BY/BZ are available through DLOAD.");
 
         // Resolved modifiers are reset on entry and shared by this occurrence's rows.

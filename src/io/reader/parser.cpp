@@ -103,6 +103,7 @@ void Parser::run(const std::string& input_path,
     committed_collector_conditions_.clear();
     committed_structural_load_.reset();
     last_committed_static_nonlinear_ = false;
+    subcase_active_ = false;
 
     // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
@@ -409,9 +410,33 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
             logging::error(!entries.empty() && entries.back()->command().name_ == "ENDSTEP",
                 "STEP requires END STEP after the procedure commands");
 
+            // Subcases share the step-level state; any step-level load or support
+            // after the first SUBCASE would be ambiguous and is rejected.
+            bool subcase_seen = false;
+            for (const auto* entry : entries) {
+                const auto& entry_name = entry->command().name_;
+                if (entry_name == "SUBCASE") {
+                    const auto subcase_entries = entry->children();
+                    logging::error(!subcase_entries.empty() && subcase_entries.back()->command().name_ == "ENDSUBCASE",
+                        "SUBCASE requires END SUBCASE");
+                    subcase_seen = true;
+                }
+                logging::error(!subcase_seen || entry_name == "SUBCASE" || entry_name == "ENDSTEP"
+                            || (!is_condition_command(entry_name) && entry_name != "LOADS" && entry_name != "SUPPORTS"),
+                    "STEP: ", entry_name, " must appear before the first SUBCASE or inside one");
+            }
+
             command->enter();
             procedure->enter();
-            for (const auto* entry : entries) entry->execute();
+            for (const auto* entry : entries) {
+                if (entry->command().name_ == "SUBCASE") {
+                    entry->enter();
+                    entry->execute_children();
+                    entry->leave();
+                } else {
+                    entry->execute();
+                }
+            }
             procedure->leave();
             command->leave();
         }
@@ -623,27 +648,35 @@ void Parser::end_loadcase() {
         const bool      arc_length = nonlinear && nonlinear->control == loadcase::NonlinearControl::ArcLength;
         const Precision tolerance  = Precision(1e-10);
 
-        for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
-            for (const auto& condition : loadcase->target_conditions.get(family)) {
-                // Only target-only definitions need a new amplitude evaluation.
-                // Shared pointers identify continued loads without modifying
-                // the reusable definitions or their collector ownership.
-                if (loadcase->initial_conditions.contains(family, condition)
-                    || !condition->amplitude_) continue;
+        // Subcases carry their own load targets next to the step target
+        std::vector<const bc::ConditionState*> targets{&loadcase->target_conditions};
+        if (linear) {
+            for (const auto& [name, conditions] : linear->subcases) targets.push_back(&conditions);
+        }
 
-                // Riks assumes a proportional load vector with a constant
-                // derivative with respect to the arc-length load parameter.
-                logging::error(!arc_length,
-                    "NONLINEARSTATIC RIKS does not support newly activated load AMPLITUDE");
+        for (const auto* target : targets) {
+            for (const auto family : bc::STRUCTURAL_LOAD_FAMILIES) {
+                for (const auto& condition : target->get(family)) {
+                    // Only target-only definitions need a new amplitude evaluation.
+                    // Shared pointers identify continued loads without modifying
+                    // the reusable definitions or their collector ownership.
+                    if (loadcase->initial_conditions.contains(family, condition)
+                        || !condition->amplitude_) continue;
 
-                const Precision start = condition->amplitude_->evaluate(Precision(0));
-                const Precision end   = condition->amplitude_->evaluate(step_period);
+                    // Riks assumes a proportional load vector with a constant
+                    // derivative with respect to the arc-length load parameter.
+                    logging::error(!arc_length,
+                        "NONLINEARSTATIC RIKS does not support newly activated load AMPLITUDE");
 
-                logging::error(std::isfinite(start) && std::isfinite(end)
-                            && std::abs(start) <= tolerance
-                            && std::abs(end - Precision(1)) <= tolerance,
-                    "Static load AMPLITUDE ", condition->amplitude_->name,
-                    " must satisfy A(0)=0 and A(STEP PERIOD)=1");
+                    const Precision start = condition->amplitude_->evaluate(Precision(0));
+                    const Precision end   = condition->amplitude_->evaluate(step_period);
+
+                    logging::error(std::isfinite(start) && std::isfinite(end)
+                                && std::abs(start) <= tolerance
+                                && std::abs(end - Precision(1)) <= tolerance,
+                        "Static load AMPLITUDE ", condition->amplitude_->name,
+                        " must satisfy A(0)=0 and A(STEP PERIOD)=1");
+                }
             }
         }
     }
@@ -701,6 +734,58 @@ void Parser::end_loadcase() {
         last_committed_static_nonlinear_ = false;
     }
     model_->_data->temperature = std::move(model_->_data->temperature_target);
+}
+
+/**
+ * Opens one named load set inside the active static perturbation step.
+ *
+ * The step-level target, its identifier generations and pending selections are
+ * stashed. The subcase edits a copy that already contains the step-level
+ * selections, so OP=MOD/NEW and collector selection stay local to the subcase.
+ */
+void Parser::begin_subcase(const std::string& name) {
+    auto* linear = active_loadcase_ ? active_loadcase_->as<loadcase::LinearStatic>() : nullptr;
+    logging::error(linear != nullptr && linear->perturbation,
+        "SUBCASE requires an active STATIC, PERTURBATION step");
+    logging::error(!subcase_active_,
+        "Nested SUBCASE blocks are not supported");
+    for (const auto& [existing, conditions] : linear->subcases) {
+        logging::error(existing != name,
+            "SUBCASE: duplicate name ", name);
+    }
+
+    subcase_step_conditions_ = linear->target_conditions;
+    subcase_step_inherited_  = inherited_conditions_;
+    subcase_step_current_    = current_conditions_;
+    subcase_step_selected_   = selected_conditions_;
+
+    for (const auto& [family, condition] : selected_conditions_) {
+        linear->target_conditions.add(family, condition);
+    }
+    selected_conditions_.clear();
+
+    linear->subcases.emplace_back(name, bc::ConditionState{});
+    subcase_active_ = true;
+}
+
+/**
+ * Stores the finished subcase load target and restores the step-level state.
+ */
+void Parser::end_subcase() {
+    auto* linear = active_loadcase_ ? active_loadcase_->as<loadcase::LinearStatic>() : nullptr;
+    logging::error(subcase_active_ && linear != nullptr,
+        "END SUBCASE requires an active SUBCASE");
+
+    for (const auto& [family, condition] : selected_conditions_) {
+        linear->target_conditions.add(family, condition);
+    }
+    linear->subcases.back().second = std::move(linear->target_conditions);
+
+    linear->target_conditions = std::move(subcase_step_conditions_);
+    inherited_conditions_     = std::move(subcase_step_inherited_);
+    current_conditions_       = std::move(subcase_step_current_);
+    selected_conditions_      = std::move(subcase_step_selected_);
+    subcase_active_           = false;
 }
 
 /**

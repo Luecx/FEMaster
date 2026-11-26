@@ -59,7 +59,7 @@ namespace fem::io::reader::commands {
 void register_dsload(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("DSLOAD", [&](fem::io::dsl::Command& command) {
         // Match native load scope and collector semantics while retaining DSLOAD rows.
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "SUBCASE", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc("Create Abaqus-compatible surface-based P pressure; TRVEC is currently unsupported.");
 
         auto amplitude   = std::make_shared<bc::Amplitude::Ptr>(nullptr);
