@@ -922,3 +922,64 @@ TEST(Reader_ConstraintMethod, BucklingAndFrequencyAllowNullspaceOverride) {
         std::filesystem::remove(path);
     }
 }
+
+TEST(Reader_Conditions, AbaqusShellPressureActsAlongElementNormal) {
+    const std::string input_path  = "tests/TMP_SHELL_DLOAD_P.INP";
+    const std::string output_path = "tests/TMP_SHELL_DLOAD_P.RES";
+
+    const auto write_deck = [&](const std::string& elements) {
+        std::ofstream os(input_path);
+        ASSERT_TRUE(os.is_open());
+        os << "*NODE\n1, 0., 0., 0.\n2, 1., 0., 0.\n3, 1., 1., 0.\n4, 0., 1., 0.\n5, 0., 0., 1.\n"
+           << elements
+           << "*MATERIAL, NAME=MAT\n*ELASTIC\n1000., 0.3\n"
+           << "*DLOAD, NAME=BARE\nEALL, P, 2.\n"
+           << "*DLOAD, NAME=FACE1\nEALL, P1, 2.\n"
+           << "*DLOAD, NAME=FACE2\nEALL, P2, 2.\n";
+    };
+
+    // Shell P resolves to face 2: reversed connectivity, so t = -p n acts along +n
+    write_deck("*ELEMENT, TYPE=S4, ELSET=EALL\n1, 1, 2, 3, 4\n"
+               "*SHELL SECTION, ELSET=EALL, MATERIAL=MAT\n1.\n");
+    {
+        io::reader::Parser parser;
+        ASSERT_NO_THROW(parser.run(input_path, output_path));
+
+        const auto& data = *parser.model()._data;
+        const auto  face = [&](const std::string& name) {
+            const auto load = std::dynamic_pointer_cast<bc::PLoad>(data.load_cols.get(name)->first());
+            EXPECT_NE(load, nullptr);
+            if (!load) return ID{-1};
+            EXPECT_EQ(load->region_->size(), 1u);
+            return load->region_->at(0);
+        };
+
+        const ID bare = face("BARE");
+        EXPECT_EQ(bare, face("FACE2"));
+        EXPECT_NE(bare, face("FACE1"));
+
+        const auto& element = data.elements[0];
+        const auto& surface = data.surfaces[static_cast<std::size_t>(bare)];
+        ASSERT_EQ(surface->n_nodes, Index{4});
+        for (Index i = 0; i < 4; ++i) {
+            EXPECT_EQ(surface->nodes()[i], element->nodes()[3 - i]);
+        }
+    }
+
+    // Bare P has no meaning for solids and is rejected instead of guessing a face
+    write_deck("*ELEMENT, TYPE=C3D4, ELSET=EALL\n1, 1, 2, 4, 5\n"
+               "*SOLID SECTION, ELSET=EALL, MATERIAL=MAT\n");
+    {
+        io::reader::Parser parser;
+        try {
+            parser.run(input_path, output_path);
+            FAIL() << "Expected bare P on a solid element to be rejected";
+        } catch (const std::runtime_error& error) {
+            EXPECT_NE(std::string(error.what()).find("P requires shell elements"), std::string::npos)
+                << "Unexpected reader error: " << error.what();
+        }
+    }
+
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+}
