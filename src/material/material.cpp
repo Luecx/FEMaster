@@ -26,8 +26,8 @@ namespace material {
 Material::Material(std::string name)
     : fem::Namable(std::move(name)) {}
 
-ID Material::create_id() {
-    static ID next_id = 0;
+Index Material::create_id() {
+    static Index next_id = 0;
     return ++next_id;
 }
 

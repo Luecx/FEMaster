@@ -24,11 +24,11 @@ ShellMaterialStrain::ShellMaterialStrain(const Vec5& values)
 
 // Map named components onto the underlying vector
 Precision& ShellMaterialStrain::operator[](Component component) {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 Precision ShellMaterialStrain::operator[](Component component) const {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 /**

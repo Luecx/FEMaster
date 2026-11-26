@@ -285,7 +285,7 @@ std::string SolidSection::str() const {
     os << "SolidSection: material=" << (material_    ? material_   ->name : std::string("-"))
        << ", orientation="          << (orientation_ ? orientation_->name : std::string("-"))
        << ", region="               << (region_      ? region_     ->name : std::string("-"))
-       << " ("                      << (region_      ? static_cast<int>(region_->size()) : 0) << ")";
+       << " ("                      << (region_      ? region_->size() : 0) << ")";
 
     return os.str();
 }

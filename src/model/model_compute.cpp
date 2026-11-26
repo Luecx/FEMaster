@@ -68,8 +68,8 @@ std::tuple<Field, Field> Model::compute_stress(
 
     // Recover element-nodal values into non-overlapping compiled row ranges
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            const auto& element = _data->elements[elem_idx];
             if (!element) return;
 
             if (auto sel = element->as<StructuralElement>()) {
@@ -120,8 +120,8 @@ Field Model::compute_peeq_element_nodal() {
 
     // Let each structural formulation recover accepted material history locally
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            const auto& element = _data->elements[elem_idx];
             if (!element) return;
 
             if (auto sel = element->as<StructuralElement>()) {
@@ -171,8 +171,8 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
 
     // Evaluate both faces in each element's disjoint compiled row range
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            const auto& element = _data->elements[elem_idx];
             if (!element) return;
 
             if (auto sel = element->as<StructuralElement>()) {
@@ -184,7 +184,7 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(
 
                 // Select the two natural thickness faces for shell formulations
                 if (sel->is_shell()) {
-                    for (int i = 0; i < base_rst.rows(); ++i) {
+                    for (Index i = 0; i < base_rst.rows(); ++i) {
                         rst_bot(i, 2) = -1;
                         rst_top(i, 2) =  1;
                     }
@@ -234,8 +234,8 @@ Field Model::compute_shell_resultants(
 
     // Each element writes a disjoint segment; no global nodal reduction is needed
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            const auto& element = _data->elements[elem_idx];
             if (!element) return;
             if (auto sel = element->as<StructuralElement>()) {
                 sel->compute_shell_section_forces(
@@ -315,7 +315,7 @@ Field Model::compute_volumes() {
     for (auto& el : _data->elements) {
         if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
-            volumes(static_cast<Index>(el->elem_id)) = sel->volume();
+            volumes(el->elem_id) = sel->volume();
         }
     }
     return volumes;
@@ -353,8 +353,8 @@ Field Model::compute_section_forces(
 
     // Recover section forces into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            auto el = _data->elements[elem_idx];
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
                 sel->compute_beam_section_forces(
@@ -393,8 +393,8 @@ Field Model::compute_shear_flow(Field& displacement) {
 
     // Recover shear flow into each element's disjoint nodal row range
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            auto el = _data->elements[elem_idx];
             if (!el) return;
             if (auto sel = el->as<StructuralElement>()) {
                 sel->compute_shear_flow(shear_flow, displacement);
@@ -443,8 +443,8 @@ Field Model::compute_heat_flux(const Field& temperature) {
 
     // Recover each thermal element into its disjoint element-nodal field range
     parallel::for_index(element_count, global_config.max_threads,
-        [&](Index elem_idx, int /*worker*/) {
-            const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        [&](Index elem_idx, Index /*worker*/) {
+            const auto& element = _data->elements[elem_idx];
             if (!element) {
                 return;
             }

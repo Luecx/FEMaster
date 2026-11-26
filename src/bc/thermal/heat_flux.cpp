@@ -87,12 +87,12 @@ void HeatFlux::apply(
     Precision*  rhs_data      = load.data();
 
 #ifdef _OPENMP
-    const int worker_count = std::max(
+    const Index worker_count = std::max<Index>(
         1,
-        std::min(global_config.max_threads, static_cast<int>(std::max<Index>(surface_count, 1)))
+        std::min(global_config.max_threads, std::max<Index>(surface_count, 1))
     );
 #else
-    const int worker_count = 1;
+    const Index worker_count = 1;
 #endif
 
     std::atomic_bool   failed{false};
@@ -109,12 +109,12 @@ void HeatFlux::apply(
         }
 
         try {
-            const ID surface_id = surface_ids[static_cast<std::size_t>(surface_index)];
+            const Index surface_id = surface_ids[surface_index];
             logging::error(surface_id >= 0
-                        && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                        && surface_id < static_cast<Index>(model_data.surfaces.size()),
                 "HEATFLUX: surface ", surface_id, " is outside the compiled surface domain");
 
-            const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+            const auto& surface = model_data.surfaces[surface_id];
             logging::error(surface != nullptr,
                 "HEATFLUX: surface ", surface_id, " is not initialized");
 
@@ -123,12 +123,12 @@ void HeatFlux::apply(
                 [flux](const Vec3&) -> Precision { return flux; }
             );
 
-            logging::error(static_cast<Index>(local.size()) == surface->n_nodes && local.allFinite(),
+            logging::error(local.size() == surface->n_nodes && local.allFinite(),
                 "HEATFLUX: local surface load is invalid on surface ", surface_id);
 
             for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
-                const ID node_id = surface->nodes()[local_node];
-                logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+                const Index node_id = surface->nodes()[local_node];
+                logging::error(node_id >= 0 && node_id < node_count,
                     "HEATFLUX: surface references node ", node_id,
                     " outside the thermal RHS domain");
 
@@ -136,7 +136,7 @@ void HeatFlux::apply(
 #ifdef _OPENMP
                 #pragma omp atomic update
 #endif
-                rhs_data[static_cast<std::size_t>(node_id)] += contribution;
+                rhs_data[node_id] += contribution;
             }
         } catch (...) {
             failed.store(true, std::memory_order_relaxed);
@@ -168,7 +168,7 @@ std::string HeatFlux::str() const {
     // Report the stored flux before temporal scaling or surface integration.
     os << "HEATFLUX: target=SFSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << "), value=" << heat_flux_;
+       << (region_ ? region_->size() : 0) << "), value=" << heat_flux_;
 
     if (amplitude_) os << ", amplitude=" << amplitude_->name;
 

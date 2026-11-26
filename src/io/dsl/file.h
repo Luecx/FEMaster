@@ -47,7 +47,7 @@ private:
 
     std::ifstream                      _stream;        ///< Underlying file stream.
     std::shared_ptr<const std::string> _source;        ///< Shared source path for returned lines.
-    std::size_t                        _line_number{}; ///< Current one-based source line number.
+    Index                              _line_number{}; ///< Current one-based source line number.
 
     /**
      * @brief Opens a sub-file for nested include processing.

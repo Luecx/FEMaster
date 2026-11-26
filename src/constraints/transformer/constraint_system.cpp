@@ -82,7 +82,7 @@ ConstraintSystem assemble_constraint_system(
             // Map the node-local DOF pair to its active global system index.
             // Negative values indicate that this DOF is not part of the
             // current active algebraic system.
-            const int dof_id = system_dofs(entry.node_id, entry.dof);
+            const Index dof_id = system_dofs(entry.node_id, entry.dof);
 
             // Ignore terms associated with inactive DOFs. They do not receive a
             // column in the assembled matrix.
@@ -143,7 +143,7 @@ ConstraintSystem assemble_constraint_system(
     // Copy the temporarily stored scalar values into Eigen's dynamic vector
     // while preserving the same packed row order used for C.
     for (Index row = 0; row < system.equations; ++row) {
-        system.d[row] = rhs_values[static_cast<std::size_t>(row)];
+        system.d[row] = rhs_values[row];
     }
 
     // Report the dimensions and sparsity of the completed constraint system:
@@ -155,7 +155,7 @@ ConstraintSystem assemble_constraint_system(
         true,
         "[ConstraintSystem] Assembled C: m=", system.equations,
         " n=",                              system.dofs,
-        " nnz=",                            static_cast<Index>(system.C.nonZeros())
+        " nnz=",                            system.C.nonZeros()
     );
 
     return system;

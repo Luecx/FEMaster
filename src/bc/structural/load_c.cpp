@@ -85,7 +85,7 @@ void CLoad::apply(
 
     // Omitted generalized components contribute no nodal forces or moments
     Vec6 values = Vec6::Zero();
-    for (Dim i = 0; i < 6; ++i) {
+    for (Index i = 0; i < 6; ++i) {
         if (std::isfinite(values_[i])) values[i] = scale * values_[i];
     }
 
@@ -97,10 +97,10 @@ void CLoad::apply(
     const Vec3 force  = values.head<3>();
     const Vec3 moment = values.tail<3>();
 
-    for (ID node_id : *region_) {
+    for (Index node_id : *region_) {
         // Without an orientation, the global components are constant
         if (!orientation_) {
-            for (Dim i = 0; i < 6; ++i) {
+            for (Index i = 0; i < 6; ++i) {
                 load(node_id, i) += values[i];
             }
             continue;
@@ -115,7 +115,7 @@ void CLoad::apply(
         const Vec3 global_force  = axes * force;
         const Vec3 global_moment = axes * moment;
 
-        for (Dim i = 0; i < 3; ++i) {
+        for (Index i = 0; i < 3; ++i) {
             load(node_id, i    ) += global_force [i];
             load(node_id, i + 3) += global_moment[i];
         }
@@ -147,7 +147,7 @@ std::string CLoad::str() const {
     // Report the stored semantic definition without performing assembly
     os << "CLOAD: target=NSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << "), values=["
+       << (region_ ? region_->size() : 0) << "), values=["
        << values_[0] << ", "
        << values_[1] << ", "
        << values_[2] << ", "

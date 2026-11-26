@@ -35,7 +35,7 @@ namespace fem { namespace model {
  */
 struct C3D4 : public SolidElement<4> {
     // Construction and concrete element identity
-    C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds);
+    C3D4(Index pElemId, const std::array<Index, 4>& pNodeIds);
 
     // Recreate only the persistent topology. Model::compile() rewires the
     // returned element to the target Instance and initializes runtime state.
@@ -55,7 +55,7 @@ struct C3D4 : public SolidElement<4> {
     const math::quadrature::Quadrature& integration_scheme() const override;
 
     // Boundary faces reuse the global connectivity for surface loads and constraints
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
 
 protected:
     // Constant natural-space recovery operator from constitutive points to nodes

@@ -32,6 +32,6 @@ namespace fem {
 //
 // A non-positive alpha disables regularisation. The return value is the number
 // of matrix rows for which a diagonal contribution was added.
-int regularise_stiffness(SparseMatrix& matrix, Precision alpha);
+Index regularise_stiffness(SparseMatrix& matrix, Precision alpha);
 
 } // namespace fem

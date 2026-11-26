@@ -36,8 +36,8 @@ inline std::string qualify_reference(const std::string& target, const std::strin
 }
 
 // Parse a complete Part-local integer token for commands that construct topology
-inline ID parse_local_id(const std::string& token, const std::string& context) {
-    ID id{};
+inline Index parse_local_id(const std::string& token, const std::string& context) {
+    Index id{};
     const char* begin = token.data();
     const char* end   = begin + token.size();
     const auto [ptr, ec] = std::from_chars(begin, end, id);

@@ -26,7 +26,7 @@
 namespace fem::solver::detail {
 
 std::vector<EigvalPair>
-eigval_simple_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts) {
+eigval_simple_cpu(const SparseMatrix& A, Index k, const EigvalOpts& opts) {
     switch (opts.mode) {
         case EigvalMode::Regular:
             return eigval_simple_regular_cpu(A, k, opts);
@@ -40,7 +40,7 @@ eigval_simple_cpu(const SparseMatrix& A, int k, const EigvalOpts& opts) {
 }
 
 std::vector<EigvalPair>
-eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts) {
+eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Index k, const EigvalOpts& opts) {
     switch (opts.mode) {
         case EigvalMode::ShiftInvert:
             return eigval_general_shiftinvert_cpu(A, B, k, opts);
@@ -97,7 +97,7 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
     logging::error(std::isfinite(opts_new.sigma) && opts_new.sigma < min_val,
         "Generalized eigval interval cannot place a finite shift below min_val");
 
-    const int max_attempt = static_cast<int>(A.rows()) - 1;
+    const Index max_attempt = A.rows() - 1;
 #ifdef USE_MKL
     // Count eigenvalues below the interval's upper bound using the inertia of
     // K - max_val M; no partial eigenvectors need to be computed yet
@@ -107,9 +107,9 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
     solver.compute(D);
     logging::error(solver.info() == Eigen::Success,
         "Generalized eigval interval: shifted stiffness factorization failed");
-    const int num_below_max = solver.pardisoParameterArray()[22];
+    const Index num_below_max = solver.pardisoParameterArray()[22];
 
-    logging::error(num_below_max >= 0 && num_below_max <= static_cast<int>(A.rows()),
+    logging::error(num_below_max >= 0 && num_below_max <= A.rows(),
         "Generalized eigval interval: invalid inertia count");
 
     if (num_below_max == 0) return {};
@@ -124,12 +124,12 @@ eigval_general_cpu(const SparseMatrix& A, const SparseMatrix& B, Precision min_v
         return {};
     }
 
-    const int k = num_below_max + std::min(num_below_max / 5, max_attempt - num_below_max);
+    const Index k = num_below_max + std::min(num_below_max / 5, max_attempt - num_below_max);
     std::vector<EigvalPair> eig_values_raw = eigval_general_cpu(A, B, k, opts_new);
 #else
     std::vector<EigvalPair> eig_values_raw;
-    const int min_attempt = std::min(10, max_attempt);
-    for (int i = min_attempt; i <= max_attempt; i += std::min(i, max_attempt - i)) {
+    const Index min_attempt = std::min<Index>(10, max_attempt);
+    for (Index i = min_attempt; i <= max_attempt; i += std::min(i, max_attempt - i)) {
         eig_values_raw = eigval_general_cpu(A, B, i, opts_new);
         // check if the maximum eigenvalue is above max, if so, we dont need to look further
         const bool interval_covered = std::any_of(eig_values_raw.begin(), eig_values_raw.end(),

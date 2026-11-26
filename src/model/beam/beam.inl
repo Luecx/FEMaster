@@ -20,7 +20,7 @@ namespace fem {
 namespace model {
 
 template<Index N>
-BeamElement<N>::BeamElement(ID elem_id, std::array<ID, N> node_ids_in)
+BeamElement<N>::BeamElement(Index elem_id, std::array<Index, N> node_ids_in)
     : StructuralElement(elem_id), node_ids(node_ids_in) {}
 
 template<Index N>
@@ -73,8 +73,8 @@ template<Index N>
 Precision BeamElement<N>::length() {
     Precision l = 0;
     for (Index i = 0; i < N - 1; ++i) {
-        const Vec3 x0 = this->node_position(static_cast<ID>(i));
-        const Vec3 x1 = this->node_position(static_cast<ID>(i + 1));
+        const Vec3 x0 = this->node_position(i);
+        const Vec3 x1 = this->node_position(i + 1);
         l += (x0 - x1).norm();
     }
     return l;
@@ -95,8 +95,8 @@ Precision BeamElement<N>::length_reference() {
 
     Precision l = 0;
     for (Index i = 0; i < N - 1; ++i) {
-        const Vec3 x0 = reference.row_vec3(static_cast<Index>(node_ids[i]));
-        const Vec3 x1 = reference.row_vec3(static_cast<Index>(node_ids[i + 1]));
+        const Vec3 x0 = reference.row_vec3(node_ids[i]);
+        const Vec3 x1 = reference.row_vec3(node_ids[i + 1]);
         l += (x0 - x1).norm();
     }
     return l;
@@ -120,7 +120,7 @@ Vec3 BeamElement<N>::midpoint_reference() {
 
     Vec3 x_mid = Vec3::Zero();
     for (Index i = 0; i < N; ++i) {
-        x_mid += reference.row_vec3(static_cast<Index>(node_ids[i]));
+        x_mid += reference.row_vec3(node_ids[i]);
     }
     return x_mid / static_cast<Precision>(N);
 }
@@ -233,8 +233,8 @@ StaticMatrix<N * 6, N * 6> BeamElement<N>::transformation() {
     Mat3 R = rotation_matrix();
 
     for (Index i = 0; i < N; ++i) {
-        for (Dim j = 0; j < 3; ++j) {
-            for (Dim k = 0; k < 3; ++k) {
+        for (Index j = 0; j < 3; ++j) {
+            for (Index k = 0; k < 3; ++k) {
                 T(i * 6 + j,     i * 6 + k)     = R(j, k);
                 T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
             }
@@ -250,8 +250,8 @@ StaticMatrix<N * 6, N * 6> BeamElement<N>::transformation_base() {
     Mat3 R = base_rotation_matrix();
 
     for (Index i = 0; i < N; ++i) {
-        for (Dim j = 0; j < 3; ++j) {
-            for (Dim k = 0; k < 3; ++k) {
+        for (Index j = 0; j < 3; ++j) {
+            for (Index k = 0; k < 3; ++k) {
                 T(i * 6 + j,     i * 6 + k)     = R(j, k);
                 T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
             }
@@ -280,8 +280,8 @@ void BeamElement<N>::validate_reference_base_displacement(const Field* base_disp
     // An omitted field already represents zero displacement at every node.
     bool reference_base = true;
     if (base_displacement) {
-        for (ID node : node_ids) {
-            const Vec6 displacement = base_displacement->row_vec6(static_cast<Index>(node));
+        for (Index node : node_ids) {
+            const Vec6 displacement = base_displacement->row_vec6(node);
             reference_base &= (displacement.array() == Precision(0)).all();
         }
     }
@@ -344,7 +344,7 @@ MapMatrix BeamElement<N>::evaluate(
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index node = 0; node < N; ++node) {
             const Vec6 row =
-                target_displacement->row_vec6(static_cast<Index>(node_ids[node]));
+                target_displacement->row_vec6(node_ids[node]);
             for (Index dof = 0; dof < 6; ++dof) {
                 u_global(node * 6 + dof) = row(dof);
             }
@@ -359,8 +359,7 @@ MapMatrix BeamElement<N>::evaluate(
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < N; ++node) {
-                temperature += (*target_temperature)(
-                    static_cast<Index>(node_ids[node]), 0);
+                temperature += (*target_temperature)(node_ids[node], 0);
             }
             temperature /= static_cast<Precision>(N);
 
@@ -375,7 +374,7 @@ MapMatrix BeamElement<N>::evaluate(
         }
 
         for (Index node = 0; node < N; ++node) {
-            const Index row = static_cast<Index>(elem_nodal_offset) + node;
+            const Index row = elem_nodal_offset + node;
             for (Index dof = 0; dof < 6; ++dof) {
                 (*internal_force)(row, dof) += force(node * 6 + dof);
             }
@@ -410,27 +409,27 @@ ElDofs BeamElement<N>::dofs() const {
 }
 
 template<Index N>
-Dim BeamElement<N>::dimensions() const {
+Index BeamElement<N>::dimensions() const {
     return 3;
 }
 
 template<Index N>
-Dim BeamElement<N>::n_nodes() const {
+Index BeamElement<N>::n_nodes() const {
     return N;
 }
 
 template<Index N>
-Dim BeamElement<N>::num_ip() const {
+Index BeamElement<N>::num_ip() const {
     return 1;
 }
 
 template<Index N>
-const ID* BeamElement<N>::nodes() const {
+const Index* BeamElement<N>::nodes() const {
     return node_ids.data();
 }
 
 template<Index N>
-SurfacePtr BeamElement<N>::surface(ID surface_id) {
+SurfacePtr BeamElement<N>::surface(Index surface_id) {
     (void) surface_id;
     return nullptr;
 }
@@ -460,14 +459,14 @@ bool BeamElement<N>::compute_beam_section_forces(
     const Field* base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     (void) base_temperature;
     validate_reference_base_displacement(base_displacement);
     Eigen::Matrix<Precision, N * 6, 1> u_global;
     for (Index i = 0; i < N; ++i) {
-        const ID nid = node_ids[i];
-        const Vec6 row = target_displacement.row_vec6(static_cast<Index>(nid));
+        const Index nid = node_ids[i];
+        const Vec6 row = target_displacement.row_vec6(nid);
         for (Index d = 0; d < 6; ++d) {
             u_global(i * 6 + d) = row(d);
         }
@@ -483,8 +482,7 @@ bool BeamElement<N>::compute_beam_section_forces(
         const Precision alpha = material->get_thermal_expansion();
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*target_temperature)(
-                static_cast<Index>(node_ids[node]), 0);
+            temperature += (*target_temperature)(node_ids[node], 0);
         }
         temperature /= static_cast<Precision>(N);
 
@@ -502,7 +500,7 @@ bool BeamElement<N>::compute_beam_section_forces(
 
     for (Index i = 0; i < N; ++i) {
         for (Index d = 0; d < 6; ++d) {
-            section_forces(static_cast<Index>(offset) + i, d)
+            section_forces(offset + i, d)
                 = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
         }
     }
@@ -571,7 +569,7 @@ void BeamElement<N>::integrate_vector_field(
     const Vec3 F = field(x_mid) * (rho * A * L);
     const Precision share = Precision(1) / static_cast<Precision>(N);
     for (Index i = 0; i < N; ++i) {
-        const ID n_id = node_ids[i];
+        const Index n_id = node_ids[i];
         node_loads(n_id, 0) += share * F(0);
         node_loads(n_id, 1) += share * F(1);
         node_loads(n_id, 2) += share * F(2);

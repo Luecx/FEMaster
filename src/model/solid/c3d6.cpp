@@ -23,7 +23,7 @@
 namespace fem {
 namespace model {
 
-C3D6::C3D6(ID p_elem_id, const std::array<ID, 6>& p_node_ids)
+C3D6::C3D6(Index p_elem_id, const std::array<Index, 6>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
 /**
@@ -47,14 +47,14 @@ const math::quadrature::Quadrature& C3D6::integration_scheme() const {
  * @param surface_id One-based face identifier.
  * @return Requested face, or nullptr when the identifier is invalid.
  */
-SurfacePtr C3D6::surface(ID surface_id) {
+SurfacePtr C3D6::surface(Index surface_id) {
     // C3D6 (6-node wedge element): Triangular faces have 3 nodes, quadrilateral faces have 4 nodes
     switch (surface_id) {
-        case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[2], node_ids[1]});    // Face 1: Triangle
-        case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[3], node_ids[4], node_ids[5]});    // Face 2: Triangle
-        case 3: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[0], node_ids[1], node_ids[4], node_ids[3]});    // Face 3: Quadrilateral
-        case 4: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[1], node_ids[2], node_ids[5], node_ids[4]});    // Face 4: Quadrilateral
-        case 5: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[2], node_ids[0], node_ids[3], node_ids[5]});    // Face 5: Quadrilateral
+        case 1: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[0], node_ids[2], node_ids[1]});    // Face 1: Triangle
+        case 2: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[3], node_ids[4], node_ids[5]});    // Face 2: Triangle
+        case 3: return std::make_shared<Surface4>(std::array<Index, 4>{node_ids[0], node_ids[1], node_ids[4], node_ids[3]});    // Face 3: Quadrilateral
+        case 4: return std::make_shared<Surface4>(std::array<Index, 4>{node_ids[1], node_ids[2], node_ids[5], node_ids[4]});    // Face 4: Quadrilateral
+        case 5: return std::make_shared<Surface4>(std::array<Index, 4>{node_ids[2], node_ids[0], node_ids[3], node_ids[5]});    // Face 5: Quadrilateral
         default: return nullptr;                                                            // Invalid surface ID
     }
 }

@@ -18,22 +18,22 @@ namespace constraint {
 namespace {
 
 // Collect unique node ids from all elements in the configured element set.
-static std::vector<ID> collect_nodes(const Rbm& rbm, model::ModelData& model_data) {
-    std::vector<ID> ids;
+static std::vector<Index> collect_nodes(const Rbm& rbm, model::ModelData& model_data) {
+    std::vector<Index> ids;
     ids.reserve(256);
 
     if (rbm.element_region) {
-        for (ID elem_id : *rbm.element_region) {
-            if (elem_id < 0 || static_cast<std::size_t>(elem_id) >= model_data.elements.size()) {
+        for (Index elem_id : *rbm.element_region) {
+            if (elem_id < 0 || elem_id >= static_cast<Index>(model_data.elements.size())) {
                 continue;
             }
 
-            auto& eptr = model_data.elements[static_cast<std::size_t>(elem_id)];
+            auto& eptr = model_data.elements[elem_id];
             if (!eptr) {
                 continue;
             }
 
-            for (ID node_id : *eptr) {
+            for (Index node_id : *eptr) {
                 ids.push_back(node_id);
             }
         }
@@ -51,12 +51,12 @@ static Vec3 compute_center_of_gravity(const Rbm& rbm, model::ModelData& model_da
     Vec3 c_num  = Vec3::Zero();
 
     if (rbm.element_region) {
-        for (ID elem_id : *rbm.element_region) {
-            if (elem_id < 0 || static_cast<std::size_t>(elem_id) >= model_data.elements.size()) {
+        for (Index elem_id : *rbm.element_region) {
+            if (elem_id < 0 || elem_id >= static_cast<Index>(model_data.elements.size())) {
                 continue;
             }
 
-            auto& eptr = model_data.elements[static_cast<std::size_t>(elem_id)];
+            auto& eptr = model_data.elements[elem_id];
             if (!eptr) {
                 continue;
             }
@@ -76,14 +76,14 @@ static Vec3 compute_center_of_gravity(const Rbm& rbm, model::ModelData& model_da
     return c_num / m;
 }
 
-static bool has_any_translation_dof(const model::SystemDofs& dofs, ID node_id) {
+static bool has_any_translation_dof(const model::SystemDofs& dofs, Index node_id) {
     return dofs(node_id, 0) >= 0 || dofs(node_id, 1) >= 0 || dofs(node_id, 2) >= 0;
 }
 
 static bool add_if_available(Equation& equation,
                              const model::SystemDofs& dofs,
-                             ID node_id,
-                             Dim dof,
+                             Index node_id,
+                             Index dof,
                              Precision coeff) {
     if (dofs(node_id, dof) < 0) {
         return false;
@@ -101,13 +101,13 @@ Equations Rbm::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
     const auto& X = *model_data.positions;
 
     // Collect candidate nodes from all elements in the region.
-    std::vector<ID> ids = collect_nodes(*this, model_data);
+    std::vector<Index> ids = collect_nodes(*this, model_data);
     if (ids.empty()) return eqs;
 
     // Keep only nodes that contribute at least one translational DOF.
-    std::vector<ID> use;
+    std::vector<Index> use;
     use.reserve(ids.size());
-    for (ID id : ids) {
+    for (Index id : ids) {
         if (has_any_translation_dof(system_nodal_dofs, id)) {
             use.push_back(id);
         }
@@ -118,7 +118,7 @@ Equations Rbm::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
     const Vec3 x0 = compute_center_of_gravity(*this, model_data);
 
     // Optional normalization keeps coefficients comparable for large sets.
-    const Precision w = Precision(1) / Precision(std::max<std::size_t>(1, use.size()));
+    const Precision w = Precision(1) / Precision(std::max<Index>(1, static_cast<Index>(use.size())));
 
     // 3 translation equations: sum u = 0 (scaled)
     Equation ex, ey, ez;
@@ -126,7 +126,7 @@ Equations Rbm::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
     ey.entries.reserve(use.size());
     ez.entries.reserve(use.size());
 
-    for (ID i : use) {
+    for (Index i : use) {
         add_if_available(ex, system_nodal_dofs, i, 0, w);
         add_if_available(ey, system_nodal_dofs, i, 1, w);
         add_if_available(ez, system_nodal_dofs, i, 2, w);
@@ -142,8 +142,8 @@ Equations Rbm::get_equations(model::SystemDofs& system_nodal_dofs, model::ModelD
     ery.entries.reserve(2 * use.size());
     erz.entries.reserve(2 * use.size());
 
-    for (ID i : use) {
-        const Vec3 xi = X.row_vec3(static_cast<Index>(i));
+    for (Index i : use) {
+        const Vec3 xi = X.row_vec3(i);
         const Vec3 r  = xi - x0;
         const Precision rx = r(0), ry = r(1), rz = r(2);
 

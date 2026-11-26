@@ -38,6 +38,8 @@
 #include <charconv>
 #include <cmath>
 
+#include "../../core/types_num.h"
+
 namespace fem {
 namespace io {
 namespace dsl {
@@ -65,10 +67,10 @@ struct TypeName
 };
 
 /**
- * @brief Specialization for int.
+ * @brief Specialization for the integer type used by all numeric keywords.
  */
 template<>
-struct TypeName<int>
+struct TypeName<Index>
 {
     /**
      * @brief Returns the human-readable type name.
@@ -76,34 +78,6 @@ struct TypeName<int>
      * @return The string literal "int".
      */
     static const char* get() { return "int"; }
-};
-
-/**
- * @brief Specialization for long.
- */
-template<>
-struct TypeName<long>
-{
-    /**
-     * @brief Returns the human-readable type name.
-     *
-     * @return The string literal "long".
-     */
-    static const char* get() { return "long"; }
-};
-
-/**
- * @brief Specialization for unsigned.
- */
-template<>
-struct TypeName<unsigned>
-{
-    /**
-     * @brief Returns the human-readable type name.
-     *
-     * @return The string literal "unsigned".
-     */
-    static const char* get() { return "unsigned"; }
 };
 
 /**
@@ -156,10 +130,10 @@ struct TypeName<std::string>
 inline bool is_int_token(const std::string& s)
 {
     if (s.empty()) return false;
-    std::size_t i = 0;
-    if (s[i] == '+' || s[i] == '-') { ++i; if (i == s.size()) return false; }
+    Index i = 0;
+    if (s[i] == '+' || s[i] == '-') { ++i; if (i == static_cast<Index>(s.size())) return false; }
     bool any_digit = false;
-    for (; i < s.size(); ++i) {
+    for (; i < static_cast<Index>(s.size()); ++i) {
         char c = s[i];
         if (c < '0' || c > '9') return false;
         any_digit = true;
@@ -178,17 +152,17 @@ inline bool is_float_token(const std::string& s)
 {
     if (s.empty()) return false;
 
-    std::size_t i = 0;
+    Index i = 0;
     if (s[i] == '+' || s[i] == '-') {
         ++i;
-        if (i == s.size()) return false;
+        if (i == static_cast<Index>(s.size())) return false;
     }
 
     bool any_digit_before_e = false;
     bool seen_dot = false;
     bool seen_e = false;
 
-    for (; i < s.size(); ++i) {
+    for (; i < static_cast<Index>(s.size()); ++i) {
         char c = s[i];
 
         if (c >= '0' && c <= '9') {
@@ -208,13 +182,13 @@ inline bool is_float_token(const std::string& s)
             seen_e = true;
 
             ++i;
-            if (i == s.size()) return false; // needs exponent digits
+            if (i == static_cast<Index>(s.size())) return false; // needs exponent digits
             if (s[i] == '+' || s[i] == '-') {
                 ++i;
-                if (i == s.size()) return false;
+                if (i == static_cast<Index>(s.size())) return false;
             }
             bool exp_digits = false;
-            for (; i < s.size(); ++i) {
+            for (; i < static_cast<Index>(s.size()); ++i) {
                 char ce = s[i];
                 if (ce < '0' || ce > '9') return false;
                 exp_digits = true;
@@ -257,7 +231,7 @@ struct PatternElementBase
      *
      * @return Number of tokens reserved by this element.
      */
-    virtual std::size_t count() const = 0;
+    virtual Index count() const = 0;
 
     /**
      * @brief Returns a stable, human-readable type name.
@@ -381,7 +355,7 @@ struct PatternElementBase
      * @param how_many  Number of default tokens to emit.
      * @return True if defaults were emitted; false if missing is not allowed.
      */
-    virtual bool emit_missing(std::vector<std::string>& out, std::size_t how_many) const
+    virtual bool emit_missing(std::vector<std::string>& out, Index how_many) const
     {
         (void)out;
         (void)how_many;
@@ -515,7 +489,7 @@ struct Fixed : PatternElementBase
      *
      * @return The constant `N`.
      */
-    std::size_t count() const override
+    Index count() const override
     {
         return N;
     }
@@ -667,11 +641,11 @@ struct Fixed : PatternElementBase
      * @param how_many  Number of default tokens to emit.
      * @return True if defaults were emitted; false if missing is not allowed.
      */
-    bool emit_missing(std::vector<std::string>& out, std::size_t how_many) const override
+    bool emit_missing(std::vector<std::string>& out, Index how_many) const override
     {
         if (!_allow_missing) return false;
         const std::string s = missing_token_string();
-        for (std::size_t i = 0; i < how_many; ++i) out.push_back(s);
+        for (Index i = 0; i < how_many; ++i) out.push_back(s);
         return true;
     }
 

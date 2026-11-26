@@ -24,12 +24,12 @@ namespace cuda {
 template<typename T>
 class CudaArray {
 public:
-    explicit CudaArray(std::size_t size);
+    explicit CudaArray(Index size);
     ~CudaArray();
 
     operator T*();
 
-    std::size_t size() const;
+    Index size() const;
 
     void copy(const T* source);
 
@@ -41,14 +41,14 @@ public:
 
     void clear();
 
-    static std::size_t estimate_mem(std::size_t count);
+    static Index estimate_mem(Index count);
 
 protected:
     void allocate();
     void release();
 
     T* data = nullptr;
-    std::size_t element_count = 0;
+    Index element_count = 0;
 };
 } // namespace cuda
 } // namespace fem

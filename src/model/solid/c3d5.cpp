@@ -23,7 +23,7 @@ namespace fem::model {
  * @param elem_id Element identifier.
  * @param node_ids Four base corners followed by the pyramid apex.
  */
-C3D5::C3D5(ID elem_id, const std::array<ID, 5>& node_ids)
+C3D5::C3D5(Index elem_id, const std::array<Index, 5>& node_ids)
     : C3D8(elem_id, {
         node_ids[0], node_ids[1], node_ids[2], node_ids[3],
         node_ids[4], node_ids[4], node_ids[4], node_ids[4]
@@ -36,13 +36,13 @@ C3D5::C3D5(ID elem_id, const std::array<ID, 5>& node_ids)
  * Returning its S2 face would create a zero-area quadrilateral, so the
  * pyramid instead exposes its base and four properly oriented triangles.
  */
-SurfacePtr C3D5::surface(ID surface_id) {
+SurfacePtr C3D5::surface(Index surface_id) {
     switch (surface_id) {
-        case 1: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
-        case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[0], node_ids[1], node_ids[4]});
-        case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[1], node_ids[2], node_ids[4]});
-        case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[2], node_ids[3], node_ids[4]});
-        case 5: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[3], node_ids[0], node_ids[4]});
+        case 1: return std::make_shared<Surface4>(std::array<Index, 4>{node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
+        case 2: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[0], node_ids[1], node_ids[4]});
+        case 3: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[1], node_ids[2], node_ids[4]});
+        case 4: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[2], node_ids[3], node_ids[4]});
+        case 5: return std::make_shared<Surface3>(std::array<Index, 3>{node_ids[3], node_ids[0], node_ids[4]});
         default: return nullptr;
     }
 }
@@ -54,7 +54,7 @@ SurfacePtr C3D5::surface(ID surface_id) {
  * subsequently remaps all eight references to their dense assembly node ids.
  */
 ElementPtr C3D5::copy() const {
-    return std::make_shared<C3D5>(elem_id, std::array<ID, 5> {
+    return std::make_shared<C3D5>(elem_id, std::array<Index, 5> {
         node_ids[0], node_ids[1], node_ids[2], node_ids[3], node_ids[4]
     });
 }

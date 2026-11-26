@@ -18,8 +18,8 @@ namespace {
 
 using Bytes = std::vector<std::uint8_t>;
 
-std::uint32_t crc32_update(std::uint32_t crc, const std::uint8_t* data, std::size_t size) {
-    for (std::size_t i = 0; i < size; ++i) {
+std::uint32_t crc32_update(std::uint32_t crc, const std::uint8_t* data, Index size) {
+    for (Index i = 0; i < size; ++i) {
         crc ^= data[i];
         for (int bit = 0; bit < 8; ++bit)
             crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
@@ -28,12 +28,12 @@ std::uint32_t crc32_update(std::uint32_t crc, const std::uint8_t* data, std::siz
 }
 
 std::uint32_t crc32(const Bytes& data) {
-    return crc32_update(0xffffffffu, data.data(), data.size()) ^ 0xffffffffu;
+    return crc32_update(0xffffffffu, data.data(), static_cast<Index>(data.size())) ^ 0xffffffffu;
 }
 
 template<class UInt>
 void append_uint(Bytes& out, UInt value) {
-    for (std::size_t i = 0; i < sizeof(UInt); ++i)
+    for (Index i = 0; i < static_cast<Index>(sizeof(UInt)); ++i)
         out.push_back(static_cast<std::uint8_t>((value >> (8 * i)) & 0xffu));
 }
 
@@ -66,16 +66,16 @@ void append_string(Bytes& out, const std::string& value) {
 }
 
 Bytes encode_lz4(const Bytes& input) {
-    logging::error(input.size() <= static_cast<std::size_t>(LZ4_MAX_INPUT_SIZE),
+    logging::error(static_cast<Index>(input.size()) <= LZ4_MAX_INPUT_SIZE,
                    "FemrWriter: field chunk exceeds the LZ4 block size limit");
     const int source_size = static_cast<int>(input.size());
-    Bytes out(static_cast<std::size_t>(LZ4_compressBound(source_size)));
+    Bytes out(static_cast<Index>(LZ4_compressBound(source_size)));
     const int stored_size = LZ4_compress_default(
         reinterpret_cast<const char*>(input.data()),
         reinterpret_cast<char*>(out.data()), source_size, static_cast<int>(out.size()));
     logging::error(stored_size > 0,
         "FemrWriter: LZ4 compression failed");
-    out.resize(static_cast<std::size_t>(stored_size));
+    out.resize(static_cast<Index>(stored_size));
     return out;
 }
 
@@ -192,8 +192,8 @@ void FemrWriter::write_chunk(const char type[4], const Bytes& payload,
     logging::error(file_.good(),
         "FemrWriter: failed while writing chunk");
     if (include_in_file_checksum) {
-        file_crc_state_ = crc32_update(file_crc_state_, header.data(), header.size());
-        file_crc_state_ = crc32_update(file_crc_state_, stored.data(), stored.size());
+        file_crc_state_ = crc32_update(file_crc_state_, header.data(), static_cast<Index>(header.size()));
+        file_crc_state_ = crc32_update(file_crc_state_, stored.data(), static_cast<Index>(stored.size()));
     }
 }
 
@@ -215,15 +215,15 @@ void FemrWriter::write_model_data(const model::ModelData& model_data) {
     append_uint(payload, node_count); append_uint(payload, element_count);
     logging::error(model_data.positions != nullptr || node_count == 0,
                    "FemrWriter: mesh nodes require a positions field");
-    logging::error(model_data.node_mapping.size() == static_cast<std::size_t>(node_count),
+    logging::error(static_cast<Index>(model_data.node_mapping.size()) == static_cast<Index>(node_count),
                    "FemrWriter: node mapping does not match NODE rows");
-    logging::error(model_data.element_mapping.size() == static_cast<std::size_t>(element_count),
+    logging::error(static_cast<Index>(model_data.element_mapping.size()) == static_cast<Index>(element_count),
                    "FemrWriter: element mapping does not match ELEMENT rows");
     // MESH order is the normative dense field-row mapping: node/element entry
     // zero corresponds to row zero in NODE/ELEMENT FDAT arrays. Identifiers are
     // stored explicitly as well, so readers never infer them from connectivity.
     for (Index row = 0; row < static_cast<Index>(node_count); ++row) {
-        const auto& [instance, local_id] = model_data.node_mapping[static_cast<std::size_t>(row)];
+        const auto& [instance, local_id] = model_data.node_mapping[row];
         logging::error(instance != nullptr,
             "FemrWriter: dense node has no semantic identity: ", row);
         append_i32(payload, static_cast<std::int32_t>(row));
@@ -233,29 +233,29 @@ void FemrWriter::write_model_data(const model::ModelData& model_data) {
             append_f64(payload, static_cast<double>((*model_data.positions)(row, component)));
     }
     for (Index row = 0; row < static_cast<Index>(element_count); ++row) {
-        const auto& element = model_data.elements[static_cast<std::size_t>(row)];
+        const auto& element = model_data.elements[row];
         logging::error(element != nullptr,
             "FemrWriter: dense element row is empty: ", row);
-        logging::error(element->elem_id == static_cast<ID>(row),
+        logging::error(element->elem_id == row,
                        "FemrWriter: element identifier does not match its dense row");
-        const auto& [instance, local_id] = model_data.element_mapping[static_cast<std::size_t>(row)];
+        const auto& [instance, local_id] = model_data.element_mapping[row];
         logging::error(instance != nullptr,
             "FemrWriter: dense element has no semantic identity: ", row);
-        append_i32(payload, element->elem_id);
+        append_i32(payload, static_cast<std::int32_t>(element->elem_id));
         append_i32(payload, static_cast<std::int32_t>(instance->instance_id));
         append_i32(payload, static_cast<std::int32_t>(local_id));
         append_string(payload, element->type_name());
         append_uint(payload, static_cast<std::uint16_t>(element->n_nodes()));
-        for (Dim i = 0; i < element->n_nodes(); ++i) append_i32(payload, element->nodes()[i]);
+        for (Index i = 0; i < element->n_nodes(); ++i) append_i32(payload, static_cast<std::int32_t>(element->nodes()[i]));
     }
     write_chunk("MESH", payload);
 }
 
-void FemrWriter::add_loadcase(int id, WriterStepType step_type) {
+void FemrWriter::add_loadcase(Index id, WriterStepType step_type) {
     current_loadcase_ = id; current_step_type_ = step_type;
     current_frame_ = 0; frame_written_ = false; frames_written_.clear();
     last_frame_value_ = std::numeric_limits<double>::quiet_NaN();
-    Bytes payload; append_i32(payload, id); payload.push_back(step_code(step_type));
+    Bytes payload; append_i32(payload, static_cast<std::int32_t>(id)); payload.push_back(step_code(step_type));
     payload.insert(payload.end(), 3, 0);
     write_chunk("LCAS", payload);
 }
@@ -273,7 +273,7 @@ void FemrWriter::ensure_frame(const std::string& field_name, Precision frame_val
     if (frame_written_ && frame == current_frame_) return;
     current_frame_ = frame;
     if (frames_written_.count(frame) != 0) return;
-    Bytes payload; append_i32(payload, current_loadcase_); append_uint(payload, current_frame_);
+    Bytes payload; append_i32(payload, static_cast<std::int32_t>(current_loadcase_)); append_uint(payload, current_frame_);
     append_f64(payload, value);
     write_chunk("FRAM", payload);
     frames_written_.insert(frame);
@@ -296,7 +296,7 @@ void FemrWriter::write_field(const model::Field& field, const std::string& field
     ensure_frame(field_name, frame_value);
     const std::uint64_t field_id = next_field_id_++;
     Bytes metadata;
-    append_uint(metadata, field_id); append_i32(metadata, current_loadcase_);
+    append_uint(metadata, field_id); append_i32(metadata, static_cast<std::int32_t>(current_loadcase_));
     append_uint(metadata, current_frame_); append_string(metadata, field_name);
     metadata.push_back(field_domain_code(field.domain));
     metadata.push_back(static_cast<std::uint8_t>(sizeof(Precision)));

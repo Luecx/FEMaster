@@ -101,7 +101,7 @@ struct DocOptions {
  */
 struct StepState {
     bool        step_active    = false;
-    int         max_increments = 100;
+    Index       max_increments = 100;
     bool        nlgeom         = false;
     bool        perturbation   = false;
     bool        resume         = true;
@@ -119,7 +119,7 @@ class Parser {
 
     // Load case currently assembled by consecutive analysis commands
     loadcase::LoadCase::Ptr active_loadcase_;
-    int                     next_loadcase_id_ = 1;
+    Index                   next_loadcase_id_ = 1;
     StepState               step_state_;
 
     // Only the final successful target is carried between steps. The working
@@ -152,7 +152,7 @@ public:
     // two loads at the same node in different coordinate systems. We need to track all nodes
     // that have been transformed so that, once we encounter a node, we can create a separate
     // load with the correct transformation applied. This maps node ID -> coordinate system name.
-    std::unordered_map<ID, std::string> node_transforms;
+    std::unordered_map<Index, std::string> node_transforms;
 
 public:
     // Construction

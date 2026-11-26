@@ -66,10 +66,10 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                 .range(dsl::LineRange{}.min(2).max(2))
                 .pattern(dsl::Pattern::make()
                     .allow_multiline()
-                    .one<ID>().name("DOF").desc("Nodal degree of freedom 1..6")
+                    .one<Index>().name("DOF").desc("Nodal degree of freedom 1..6")
                     .one<Precision>().name("STIFFNESS").desc("Linear spring stiffness")
                 )
-                .bind([&model, elset](ID dof, Precision stiffness) {
+                .bind([&model, elset](Index dof, Precision stiffness) {
                     logging::error(!model._data->compiled,
                         "SPRING: ROOT/PART assignment must be processed before model compilation");
 
@@ -85,7 +85,7 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                         "SPRING: element set ", *elset,
                         " is empty in part ", part->name);
 
-                    for (const ID id : *region) {
+                    for (const Index id : *region) {
                         const auto it = part->elements.find(id);
                         logging::error(it != part->elements.end() && it->second != nullptr,
                             "SPRING: element ", id,
@@ -101,9 +101,9 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                     Vec3 spring        = Vec3::Zero();
                     Vec3 rotary_spring = Vec3::Zero();
                     if (dof <= 3) {
-                        spring(static_cast<Index>(dof - 1)) = stiffness;
+                        spring(dof - 1) = stiffness;
                     } else {
-                        rotary_spring(static_cast<Index>(dof - 4)) = stiffness;
+                        rotary_spring(dof - 4) = stiffness;
                     }
 
                     model.add_section(std::make_shared<PointMassSection>(
@@ -119,10 +119,10 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                 .range(dsl::LineRange{}.min(2).max(2))
                 .pattern(dsl::Pattern::make()
                     .allow_multiline()
-                    .one<ID>().name("DOF").desc("Nodal degree of freedom 1..6")
+                    .one<Index>().name("DOF").desc("Nodal degree of freedom 1..6")
                     .one<Precision>().name("STIFFNESS").desc("Linear spring stiffness")
                 )
-                .bind([&model, elset](ID dof, Precision stiffness) {
+                .bind([&model, elset](Index dof, Precision stiffness) {
                     logging::error(model._data->compiled,
                         "SPRING: ASSEMBLY assignment requires a compiled model");
                     logging::error(model._data->elem_sets.has(*elset),
@@ -132,12 +132,12 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                     logging::error(region != nullptr && region->size() > 0,
                         "SPRING: compiled element set ", *elset, " is empty");
 
-                    for (const ID id : *region) {
+                    for (const Index id : *region) {
                         logging::error(id >= 0
-                                    && static_cast<std::size_t>(id) < model._data->elements.size()
-                                    && model._data->elements[static_cast<std::size_t>(id)] != nullptr,
+                                    && id < static_cast<Index>(model._data->elements.size())
+                                    && model._data->elements[id] != nullptr,
                             "SPRING: compiled element ", id, " does not exist");
-                        logging::error(model._data->elements[static_cast<std::size_t>(id)]->as<model::PointElement>() != nullptr,
+                        logging::error(model._data->elements[id]->as<model::PointElement>() != nullptr,
                             "SPRING: compiled element set ", *elset,
                             " contains non-point element ", id);
                     }
@@ -148,9 +148,9 @@ void register_spring(dsl::Registry& registry, model::Model& model) {
                     Vec3 spring        = Vec3::Zero();
                     Vec3 rotary_spring = Vec3::Zero();
                     if (dof <= 3) {
-                        spring(static_cast<Index>(dof - 1)) = stiffness;
+                        spring(dof - 1) = stiffness;
                     } else {
-                        rotary_spring(static_cast<Index>(dof - 4)) = stiffness;
+                        rotary_spring(dof - 4) = stiffness;
                     }
 
                     model.add_section(std::make_shared<PointMassSection>(

@@ -78,7 +78,7 @@ void VLoad::apply(
 
     // Density-independent body-force components are prescribed in local axes.
     Vec3 body_force = Vec3::Zero();
-    for (Dim i = 0; i < 3; ++i) {
+    for (Index i = 0; i < 3; ++i) {
         if (std::isfinite(values_[i])) body_force[i] = scale * values_[i];
     }
 
@@ -97,7 +97,7 @@ void VLoad::apply(
     //     b_global(x_q) = A(x_q) * b_local,
     //
     // evaluating the local-to-global axes separately at every quadrature point.
-    for (ID element_id : *region_) {
+    for (Index element_id : *region_) {
         const auto& element = model_data.elements[element_id];
         if (!element) continue;
 
@@ -134,7 +134,7 @@ std::string VLoad::str() const {
     // Report the stored force density without scaling or transformation.
     os << "VLOAD: target=ELSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << "), values=["
+       << (region_ ? region_->size() : 0) << "), values=["
        << values_[0] << ", " << values_[1] << ", " << values_[2] << "]";
 
     if (orientation_) os << ", orientation=" << orientation_->name;

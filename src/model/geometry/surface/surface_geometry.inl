@@ -23,7 +23,7 @@ namespace fem::model {
  * @param node_ids Global identifiers of the surface nodes.
  */
 template<Index N>
-Surface<N>::Surface(const std::array<ID, N>& node_ids)
+Surface<N>::Surface(const std::array<Index, N>& node_ids)
     : SurfaceInterface(num_edges, num_nodes, num_nodes_per_edge),
       nodeIds         (node_ids) {}
 
@@ -186,7 +186,7 @@ StaticMatrix<N, 3> Surface<N>::node_coords_global(const Field& node_coords) cons
 
     // Gather the global coordinate row belonging to every local surface node
     for (Index local_id = 0; local_id < N; ++local_id) {
-        const Index node_id = static_cast<Index>(nodeIds[local_id]);
+        const Index node_id = nodeIds[local_id];
         coordinates.row(local_id) = node_coords.row_vec3(node_id).transpose();
     }
 
@@ -203,7 +203,7 @@ StaticMatrix<N, 3> Surface<N>::node_coords_global(const Field& node_coords) cons
  * @return Pointer to the first node identifier.
  */
 template<Index N>
-ID* Surface<N>::nodes() {
+Index* Surface<N>::nodes() {
     return nodeIds.data();
 }
 /**
@@ -216,7 +216,7 @@ ID* Surface<N>::nodes() {
  * @return Pointer to the first node identifier.
  */
 template<Index N>
-const ID* Surface<N>::nodes() const {
+const Index* Surface<N>::nodes() const {
     return nodeIds.data();
 }
 

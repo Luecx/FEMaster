@@ -117,15 +117,15 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
 ) {
     const Vec3 X1 = node_position_reference(0);
     const Vec3 X2 = node_position_reference(1);
-    const Vec3 u1 = target_displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u2 = target_displacement.row_vec3(static_cast<Index>(node_ids[1]));
+    const Vec3 u1 = target_displacement.row_vec3(node_ids[0]);
+    const Vec3 u2 = target_displacement.row_vec3(node_ids[1]);
 
     Vec3 u01 = Vec3::Zero();
     Vec3 u02 = Vec3::Zero();
 
     if (base_displacement) {
-        u01 = base_displacement->row_vec3(static_cast<Index>(node_ids[0]));
-        u02 = base_displacement->row_vec3(static_cast<Index>(node_ids[1]));
+        u01 = base_displacement->row_vec3(node_ids[0]);
+        u02 = base_displacement->row_vec3(node_ids[1]);
     }
 
     const Vec3      reference_axis = X2 - X1;
@@ -177,8 +177,7 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
 
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*temperature_field)(
-                static_cast<Index>(node_ids[node]), 0);
+            temperature += (*temperature_field)(node_ids[node], 0);
         }
 
         temperature /= static_cast<Precision>(N);
@@ -315,7 +314,7 @@ void T3::compute_stress_strain(
     const Field*     base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     // Validate all requirements before performing the actual recovery.
     logging::error(strain != nullptr || stress != nullptr,
@@ -334,8 +333,8 @@ void T3::compute_stress_strain(
             base_temperature);
 
     // The axial strain and stress are constant over the two-node truss.
-    for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
-        const Index row = static_cast<Index>(offset) + i;
+    for (Index i = 0; i < rst.rows(); ++i) {
+        const Index row = offset + i;
 
         if (strain) {
             for (Index component = 0; component < strain->components; ++component)
@@ -363,7 +362,7 @@ void T3::compute_stress_strain(
  */
 bool T3::compute_peeq(Field& peeq) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "T3: PEEQ recovery requires scalar ELEMENT_NODAL output");
@@ -388,8 +387,8 @@ bool T3::compute_peeq(Field& peeq) {
 
     // The material-point value is constant over the truss and is therefore
     // written to both element-nodal result rows.
-    peeq(static_cast<Index>(offset) + 0, 0) = value;
-    peeq(static_cast<Index>(offset) + 1, 0) = value;
+    peeq(offset + 0, 0) = value;
+    peeq(offset + 1, 0) = value;
 
     return true;
 }
@@ -421,13 +420,13 @@ void T3::compute_compliance(Field& displacement, Field& result) {
     //     u_e = [u1_x, u1_y, u1_z, u2_x, u2_y, u2_z]^T.
     StaticVector<N * 3> u;
     for (Index node = 0; node < N; ++node) {
-        u.template segment<3>(3 * node) = displacement.row_vec3(static_cast<Index>(node_ids[node]));
+        u.template segment<3>(3 * node) = displacement.row_vec3(node_ids[node]);
     }
 
     // Store the scalar element contribution
     //
     //     J_e = u_e^T K_0 u_e.
-    result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);
+    result(this->elem_id, 0) = u.dot(K * u);
 }
 
 /**
@@ -470,7 +469,7 @@ bool T3::compute_beam_section_forces(
     const Field* base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     const Precision stress_value =
         evaluate_axial_response(
@@ -484,7 +483,7 @@ bool T3::compute_beam_section_forces(
 
     // The axial section force is constant over the two-node truss.
     for (Index node = 0; node < N; ++node) {
-        const Index row = static_cast<Index>(offset) + node;
+        const Index row = offset + node;
 
         for (Index component = 0; component < section_forces.components; ++component) {
             section_forces(row, component) = Precision(0);

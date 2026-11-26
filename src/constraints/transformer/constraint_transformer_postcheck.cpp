@@ -203,12 +203,12 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                          true});
 
     if (nm > 0) {
-        const int samples = 3;
+        const Index samples = 3;
         Precision abs_acc = 0;
         Precision rel_acc = 0;
         const Precision CnormF = std::max<Precision>(1, system_.C.norm());
 
-        for (int s = 0; s < samples; ++s) {
+        for (Index s = 0; s < samples; ++s) {
             DynamicVector q = DynamicVector::Random(nm);
             DynamicVector Tq;
             Tq = recover_increment(q);

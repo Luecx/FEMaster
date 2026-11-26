@@ -60,7 +60,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
 
     // Evaluate one generalized section response for every shell integration point.
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
+        const Index id = ip;
         const ReferencePoint& point = points[id];
         // Temperature is part of the state evaluated at the selected
         // linearization point. The section therefore always receives the
@@ -123,8 +123,8 @@ void FRTShell<N>::assemble_material_stiffness(
     const auto& points = reference_data().ip_points;
 
     // Integrate the constitutive tangent over the actual curved reference area
-    for (Index ip = 0; ip < static_cast<Index>(data.ip_B.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
+    for (Index ip = 0; ip < data.ip_B.size(); ++ip) {
+        const Index id = ip;
         const Precision weight = points[id].w * points[id].detJ;
 
         Kmat.noalias() += weight
@@ -228,11 +228,11 @@ void FRTShell<N>::assemble_geometric_stiffness(
     const auto& points = reference_data().ip_points;
     const auto& tying  = reference_data().tying_points;
 
-    logging::error(data.geometric_tying_weights.size() == tying.size(),
+    logging::error(data.geometric_tying_weights.size() == static_cast<Index>(tying.size()),
                    "FRTShell: invalid geometric tying workspace size");
 
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
+        const Index id = ip;
         const Precision weight = points[id].w * points[id].detJ;
         const Vec8 local_resultants = weight * data.ip_resultants[id];
 
@@ -279,7 +279,7 @@ void FRTShell<N>::assemble_geometric_stiffness(
 
         // Add all compatible tying-point Hessian contributions
         for (Index tying_id = 0; tying_id < static_cast<Index>(tying.size()); ++tying_id) {
-            const std::size_t tying_index = static_cast<std::size_t>(tying_id);
+            const Index tying_index = tying_id;
             Vec8& tying_weight = data.geometric_tying_weights[tying_index];
             tying_weight =
                 director_deskew_natural_transform(tying[tying_index]).transpose()
@@ -323,8 +323,8 @@ void FRTShell<N>::assemble_internal_force(
     const auto& points = reference_data().ip_points;
 
     // Integrate the physical shell resultants over the curved reference area
-    for (Index ip = 0; ip < static_cast<Index>(data.ip_B.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
+    for (Index ip = 0; ip < data.ip_B.size(); ++ip) {
+        const Index id = ip;
         const Precision weight = points[id].w * points[id].detJ;
 
         internal_force.noalias() +=
@@ -381,14 +381,14 @@ void FRTShell<N>::assemble_drill_stabilization(
         "FRTShell: drilling stabilization requires first rotation derivatives");
     logging::error(data.rotations != nullptr,
         "FRTShell: drilling stabilization requires nodal rotations");
-    logging::error(data.ip_drill_stiffness.size() == reference_data().ip_points.size(),
+    logging::error(data.ip_drill_stiffness.size() == static_cast<Index>(reference_data().ip_points.size()),
         "FRTShell: invalid drilling stiffness workspace size");
 
     const auto& rotations = *data.rotations;
     const auto& points    = reference_data().ip_points;
 
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const std::size_t id = static_cast<std::size_t>(ip);
+        const Index id = ip;
         const ReferencePoint& point = points[id];
         const Precision k_d = data.ip_drill_stiffness[id];
 
@@ -552,7 +552,7 @@ typename FRTShell<N>::Vec8 FRTShell<N>::thermal_generalized_strain(
     // the active mechanical evaluation's thread-local workspace.
     const auto& tying_points = reference_data().tying_points;
     std::vector<Vec8> tying_strain(tying_points.size());
-    for (std::size_t tying = 0; tying < tying_points.size(); ++tying) {
+    for (Index tying = 0; tying < static_cast<Index>(tying_points.size()); ++tying) {
         tying_strain[tying] = compatible_dilation(tying_points[tying]);
     }
 
@@ -668,7 +668,7 @@ MapMatrix FRTShell<N>::evaluate(
         target_resultants.resize(points.size());
 
         for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-            const std::size_t id = static_cast<std::size_t>(ip);
+            const Index id = ip;
             const ReferencePoint& point = points[id];
 
             Vec8 strain_values = data.ip_strain[id];
@@ -740,7 +740,7 @@ MapMatrix FRTShell<N>::evaluate(
         resultant_increment.resize(points.size());
 
         for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-            const std::size_t id = static_cast<std::size_t>(ip);
+            const Index id = ip;
 
             // Temperature changes are represented by the exact resultant
             // difference at q0. Displacement changes are linearized with H0 B0.
@@ -769,7 +769,7 @@ MapMatrix FRTShell<N>::evaluate(
 
     if (with_force) {
         for (Index node = 0; node < num_nodes; ++node) {
-            const Index row = static_cast<Index>(this->elem_nodal_offset) + node;
+            const Index row = this->elem_nodal_offset + node;
             for (Index dof = 0; dof < dofs_per_node; ++dof) {
                 (*internal_force_output)(row, dof) += force(dofs_per_node * node + dof);
             }

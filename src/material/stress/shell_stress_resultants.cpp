@@ -18,24 +18,24 @@ ShellStressResultants::ShellStressResultants(const Vec8& values)
 
 // Map named components onto the underlying vector
 Precision& ShellStressResultants::operator[](Component component) {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 Precision ShellStressResultants::operator[](Component component) const {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 // Extract the three physical resultant blocks
 Vec3 ShellStressResultants::membrane() const {
-    return values_.template segment<3>(static_cast<int>(Component::NXX));
+    return values_.template segment<3>(static_cast<Index>(Component::NXX));
 }
 
 Vec3 ShellStressResultants::moments() const {
-    return values_.template segment<3>(static_cast<int>(Component::MXX));
+    return values_.template segment<3>(static_cast<Index>(Component::MXX));
 }
 
 Vec2 ShellStressResultants::transverse_shear() const {
-    return values_.template segment<2>(static_cast<int>(Component::QX));
+    return values_.template segment<2>(static_cast<Index>(Component::QX));
 }
 
 /**

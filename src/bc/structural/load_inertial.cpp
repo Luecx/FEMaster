@@ -133,21 +133,21 @@ void InertialLoad::apply(
     const auto apply_point_mass = [&](const model::PointElement& point) {
         if (!point._section) return;
 
-        const ID    node_id = point.nodes()[0];
+        const Index node_id = point.nodes()[0];
         const auto* section = point._section->as<PointMassSection>();
 
         logging::error(section != nullptr,
             "INERTIAL: point element ", point.label(), " has a non-point-mass section");
-        logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+        logging::error(node_id >= 0 && node_id < positions.rows,
             "INERTIAL: point-element node ", node_id, " is outside positions field with ", positions.rows, " rows");
 
-        const Index node     = static_cast<Index>(node_id);
+        const Index node     = node_id;
         const Vec3  position = positions.row_vec3(node);
 
         // F = -m a(x), including the effective step multiplier
         const Vec3 force = section->mass_ * inertia_acceleration(position);
 
-        for (Dim i = 0; i < 3; ++i) {
+        for (Index i = 0; i < 3; ++i) {
             load(node, i) += force[i];
         }
 
@@ -164,7 +164,7 @@ void InertialLoad::apply(
         const Vec3 moment = -scale * (
             section->rotary_inertia_.cwiseProduct(alpha_) + omega_.cross(J_omega));
 
-        for (Dim i = 0; i < 3; ++i) {
+        for (Index i = 0; i < 3; ++i) {
             load(node, i + 3) += moment[i];
         }
     };
@@ -173,8 +173,8 @@ void InertialLoad::apply(
     // products use the same reference quadrature and nodal weighting as the
     // dead field integration, so both parts form one consistent integral.
     const auto apply_follower_mass = [&](model::StructuralElement& element) {
-        const Index         n_nodes  = static_cast<Index>(element.n_nodes());
-        const ID*           nodes    = element.nodes();
+        const Index         n_nodes  = element.n_nodes();
+        const Index*        nodes    = element.nodes();
         const DynamicMatrix products = element.integrate_shape_products(true);
 
         logging::error(products.rows() == n_nodes && products.cols() == n_nodes,
@@ -189,7 +189,7 @@ void InertialLoad::apply(
                 const Vec3 displacement = positions.row_vec3(nodes[j]) - reference.row_vec3(nodes[j]);
                 const Vec3 force        = stiffness * displacement;
 
-                for (Dim d = 0; d < 3; ++d) {
+                for (Index d = 0; d < 3; ++d) {
                     load(nodes[i], d) += force[d];
                 }
 
@@ -200,11 +200,11 @@ void InertialLoad::apply(
 
     // Distributed mass is integrated with density scaling over the reference
     // volume. Compiled PointElements use the concentrated-mass formula instead.
-    for (ID element_id : *region_) {
-        logging::error(element_id >= 0 && static_cast<std::size_t>(element_id) < model_data.elements.size(),
+    for (Index element_id : *region_) {
+        logging::error(element_id >= 0 && element_id < static_cast<Index>(model_data.elements.size()),
             "INERTIAL: element ", element_id, " is outside compiled element storage");
 
-        const auto& element = model_data.elements[static_cast<std::size_t>(element_id)];
+        const auto& element = model_data.elements[element_id];
         if (!element) continue;
 
         if (const auto* point = element->as<model::PointElement>()) {
@@ -247,7 +247,7 @@ std::string InertialLoad::str() const {
 
     os << "INERTIAL: target=ELSET "
        << (region_ ? region_->name : std::string("?"))
-       << " (" << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
+       << " (" << (region_ ? region_->size() : 0) << ")"
        << ", center=[" << center_    (0) << ", " << center_    (1) << ", " << center_    (2) << "]"
        << ", a0=["     << center_acc_(0) << ", " << center_acc_(1) << ", " << center_acc_(2) << "]"
        << ", omega=["  << omega_     (0) << ", " << omega_     (1) << ", " << omega_     (2) << "]"

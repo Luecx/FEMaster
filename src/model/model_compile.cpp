@@ -61,7 +61,7 @@ namespace {
  * @param entity Entity name used in validation diagnostics.
  * @return Instance name and local semantic identifier.
  */
-std::pair<std::string, ID> split_compiled_reference(const std::string& reference, const char* entity) {
+std::pair<std::string, Index> split_compiled_reference(const std::string& reference, const char* entity) {
     // Separate an optional Instance prefix from the local identifier token
     std::string instance = Model::DEFAULT_INSTANCE_NAME;
     std::string local    = reference;
@@ -76,7 +76,7 @@ std::pair<std::string, ID> split_compiled_reference(const std::string& reference
     }
 
     // Convert the complete local token without accepting trailing characters
-    ID id{};
+    Index id{};
     const char* begin = local.data();
     const char* end   = begin + local.size();
     const auto [ptr, ec] = std::from_chars(begin, end, id);
@@ -100,7 +100,7 @@ Model::Model()
     // Unqualified deck entities live in the default part. The corresponding
     // default instance is its identity embedding into the final assembly.
     const auto default_part = _data->parts.activate(DEFAULT_PART_NAME);
-    _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part, ID{0});
+    _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part, Index{0});
 }
 
 /**
@@ -161,7 +161,7 @@ void Model::add_instance(const std::string& name,
     _data->instances.add(std::make_shared<Instance>(
         name,
         _data->parts.get(part_name),
-        static_cast<ID>(_data->instances.size()),
+        static_cast<Index>(_data->instances.size()),
         translation,
         rotation
     ));
@@ -356,14 +356,14 @@ void Model::compile() {
 
     // Dense solver arrays are allocated exactly once from the semantic assembly
     // size. Sparse/local identifiers never escape into these arrays.
-    _data->elements.assign(static_cast<std::size_t>(total_elements), nullptr);
-    _data->surfaces.assign(static_cast<std::size_t>(total_surfaces), nullptr);
-    _data->lines   .assign(static_cast<std::size_t>(total_lines), nullptr);
+    _data->elements.assign(total_elements, nullptr);
+    _data->surfaces.assign(total_surfaces, nullptr);
+    _data->lines   .assign(total_lines, nullptr);
     _data->sections.clear();
 
     // Dense-to-semantic maps used by writers and readers to recover instance + local id
-    _data->node_mapping   .resize(static_cast<std::size_t>(total_nodes));
-    _data->element_mapping.resize(static_cast<std::size_t>(total_elements));
+    _data->node_mapping   .resize(total_nodes);
+    _data->element_mapping.resize(total_elements);
 
     // Rebuild the compiled set namespaces. Each Sets container automatically
     // propagates additions into its global *ALL parent collection.
@@ -383,15 +383,15 @@ void Model::compile() {
     _data->fields.emplace(_data->positions->name          , _data->positions);
     _data->fields.emplace(_data->positions_reference->name, _data->positions_reference);
 
-    ID next_node    = 0;
-    ID next_element = 0;
-    ID next_surface = 0;
-    ID next_line    = 0;
+    Index next_node    = 0;
+    Index next_element = 0;
+    Index next_surface = 0;
+    Index next_line    = 0;
 
     // Part-local identifiers of one entity family in ascending order. Sorting
     // makes the dense numbering independent of the unordered_map storage in Part.
     auto sorted_ids = [](const auto& entities) {
-        std::vector<ID> ids;
+        std::vector<Index> ids;
         ids.reserve(entities.size());
         for (const auto& entry : entities) {
             ids.push_back(entry.first);
@@ -435,24 +435,24 @@ void Model::compile() {
                                     auto&       target,
                                     const auto& all,
                                     auto&       id_map,
-                                    ID&         next_id,
+                                    Index&      next_id,
                                     const char* entity,
                                     auto&&      prepare) {
-            for (const ID local_id : sorted_ids(entities)) {
-                const ID    global_id = next_id++;
+            for (const Index local_id : sorted_ids(entities)) {
+                const Index global_id = next_id++;
                 auto        copy      = entities.at(local_id)->copy();
                 const Index n_nodes   = prepare(copy, global_id, local_id);
 
                 for (Index local = 0; local < n_nodes; ++local) {
-                    const ID   local_node = copy->nodes()[local];
-                    const auto it         = node_map.find(local_node);
+                    const Index local_node = copy->nodes()[local];
+                    const auto  it         = node_map.find(local_node);
                     logging::error(it != node_map.end(),
                         "Model: ", entity, " ", local_id, " in part ", source->name,
                         " references undefined node ", local_node);
                     copy->nodes()[local] = it->second;
                 }
 
-                target[static_cast<std::size_t>(global_id)] = std::move(copy);
+                target[global_id] = std::move(copy);
                 all->add(global_id);
                 id_map.emplace(local_id, global_id);
             }
@@ -470,7 +470,7 @@ void Model::compile() {
                 if (is_default && local_name == all_name) continue;
 
                 auto target = target_sets.activate(qualified_name(local_name));
-                for (const ID local_id : *local_set) {
+                for (const Index local_id : *local_set) {
                     const auto it = id_map.find(local_id);
                     logging::error(it != id_map.end(),
                         "Model: ", entity, " set ", local_name, " in part ", source->name,
@@ -481,16 +481,16 @@ void Model::compile() {
         };
 
         // Transform local nodal coordinates and establish the dense node map
-        for (const ID local_id : sorted_ids(source->nodes)) {
-            const ID   global_id = next_node++;
-            const Vec3 position  = instance->rotation * source->nodes.at(local_id) + instance->translation;
+        for (const Index local_id : sorted_ids(source->nodes)) {
+            const Index global_id = next_node++;
+            const Vec3  position  = instance->rotation * source->nodes.at(local_id) + instance->translation;
 
             node_map.emplace(local_id, global_id);
-            _data->node_mapping[static_cast<std::size_t>(global_id)] = {instance, local_id};
+            _data->node_mapping[global_id] = {instance, local_id};
 
-            for (Dim d = 0; d < 3; ++d) {
-                (*_data->positions          )(static_cast<Index>(global_id), d) = position(d);
-                (*_data->positions_reference)(static_cast<Index>(global_id), d) = position(d);
+            for (Index d = 0; d < 3; ++d) {
+                (*_data->positions          )(global_id, d) = position(d);
+                (*_data->positions_reference)(global_id, d) = position(d);
             }
             _data->node_sets.all()->add(global_id);
         }
@@ -499,7 +499,7 @@ void Model::compile() {
         // configuration. Assembly-owned ids, offsets, section assignment and
         // ModelData binding are always rebuilt explicitly here.
         compile_entities(source->elements, _data->elements, _data->elem_sets.all(), element_map, next_element, "element",
-            [&](ElementPtr& element, ID global_id, ID local_id) {
+            [&](ElementPtr& element, Index global_id, Index local_id) {
                 element->elem_id           = global_id;
                 element->elem_nodal_offset = 0;
                 element->elem_ip_offset    = 0;
@@ -507,19 +507,19 @@ void Model::compile() {
                 element->_section          = nullptr;
                 element->_model_data       = _data.get();
 
-                _data->element_mapping[static_cast<std::size_t>(global_id)] = {instance, local_id};
-                return static_cast<Index>(element->n_nodes());
+                _data->element_mapping[global_id] = {instance, local_id};
+                return element->n_nodes();
             });
 
         compile_sets(source->node_sets, _data->node_sets, SET_NODE_ALL, node_map   , "node");
         compile_sets(source->elem_sets, _data->elem_sets, SET_ELEM_ALL, element_map, "element");
 
         compile_entities(source->surfaces, _data->surfaces, _data->surface_sets.all(), surface_map, next_surface, "surface",
-            [](SurfacePtr& surface, ID, ID) { return static_cast<Index>(surface->n_nodes); });
+            [](SurfacePtr& surface, Index, Index) { return surface->n_nodes; });
         compile_sets(source->surface_sets, _data->surface_sets, SET_SURF_ALL, surface_map, "surface");
 
         compile_entities(source->lines, _data->lines, _data->line_sets.all(), line_map, next_line, "line",
-            [](LinePtr& line, ID, ID) { return static_cast<Index>(line->n_nodes); });
+            [](LinePtr& line, Index, Index) { return line->n_nodes; });
         compile_sets(source->line_sets, _data->line_sets, SET_LINE_ALL, line_map, "line");
 
         // Sections are definitions on the source part but assignments in the
@@ -528,7 +528,7 @@ void Model::compile() {
         for (const Section::Ptr& source_section : source->sections) {
             auto region = std::make_shared<ElementRegion>(qualified_name(source_section->region_->name));
 
-            for (const ID local_id : *source_section->region_) {
+            for (const Index local_id : *source_section->region_) {
                 const auto it = element_map.find(local_id);
                 logging::error(it != element_map.end(),
                     "Model: section region ", source_section->region_->name, " in part ", source->name,
@@ -542,7 +542,7 @@ void Model::compile() {
         // Part-local constraints are copied once per instance. Nodes are mapped
         // through the dense node map and regions are replaced by their qualified
         // compiled counterparts materialized above.
-        auto compiled_node = [&](ID local_id) {
+        auto compiled_node = [&](Index local_id) {
             const auto it = node_map.find(local_id);
             logging::error(it != node_map.end(),
                 "Model: constraint in part ", source->name, " references undefined node ", local_id);
@@ -633,7 +633,7 @@ void Model::compile() {
  * @param reference Local `ID` or qualified `INSTANCE.ID` node reference.
  * @return Dense assembly node identifier.
  */
-ID Model::compiled_node_id(const std::string& reference) const {
+Index Model::compiled_node_id(const std::string& reference) const {
     const auto [instance, id] = split_compiled_reference(reference, "node");
     return compiled_node_id(id, instance);
 }
@@ -647,7 +647,7 @@ ID Model::compiled_node_id(const std::string& reference) const {
  * @param reference Local `ID` or qualified `INSTANCE.ID` element reference.
  * @return Dense assembly element identifier.
  */
-ID Model::compiled_element_id(const std::string& reference) const {
+Index Model::compiled_element_id(const std::string& reference) const {
     const auto [instance, id] = split_compiled_reference(reference, "element");
     return compiled_element_id(id, instance);
 }
@@ -661,7 +661,7 @@ ID Model::compiled_element_id(const std::string& reference) const {
  * @param reference Local `ID` or qualified `INSTANCE.ID` surface reference.
  * @return Dense assembly surface identifier.
  */
-ID Model::compiled_surface_id(const std::string& reference) const {
+Index Model::compiled_surface_id(const std::string& reference) const {
     const auto [instance, id] = split_compiled_reference(reference, "surface");
     return compiled_surface_id(id, instance);
 }
@@ -672,7 +672,7 @@ ID Model::compiled_surface_id(const std::string& reference) const {
  * @param reference Local `ID` or qualified `INSTANCE.ID` line reference.
  * @return Dense compiled line identifier.
  */
-ID Model::compiled_line_id(const std::string& reference) const {
+Index Model::compiled_line_id(const std::string& reference) const {
     const auto [instance, id] = split_compiled_reference(reference, "line");
     return compiled_line_id(id, instance);
 }
@@ -687,7 +687,7 @@ ID Model::compiled_line_id(const std::string& reference) const {
  * @param reference Node reference as given in the input.
  * @return Part-local id before compile(), dense compiled id afterwards.
  */
-ID Model::resolve_node_id(const std::string& reference) const {
+Index Model::resolve_node_id(const std::string& reference) const {
     logging::error(_data != nullptr,
         "Model: model data is not initialized");
 
@@ -707,7 +707,7 @@ ID Model::resolve_node_id(const std::string& reference) const {
  * @param instance Instance name, or the implicit identity instance by default.
  * @return Dense assembly node identifier.
  */
-ID Model::compiled_node_id(ID id, const std::string& instance) const {
+Index Model::compiled_node_id(Index id, const std::string& instance) const {
     // Validate the compile state, instance namespace and local node reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: node ids cannot be resolved before compile()");
@@ -729,7 +729,7 @@ ID Model::compiled_node_id(ID id, const std::string& instance) const {
  * @param instance Instance name, or the implicit identity instance by default.
  * @return Dense assembly element identifier.
  */
-ID Model::compiled_element_id(ID id, const std::string& instance) const {
+Index Model::compiled_element_id(Index id, const std::string& instance) const {
     // Validate the compile state, instance namespace and local element reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: element ids cannot be resolved before compile()");
@@ -751,7 +751,7 @@ ID Model::compiled_element_id(ID id, const std::string& instance) const {
  * @param instance Instance name, or the implicit identity instance by default.
  * @return Dense assembly surface identifier.
  */
-ID Model::compiled_surface_id(ID id, const std::string& instance) const {
+Index Model::compiled_surface_id(Index id, const std::string& instance) const {
     // Validate the compile state, instance namespace and local surface reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: surface ids cannot be resolved before compile()");
@@ -773,7 +773,7 @@ ID Model::compiled_surface_id(ID id, const std::string& instance) const {
  * @param instance Instance name, or the implicit identity instance by default.
  * @return Dense assembly line identifier.
  */
-ID Model::compiled_line_id(ID id, const std::string& instance) const {
+Index Model::compiled_line_id(Index id, const std::string& instance) const {
     // Validate the compile state, instance namespace and local line reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: line ids cannot be resolved before compile()");

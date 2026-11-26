@@ -9,7 +9,7 @@ namespace fem {
 namespace cuda {
 
 template<typename T>
-CudaArray<T>::CudaArray(std::size_t size) : element_count(size) {
+CudaArray<T>::CudaArray(Index size) : element_count(size) {
     runtime_check(size > 0, "size cannot be less than 1");
     allocate();
 }
@@ -25,7 +25,7 @@ CudaArray<T>::operator T*() {
 }
 
 template<typename T>
-std::size_t CudaArray<T>::size() const {
+Index CudaArray<T>::size() const {
     return element_count;
 }
 
@@ -43,7 +43,7 @@ void CudaArray<T>::upload(const SourceType* source) {
         runtime_check_cuda(cudaMemcpy(data, source, size() * sizeof(T), cudaMemcpyHostToDevice));
     } else {
         std::vector<T> intermediate(size());
-        for (std::size_t i = 0; i < size(); ++i) {
+        for (Index i = 0; i < size(); ++i) {
             intermediate[i] = static_cast<T>(source[i]);
         }
         runtime_check_cuda(cudaMemcpy(data, intermediate.data(), size() * sizeof(T), cudaMemcpyHostToDevice));
@@ -59,7 +59,7 @@ void CudaArray<T>::download(DestType* destination) {
     } else {
         std::vector<T> intermediate(size());
         runtime_check_cuda(cudaMemcpy(intermediate.data(), data, size() * sizeof(T), cudaMemcpyDeviceToHost));
-        for (std::size_t i = 0; i < size(); ++i) {
+        for (Index i = 0; i < size(); ++i) {
             destination[i] = static_cast<DestType>(intermediate[i]);
         }
     }
@@ -72,8 +72,8 @@ void CudaArray<T>::clear() {
 }
 
 template<typename T>
-std::size_t CudaArray<T>::estimate_mem(std::size_t count) {
-    return sizeof(T) * count;
+Index CudaArray<T>::estimate_mem(Index count) {
+    return static_cast<Index>(sizeof(T)) * count;
 }
 
 template<typename T>

@@ -73,11 +73,11 @@ class Contact {
      */
     struct State {
         // Persistent physical history on global slave mortar nodes
-        std::unordered_map<ID, Precision> multipliers;
+        std::unordered_map<Index, Precision> multipliers;
 
         // Current accepted mortar evaluation used by the next AL update
-        std::unordered_map<ID, Precision> gaps;
-        std::unordered_map<ID, Precision> characteristic_lengths;
+        std::unordered_map<Index, Precision> gaps;
+        std::unordered_map<Index, Precision> characteristic_lengths;
     };
 
     // Surface-to-surface contact definition

@@ -35,7 +35,7 @@ struct B31 : BeamElement<2> {
     using Mat12  = StaticMatrix<num_dofs, num_dofs>;
     using Mat6x12 = StaticMatrix<n_strain, num_dofs>;
 
-    B31(ID elem_id, std::array<ID, N> node_ids_in)
+    B31(Index elem_id, std::array<Index, N> node_ids_in)
         : BeamElement(elem_id, node_ids_in) {}
 
     ElementPtr copy() const override {
@@ -63,7 +63,7 @@ struct B31 : BeamElement<2> {
         bool         update_state
     ) override;
 
-    Dim num_ip() const override { return 2; }
+    Index num_ip() const override { return 2; }
 
     RowMatrix stress_strain_nodal_rst() override;
     RowMatrix stress_strain_ip_rst() override;
@@ -86,7 +86,7 @@ struct B31 : BeamElement<2> {
         const Field* base_temperature = nullptr
     ) override;
 
-    LinePtr line(ID line_id) override {
+    LinePtr line(Index line_id) override {
         (void) line_id;
         return std::make_shared<Line2A>(this->node_ids);
     }

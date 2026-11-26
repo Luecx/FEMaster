@@ -50,7 +50,7 @@ void SystemDofs::numerate() {
     logging::error(!_numerated,
         "SystemDofs: numbering already assigned");
 
-    int next = 0;
+    Index next = 0;
     for (Index node = 0; node < nodes(); ++node) {
         for (Index dof = 0; dof < width(); ++dof) {
             _ids(node, dof) = _mask(node, dof) ? next++ : -1;
@@ -71,7 +71,7 @@ DynamicVector SystemDofs::reduce(const Field& field) const {
     DynamicVector vector(_size);
     for (Index node = 0; node < nodes(); ++node) {
         for (Index dof = 0; dof < width(); ++dof) {
-            const int id = _ids(node, dof);
+            const Index id = _ids(node, dof);
             if (id >= 0) vector(id) = field(node, dof);
         }
     }
@@ -88,7 +88,7 @@ Field SystemDofs::expand(const DynamicVector& vector) const {
     field.set_zero();
     for (Index node = 0; node < nodes(); ++node) {
         for (Index dof = 0; dof < width(); ++dof) {
-            const int id = _ids(node, dof);
+            const Index id = _ids(node, dof);
             if (id >= 0) field(node, dof) = vector(id);
         }
     }
@@ -116,12 +116,12 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
 
     const parallel::ScopedLinearAlgebraThreads threading{};
 
-    constexpr std::size_t min_batch_size = 64;
+    constexpr Index min_batch_size = 64;
 
     logging::error(_numerated,
         "SystemDofs: pattern requires a numbering");
 
-    const std::size_t node_count = static_cast<std::size_t>(nodes());
+    const Index node_count = nodes();
 
     // ---------------------------------------------------------------------
     // 1. Validate input and count node-to-element incidence
@@ -131,33 +131,33 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     // matrix dimension
     logging::error(_size < std::numeric_limits<StorageIndex>::max(),
         "Sparsity pattern dimension exceeds sparse storage index capacity");
-    const std::size_t global_size = static_cast<std::size_t>(_size);
+    const Index global_size = _size;
 
     // Count how often each node occurs in the element connectivity.
     // Invalid identifiers are recorded without accessing invalid offsets.
-    std::vector<std::size_t> node_offsets(node_count + 1, 0);
+    std::vector<Index> node_offsets(node_count + 1, 0);
 
-    bool valid_element_sizes = true;
-    bool valid_node_ids      = true;
-    ID   invalid_node        = ID(-1);
+    bool  valid_element_sizes = true;
+    bool  valid_node_ids      = true;
+    Index invalid_node        = Index(-1);
 
     for (const auto& element : elements) {
         if (!element) {
             continue;
         }
 
-        const int n_nodes = element->n_nodes();
+        const Index n_nodes = element->n_nodes();
         if (n_nodes <= 0) {
             valid_element_sizes = false;
             continue;
         }
 
-        const ID* nodes = element->nodes();
+        const Index* nodes = element->nodes();
 
-        for (int i = 0; i < n_nodes; ++i) {
-            const ID node = nodes[i];
+        for (Index i = 0; i < n_nodes; ++i) {
+            const Index node = nodes[i];
 
-            if (node < 0 || static_cast<std::size_t>(node) >= node_count) {
+            if (node < 0 || node >= node_count) {
                 valid_node_ids = false;
                 invalid_node   = node;
                 continue;
@@ -173,8 +173,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     logging::error(valid_node_ids,
         "Sparsity pattern element node is outside the global DOF mapping: ", invalid_node);
 
-    const int num_threads = parallel::worker_count(
-        node_count, static_cast<int>(global_config.max_threads), min_batch_size);
+    const Index num_threads = parallel::worker_count(node_count, global_config.max_threads, min_batch_size);
 
     // ---------------------------------------------------------------------
     // 2. Construct compact node-to-element incidence
@@ -186,27 +185,27 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     //
     //   incident_elements[node_offsets[n] ... node_offsets[n + 1])
     //
-    for (std::size_t node = 0; node < node_count; ++node) {
+    for (Index node = 0; node < node_count; ++node) {
         node_offsets[node + 1] += node_offsets[node];
     }
 
-    std::vector<std::size_t> incident_elements(node_offsets.back());
+    std::vector<Index> incident_elements(node_offsets.back());
 
     // Fill the incidence array using temporary write positions. These
     // positions are discarded immediately after construction.
     {
-        std::vector<std::size_t> next = node_offsets;
+        std::vector<Index> next = node_offsets;
 
-        for (std::size_t e = 0; e < elements.size(); ++e) {
+        for (Index e = 0; e < static_cast<Index>(elements.size()); ++e) {
             const auto& element = elements[e];
             if (!element) {
                 continue;
             }
 
-            const int n_nodes = element->n_nodes();
-            const ID* nodes   = element->nodes();
+            const Index  n_nodes = element->n_nodes();
+            const Index* nodes   = element->nodes();
 
-            for (int i = 0; i < n_nodes; ++i) {
+            for (Index i = 0; i < n_nodes; ++i) {
                 incident_elements[next[nodes[i]]++] = e;
             }
         }
@@ -221,9 +220,9 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     // and can therefore be parallelized without synchronization.
     std::vector<std::vector<StorageIndex>> node_rows(node_count);
 
-    parallel::for_index(node_count, num_threads, [&](std::size_t node, int) {
-        const std::size_t begin = node_offsets[node];
-        const std::size_t end   = node_offsets[node + 1];
+    parallel::for_index(node_count, num_threads, [&](Index node, Index) {
+        const Index begin = node_offsets[node];
+        const Index end   = node_offsets[node + 1];
 
         if (begin == end) {
             return;
@@ -231,12 +230,12 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
 
         // Collect all nodes belonging to incident elements and remove
         // duplicates to obtain the topological neighborhood.
-        std::vector<ID> neighbors;
+        std::vector<Index> neighbors;
 
-        for (std::size_t p = begin; p < end; ++p) {
-            const auto& element = elements[incident_elements[p]];
-            const int   n_nodes = element->n_nodes();
-            const ID*   nodes   = element->nodes();
+        for (Index p = begin; p < end; ++p) {
+            const auto&  element = elements[incident_elements[p]];
+            const Index  n_nodes = element->n_nodes();
+            const Index* nodes   = element->nodes();
 
             neighbors.insert(neighbors.end(), nodes, nodes + n_nodes);
         }
@@ -248,9 +247,9 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
         // is necessary because algebraic numbering need not follow node IDs.
         auto& rows = node_rows[node];
 
-        for (ID neighbor : neighbors) {
-            for (int dof = 0; dof < width(); ++dof) {
-                const int row = _ids(neighbor, dof);
+        for (Index neighbor : neighbors) {
+            for (Index dof = 0; dof < width(); ++dof) {
+                const Index row = _ids(neighbor, dof);
                 if (row >= 0) {
                     rows.push_back(row);
                 }
@@ -273,13 +272,13 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     StorageIndex* outer = global_matrix.outerIndexPtr();
     std::fill_n(outer, global_size, StorageIndex(-1));
 
-    int duplicate_column = -1;
+    Index duplicate_column = -1;
 
-    for (std::size_t node = 0; node < node_count; ++node) {
+    for (Index node = 0; node < node_count; ++node) {
         const auto& rows = node_rows[node];
 
-        for (int dof = 0; dof < width(); ++dof) {
-            const int col = _ids(node, dof);
+        for (Index dof = 0; dof < width(); ++dof) {
+            const Index col = _ids(node, dof);
             if (col < 0) {
                 continue;
             }
@@ -290,8 +289,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
 
             // Each active DOF of this node has the same row count.
             // Row-count capacity is checked before storing the length.
-            outer[col] = rows.size() <= static_cast<std::size_t>(
-                std::numeric_limits<StorageIndex>::max())
+            outer[col] = static_cast<Index>(rows.size()) <= std::numeric_limits<StorageIndex>::max()
                 ? static_cast<StorageIndex>(rows.size())
                 : StorageIndex(-2);
         }
@@ -302,7 +300,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     Index nonzeros = 0;
     bool valid_column_sizes = true;
 
-    for (int col = 0; col < global_size; ++col) {
+    for (Index col = 0; col < global_size; ++col) {
         valid_column_sizes &= outer[col] != StorageIndex(-2);
 
         if (outer[col] >= 0) {
@@ -323,7 +321,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     // Unused columns contribute zero entries and retain valid empty ranges.
     StorageIndex offset = 0;
 
-    for (int col = 0; col < global_size; ++col) {
+    for (Index col = 0; col < global_size; ++col) {
         const StorageIndex count = std::max(StorageIndex(0), outer[col]);
 
         outer[col] = offset;
@@ -342,15 +340,15 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     // Each node fills the columns corresponding to its active global DOFs.
     // Unique indices guarantee disjoint storage ranges, so parallel writes
     // require neither locks nor atomic operations.
-    parallel::for_index(node_count, num_threads, [&](std::size_t node, int) {
+    parallel::for_index(node_count, num_threads, [&](Index node, Index) {
         const auto& rows = node_rows[node];
 
         if (rows.empty()) {
             return;
         }
 
-        for (int dof = 0; dof < width(); ++dof) {
-            const int col = _ids(node, dof);
+        for (Index dof = 0; dof < width(); ++dof) {
+            const Index col = _ids(node, dof);
             if (col < 0) {
                 continue;
             }

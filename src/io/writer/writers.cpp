@@ -72,7 +72,7 @@ void ResultWriters::write_model_data(const model::ModelData& model_data) {
     }
 }
 
-void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
+void ResultWriters::add_loadcase(Index id, WriterStepType step_type) {
     if (res_writer) {
         res_writer->add_loadcase(id, step_type);
     }

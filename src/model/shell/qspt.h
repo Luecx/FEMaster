@@ -39,7 +39,7 @@ struct QSPT : ShellElement<4> {
     Surface4                      geometry;
     math::quadrature::Quadrature integration_scheme_;
 
-    QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids);
+    QSPT(Index p_elem_id, std::array<Index, 4> p_node_ids);
 
     // Rebuild the concrete element from id and connectivity only. Geometry and
     // quadrature definitions are recreated by the ordinary QSPT constructor.
@@ -47,7 +47,7 @@ struct QSPT : ShellElement<4> {
 
     std::string type_name() const override { return "QSPT"; }
 
-    SurfacePtr surface(ID surface_id) override;
+    SurfacePtr surface(Index surface_id) override;
     Precision  volume() override;
     MapMatrix  evaluate(
         Precision*   tangent,
@@ -62,7 +62,7 @@ struct QSPT : ShellElement<4> {
     MapMatrix  mass(Precision* buffer) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
 
-    Dim    num_ip() const override { return 1; }
+    Index  num_ip() const override { return 1; }
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }
 
     bool compute_shear_flow(Field& shear_flow,

@@ -26,7 +26,7 @@ namespace fem::model {
  * @param id Element identifier.
  * @param nodes Three nodal identifiers in positive triangular ordering.
  */
-FRTShellS3::FRTShellS3(ID id, const std::array<ID, 3>& nodes)
+FRTShellS3::FRTShellS3(Index id, const std::array<Index, 3>& nodes)
     : FRTShell<3>       (id, nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_TRI,
                           math::quadrature::Order::ORDER_CUBIC) {}
@@ -49,11 +49,11 @@ std::string FRTShellS3::type_name() const {
  * @param surface_id Requested shell side identifier.
  * @return Oriented three-node surface object.
  */
-std::shared_ptr<SurfaceInterface> FRTShellS3::surface(int surface_id) {
+std::shared_ptr<SurfaceInterface> FRTShellS3::surface(Index surface_id) {
     return std::make_shared<Surface3>(
         surface_id == 1
-            ? std::array<ID, 3>{this->nodes()[0], this->nodes()[1], this->nodes()[2]}
-            : std::array<ID, 3>{this->nodes()[0], this->nodes()[2], this->nodes()[1]}
+            ? std::array<Index, 3>{this->nodes()[0], this->nodes()[1], this->nodes()[2]}
+            : std::array<Index, 3>{this->nodes()[0], this->nodes()[2], this->nodes()[1]}
     );
 }
 

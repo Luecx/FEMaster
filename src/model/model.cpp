@@ -52,9 +52,9 @@ namespace {
  * @param entity Entity name used in validation diagnostics.
  * @return Parsed sparse local identifier.
  */
-ID parse_local_id(const std::string& source, const char* entity) {
+Index parse_local_id(const std::string& source, const char* entity) {
     // Convert the complete token without accepting trailing characters
-    ID id{};
+    Index id{};
     const char* begin = source.data();
     const char* end   = begin + source.size();
     const auto [ptr, ec] = std::from_chars(begin, end, id);
@@ -114,8 +114,8 @@ void Model::step_begin() {
     // Initialize independent element state using the shared exception-safe loop
     try {
         parallel::for_index(element_count, global_config.max_threads,
-            [&](Index elem_idx, int /*worker*/) {
-                auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+            [&](Index elem_idx, Index /*worker*/) {
+                auto& element = _data->elements[elem_idx];
                 if (!element) {
                     return;
                 }
@@ -381,7 +381,7 @@ std::ostream& operator<<(std::ostream& ostream, const Model& model) {
     // Count named semantic containers through their public iterator interface.
     // This avoids depending on the associative storage selected by Dict.
     auto entry_count = [](const auto& entries) {
-        return static_cast<Index>(std::distance(entries.begin(), entries.end()));
+        return std::distance(entries.begin(), entries.end());
     };
 
     // Use the compiled position field as the authoritative dense node count

@@ -59,8 +59,8 @@ namespace {
  * @param offsets Accumulated global Cartesian nodal imperfections.
  */
 void read_res(const std::string&           filename,
-              int                          step,
-              const std::map<int, Precision>& scales,
+              Index                        step,
+              const std::map<Index, Precision>& scales,
               model::Model&                model,
               std::vector<Vec3>&           offsets) {
     // Open and validate the requested result source
@@ -70,15 +70,15 @@ void read_res(const std::string&           filename,
         "IMPERFECTION: cannot open RES file ", filename);
 
     // Track written frame identities and requested displacement blocks
-    std::string               line;
-    std::map<std::string, int> numbered_frames;
-    std::set<int>             processed_frames;
-    std::set<int>             found_frames;
+    std::string                  line;
+    std::map<std::string, Index> numbered_frames;
+    std::set<Index>              processed_frames;
+    std::set<Index>              found_frames;
 
-    int  current_step   = -1;
-    int  frame_count    = 0;
-    int  selected_frame = 0;
-    bool read_field     = false;
+    Index current_step   = -1;
+    Index frame_count    = 0;
+    Index selected_frame = 0;
+    bool  read_field     = false;
 
     while (std::getline(file, line)) {
         // A new LC resets frame numbering and field selection
@@ -160,16 +160,16 @@ void read_res(const std::string&           filename,
         Vec3               displacement = Vec3::Zero();
 
         stream >> node >> displacement(0) >> displacement(1) >> displacement(2);
-        const bool valid_row = !stream.fail() && displacement.allFinite();
-        const ID   id        = valid_row ? model.compiled_node_id(node) : -1;
+        const bool  valid_row = !stream.fail() && displacement.allFinite();
+        const Index id        = valid_row ? model.compiled_node_id(node) : -1;
 
         // Validate the entire row before accumulating the geometric contribution
         logging::error(valid_row,
             "IMPERFECTION: malformed RES displacement in ", filename);
-        logging::error(id >= 0 && static_cast<std::size_t>(id) < offsets.size(),
+        logging::error(id >= 0 && id < static_cast<Index>(offsets.size()),
             "IMPERFECTION: unknown RES node ", node);
 
-        offsets[static_cast<std::size_t>(id)] += scales.at(selected_frame) * displacement;
+        offsets[id] += scales.at(selected_frame) * displacement;
         found_frames.insert(selected_frame);
     }
 
@@ -197,8 +197,8 @@ void read_res(const std::string&           filename,
  * @param offsets Accumulated global Cartesian nodal imperfections.
  */
 void read_frd(const std::string&           filename,
-              int                          step,
-              const std::map<int, Precision>& scales,
+              Index                        step,
+              const std::map<Index, Precision>& scales,
               model::Model&                model,
               std::vector<Vec3>&           offsets) {
     std::ifstream file(filename);
@@ -208,31 +208,31 @@ void read_frd(const std::string&           filename,
         "IMPERFECTION: cannot open FRD file ", filename);
 
     // Reconstruct the same external node labels used by the FRD writer
-    std::unordered_map<ExternalID, ID> nodes;
-    for (std::size_t row = 0; row < model._data->node_mapping.size(); ++row) {
+    std::unordered_map<Index, Index> nodes;
+    for (Index row = 0; row < static_cast<Index>(model._data->node_mapping.size()); ++row) {
         const auto& [instance, local] = model._data->node_mapping[row];
 
         logging::error(instance != nullptr,
             "IMPERFECTION: invalid compiled node mapping");
 
-        nodes.emplace(instance->external_id(local), static_cast<ID>(row));
+        nodes.emplace(instance->external_id(local), row);
     }
 
     // Track active FRD block metadata and avoid importing duplicate DISP fields
-    std::string   line;
-    std::set<int> processed_frames;
-    std::set<int> found_frames;
+    std::string     line;
+    std::set<Index> processed_frames;
+    std::set<Index> found_frames;
 
-    int  current_step  = -1;
-    int  current_frame = -1;
-    bool read_field    = false;
+    Index current_step  = -1;
+    Index current_frame = -1;
+    bool  read_field    = false;
 
     while (std::getline(file, line)) {
         // A 1PSTEP record identifies the frame of the following result block
         const std::size_t step_marker = line.find("1PSTEP");
         if (step_marker != std::string::npos) {
             std::istringstream stream(line.substr(step_marker + 6));
-            int block = 0;
+            Index block = 0;
             stream >> block >> current_frame >> current_step;
 
             logging::error(!stream.fail() && current_step > 0 && current_frame > 0,
@@ -246,8 +246,8 @@ void read_frd(const std::string&           filename,
         if (line.rfind(" -4", 0) == 0) {
             std::istringstream stream(line.substr(3));
             std::string        name;
-            int                components = 0;
-            int                data_type  = 0;
+            Index              components = 0;
+            Index              data_type  = 0;
 
             stream >> name >> components >> data_type;
             logging::error(!stream.fail(),
@@ -271,13 +271,13 @@ void read_frd(const std::string&           filename,
         if (!read_field || line.rfind(" -1", 0) != 0) continue;
 
         // Parse the first three Cartesian displacement components of a nodal row
-        const bool       complete = line.size() >= 49;
-        const ExternalID external = complete ? static_cast<ExternalID>(std::stoll(line.substr(3, 10))) : -1;
-        const auto       node     = nodes.find(external);
+        const bool  complete = line.size() >= 49;
+        const Index external = complete ? static_cast<Index>(std::stoll(line.substr(3, 10))) : -1;
+        const auto  node     = nodes.find(external);
 
         Vec3 displacement = Vec3::Zero();
         if (complete) {
-            for (int d = 0; d < 3; ++d) {
+            for (Index d = 0; d < 3; ++d) {
                 displacement(d) = static_cast<Precision>(std::stod(line.substr(13 + 12 * d, 12)));
             }
         }
@@ -290,7 +290,7 @@ void read_frd(const std::string&           filename,
         logging::error(displacement.allFinite(),
             "IMPERFECTION: non-finite FRD displacement at node ", external);
 
-        offsets[static_cast<std::size_t>(node->second)] += scales.at(current_frame) * displacement;
+        offsets[node->second] += scales.at(current_frame) * displacement;
         found_frames.insert(current_frame);
     }
 
@@ -329,13 +329,13 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
             .key("STEP").optional());
 
         // Keep the requested frame coefficients for the currently executed keyword
-        auto scales = std::make_shared<std::map<int, Precision>>();
+        auto scales = std::make_shared<std::map<Index, Precision>>();
 
         command.on_enter([scales](const fem::io::dsl::Keys& keys) {
             scales->clear();
 
-            const int  step     = (keys.has("STEP") ? keys.get<int>("STEP") : 1);
-            const bool has_file = keys.has("FILE");
+            const Index step     = (keys.has("STEP") ? keys.get<Index>("STEP") : 1);
+            const bool  has_file = keys.has("FILE");
 
             // Validate the keyword before processing any nodal or frame rows
             logging::error(step > 0,
@@ -357,17 +357,17 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
                     .one<Precision>().name("DY")
                     .one<Precision>().name("DZ"))
                 .bind([&model](const std::string& node, Precision dx, Precision dy, Precision dz) {
-                    const ID   id    = model.compiled_node_id(node);
-                    const Vec3 delta = Vec3(dx, dy, dz);
+                    const Index id    = model.compiled_node_id(node);
+                    const Vec3  delta = Vec3(dx, dy, dz);
 
                     // Validate the complete nodal contribution before changing geometry
-                    logging::error(id >= 0 && static_cast<Index>(id) < model._data->positions_reference->rows,
+                    logging::error(id >= 0 && id < model._data->positions_reference->rows,
                         "IMPERFECTION: unknown node ", node);
                     logging::error(delta.allFinite(),
                         "IMPERFECTION: non-finite nodal offset");
 
                     // Apply the same stress-free coordinate change to both position fields
-                    for (Dim d = 0; d < 3; ++d) {
+                    for (Index d = 0; d < 3; ++d) {
                         (*model._data->positions_reference)(id, d) += delta(d);
                         (*model._data->positions)(id, d) += delta(d);
                     }
@@ -379,9 +379,9 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("FRAME")
+                    .one<Index>().name("FRAME")
                     .one<Precision>().name("SCALE"))
-                .bind([scales](int frame, Precision scale) {
+                .bind([scales](Index frame, Precision scale) {
                     logging::error(frame > 0 && std::isfinite(scale),
                         "IMPERFECTION: invalid frame or scale");
 
@@ -440,13 +440,13 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
 
             // Select the matching native FEMaster result reader
             const std::string extension = uppercase(filename.extension().string());
-            const int         step      = (keys.has("STEP") ? keys.get<int>("STEP") : 1);
+            const Index       step      = (keys.has("STEP") ? keys.get<Index>("STEP") : 1);
 
             logging::error(extension == ".RES" || extension == ".FRD",
                 "IMPERFECTION: FILE must be a RES or FRD result");
 
             std::vector<Vec3> offsets(
-                static_cast<std::size_t>(model._data->positions_reference->rows), Vec3::Zero());
+                model._data->positions_reference->rows, Vec3::Zero());
 
             if (extension == ".RES") {
                 read_res(filename.string(), step, *scales, model, offsets);
@@ -459,8 +459,8 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
             auto& current   = *model._data->positions;
 
             for (Index node = 0; node < reference.rows; ++node) {
-                for (Dim d = 0; d < 3; ++d) {
-                    const Precision delta = offsets[static_cast<std::size_t>(node)](d);
+                for (Index d = 0; d < 3; ++d) {
+                    const Precision delta = offsets[node](d);
                     reference(node, d) += delta;
                     current(node, d)   += delta;
                 }

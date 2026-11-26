@@ -37,9 +37,9 @@ void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, Parser& 
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<int>().name("COUNT").desc("Number of eigenvalues")
+                    .one<Index>().name("COUNT").desc("Number of eigenvalues")
                 )
-                .bind([&parser](int count) {
+                .bind([&parser](Index count) {
                     logging::error(count > 0,
                         "NUMEIGENVALUES requires a positive integer");
 

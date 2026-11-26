@@ -29,11 +29,11 @@
 using namespace fem;
 
 // Helper: small SPD matrix
-static SparseMatrix eye(int n) {
+static SparseMatrix eye(Index n) {
     SparseMatrix A(n,n);
     std::vector<Eigen::Triplet<Precision>> trips;
     trips.reserve(n);
-    for (int i = 0; i < n; ++i) trips.emplace_back(i,i,1.0);
+    for (Index i = 0; i < n; ++i) trips.emplace_back(i,i,1.0);
     A.setFromTriplets(trips.begin(), trips.end());
     return A;
 }
@@ -84,7 +84,7 @@ TEST(Constraints_Connector, TwoNodesSameDir) {
     model::SystemDofs ids(2,6); for (Index n = 0; n < 2; ++n) for (Index d = 0; d < 3; ++d) ids.activate(n, d); ids.numerate();
     auto eqs = conn.get_equations(ids, *mdl._data);
     // Expect three equations (Tx,Ty,Tz) relating node 0 and 1 with opposite signs
-    int count = 0;
+    Index count = 0;
     for (auto& e : eqs) if (!e.entries.empty()) ++count;
     EXPECT_GE(count, 3);
 }
@@ -117,7 +117,7 @@ static constraint::Coupling distributing_coupling(model::Model& mdl, bool master
     mdl.compile();
 
     auto slaves = std::make_shared<model::NodeRegion>("CLOUD");
-    for (ID node = master_in_cloud ? 0 : 1; node <= 4; ++node) slaves->add(node);
+    for (Index node = master_in_cloud ? 0 : 1; node <= 4; ++node) slaves->add(node);
 
     Dofs coupled;
     coupled.setConstant(true);
@@ -169,10 +169,10 @@ TEST(Constraints_Coupling, DistributingTransfersMasterLoadResultant) {
     const Vec6 b(3.0, 5.0, 7.0, 2.0, 4.0, 6.0);
     DynamicMatrix f = DynamicMatrix::Zero(5, 3);
     for (Index c = 0; c < 6; ++c) {
-        const auto& eq = eqs[static_cast<std::size_t>(c)];
-        ASSERT_EQ(static_cast<Index>(eq.entries.front().node_id), 0);
-        ASSERT_EQ(static_cast<Index>(eq.entries.front().dof),     c);
-        for (std::size_t i = 1; i < eq.entries.size(); ++i)
+        const auto& eq = eqs[c];
+        ASSERT_EQ(eq.entries.front().node_id, 0);
+        ASSERT_EQ(eq.entries.front().dof,     c);
+        for (Index i = 1; i < eq.entries.size(); ++i)
             f(eq.entries[i].node_id, eq.entries[i].dof) -= eq.entries[i].coeff * b(c);
     }
 

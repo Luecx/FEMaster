@@ -21,6 +21,7 @@
 #pragma once
 
 #include "../core/namable.h"
+#include "../core/types_num.h"
 
 #include <algorithm>
 #include <memory>
@@ -180,37 +181,37 @@ class Collection : public fem::Namable {
     }
 
     // Returns the current number of stored items.
-    [[nodiscard]] size_t size() const {
-        return _data.size();
+    [[nodiscard]] Index size() const {
+        return static_cast<Index>(_data.size());
     }
 
     // Unchecked mutable indexed access; callers must preserve ordering/uniqueness.
-    T& at(size_t index) {
+    T& at(Index index) {
         return _data[index];
     }
 
     // Const indexed access returns a value copy; index must be less than size().
-    T at(size_t index) const {
+    T at(Index index) const {
         return _data[index];
     }
 
     // Const subscript operator forwarding to `at`.
-    T operator[](size_t index) const {
+    T operator[](Index index) const {
         return _data[index];
     }
 
     // Mutable subscript operator forwarding to `at`.
-    T& operator[](size_t index) {
+    T& operator[](Index index) {
         return _data[index];
     }
 
     // Const call operator mirroring subscript semantics.
-    T operator()(size_t index) const {
+    T operator()(Index index) const {
         return _data[index];
     }
 
     // Mutable call operator mirroring subscript semantics.
-    T& operator()(size_t index) {
+    T& operator()(Index index) {
         return _data[index];
     }
 

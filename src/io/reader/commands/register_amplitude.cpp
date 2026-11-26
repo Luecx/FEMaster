@@ -97,7 +97,7 @@ void register_amplitude(dsl::Registry& registry, model::Model& model) {
 
                     // Preserve pair order; absent pairs carry NaN in both positions.
                     bool added = false;
-                    for (std::size_t i = 0; i < data.size(); i += 2) {
+                    for (Index i = 0; i < static_cast<Index>(data.size()); i += 2) {
                         const bool has_time  = !std::isnan(data[i]);
                         const bool has_value = !std::isnan(data[i + 1]);
                         if (!has_time && !has_value) continue;

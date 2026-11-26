@@ -105,10 +105,10 @@ void register_element(dsl::Registry& registry, model::Model& model) {
                     .range(dsl::LineRange{}.min(1))
                     .pattern(dsl::Pattern::make()
                         .allow_multiline()
-                        .one<ID>().name("ID")
-                        .fixed<ID, N>().name("N")
+                        .one<Index>().name("ID")
+                        .fixed<Index, N>().name("N")
                     )
-                    .bind([&model](ID id, const std::array<ID, N>& nodes) {
+                    .bind([&model](Index id, const std::array<Index, N>& nodes) {
                         std::apply([&](auto... node_ids) {
                             model.set_element<Element>(id, node_ids...);
                         }, nodes);

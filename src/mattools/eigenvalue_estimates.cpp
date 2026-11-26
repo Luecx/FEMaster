@@ -79,9 +79,9 @@ Precision estimate_eigenvalue_ritz(
         "Ritz estimator requires a square stiffness matrix");
     logging::error(B.rows() == A.rows() && B.cols() == A.cols(),
         "Ritz estimator requires matching operator dimensions");
-    logging::error(map.n_master() == static_cast<Index>(A.rows()),
+    logging::error(map.n_master() == A.rows(),
         "Ritz estimator: master count does not match reduced system");
-    logging::error(map.full_size == static_cast<Index>(map.T.rows()) && map.T.cols() == A.rows(),
+    logging::error(map.full_size == map.T.rows() && map.T.cols() == A.rows(),
         "Ritz estimator: invalid constraint transformation dimensions");
     logging::error(transformer.has_dof_locations(),
         "Ritz estimator requires initialized transformer DOF locations");
@@ -96,7 +96,7 @@ Precision estimate_eigenvalue_ritz(
     Vec3 maximum = -minimum;
 
     for (Index node : transformer.active_nodes()) {
-        logging::error(node < positions.rows,
+        logging::error(node >= 0 && node < positions.rows,
             "Ritz estimator: active node outside position field: ", node);
 
         const Vec3 x(positions(node, 0), positions(node, 1), positions(node, 2));
@@ -121,7 +121,7 @@ Precision estimate_eigenvalue_ritz(
     if (!std::isfinite(length) || length <= 0) return invalid;
 
     Vec3 inverse_span = Vec3::Zero();
-    for (int axis = 0; axis < 3; ++axis) {
+    for (Index axis = 0; axis < 3; ++axis) {
         if (half_span[axis] > 0) inverse_span[axis] = Precision(1) / half_span[axis];
     }
 
@@ -140,7 +140,7 @@ Precision estimate_eigenvalue_ritz(
         // columns as rigid: if supports make them flexible, Ritz keeps them.
         if (dof < 3) {
             V(master, dof) = 1;
-            for (int axis = 0; axis < 3; ++axis) {
+            for (Index axis = 0; axis < 3; ++axis) {
                 V(master, 3 + axis) = Vec3::Unit(axis).cross(r)[dof];
             }
         } else {
@@ -161,9 +161,9 @@ Precision estimate_eigenvalue_ritz(
             Vec3(0,          z * iy,     y * iz)
         };
 
-        for (int polynomial = 0; polynomial < 6; ++polynomial) {
-            for (int direction = 0; direction < 3; ++direction) {
-                const int column = 6 + 3 * polynomial + direction;
+        for (Index polynomial = 0; polynomial < 6; ++polynomial) {
+            for (Index direction = 0; direction < 3; ++direction) {
+                const Index column = 6 + 3 * polynomial + direction;
                 if (dof < 3) {
                     if (dof == direction) V(master, column) = length * values[polynomial];
                 } else {

@@ -28,8 +28,8 @@ constexpr Precision kEps = static_cast<Precision>(1e-8); ///< Numerical toleranc
 /**
  * @copydoc Connector::Connector
  */
-Connector::Connector(ID node_1_id,
-                     ID node_2_id,
+Connector::Connector(Index node_1_id,
+                     Index node_2_id,
                      fem::cos::CoordinateSystem::Ptr coordinate_system,
                      ConnectorType connector_type)
     : coordinate_system_(std::move(coordinate_system))
@@ -53,7 +53,7 @@ Equations Connector::get_equations(model::SystemDofs& system_nodal_dofs, model::
 
     const char axis_names[3] = {'X', 'Y', 'Z'};
 
-    for (int i = 0; i < 6; ++i) {
+    for (Index i = 0; i < 6; ++i) {
         if (!constrained_dofs_(i)) {
             continue;
         }
@@ -62,15 +62,15 @@ Equations Connector::get_equations(model::SystemDofs& system_nodal_dofs, model::
         const Vec3 global_direction = coordinate_system_->to_global(local_direction);
 
         std::vector<EquationEntry> entries;
-        const int block = (i < 3) ? 0 : 1; // 0: translations, 1: rotations
+        const Index block = (i < 3) ? 0 : 1; // 0: translations, 1: rotations
 
-        for (int j = 0; j < 3; ++j) {
+        for (Index j = 0; j < 3; ++j) {
             const Precision coeff = global_direction(j);
             if (std::abs(coeff) <= kEps) {
                 continue;
             }
 
-            const Dim dof = static_cast<Dim>(3 * block + j);
+            const Index dof = 3 * block + j;
             const auto dof_id_n1 = system_nodal_dofs(node_1_id_, dof);
             const auto dof_id_n2 = system_nodal_dofs(node_2_id_, dof);
             if (dof_id_n1 < 0 || dof_id_n2 < 0) {
@@ -103,18 +103,18 @@ Dofs Connector::dofs() const {
     Dofs impacted;
     impacted.setZero();
 
-    for (int i = 0; i < 6; ++i) {
+    for (Index i = 0; i < 6; ++i) {
         if (!constrained_dofs_(i)) {
             continue;
         }
 
-        const int block       = (i < 3) ? 0 : 1;
+        const Index block     = (i < 3) ? 0 : 1;
         const Vec3 local_dir  = (i < 3) ? Vec3::Unit(i) : Vec3::Unit(i - 3);
         const Vec3 global_dir = coordinate_system_->to_global(local_dir);
 
-        for (int j = 0; j < 3; ++j) {
+        for (Index j = 0; j < 3; ++j) {
             if (std::abs(global_dir(j)) > kEps) {
-                impacted(static_cast<int>(3 * block + j)) = true;
+                impacted(3 * block + j) = true;
             }
         }
     }

@@ -63,7 +63,7 @@ namespace model {
  * and the formulation-specific recovery callbacks below.
  */
 struct StructuralElement : ElementInterface {
-    explicit StructuralElement(ID elem_id)
+    explicit StructuralElement(Index elem_id)
         : ElementInterface(elem_id) {}
 
     ~StructuralElement() override = default;

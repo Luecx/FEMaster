@@ -51,10 +51,10 @@ inline Spectra::SortRule to_rule(EigvalOpts::Sort s) {
 /**
  * @brief Choose subspace size ncv heuristically: k < ncv ≤ n.
  */
-inline int choose_ncv(int n, int k) {
-    const int lo  = k + 2;
-    const int hi  = 2 * k + 20;
-    int ncv       = std::min(n, std::max(lo, hi));
+inline Index choose_ncv(Index n, Index k) {
+    const Index lo = k + 2;
+    const Index hi = 2 * k + 20;
+    Index ncv      = std::min(n, std::max(lo, hi));
     if (ncv <= k) ncv = std::min(n, k + 2);
     return ncv;
 }

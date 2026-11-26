@@ -72,9 +72,9 @@ void Temperature::apply(
 ) {
     // Exactly one semantic target is permitted. The resulting node indices
     // must refer to the compiled geometry used by the thermal system.
-    const int active_regions = static_cast<int>(node_region_    != nullptr)
-                             + static_cast<int>(surface_region_ != nullptr)
-                             + static_cast<int>(element_region_ != nullptr);
+    const Index active_regions = static_cast<Index>(node_region_    != nullptr)
+                               + static_cast<Index>(surface_region_ != nullptr)
+                               + static_cast<Index>(element_region_ != nullptr);
 
     logging::error(active_regions == 1,
         "TEMPERATURE: exactly one node, surface or element region must be configured");
@@ -88,28 +88,22 @@ void Temperature::apply(
     // Atomic flags allow parallel region expansion even when multiple selected
     // elements or surfaces share the same physical node. Initialize all flags
     // before the parallel traversal so marking remains idempotent.
-    std::vector<std::atomic_bool> selected(static_cast<std::size_t>(node_count));
+    std::vector<std::atomic_bool> selected(node_count);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        selected[static_cast<std::size_t>(node)].store(
-            false,
-            std::memory_order_relaxed
-        );
+        selected[node].store(false, std::memory_order_relaxed);
     }
 
     std::atomic_bool   failed{false};
     std::exception_ptr failure = nullptr;
 
-    auto mark_node = [&](ID node_id) {
-        logging::error(node_id >= 0 && static_cast<Index>(node_id) < node_count,
+    auto mark_node = [&](Index node_id) {
+        logging::error(node_id >= 0 && node_id < node_count,
             "TEMPERATURE: node ", node_id, " is outside the compiled node domain");
 
-        selected[static_cast<std::size_t>(node_id)].store(
-            true,
-            std::memory_order_relaxed
-        );
+        selected[node_id].store(true, std::memory_order_relaxed);
     };
 
     // Direct node selections need no topology expansion.
@@ -126,7 +120,7 @@ void Temperature::apply(
             }
 
             try {
-                mark_node(node_ids[static_cast<std::size_t>(index)]);
+                mark_node(node_ids[index]);
             } catch (...) {
                 failed.store(true, std::memory_order_relaxed);
 #ifdef _OPENMP
@@ -155,17 +149,17 @@ void Temperature::apply(
             }
 
             try {
-                const ID element_id = element_ids[static_cast<std::size_t>(index)];
+                const Index element_id = element_ids[index];
                 logging::error(element_id >= 0
-                            && static_cast<Index>(element_id) < static_cast<Index>(model_data.elements.size()),
+                            && element_id < static_cast<Index>(model_data.elements.size()),
                     "TEMPERATURE: element ", element_id,
                     " is outside the compiled element domain");
 
-                const auto& element = model_data.elements[static_cast<std::size_t>(element_id)];
+                const auto& element = model_data.elements[element_id];
                 logging::error(element != nullptr,
                     "TEMPERATURE: element ", element_id, " is not initialized");
 
-                for (ID node_id : *element) {
+                for (Index node_id : *element) {
                     mark_node(node_id);
                 }
             } catch (...) {
@@ -196,17 +190,17 @@ void Temperature::apply(
             }
 
             try {
-                const ID surface_id = surface_ids[static_cast<std::size_t>(index)];
+                const Index surface_id = surface_ids[index];
                 logging::error(surface_id >= 0
-                            && static_cast<Index>(surface_id) < static_cast<Index>(model_data.surfaces.size()),
+                            && surface_id < static_cast<Index>(model_data.surfaces.size()),
                     "TEMPERATURE: surface ", surface_id,
                     " is outside the compiled surface domain");
 
-                const auto& surface = model_data.surfaces[static_cast<std::size_t>(surface_id)];
+                const auto& surface = model_data.surfaces[surface_id];
                 logging::error(surface != nullptr,
                     "TEMPERATURE: surface ", surface_id, " is not initialized");
 
-                for (ID node_id : *surface) {
+                for (Index node_id : *surface) {
                     mark_node(node_id);
                 }
             } catch (...) {
@@ -228,12 +222,12 @@ void Temperature::apply(
     }
 
     // Count each selected node once before reserving the equation list.
-    std::size_t selected_count = 0;
+    Index selected_count = 0;
 #ifdef _OPENMP
     #pragma omp parallel for reduction(+:selected_count) schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        if (selected[static_cast<std::size_t>(node)].load(std::memory_order_relaxed)) {
+        if (selected[node].load(std::memory_order_relaxed)) {
             ++selected_count;
         }
     }
@@ -244,13 +238,13 @@ void Temperature::apply(
     // Serial emission guarantees stable node-ID ordering despite parallel
     // selection, and avoids synchronization on the equation collection.
     for (Index node = 0; node < node_count; ++node) {
-        if (!selected[static_cast<std::size_t>(node)].load(std::memory_order_relaxed)) {
+        if (!selected[node].load(std::memory_order_relaxed)) {
             continue;
         }
 
         const constraint::EquationEntry entry{
-            static_cast<ID>(node),
-            Dim(0),
+            node,
+            Index(0),
             Precision(1)
         };
         constraints.emplace_back(

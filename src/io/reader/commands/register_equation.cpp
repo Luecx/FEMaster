@@ -93,7 +93,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
 
                         // Parse the term count strictly so malformed tokens cannot be
                         // accepted through a valid numeric prefix such as "2foo".
-                        std::int64_t terms = 0;
+                        Index terms = 0;
                         std::istringstream terms_stream(data[0]);
                         terms_stream >> terms;
                         if (!terms_stream.eof()) terms_stream >> std::ws;
@@ -101,7 +101,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         logging::error(!terms_stream.fail() && terms_stream.eof() && terms >= 2,
                             "EQUATION: term count must be an integer of at least two");
 
-                        ctx->remaining    = static_cast<Index>(terms);
+                        ctx->remaining    = terms;
                         ctx->first_is_set = false;
                         ctx->equations.clear();
                         return;
@@ -116,14 +116,14 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
 
                     Index terms_on_line = 0;
 
-                    for (std::size_t i = 0; i < data.size() && !data[i].empty(); i += 3) {
+                    for (Index i = 0; i < static_cast<Index>(data.size()) && !data[i].empty(); i += 3) {
                         logging::error(!data[i + 1].empty() && !data[i + 2].empty(),
                             "EQUATION: incomplete node/DOF/coefficient triple");
 
                         // Parse the numeric term fields with complete token consumption.
                         // This rejects prefixes such as "1.5" for a DOF and prevents
                         // non-finite coefficients from entering the constraint system.
-                        int       dof         = 0;
+                        Index     dof         = 0;
                         Precision coefficient = Precision(0);
 
                         std::istringstream dof_stream        (data[i + 1]);
@@ -139,8 +139,8 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         logging::error(!coefficient_stream.fail() && coefficient_stream.eof() && std::isfinite(coefficient),
                             "EQUATION: coefficient must be finite");
 
-                        const Dim  equation_dof = static_cast<Dim>(dof - 1);
-                        const bool is_set       = node_sets.has(data[i]);
+                        const Index equation_dof = dof - 1;
+                        const bool  is_set       = node_sets.has(data[i]);
 
                         if (ctx->equations.empty()) {
                             ctx->first_is_set = is_set;
@@ -151,7 +151,7 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                                     "EQUATION: first node set is empty");
 
                                 ctx->equations.resize(set->size());
-                                for (std::size_t j = 0; j < set->size(); ++j) {
+                                for (Index j = 0; j < set->size(); ++j) {
                                     ctx->equations[j].entries.push_back({set->at(j), equation_dof, coefficient});
                                 }
                             } else {
@@ -165,14 +165,14 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                                 "EQUATION: node sets are only valid when the first target is a node set");
 
                             const auto set = node_sets.get(data[i]);
-                            logging::error(set != nullptr && set->size() == ctx->equations.size(),
+                            logging::error(set != nullptr && set->size() == static_cast<Index>(ctx->equations.size()),
                                 "EQUATION: node set ", data[i], " has incompatible size");
 
-                            for (std::size_t j = 0; j < ctx->equations.size(); ++j) {
+                            for (Index j = 0; j < static_cast<Index>(ctx->equations.size()); ++j) {
                                 ctx->equations[j].entries.push_back({set->at(j), equation_dof, coefficient});
                             }
                         } else {
-                            const ID node = model.resolve_node_id(data[i]);
+                            const Index node = model.resolve_node_id(data[i]);
                             for (auto& equation : ctx->equations) {
                                 equation.entries.push_back({node, equation_dof, coefficient});
                             }

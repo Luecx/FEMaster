@@ -29,7 +29,7 @@ namespace fem::bc {
  * imposing a physical interpolation rule. Load evaluation distinguishes
  * structural loads from support and thermal prescriptions separately.
  */
-enum ConditionFamily : std::size_t {
+enum ConditionFamily : Index {
     SUPPORT = 0,
     CLOAD,
     DLOAD,

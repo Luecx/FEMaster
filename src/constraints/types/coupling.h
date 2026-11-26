@@ -50,7 +50,7 @@ enum class CouplingType {
  */
 class Coupling : public fem::Printable {
     public:
-    ID                        master_node;                 ///< Master node ID
+    Index                     master_node;                 ///< Master node ID
     model::NodeRegion::Ptr    slave_nodes    = nullptr;    ///< List of slave node IDs
     model::SurfaceRegion::Ptr slave_surfaces = nullptr;    ///< List of slave surface IDs
     Dofs                      coupled_dofs;                ///< DOFs that are to be coupled (6 DOFs per node)
@@ -71,8 +71,8 @@ class Coupling : public fem::Printable {
      * @param coupled_dofs A Dofs object specifying the DOFs to couple.
      * @param type The type of coupling to apply (e.g., kinematic).
      */
-    Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type);
-    Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type);
+    Coupling(Index master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type);
+    Coupling(Index master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type);
 
     /**
      * @brief Generates the coupling equations for the coupled DOFs.
@@ -109,9 +109,9 @@ class Coupling : public fem::Printable {
     std::string str() const override;
 
     private:
-    std::vector<ID> slave_node_ids        (model::ModelData& model_data) const;
-    Equations       kinematic_equations   (model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
-    Equations       distributing_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
+    std::vector<Index> slave_node_ids        (model::ModelData& model_data) const;
+    Equations          kinematic_equations   (model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
+    Equations          distributing_equations(model::SystemDofs& system_nodal_dofs, model::ModelData& model_data);
 };
 }    // namespace constraint
 }    // namespace fem

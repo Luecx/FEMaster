@@ -41,7 +41,7 @@
  * @param y Local y-coordinate.
  * @param z Local z-coordinate.
  */
-inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
+inline void Model::set_node(Index id, Precision x, Precision y, Precision z) {
     // Validate that semantic topology is still mutable
     logging::error(_data != nullptr && !_data->compiled,
         "Model: nodes cannot be added after compile()");
@@ -74,7 +74,7 @@ inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
  * @param args Ordered part-local nodal connectivity.
  */
 template<typename T, typename... Args>
-inline void Model::set_element(ID id, Args&&... args) {
+inline void Model::set_element(Index id, Args&&... args) {
     // Validate that semantic topology is still mutable
     logging::error(_data != nullptr && !_data->compiled,
         "Model: elements cannot be added after compile()");
@@ -89,8 +89,8 @@ inline void Model::set_element(ID id, Args&&... args) {
     // The concrete element owns its polymorphic copy() implementation. No
     // Model-side type registry is required; compile() can clone through the
     // ElementInterface pointer and then rewire the returned instance.
-    auto element = std::make_shared<T>(id, std::array<ID, sizeof...(Args)>{
-        static_cast<ID>(std::forward<Args>(args))...
+    auto element = std::make_shared<T>(id, std::array<Index, sizeof...(Args)>{
+        static_cast<Index>(std::forward<Args>(args))...
     });
 
     // Transfer the element into local topology and register its identifier
@@ -116,7 +116,7 @@ inline void Model::set_element(ID id, Args&&... args) {
  * @param element_id Part-local identifier of the source element.
  * @param surface_id Element-specific boundary identifier.
  */
-inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
+inline void Model::set_surface(Index id, Index element_id, Index surface_id) {
     // Validate that semantic topology is still mutable
     logging::error(_data != nullptr && !_data->compiled,
         "Model: surfaces cannot be added after compile()");
@@ -145,10 +145,10 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 
     // Allocate and register a part-local surface when the element provides one
     if (surface) {
-        logging::error(id >= 0 || active->next_surface_id < std::numeric_limits<ID>::max(),
+        logging::error(id >= 0 || active->next_surface_id < std::numeric_limits<Index>::max(),
             "Model: automatic surface ids exhausted in part ", active->name);
 
-        const ID local_id = id < 0
+        const Index local_id = id < 0
             ? active->next_surface_id++
             : id;
 
@@ -161,10 +161,10 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 
     // Allocate and register a part-local line when the element provides one
     if (line) {
-        logging::error(id >= 0 || active->next_line_id < std::numeric_limits<ID>::max(),
+        logging::error(id >= 0 || active->next_line_id < std::numeric_limits<Index>::max(),
             "Model: automatic line ids exhausted in part ", active->name);
 
-        const ID local_id = id < 0
+        const Index local_id = id < 0
             ? active->next_line_id++
             : id;
 
@@ -188,7 +188,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
  * @param surface_id Element-specific boundary identifier extracted from every
  *                   selected element.
  */
-inline void Model::set_surface(const std::string& elset, ID surface_id) {
+inline void Model::set_surface(const std::string& elset, Index surface_id) {
     // Validate that semantic topology is still mutable
     logging::error(_data != nullptr && !_data->compiled,
         "Model: surfaces cannot be added after compile()");
@@ -203,7 +203,7 @@ inline void Model::set_surface(const std::string& elset, ID surface_id) {
         "Model: element set ", elset, " is empty in part ", active->name);
 
     // Extract one automatically numbered boundary from every selected element
-    for (const ID element_id : *active->elem_sets.get(elset)) {
+    for (const Index element_id : *active->elem_sets.get(elset)) {
         set_surface(-1, element_id, surface_id);
     }
 }

@@ -32,16 +32,16 @@ inline Precision leverage_to_edge(const Vec3& origin,
 }
 } // namespace
 
-QSPT::QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids)
+QSPT::QSPT(Index p_elem_id, std::array<Index, 4> p_node_ids)
     : ShellElement<4>(p_elem_id, p_node_ids)
     , geometry(p_node_ids)
     , integration_scheme_(math::quadrature::DOMAIN_ISO_QUAD, math::quadrature::ORDER_CUBIC) {}
 
-SurfacePtr QSPT::surface(ID surface_id) {
+SurfacePtr QSPT::surface(Index surface_id) {
     return std::make_shared<Surface4>(
         surface_id == 1
-            ? std::array<ID, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
-            : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
+            ? std::array<Index, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
+            : std::array<Index, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
 }
 
 const math::quadrature::Quadrature& QSPT::integration_scheme() const {
@@ -287,8 +287,8 @@ MapMatrix QSPT::evaluate(
         const StaticVector<12> force = K * u;
 
         for (Index node = 0; node < 4; ++node) {
-            const Index row = static_cast<Index>(elem_nodal_offset) + node;
-            for (Dim dof = 0; dof < 3; ++dof) {
+            const Index row = elem_nodal_offset + node;
+            for (Index dof = 0; dof < 3; ++dof) {
                 (*internal_force)(row, dof) += force(3 * node + dof);
             }
         }
@@ -330,14 +330,14 @@ StaticVector<12> QSPT::displacement_vector(const Field& displacement) {
 bool QSPT::compute_shear_flow(Field& shear_flow,
                               const Field& displacement) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     const ShearState state = shear_state();
     const StaticVector<12> u = displacement_vector(displacement);
     const Precision beta = (state.fn.dot(u)) / state.flexibility;
 
     for (Index i = 0; i < 4; ++i) {
-        shear_flow(static_cast<Index>(offset) + i, 0) =
+        shear_flow(offset + i, 0) =
             state.q(i) / state.edge_lengths[i] * beta;
     }
     return true;
@@ -407,7 +407,7 @@ void QSPT::integrate_vector_field(Field& node_loads,
 
         const Vec3 value = field(x) * density_scale * thickness * p.w * dA;
         for (Index i = 0; i < 4; ++i) {
-            const ID node_id = this->node_ids[i];
+            const Index node_id = this->node_ids[i];
             node_loads(node_id, 0) += N(i) * value(0);
             node_loads(node_id, 1) += N(i) * value(1);
             node_loads(node_id, 2) += N(i) * value(2);

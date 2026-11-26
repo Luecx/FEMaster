@@ -132,7 +132,7 @@ public:
 private:
     // Convert the six stored prescriptions for one global node into rows of
     // C u = d, including local-to-global projection when an orientation exists.
-    void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id);
+    void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, Index node_id);
 };
 
 } // namespace fem::bc

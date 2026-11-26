@@ -319,11 +319,11 @@ VolumeStressCauchy CompositeShellSection::recover_stress(
 
     // Locate the layer containing z. Interface points belong to the lower
     // layer; points outside the section are clamped to the outer layers.
-    std::size_t layer_index = layers_.size() - 1;
-    Index       first_mp    = 0;
-    Precision   z_bottom    = Precision(-0.5) * thickness_;
+    Index     layer_index = static_cast<Index>(layers_.size()) - 1;
+    Index     first_mp    = 0;
+    Precision z_bottom    = Precision(-0.5) * thickness_;
 
-    for (std::size_t i = 0; i + 1 < layers_.size(); ++i) {
+    for (Index i = 0; i + 1 < static_cast<Index>(layers_.size()); ++i) {
         if (z <= z_bottom + layers_[i].thickness) {
             layer_index = i;
             break;
@@ -337,7 +337,7 @@ VolumeStressCauchy CompositeShellSection::recover_stress(
     // Use the history of the nearest stored point of the layer.
     const Precision dz        = layer.thickness / Precision(layer.points - 1);
     const Precision position  = std::clamp((z - z_bottom) / dz, Precision(0), Precision(layer.points - 1));
-    const Index     state_mp  = first_mp + static_cast<Index>(std::lround(position));
+    const Index     state_mp  = first_mp + std::lround(position);
     const Precision* old_state = old_material_state + state_mp * material_state_stride;
 
     const Mat3 output_basis_global  = stress_basis(position_reference, shell_basis_global);

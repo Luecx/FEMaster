@@ -199,12 +199,12 @@ void accumulate_point_mass_mass(const model::ModelData& model_data,
 
         if (section->mass_ == Precision(0)) continue;
 
-        const ID node_id = point->nodes()[0];
-        logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+        const Index node_id = point->nodes()[0];
+        logging::error(node_id >= 0 && node_id < positions.rows,
             "InertiaRelief: point-mass node ", node_id,
             " is outside the positions field with ", positions.rows, " rows");
 
-        const Index node     = static_cast<Index>(node_id);
+        const Index node     = node_id;
         const Vec3  position = positions.row_vec3(node);
 
         mass              += section->mass_;
@@ -302,12 +302,12 @@ void accumulate_point_mass_inertia(const model::ModelData& model_data,
             "InertiaRelief: auxiliary point element ", point->label(),
             " has a non-point-mass section");
 
-        const ID node_id = point->nodes()[0];
-        logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+        const Index node_id = point->nodes()[0];
+        logging::error(node_id >= 0 && node_id < positions.rows,
             "InertiaRelief: point-mass node ", node_id,
             " is outside the positions field with ", positions.rows, " rows");
 
-        const Index node              = static_cast<Index>(node_id);
+        const Index node              = node_id;
         const Vec3  position          = positions.row_vec3(node);
         const Vec3  relative_position = position - center_of_gravity;
 

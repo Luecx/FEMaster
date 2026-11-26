@@ -60,10 +60,10 @@ group_by_orientation(const Parser&              parser,
 
     // Resolve the effective orientation of every node. Nodal *TRANSFORM
     // assignments take precedence over the orientation supplied by the command.
-    std::vector<std::pair<ID, cos::CoordinateSystem::Ptr>> node_orientations;
+    std::vector<std::pair<Index, cos::CoordinateSystem::Ptr>> node_orientations;
     node_orientations.reserve(region->size());
 
-    for (const ID node_id : *region) {
+    for (const Index node_id : *region) {
         cos::CoordinateSystem::Ptr orientation = default_orientation;
 
         const auto transform = parser.node_transforms.find(node_id);

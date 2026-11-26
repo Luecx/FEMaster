@@ -46,7 +46,7 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
     j2.add_yield_point(Precision(280), Precision(0));
     j2.add_yield_point(Precision(350), Precision(0.10));
 
-    std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> committed(j2.state_size());
     j2.initialize_state(committed.data());
     const auto committed_before = committed;
 
@@ -70,7 +70,7 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
 
     // Constitutive calls must never modify committed history and repeated trial
     // evaluations from the same committed state must be deterministic.
-    for (std::size_t i = 0; i < committed.size(); ++i) {
+    for (Index i = 0; i < committed.size(); ++i) {
         EXPECT_EQ(committed[i], committed_before[i]);
         EXPECT_NEAR(trial_a[i], trial_b[i], Precision(1e-12));
     }
@@ -101,7 +101,7 @@ TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
     strain_values(0) = Precision(0.005);
     strain_values(1) = Precision(-0.005);
 
-    std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> committed(j2.state_size());
     std::vector<Precision> trial(committed.size());
     j2.initialize_state(committed.data());
 
@@ -123,7 +123,7 @@ TEST(Material_J2, FiniteStrainPlasticTableUsesCauchyYieldStress) {
     material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
     j2.add_yield_point(Precision(250), Precision(0));
 
-    std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> committed(j2.state_size());
     std::vector<Precision> trial(committed.size());
     j2.initialize_state(committed.data());
 
@@ -162,7 +162,7 @@ TEST(Material_J2, FiniteStrainTangentIsSymmetricApproximationOfReturnMap) {
     j2.add_yield_point(Precision(250), Precision(0));
     j2.add_yield_point(Precision(700), Precision(0.30));
 
-    std::vector<Precision> initial(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> initial(j2.state_size());
     std::vector<Precision> committed(initial.size());
     j2.initialize_state(initial.data());
 
@@ -248,7 +248,7 @@ TEST(Material_J2, FiniteAxialTangentRemainsConsistentWithReducedStress) {
     j2.add_yield_point(Precision(250), Precision(0));
     j2.add_yield_point(Precision(700), Precision(0.30));
 
-    std::vector<Precision> initial(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> initial(j2.state_size());
     std::vector<Precision> committed(initial.size());
     j2.initialize_state(initial.data());
 

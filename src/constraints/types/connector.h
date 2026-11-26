@@ -57,8 +57,8 @@ class Connector {
     fem::cos::CoordinateSystem::Ptr coordinate_system_; ///< Local coordinate system for projection.
     ConnectorType connector_type_; ///< Connector type describing constrained DOFs.
     Dofs constrained_dofs_;        ///< Per-DOF constraint mask.
-    ID node_1_id_;                 ///< First node identifier.
-    ID node_2_id_;                 ///< Second node identifier.
+    Index node_1_id_;              ///< First node identifier.
+    Index node_2_id_;              ///< Second node identifier.
 
 public:
     /**
@@ -69,8 +69,8 @@ public:
      * @param coordinate_system Local frame used to interpret the connector type.
      * @param connector_type Bit mask describing constrained DOFs.
      */
-    Connector(ID node_1_id,
-              ID node_2_id,
+    Connector(Index node_1_id,
+              Index node_2_id,
               fem::cos::CoordinateSystem::Ptr coordinate_system,
               ConnectorType connector_type);
 
@@ -100,14 +100,14 @@ public:
      *
      * @return ID ID of the first node.
      */
-    [[nodiscard]] ID node_1() const { return node_1_id_; }
+    [[nodiscard]] Index node_1() const { return node_1_id_; }
 
     /**
      * @brief Provides the second node identifier.
      *
      * @return ID ID of the second node.
      */
-    [[nodiscard]] ID node_2() const { return node_2_id_; }
+    [[nodiscard]] Index node_2() const { return node_2_id_; }
 };
 } // namespace constraint
 } // namespace fem

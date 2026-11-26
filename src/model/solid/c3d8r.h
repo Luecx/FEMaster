@@ -32,7 +32,7 @@ namespace fem::model {
 class C3D8R final : public C3D8 {
 public:
     static constexpr Index N    = 8;
-    static constexpr Dim   D    = 3;
+    static constexpr Index D    = 3;
     static constexpr Index ndof = N * D;
 
     using GradientMatrix = StaticMatrix<N, D>;
@@ -42,7 +42,7 @@ public:
 
     static constexpr Precision default_hourglass_coefficient = Precision(0.005);
 
-    C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
+    C3D8R(Index elem_id, const std::array<Index, N>& node_ids);
     ~C3D8R() override = default;
 
     // Preserve the reduced-integration concrete type while copying only the

@@ -21,7 +21,7 @@ namespace fem::model {
  *
  * @param node_ids Global identifiers of the six surface nodes.
  */
-Surface6::Surface6(const std::array<ID, 6>& node_ids)
+Surface6::Surface6(const std::array<Index, 6>& node_ids)
     : Surface<6>(node_ids) {}
 
 /**
@@ -174,7 +174,7 @@ Vec2 Surface6::closest_point_on_boundary(const Vec3&               global,
     Field node_field("SURFACE6_BOUNDARY", FieldDomain::NODE, 6, 3);
 
     for (Index local_id = 0; local_id < 6; ++local_id) {
-        for (Dim component = 0; component < 3; ++component) {
+        for (Index component = 0; component < 3; ++component) {
             node_field(local_id, component) = node_coords(local_id, component);
         }
     }

@@ -37,9 +37,9 @@ namespace fem::model {
  */
 template<Index N>
 struct ShellElement : StructuralElement {
-    std::array<ID, N> node_ids;
+    std::array<Index, N> node_ids;
 
-    ShellElement(ID p_elem_id, std::array<ID, N> p_node_ids)
+    ShellElement(Index p_elem_id, std::array<Index, N> p_node_ids)
         : StructuralElement(p_elem_id), node_ids {p_node_ids} {}
     ~ShellElement() override = default;
 
@@ -95,7 +95,7 @@ struct ShellElement : StructuralElement {
 
     // Formulation-specific mechanical response through the common structural
     // state evaluation and the independent inertial operator.
-    SurfacePtr surface(ID surface_id) override = 0;
+    SurfacePtr surface(Index surface_id) override = 0;
     Precision  volume() override = 0;
     MapMatrix  evaluate(
         Precision*   tangent,
@@ -136,13 +136,13 @@ struct ShellElement : StructuralElement {
         const auto& positions = *this->_model_data->positions_reference;
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; ++i) {
-            const Index row = static_cast<Index>(this->node_ids[i]);
+            const Index row = this->node_ids[i];
             res.row(i) = positions.row_vec3(row).transpose();
         }
         return res;
     }
 
-    Dim num_ip() const override {
+    Index num_ip() const override {
         return integration_scheme().count();
     }
     Index num_mp_per_ip() const override {
@@ -152,13 +152,13 @@ struct ShellElement : StructuralElement {
     ElDofs dofs() const override {
         return ElDofs{true, true, true, true, true, true};
     }
-    Dim dimensions() const override {
+    Index dimensions() const override {
         return 3;
     }
-    Dim n_nodes() const override {
+    Index n_nodes() const override {
         return N;
     }
-    const ID* nodes() const override {
+    const Index* nodes() const override {
         return node_ids.data();
     }
 
@@ -191,7 +191,7 @@ struct ShellElement : StructuralElement {
      * @param stride The stride for accessing the data.
      * @return StaticMatrix<N, K> The extracted nodal data for the element.
      */
-    template<Dim K>
+    template<Index K>
     StaticMatrix<N, K> nodal_data(const Field& full_data, Index offset = 0, Index stride = 1) {
         StaticMatrix<N, K> res {};
         runtime_assert(
@@ -199,10 +199,10 @@ struct ShellElement : StructuralElement {
             "cannot extract this many elements from the data"
         );
 
-        for (Dim m = 0; m < N; m++) {
-            for (Dim j = 0; j < K; j++) {
+        for (Index m = 0; m < N; m++) {
+            for (Index j = 0; j < K; j++) {
                 Index n = j * stride + offset;
-                res(m, j) = full_data(static_cast<Index>(node_ids[m]), n);
+                res(m, j) = full_data(node_ids[m], n);
             }
         }
 

@@ -36,7 +36,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         SparseMatrix  C{};
         DynamicVector d{};
 
-        std::vector<int>       used_columns{};
+        std::vector<Index>     used_columns{};
         std::vector<char>      fixed_columns{};
         std::vector<Precision> fixed_values{};
         std::vector<char>      kept_rows{};
@@ -72,18 +72,18 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     PreprocessedSystem preprocessed{};
     preprocess_time = Timer::measure_time([&]() {
         preprocessed.C = system.C;
-        preprocessed.d = static_cast<Index>(system.d.size()) == system.equations
+        preprocessed.d = system.d.size() == system.equations
                              ? system.d
                              : DynamicVector::Zero(system.equations);
 
         // Identify rows that prescribe exactly one full-system DOF
-        std::vector<int>       row_nonzeros(system.equations, 0);
-        std::vector<int>       row_columns(system.equations, -1);
+        std::vector<Index>     row_nonzeros(system.equations, 0);
+        std::vector<Index>     row_columns(system.equations, -1);
         std::vector<Precision> row_values(system.equations, Precision(0));
 
-        for (int column = 0; column < system.C.outerSize(); ++column) {
+        for (Index column = 0; column < system.C.outerSize(); ++column) {
             for (SparseMatrix::InnerIterator entry(system.C, column); entry; ++entry) {
-                std::size_t row = static_cast<std::size_t>(entry.row());
+                Index row = entry.row();
                 row_nonzeros[row]++;
                 row_columns [row] = column;
                 row_values  [row]  = entry.value();
@@ -95,29 +95,29 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         preprocessed.kept_rows.assign(system.equations, 1);
 
         for (Index row = 0; row < system.equations; ++row) {
-            if (row_nonzeros[static_cast<std::size_t>(row)] != 1) {
+            if (row_nonzeros[row] != 1) {
                 continue;
             }
 
-            const int       column      = row_columns[static_cast<std::size_t>(row)];
-            const Precision coefficient = row_values[static_cast<std::size_t>(row)];
+            const Index     column      = row_columns[row];
+            const Precision coefficient = row_values[row];
             if (column < 0 || coefficient == Precision(0)) {
                 continue;
             }
 
-            preprocessed.fixed_columns[static_cast<std::size_t>(column)] = 1;
-            preprocessed.fixed_values[static_cast<std::size_t>(column)]  =
+            preprocessed.fixed_columns[column] = 1;
+            preprocessed.fixed_values[column]  =
                 report.homogeneous ? Precision(0) : preprocessed.d[row] / coefficient;
-            preprocessed.kept_rows[static_cast<std::size_t>(row)] = 0;
+            preprocessed.kept_rows[row] = 0;
         }
 
         // Substitute prescribed values into all unresolved equations
         for (Index column = 0; column < system.dofs; ++column) {
-            if (!preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
+            if (!preprocessed.fixed_columns[column]) {
                 continue;
             }
 
-            const Precision fixed_value = preprocessed.fixed_values[static_cast<std::size_t>(column)];
+            const Precision fixed_value = preprocessed.fixed_values[column];
             if (fixed_value == Precision(0)) {
                 continue;
             }
@@ -130,13 +130,13 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         // Remove prescribed columns and equations resolved by substitution
         TripletList unfixed_entries{};
         unfixed_entries.reserve(preprocessed.C.nonZeros());
-        for (int column = 0; column < preprocessed.C.outerSize(); ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
+        for (Index column = 0; column < preprocessed.C.outerSize(); ++column) {
+            if (preprocessed.fixed_columns[column]) {
                 continue;
             }
 
             for (SparseMatrix::InnerIterator entry(preprocessed.C, column); entry; ++entry) {
-                if (preprocessed.kept_rows[static_cast<std::size_t>(entry.row())]) {
+                if (preprocessed.kept_rows[entry.row()]) {
                     unfixed_entries.emplace_back(entry.row(), column, entry.value());
                 }
             }
@@ -148,7 +148,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         preprocessed.C.makeCompressed();
 
         // Compact nonzero columns while retaining their full-system indices
-        for (int column = 0; column < preprocessed.C.outerSize(); ++column) {
+        for (Index column = 0; column < preprocessed.C.outerSize(); ++column) {
             if (preprocessed.C.col(column).nonZeros() > 0) {
                 preprocessed.used_columns.push_back(column);
             }
@@ -162,7 +162,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         std::stable_sort(
             preprocessed.used_columns.begin(),
             preprocessed.used_columns.end(),
-            [&](int lhs, int rhs) {
+            [&](Index lhs, Index rhs) {
                 const Index lhs_count = preprocessed.C.col(lhs).nonZeros();
                 const Index rhs_count = preprocessed.C.col(rhs).nonZeros();
                 return lhs_count != rhs_count ? lhs_count < rhs_count : lhs < rhs;
@@ -171,16 +171,16 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
 
         TripletList compact_entries{};
         compact_entries.reserve(preprocessed.C.nonZeros());
-        for (int local_column = 0;
-             local_column < static_cast<int>(preprocessed.used_columns.size());
+        for (Index local_column = 0;
+             local_column < static_cast<Index>(preprocessed.used_columns.size());
              ++local_column) {
-            const int global_column = preprocessed.used_columns[static_cast<std::size_t>(local_column)];
+            const Index global_column = preprocessed.used_columns[local_column];
             for (SparseMatrix::InnerIterator entry(preprocessed.C, global_column); entry; ++entry) {
                 compact_entries.emplace_back(entry.row(), local_column, entry.value());
             }
         }
 
-        SparseMatrix compact(system.equations, static_cast<int>(preprocessed.used_columns.size()));
+        SparseMatrix compact(system.equations, static_cast<Index>(preprocessed.used_columns.size()));
         compact.setFromTriplets(compact_entries.begin(), compact_entries.end());
         compact.makeCompressed();
         preprocessed.C = std::move(compact);
@@ -198,9 +198,9 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         map.particular = DynamicVector::Zero(system.dofs);
 
         for (Index column = 0; column < system.dofs; ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
+            if (preprocessed.fixed_columns[column]) {
                 map.slaves.push_back(column);
-                map.particular[column] = preprocessed.fixed_values[static_cast<std::size_t>(column)];
+                map.particular[column] = preprocessed.fixed_values[column];
             } else {
                 map.masters.push_back(column);
             }
@@ -209,7 +209,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         TripletList identity_entries{};
         identity_entries.reserve(map.masters.size());
         for (Index column = 0; column < map.n_master(); ++column) {
-            identity_entries.emplace_back(map.masters[static_cast<std::size_t>(column)], column, Precision(1));
+            identity_entries.emplace_back(map.masters[column], column, Precision(1));
         }
 
         map.T.resize(system.dofs, map.n_master());
@@ -246,11 +246,11 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     });
 
     // Determine numerical rank from the leading diagonal of R
-    int       reduced_rank = 0;
+    Index     reduced_rank = 0;
     Precision max_diagonal = Precision(0);
     rank_time = Timer::measure_time([&]() {
-        const int max_rank = std::min<int>(R.rows(), R.cols());
-        for (int diagonal = 0; diagonal < max_rank; ++diagonal) {
+        const Index max_rank = std::min<Index>(R.rows(), R.cols());
+        for (Index diagonal = 0; diagonal < max_rank; ++diagonal) {
             max_diagonal = std::max(max_diagonal, std::abs(R.coeff(diagonal, diagonal)));
         }
 
@@ -265,37 +265,37 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     });
 
     // Compute the slave-to-master block X = -R11^-1 R12
-    using SparseColumns = std::vector<std::vector<std::pair<int, Precision>>>;
+    using SparseColumns = std::vector<std::vector<std::pair<Index, Precision>>>;
     SparseColumns x_columns{};
     build_x_time = Timer::measure_time([&]() {
-        const int master_columns = R.cols() - reduced_rank;
-        x_columns.resize(static_cast<std::size_t>(std::max(0, master_columns)));
+        const Index master_columns = R.cols() - reduced_rank;
+        x_columns.resize(std::max<Index>(0, master_columns));
         if (reduced_rank == 0 || master_columns <= 0) {
             return;
         }
 
-        std::vector<Precision> diagonal(static_cast<std::size_t>(reduced_rank), Precision(0));
-        SparseColumns          upper_rows(static_cast<std::size_t>(reduced_rank));
+        std::vector<Precision> diagonal(reduced_rank, Precision(0));
+        SparseColumns          upper_rows(reduced_rank);
 
         // Store R11 by rows for independent sparse back substitutions
-        for (int column = 0; column < reduced_rank; ++column) {
+        for (Index column = 0; column < reduced_rank; ++column) {
             for (SparseMatrix::InnerIterator entry(R, column); entry; ++entry) {
-                const int row = entry.row();
+                const Index row = entry.row();
                 if (row >= reduced_rank) {
                     continue;
                 }
                 if (row == column) {
-                    diagonal[static_cast<std::size_t>(row)] = entry.value();
+                    diagonal[row] = entry.value();
                 } else if (row < column) {
-                    upper_rows[static_cast<std::size_t>(row)].emplace_back(column, entry.value());
+                    upper_rows[row].emplace_back(column, entry.value());
                 }
             }
         }
 
         // Each master column defines an independent triangular solve
         parallel::for_index(master_columns, global_config.max_threads,
-            [&](int master, int /*worker*/) {
-                std::unordered_map<int, Precision> rhs{};
+            [&](Index master, Index /*worker*/) {
+                std::unordered_map<Index, Precision> rhs{};
                 rhs.reserve(16);
                 for (SparseMatrix::InnerIterator entry(R, reduced_rank + master); entry; ++entry) {
                     if (entry.row() < reduced_rank) {
@@ -306,26 +306,26 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
                     return;
                 }
 
-                std::vector<Precision> values(static_cast<std::size_t>(reduced_rank), Precision(0));
-                for (int row = reduced_rank - 1; row >= 0; --row) {
+                std::vector<Precision> values(reduced_rank, Precision(0));
+                for (Index row = reduced_rank - 1; row >= 0; --row) {
                     Precision value = Precision(0);
                     const auto found = rhs.find(row);
                     if (found != rhs.end()) {
                         value = found->second;
                     }
-                    for (const auto& [column, coefficient] : upper_rows[static_cast<std::size_t>(row)]) {
-                        value -= coefficient * values[static_cast<std::size_t>(column)];
+                    for (const auto& [column, coefficient] : upper_rows[row]) {
+                        value -= coefficient * values[column];
                     }
 
-                    const Precision diagonal_value = diagonal[static_cast<std::size_t>(row)];
-                    values[static_cast<std::size_t>(row)] =
+                    const Precision diagonal_value = diagonal[row];
+                    values[row] =
                         diagonal_value != Precision(0) ? value / diagonal_value : Precision(0);
                 }
 
-                auto& entries = x_columns[static_cast<std::size_t>(master)];
+                auto& entries = x_columns[master];
                 entries.reserve(16);
-                for (int row = 0; row < reduced_rank; ++row) {
-                    const Precision value = values[static_cast<std::size_t>(row)];
+                for (Index row = 0; row < reduced_rank; ++row) {
+                    const Precision value = values[row];
                     if (value != Precision(0)) {
                         entries.emplace_back(row, value);
                     }
@@ -334,44 +334,44 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     });
 
     // Map the QR partition back to full-system DOF indices
-    std::vector<int> qr_slaves{};
-    std::vector<int> qr_masters{};
+    std::vector<Index> qr_slaves{};
+    std::vector<Index> qr_masters{};
     partition_time = Timer::measure_time([&]() {
         const auto& permutation = qr.colsPermutation().indices();
-        qr_slaves.reserve(static_cast<std::size_t>(reduced_rank));
-        for (int row = 0; row < reduced_rank; ++row) {
+        qr_slaves.reserve(reduced_rank);
+        for (Index row = 0; row < reduced_rank; ++row) {
             qr_slaves.push_back(permutation(row));
         }
 
-        const int reduced_masters = static_cast<int>(preprocessed.used_columns.size()) - reduced_rank;
-        qr_masters.reserve(static_cast<std::size_t>(std::max(0, reduced_masters)));
-        for (int column = 0; column < reduced_masters; ++column) {
+        const Index reduced_masters = static_cast<Index>(preprocessed.used_columns.size()) - reduced_rank;
+        qr_masters.reserve(std::max<Index>(0, reduced_masters));
+        for (Index column = 0; column < reduced_masters; ++column) {
             qr_masters.push_back(permutation(reduced_rank + column));
         }
 
-        std::vector<char> used_global(static_cast<std::size_t>(system.dofs), 0);
-        for (int column : preprocessed.used_columns) {
-            used_global[static_cast<std::size_t>(column)] = 1;
+        std::vector<char> used_global(system.dofs, 0);
+        for (Index column : preprocessed.used_columns) {
+            used_global[column] = 1;
         }
 
         map.full_size = system.dofs;
-        map.slaves.reserve(static_cast<std::size_t>(n_fixed + reduced_rank));
+        map.slaves.reserve(n_fixed + reduced_rank);
         for (Index column = 0; column < system.dofs; ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
+            if (preprocessed.fixed_columns[column]) {
                 map.slaves.push_back(column);
             }
         }
-        for (int local_column : qr_slaves) {
-            map.slaves.push_back(preprocessed.used_columns[static_cast<std::size_t>(local_column)]);
+        for (Index local_column : qr_slaves) {
+            map.slaves.push_back(preprocessed.used_columns[local_column]);
         }
 
-        map.masters.reserve(static_cast<std::size_t>(system.dofs - n_fixed - reduced_rank));
-        for (int local_column : qr_masters) {
-            map.masters.push_back(preprocessed.used_columns[static_cast<std::size_t>(local_column)]);
+        map.masters.reserve(system.dofs - n_fixed - reduced_rank);
+        for (Index local_column : qr_masters) {
+            map.masters.push_back(preprocessed.used_columns[local_column]);
         }
         for (Index column = 0; column < system.dofs; ++column) {
-            if (!used_global[static_cast<std::size_t>(column)] &&
-                !preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
+            if (!used_global[column] &&
+                !preprocessed.fixed_columns[column]) {
                 map.masters.push_back(column);
             }
         }
@@ -381,15 +381,15 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     assemble_time = Timer::measure_time([&]() {
         map.particular = DynamicVector::Zero(system.dofs);
         for (Index column = 0; column < system.dofs; ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
-                map.particular[column] = preprocessed.fixed_values[static_cast<std::size_t>(column)];
+            if (preprocessed.fixed_columns[column]) {
+                map.particular[column] = preprocessed.fixed_values[column];
             }
         }
 
         std::unordered_map<Index, Index> master_local{};
         master_local.reserve(map.masters.size());
         for (Index column = 0; column < map.n_master(); ++column) {
-            master_local[map.masters[static_cast<std::size_t>(column)]] = column;
+            master_local[map.masters[column]] = column;
         }
 
         TripletList t_entries{};
@@ -398,18 +398,18 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         x_entries.reserve(R.nonZeros());
 
         for (Index column = 0; column < map.n_master(); ++column) {
-            t_entries.emplace_back(map.masters[static_cast<std::size_t>(column)], column, Precision(1));
+            t_entries.emplace_back(map.masters[column], column, Precision(1));
         }
 
-        for (int master = 0; master < static_cast<int>(qr_masters.size()); ++master) {
+        for (Index master = 0; master < static_cast<Index>(qr_masters.size()); ++master) {
             const Index global_master = preprocessed.used_columns[
-                static_cast<std::size_t>(qr_masters[static_cast<std::size_t>(master)])
+                qr_masters[master]
             ];
             const Index map_column = master_local.at(global_master);
 
-            for (const auto& [slave_row, coefficient] : x_columns[static_cast<std::size_t>(master)]) {
+            for (const auto& [slave_row, coefficient] : x_columns[master]) {
                 const Index global_slave = preprocessed.used_columns[
-                    static_cast<std::size_t>(qr_slaves[static_cast<std::size_t>(slave_row)])
+                    qr_slaves[slave_row]
                 ];
                 const Index map_row = n_fixed + slave_row;
                 t_entries.emplace_back(global_slave, map_column, coefficient);
@@ -439,33 +439,32 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
             "[NullSpace] particular solution failed");
 
         DynamicVector full_solution = DynamicVector::Zero(system.dofs);
-        for (int local_column = 0;
-             local_column < static_cast<int>(preprocessed.used_columns.size());
+        for (Index local_column = 0;
+             local_column < static_cast<Index>(preprocessed.used_columns.size());
              ++local_column) {
-            full_solution[preprocessed.used_columns[static_cast<std::size_t>(local_column)]] =
-                reduced_solution[local_column];
+            full_solution[preprocessed.used_columns[local_column]] = reduced_solution[local_column];
         }
         for (Index column = 0; column < system.dofs; ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
-                full_solution[column] = preprocessed.fixed_values[static_cast<std::size_t>(column)];
+            if (preprocessed.fixed_columns[column]) {
+                full_solution[column] = preprocessed.fixed_values[column];
             }
         }
 
         DynamicVector master_values(map.n_master());
         for (Index column = 0; column < map.n_master(); ++column) {
-            master_values[column] = full_solution[map.masters[static_cast<std::size_t>(column)]];
+            master_values[column] = full_solution[map.masters[column]];
         }
 
         const DynamicVector slave_values = map.X * master_values;
 
         // Remove the homogeneous master contribution from the slave values
         for (Index row = 0; row < map.n_slave(); ++row) {
-            const Index global_slave = map.slaves[static_cast<std::size_t>(row)];
+            const Index global_slave = map.slaves[row];
             map.particular[global_slave] = full_solution[global_slave] - slave_values[row];
         }
         for (Index column = 0; column < system.dofs; ++column) {
-            if (preprocessed.fixed_columns[static_cast<std::size_t>(column)]) {
-                map.particular[column] = preprocessed.fixed_values[static_cast<std::size_t>(column)];
+            if (preprocessed.fixed_columns[column]) {
+                map.particular[column] = preprocessed.fixed_values[column];
             }
         }
 

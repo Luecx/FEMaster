@@ -54,7 +54,7 @@ ShellSection::ShellSection(
 
     // The external one-based CSYSAXIS value has already been converted to this
     // zero-based index before construction.
-    logging::error(csys_axis_ < 3,
+    logging::error(csys_axis_ >= 0 && csys_axis_ < 3,
         "ShellSection: CSYSAXIS must be 1, 2 or 3");
 
     // Store the associations inherited from the generic Section base class.
@@ -144,7 +144,7 @@ std::string ShellSection::str() const {
        << ", orientation="   << (orientation_ ? orientation_->name : std::string("-"))
        << ", csysaxis="      << (orientation_ ? std::to_string(csys_axis_ + 1) : std::string("-"))
        << ", region="        << (region_      ? region_      ->name : std::string("-"))
-       << " ("               << (region_      ? static_cast<int>(region_->size()) : 0) << ")";
+       << " ("               << (region_      ? region_->size() : 0) << ")";
 
     return os.str();
 }

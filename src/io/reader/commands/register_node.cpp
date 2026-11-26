@@ -53,12 +53,12 @@ void register_node(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(0))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("ID")
+                    .one<Index>().name("ID")
                     .one<Precision>().name("X").on_empty(Precision{0}).on_missing(Precision{0})
                     .one<Precision>().name("Y").on_empty(Precision{0}).on_missing(Precision{0})
                     .one<Precision>().name("Z").on_empty(Precision{0}).on_missing(Precision{0})
                 )
-                .bind([&model](ID id, Precision x, Precision y, Precision z) {
+                .bind([&model](Index id, Precision x, Precision y, Precision z) {
                     model.set_node(id, x, y, z);
                 })
             )

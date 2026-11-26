@@ -57,17 +57,17 @@ struct Line : LineInterface {
     // Global identifiers of the line nodes in element-local interpolation
     // order. Derived shape functions and all geometry operations use this same
     // ordering when gathering nodal coordinates.
-    std::array<ID, N> node_ids;
+    std::array<Index, N> node_ids;
 
     // Construction from the global identifiers of the element nodes. The
     // constructor initializes the non-templated interface with the same node
     // count exposed by num_nodes.
-    explicit Line(const std::array<ID, N>& node_ids);
+    explicit Line(const std::array<Index, N>& node_ids);
 
     // Contiguous connectivity access for generic model traversal. The pointers
     // refer directly to the fixed-size node identifier storage above.
-    const ID* nodes() const override;
-    ID*       nodes()       override;
+    const Index* nodes() const override;
+    Index*       nodes()       override;
 
     // Element-specific interpolation data. Concrete line types provide the
     // fixed-size shape functions and natural-coordinate derivatives used to
@@ -102,7 +102,7 @@ struct Line : LineInterface {
     // Return the element-local node identifiers in their interpolation order.
     // The returned array is the authoritative connectivity representation used
     // by the line geometry and boundary-projection implementations.
-    const std::array<ID, N>& get_node_ids() const;
+    const std::array<Index, N>& get_node_ids() const;
 };
 
 } // namespace model

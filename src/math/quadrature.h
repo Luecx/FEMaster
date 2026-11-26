@@ -202,7 +202,7 @@ public:
     }
 
     /// Returns the `n`-th quadrature point.
-    Point get_point(ID n) const;
+    Point get_point(Index n) const;
 
     /// Returns the number of quadrature points in the scheme.
     Index count() const;

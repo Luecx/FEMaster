@@ -64,40 +64,40 @@ Tie::Tie(model::LineRegion::Ptr master, model::SurfaceRegion::Ptr slave, Precisi
     , distance(max_distance)
     , adjust(do_adjust) {}
 
-static std::vector<ID> collect_slave_nodes(const model::NodeRegion::Ptr&    slave_nodes,
-                                           const model::SurfaceRegion::Ptr& slave_surfaces,
-                                           model::ModelData&                model_data) {
-    std::vector<ID> out;
+static std::vector<Index> collect_slave_nodes(const model::NodeRegion::Ptr&    slave_nodes,
+                                              const model::SurfaceRegion::Ptr& slave_surfaces,
+                                              model::ModelData&                model_data) {
+    std::vector<Index> out;
 
     if (slave_nodes) {
-        out.reserve(static_cast<std::size_t>(slave_nodes->size()));
-        for (ID id : *slave_nodes) {
+        out.reserve(slave_nodes->size());
+        for (Index id : *slave_nodes) {
             out.push_back(id);
         }
         return out;
     }
 
     // Surface-slave: extract nodes from each surface, unique them.
-    std::unordered_set<ID> unique;
-    auto&                  surfaces = model_data.surfaces;
+    std::unordered_set<Index> unique;
+    auto&                     surfaces = model_data.surfaces;
 
-    for (ID s_id : *slave_surfaces) {
-        if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
+    for (Index s_id : *slave_surfaces) {
+        if (s_id >= static_cast<Index>(surfaces.size())) {
             continue;
         }
 
-        auto s_ptr = surfaces[static_cast<std::size_t>(s_id)];
+        auto s_ptr = surfaces[s_id];
         if (s_ptr == nullptr) {
             continue;
         }
 
-        for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
+        for (Index local_id = 0; local_id < s_ptr->n_nodes; ++local_id) {
             unique.insert(s_ptr->nodes()[local_id]);
         }
     }
 
     out.reserve(unique.size());
-    for (ID nid : unique) {
+    for (Index nid : unique) {
         out.push_back(nid);
     }
 
@@ -116,15 +116,15 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     auto&               surfaces    = model_data.surfaces;
 
     struct MasterPatch {
-        ID                  surface_id {};
+        Index               surface_id {};
         std::array<Vec2, 3> local {};
         std::array<Vec3, 3> global {};
         BvhAabb::Aabb       box {};
     };
 
     struct MortarRow {
-        std::unordered_map<ID, Precision> slave_coeffs {};
-        std::unordered_map<ID, Precision> master_coeffs {};
+        std::unordered_map<Index, Precision> slave_coeffs {};
+        std::unordered_map<Index, Precision> master_coeffs {};
     };
 
     auto cross_2d        = [](const Vec2& a, const Vec2& b) { return a(0) * b(1) - a(1) * b(0); };
@@ -155,7 +155,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
                                                 Vec2(Precision(-1.0), Precision(0.0))};
 
             triangles.reserve(boundary.size());
-            for (std::size_t i = 0; i < boundary.size(); ++i) {
+            for (Index i = 0; i < static_cast<Index>(boundary.size()); ++i) {
                 triangles.push_back({boundary[i], boundary[(i + 1) % boundary.size()], center});
             }
 
@@ -169,7 +169,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
         }
 
         triangles.reserve(domain.size() - 2);
-        for (std::size_t i = 1; i + 1 < domain.size(); ++i) {
+        for (Index i = 1; i + 1 < domain.size(); ++i) {
             triangles.push_back({domain[0], domain[i], domain[i + 1]});
         }
 
@@ -179,22 +179,22 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     auto make_surface_aabb = [&](const model::SurfaceInterface::Ptr& surface) {
         BvhAabb::Aabb box = BvhAabb::Aabb::invalid();
 
-        for (ID local_id = 0; local_id < static_cast<ID>(surface->n_nodes); ++local_id) {
-            const ID node_id = surface->nodes()[local_id];
-            box.expand_point(node_coords.row_vec3(static_cast<Index>(node_id)));
+        for (Index local_id = 0; local_id < surface->n_nodes; ++local_id) {
+            const Index node_id = surface->nodes()[local_id];
+            box.expand_point(node_coords.row_vec3(node_id));
         }
 
         return box;
     };
 
     auto make_master_patch =
-        [&](ID surface_id, const model::SurfaceInterface::Ptr& surface, const std::array<Vec2, 3>& local) {
+        [&](Index surface_id, const model::SurfaceInterface::Ptr& surface, const std::array<Vec2, 3>& local) {
             MasterPatch patch;
             patch.surface_id = surface_id;
             patch.local      = local;
             patch.box        = BvhAabb::Aabb::invalid();
 
-            for (std::size_t i = 0; i < patch.local.size(); ++i) {
+            for (Index i = 0; i < static_cast<Index>(patch.local.size()); ++i) {
                 patch.global[i] = surface->local_to_global(patch.local[i], node_coords);
                 patch.box.expand_point(patch.global[i]);
             }
@@ -219,18 +219,18 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     std::vector<MasterPatch> master_patches {};
     BvhAabb                  master_bvh;
 
-    for (ID master_surface_id : *master_surfaces) {
-        if (static_cast<std::size_t>(master_surface_id) >= surfaces.size()) {
+    for (Index master_surface_id : *master_surfaces) {
+        if (master_surface_id >= static_cast<Index>(surfaces.size())) {
             continue;
         }
 
-        auto master = surfaces[static_cast<std::size_t>(master_surface_id)];
+        auto master = surfaces[master_surface_id];
         if (master == nullptr) {
             continue;
         }
 
         for (const auto& local_triangle : local_triangles(master)) {
-            const ID patch_id = static_cast<ID>(master_patches.size());
+            const Index patch_id = static_cast<Index>(master_patches.size());
             master_patches.push_back(make_master_patch(master_surface_id, master, local_triangle));
             master_bvh.add_aabb(patch_id, master_patches.back().box);
         }
@@ -246,17 +246,17 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     const math::quadrature::Quadrature triangle_quadrature {math::quadrature::DOMAIN_ISO_TRI,
                                                             math::quadrature::ORDER_QUARTIC};
 
-    std::vector<ID>                    candidate_patch_ids {};
+    std::vector<Index>                    candidate_patch_ids {};
     candidate_patch_ids.reserve(64);
 
-    std::unordered_map<ID, MortarRow> mortar_rows {};
+    std::unordered_map<Index, MortarRow> mortar_rows {};
 
-    for (ID slave_surface_id : *slave_surfaces) {
-        if (static_cast<std::size_t>(slave_surface_id) >= surfaces.size()) {
+    for (Index slave_surface_id : *slave_surfaces) {
+        if (slave_surface_id >= static_cast<Index>(surfaces.size())) {
             continue;
         }
 
-        auto slave = surfaces[static_cast<std::size_t>(slave_surface_id)];
+        auto slave = surfaces[slave_surface_id];
         if (slave == nullptr) {
             continue;
         }
@@ -281,16 +281,16 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
 
         const auto&     candidates = master_bvh.query_aabb(slave_box, &candidate_patch_ids);
 
-        std::vector<ID> candidate_patches {};
+        std::vector<Index> candidate_patches {};
         candidate_patches.reserve(candidates.size());
 
-        for (ID patch_id : candidates) {
-            if (patch_id < 0 || static_cast<std::size_t>(patch_id) >= master_patches.size()) {
+        for (Index patch_id : candidates) {
+            if (patch_id < 0 || patch_id >= static_cast<Index>(master_patches.size())) {
                 continue;
             }
 
-            const MasterPatch& patch  = master_patches[static_cast<std::size_t>(patch_id)];
-            auto               master = surfaces[static_cast<std::size_t>(patch.surface_id)];
+            const MasterPatch& patch  = master_patches[patch_id];
+            auto               master = surfaces[patch.surface_id];
             if (master == nullptr) {
                 continue;
             }
@@ -304,15 +304,15 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
             continue;
         }
 
-        std::vector<ID>               local_master_node_ids {};
-        std::unordered_map<ID, Index> local_master_index {};
+        std::vector<Index>               local_master_node_ids {};
+        std::unordered_map<Index, Index> local_master_index {};
 
-        for (ID patch_id : candidate_patches) {
-            const MasterPatch& patch  = master_patches[static_cast<std::size_t>(patch_id)];
-            auto               master = surfaces[static_cast<std::size_t>(patch.surface_id)];
+        for (Index patch_id : candidate_patches) {
+            const MasterPatch& patch  = master_patches[patch_id];
+            auto               master = surfaces[patch.surface_id];
 
             for (Index col = 0; col < master->n_nodes; ++col) {
-                const ID master_node = master->nodes()[col];
+                const Index master_node = master->nodes()[col];
                 if (local_master_index.find(master_node) != local_master_index.end()) {
                     continue;
                 }
@@ -328,12 +328,12 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
         DynamicMatrix G        = DynamicMatrix::Zero(n_slave, n_slave);
         DynamicMatrix B        = DynamicMatrix::Zero(n_slave, n_master);
 
-        for (ID patch_id : candidate_patches) {
-            const MasterPatch&  patch  = master_patches[static_cast<std::size_t>(patch_id)];
-            auto                master = surfaces[static_cast<std::size_t>(patch.surface_id)];
+        for (Index patch_id : candidate_patches) {
+            const MasterPatch&  patch  = master_patches[patch_id];
+            auto                master = surfaces[patch.surface_id];
 
             std::array<Vec2, 3> slave_local {};
-            for (std::size_t i = 0; i < slave_local.size(); ++i) {
+            for (Index i = 0; i < static_cast<Index>(slave_local.size()); ++i) {
                 slave_local[i] = slave->global_to_local(patch.global[i], node_coords, false);
             }
 
@@ -366,8 +366,8 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
                         }
 
                         for (Index col = 0; col < master->n_nodes; ++col) {
-                            const ID   master_node = master->nodes()[col];
-                            const auto col_it      = local_master_index.find(master_node);
+                            const Index master_node = master->nodes()[col];
+                            const auto  col_it      = local_master_index.find(master_node);
 
                             if (col_it == local_master_index.end()) {
                                 continue;
@@ -395,7 +395,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
         }
 
         for (Index row = 0; row < n_slave; ++row) {
-            const ID  row_node = slave->nodes()[row];
+            const Index row_node = slave->nodes()[row];
 
             Precision row_sum  = Precision(0);
             for (Index col = 0; col < n_master; ++col) {
@@ -422,7 +422,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     constexpr Precision coefficient_tolerance = Precision(1.6e-2);
 
     for (const auto& [slave_node_id, row] : mortar_rows) {
-        std::unordered_map<ID, Precision> coefficients {};
+        std::unordered_map<Index, Precision> coefficients {};
         coefficients.reserve(row.slave_coeffs.size() + row.master_coeffs.size());
 
         Precision slave_sum  = Precision(0);
@@ -479,7 +479,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
             continue;
         }
 
-        for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
+        for (Index dof_id = 0; dof_id < 6; ++dof_id) {
             if (system_nodal_dofs(slave_node_id, dof_id) < 0) {
                 continue;
             }
@@ -547,22 +547,22 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
     // build the bvh for fast access to elements to not query all elements for every slave node
     BvhAabb bvh(distance);
     if (master_surfaces) {
-        for (ID s_id : *master_surfaces) {
-            if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
+        for (Index s_id : *master_surfaces) {
+            if (s_id >= static_cast<Index>(surfaces.size())) {
                 continue;
             }
-            auto s_ptr = surfaces[static_cast<std::size_t>(s_id)];
+            auto s_ptr = surfaces[s_id];
             if (s_ptr == nullptr) {
                 continue;
             }
             bvh.add_element(s_id, node_coords, s_ptr->nodes(), s_ptr->n_nodes);
         }
     } else if (master_lines) {
-        for (ID l_id : *master_lines) {
-            if (static_cast<std::size_t>(l_id) >= lines.size()) {
+        for (Index l_id : *master_lines) {
+            if (l_id >= static_cast<Index>(lines.size())) {
                 continue;
             }
-            auto l_ptr = lines[static_cast<std::size_t>(l_id)];
+            auto l_ptr = lines[l_id];
             if (l_ptr == nullptr) {
                 continue;
             }
@@ -572,34 +572,34 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
     bvh.finalize();
 
     // Build the actual list of slave node IDs (direct node-set or extracted from slave surface-set).
-    std::vector<ID> slave_node_ids = collect_slave_nodes(slave_nodes, slave_surfaces, model_data);
+    std::vector<Index> slave_node_ids = collect_slave_nodes(slave_nodes, slave_surfaces, model_data);
 
-    std::vector<ID> candidates;
+    std::vector<Index> candidates;
     candidates.reserve(64);
 
-    for (ID id : slave_node_ids) {
+    for (Index id : slave_node_ids) {
         // ---------------------------------------------------------------------
         // Slave node position
         // ---------------------------------------------------------------------
-        const Index node_idx = static_cast<Index>(id);
+        const Index node_idx = id;
         Vec3        node_pos = node_coords.row_vec3(node_idx);
 
         // ---------------------------------------------------------------------
         // Find closest master geometry (surface or line)
         // ---------------------------------------------------------------------
         Precision   best_dist = std::numeric_limits<Precision>::max();
-        ID          best_id   = -1;
+        Index       best_id   = -1;
         Vec2        best_local;    // surfaces: (r,s); lines: (r,0)
 
         const auto& cand_ids = bvh.query_point(node_pos, &candidates);
 
         if (master_surfaces) {
-            for (ID s_id : cand_ids) {
-                if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
+            for (Index s_id : cand_ids) {
+                if (s_id >= static_cast<Index>(surfaces.size())) {
                     continue;
                 }
 
-                auto s_ptr = surfaces[static_cast<std::size_t>(s_id)];
+                auto s_ptr = surfaces[s_id];
                 if (s_ptr == nullptr) {
                     continue;
                 }
@@ -619,12 +619,12 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
                 }
             }
         } else if (master_lines) {
-            for (ID l_id : cand_ids) {
-                if (static_cast<std::size_t>(l_id) >= lines.size()) {
+            for (Index l_id : cand_ids) {
+                if (l_id >= static_cast<Index>(lines.size())) {
                     continue;
                 }
 
-                auto l_ptr = lines[static_cast<std::size_t>(l_id)];
+                auto l_ptr = lines[l_id];
                 if (l_ptr == nullptr) {
                     continue;
                 }
@@ -654,10 +654,10 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
         // ---------------------------------------------------------------------
         Vec3 mapped_pos = Vec3::Zero();
         if (master_surfaces) {
-            auto s_ptr = surfaces[static_cast<std::size_t>(best_id)];
+            auto s_ptr = surfaces[best_id];
             mapped_pos = s_ptr->local_to_global(best_local, node_coords);
         } else {
-            auto l_ptr = lines[static_cast<std::size_t>(best_id)];
+            auto l_ptr = lines[best_id];
             mapped_pos = l_ptr->local_to_global(best_local(0), node_coords);
         }
 
@@ -666,7 +666,7 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
             // and reference position fields synchronized so the snap is not
             // interpreted later as a physical deformation of the slave side.
             auto& reference_coords = *model_data.positions_reference;
-            for (Dim d = 0; d < 3; ++d) {
+            for (Index d = 0; d < 3; ++d) {
                 node_coords(node_idx, d)      = mapped_pos(d);
                 reference_coords(node_idx, d) = mapped_pos(d);
             }
@@ -678,7 +678,7 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
         // Determine active DOFs: slave must have DOF AND all master nodes must have DOF
         // ---------------------------------------------------------------------
         Dofs dofs_mask;
-        for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
+        for (Index dof_id = 0; dof_id < 6; ++dof_id) {
             dofs_mask(0, dof_id) = ((*system_nodal_dofs)(id, dof_id) >= 0);
         }
 
@@ -686,11 +686,11 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
         Index         n_master_nodes = 0;
 
         if (master_surfaces) {
-            auto s_ptr = surfaces[static_cast<std::size_t>(best_id)];
+            auto s_ptr = surfaces[best_id];
 
-            for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
-                const ID master_node_id = s_ptr->nodes()[local_id];
-                for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
+            for (Index local_id = 0; local_id < s_ptr->n_nodes; ++local_id) {
+                const Index master_node_id = s_ptr->nodes()[local_id];
+                for (Index dof_id = 0; dof_id < 6; ++dof_id) {
                     dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && ((*system_nodal_dofs)(master_node_id, dof_id) >= 0);
                 }
             }
@@ -698,11 +698,11 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
             nodal_contributions = s_ptr->shape_function(best_local);
             n_master_nodes      = s_ptr->n_nodes;
         } else {
-            auto l_ptr = lines[static_cast<std::size_t>(best_id)];
+            auto l_ptr = lines[best_id];
 
-            for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
-                const ID master_node_id = l_ptr->nodes()[local_id];
-                for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
+            for (Index local_id = 0; local_id < l_ptr->n_nodes; ++local_id) {
+                const Index master_node_id = l_ptr->nodes()[local_id];
+                for (Index dof_id = 0; dof_id < 6; ++dof_id) {
                     dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && ((*system_nodal_dofs)(master_node_id, dof_id) >= 0);
                 }
             }
@@ -723,27 +723,27 @@ Equations Tie::get_equations(model::SystemDofs* system_nodal_dofs, model::ModelD
         // ---------------------------------------------------------------------
         // Assemble compatibility equations: u_slave - sum_i N_i u_master_i = 0 per DOF
         // ---------------------------------------------------------------------
-        for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
+        for (Index dof_id = 0; dof_id < 6; ++dof_id) {
             if (!dofs_mask(0, dof_id)) {
                 continue;
             }
 
             std::vector<EquationEntry> entries;
-            entries.reserve(static_cast<std::size_t>(n_master_nodes) + 1);
+            entries.reserve(n_master_nodes + 1);
             entries.emplace_back(EquationEntry {id, dof_id, Precision(1)});
 
             if (master_surfaces) {
-                auto s_ptr = surfaces[static_cast<std::size_t>(best_id)];
-                for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
-                    const ID        master_node_id = s_ptr->nodes()[local_id];
+                auto s_ptr = surfaces[best_id];
+                for (Index local_id = 0; local_id < s_ptr->n_nodes; ++local_id) {
+                    const Index     master_node_id = s_ptr->nodes()[local_id];
                     const Precision w              = nodal_contributions(local_id);
                     if (std::abs(w) > 1e-12)
                         entries.emplace_back(EquationEntry {master_node_id, dof_id, -w});
                 }
             } else {
-                auto l_ptr = lines[static_cast<std::size_t>(best_id)];
-                for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
-                    const ID        master_node_id = l_ptr->nodes()[local_id];
+                auto l_ptr = lines[best_id];
+                for (Index local_id = 0; local_id < l_ptr->n_nodes; ++local_id) {
+                    const Index     master_node_id = l_ptr->nodes()[local_id];
                     const Precision w              = nodal_contributions(local_id);
                     if (std::abs(w) > 1e-12)
                         entries.emplace_back(EquationEntry {master_node_id, dof_id, -w});

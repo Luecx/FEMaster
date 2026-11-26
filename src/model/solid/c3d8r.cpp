@@ -22,7 +22,7 @@
 
 namespace fem::model {
 
-C3D8R::C3D8R(ID elem_id, const std::array<ID, N>& node_ids)
+C3D8R::C3D8R(Index elem_id, const std::array<Index, N>& node_ids)
     : C3D8(elem_id, node_ids) {}
 
 std::string C3D8R::type_name() const {
@@ -200,7 +200,7 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     // Expand the scalar matrix as K_hg = kron(H, I3).
     for (Index node_a = 0; node_a < N; ++node_a) {
         for (Index node_b = 0; node_b < N; ++node_b) {
-            for (Dim dof = 0; dof < D; ++dof) {
+            for (Index dof = 0; dof < D; ++dof) {
                 stiffness(D * node_a + dof, D * node_b + dof) = scalar_stiffness(node_a, node_b);
             }
         }
@@ -224,7 +224,7 @@ C3D8R::Vector24 C3D8R::local_displacement(const Field& displacement) {
     Vector24 result            = Vector24::Zero();
 
     for (Index node = 0; node < N; ++node) {
-        for (Dim dof = 0; dof < D; ++dof) {
+        for (Index dof = 0; dof < D; ++dof) {
             result(D * node + dof) = local(node, dof);
         }
     }
@@ -246,9 +246,9 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
         "C3D8R: internal force output requires at least three components");
 
     for (Index node = 0; node < N; ++node) {
-        const Index row = static_cast<Index>(elem_nodal_offset) + node;
+        const Index row = elem_nodal_offset + node;
 
-        for (Dim dof = 0; dof < D; ++dof) {
+        for (Index dof = 0; dof < D; ++dof) {
             node_forces(row, dof) += local_force(D * node + dof);
         }
     }

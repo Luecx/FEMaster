@@ -29,11 +29,11 @@ VolumeStress::VolumeStress(const Mat3& tensor) {
 
 // Map named components onto the underlying Voigt vector
 Precision& VolumeStress::operator[](Component component) {
-    return voigt_(static_cast<int>(component));
+    return voigt_(static_cast<Index>(component));
 }
 
 Precision VolumeStress::operator[](Component component) const {
-    return voigt_(static_cast<int>(component));
+    return voigt_(static_cast<Index>(component));
 }
 
 // Expose the complete Voigt representation for material and output paths

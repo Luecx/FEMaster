@@ -74,7 +74,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
         const auto node_surface    = dsl::Condition::key_equals("TYPE", {"NODE"});
 
         // Translate Abaqus/FEMaster side labels into the element boundary index
-        auto parse_side = [](const std::string& side_token) -> int {
+        auto parse_side = [](const std::string& side_token) -> Index {
             if (side_token.empty()) return 1;
 
             std::string token = side_token;
@@ -85,7 +85,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
             if (token == "SNEG") return 2;
 
             const std::string numeric = token[0] == 'S' && token.size() > 1 ? token.substr(1) : token;
-            int side{};
+            Index side{};
             const char* begin = numeric.data();
             const char* end   = begin + numeric.size();
             const auto [ptr, ec] = std::from_chars(begin, end, side);
@@ -97,13 +97,13 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
         };
 
         // Materialize one compiled element boundary as a surface or line entity
-        auto add_compiled_boundary = [&model](ID element_id, ID side, const std::string& name) {
-            logging::error(element_id >= 0 && static_cast<std::size_t>(element_id) < model._data->elements.size(),
+        auto add_compiled_boundary = [&model](Index element_id, Index side, const std::string& name) {
+            logging::error(element_id >= 0 && element_id < static_cast<Index>(model._data->elements.size()),
                 "SURFACE: compiled element ", element_id, " is out of range");
-            logging::error(model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
+            logging::error(model._data->elements[element_id] != nullptr,
                 "SURFACE: compiled element ", element_id, " is not configured");
 
-            const auto element = model._data->elements[static_cast<std::size_t>(element_id)];
+            const auto element = model._data->elements[element_id];
             auto surface = element->surface(side);
             auto line    = element->line(side);
 
@@ -112,12 +112,12 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                 " provides neither a surface nor a line");
 
             if (surface) {
-                const ID surface_id = static_cast<ID>(model._data->surfaces.size());
+                const Index surface_id = static_cast<Index>(model._data->surfaces.size());
                 model._data->surfaces.push_back(std::move(surface));
                 model._data->surface_sets.activate(name)->add(surface_id);
             }
             if (line) {
-                const ID line_id = static_cast<ID>(model._data->lines.size());
+                const Index line_id = static_cast<Index>(model._data->lines.size());
                 model._data->lines.push_back(std::move(line));
                 model._data->line_sets.activate(name)->add(line_id);
             }
@@ -130,11 +130,11 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("ID")
-                    .one<ID>().name("ELEM_ID")
+                    .one<Index>().name("ID")
+                    .one<Index>().name("ELEM_ID")
                     .one<std::string>().name("SIDE")
                 )
-                .bind([&model, ctx, parse_side](ID id, ID element_id, const std::string& side_token) {
+                .bind([&model, ctx, parse_side](Index id, Index element_id, const std::string& side_token) {
                     logging::error(ctx->instance.empty(),
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
@@ -165,7 +165,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
 
-                    const ID side = static_cast<ID>(parse_side(side_token));
+                    const Index side = parse_side(side_token);
                     const auto part = model._data->parts.get();
                     logging::error(part != nullptr,
                         "SURFACE: no active part is available");
@@ -199,7 +199,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                     logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                         "SURFACE: instance ", ctx->instance, " is not defined");
 
-                    const ID side = static_cast<ID>(parse_side(side_token));
+                    const Index side = parse_side(side_token);
                     const std::string reference = io::reader::qualify_reference(target, ctx->instance);
 
                     if (model._data->elem_sets.has(reference)) {
@@ -207,7 +207,7 @@ void register_surface(dsl::Registry& registry, model::Model& model) {
                         logging::error(elements != nullptr,
                             "SURFACE: element set ", reference, " is not initialized");
 
-                        for (const ID element_id : *elements) {
+                        for (const Index element_id : *elements) {
                             add_compiled_boundary(element_id, side, ctx->name);
                         }
                     } else {

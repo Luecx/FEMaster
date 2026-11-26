@@ -20,8 +20,8 @@ void solve_indirect_gpu_precon(cuda::CudaCSR& mat) {
     csric02Info_t      info;
     int                buffer_size;
 
-    size_t n   = mat.cols();
-    size_t nnz = mat.nnz();
+    const int n   = static_cast<int>(mat.cols());
+    const int nnz = static_cast<int>(mat.nnz());
 
     runtime_check_cuda(cusparseCreateCsric02Info(&info));
     runtime_check_cuda(cusparseCreateMatDescr (&mat_descr));
@@ -39,7 +39,7 @@ void solve_indirect_gpu_precon(cuda::CudaCSR& mat) {
               std::setw(60), std::left, "Allocating buffer for incomplete cholesky solve",
               std::setw(16), std::left, buffer_size,
               std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaArray<char> buffer {static_cast<size_t>(buffer_size)};
+    cuda::CudaArray<char> buffer {static_cast<Index>(buffer_size)};
 
     logging::info(buffer_size > 1e9, "IC  Buffer storage: ", buffer_size / 1024 / 1024 / 1024.0, "Gb");
 
@@ -142,21 +142,26 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     cusparseSpSV_createDescr(&spsv_1_descr);
     cusparseSpSV_createDescr(&spsv_2_descr);
 
-    size_t buffer_size_ap     = 0;
-    size_t buffer_size_spsv_1 = 0;
-    size_t buffer_size_spsv_2 = 0;
-    CudaPrecision one         = 1;
-    CudaPrecision zero        = 0;
+    // cuSPARSE reports buffer sizes as size_t
+    std::size_t   buffer_bytes_ap     = 0;
+    std::size_t   buffer_bytes_spsv_1 = 0;
+    std::size_t   buffer_bytes_spsv_2 = 0;
+    CudaPrecision one                 = 1;
+    CudaPrecision zero                = 0;
 
     runtime_check_cuda(cusparseSpMV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
                                                &one, descr_A, vec_p, &zero, vec_ap, CUDA_P_TYPE,
-                                               CUSPARSE_SPMV_CSR_ALG1, &buffer_size_ap));
+                                               CUSPARSE_SPMV_CSR_ALG1, &buffer_bytes_ap));
     runtime_check_cuda(cusparseSpSV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
                                                &one, descr_L, vec_r, vec_i, CUDA_P_TYPE,
-                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr, &buffer_size_spsv_1));
+                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr, &buffer_bytes_spsv_1));
     runtime_check_cuda(cusparseSpSV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE,
                                                &one, descr_L, vec_i, vec_z, CUDA_P_TYPE,
-                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr, &buffer_size_spsv_2));
+                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr, &buffer_bytes_spsv_2));
+
+    const Index buffer_size_ap     = static_cast<Index>(buffer_bytes_ap);
+    const Index buffer_size_spsv_1 = static_cast<Index>(buffer_bytes_spsv_1);
+    const Index buffer_size_spsv_2 = static_cast<Index>(buffer_bytes_spsv_2);
 
     logging::info(cuda::manager.mem_free() > buffer_size_ap,
              std::setw(60), std::left, "Allocating buffer for matrix vector product",

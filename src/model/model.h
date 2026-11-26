@@ -110,20 +110,20 @@ struct Model {
     // overloads address a specified Instance map. String overloads accept
     // either `ID` or `INSTANCE.ID` and use the implicit identity Instance for
     // unqualified references.
-    ID compiled_node_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
-    ID compiled_element_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
-    ID compiled_surface_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
-    ID compiled_line_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    Index compiled_node_id   (Index id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    Index compiled_element_id(Index id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    Index compiled_surface_id(Index id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    Index compiled_line_id   (Index id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
 
-    ID compiled_node_id   (const std::string& reference) const;
-    ID compiled_element_id(const std::string& reference) const;
-    ID compiled_surface_id(const std::string& reference) const;
-    ID compiled_line_id   (const std::string& reference) const;
+    Index compiled_node_id   (const std::string& reference) const;
+    Index compiled_element_id(const std::string& reference) const;
+    Index compiled_surface_id(const std::string& reference) const;
+    Index compiled_line_id   (const std::string& reference) const;
 
     // Node reference on the current side of the compile boundary. Before
     // compile() it is a plain local id of the active Part, afterwards it is
     // resolved like compiled_node_id(reference).
-    ID resolve_node_id(const std::string& reference) const;
+    Index resolve_node_id(const std::string& reference) const;
 
     // Resolution of named compiled regions or scalar entity references.
     // Named node, element and surface sets are returned directly, while scalar references
@@ -150,11 +150,11 @@ struct Model {
     // boundary extraction creates a local surface or line from an element side.
     // These operations are pre-compile because later changes would invalidate
     // dense assembly identifiers and inherited regions.
-    inline void set_node(ID id, Precision x, Precision y, Precision z = 0);
+    inline void set_node(Index id, Precision x, Precision y, Precision z = 0);
     template<typename T, typename... Args>
-    inline void set_element(ID id, Args&&... args);
-    inline void set_surface(ID id, ID element_id, ID surface_id);
-    inline void set_surface(const std::string& elset, ID surface_id);
+    inline void set_element(Index id, Args&&... args);
+    inline void set_surface(Index id, Index element_id, Index surface_id);
+    inline void set_surface(const std::string& elset, Index surface_id);
 
     // Shared definitions and section assignments. Materials, profiles and
     // coordinate systems are independent of identifier flattening and may be

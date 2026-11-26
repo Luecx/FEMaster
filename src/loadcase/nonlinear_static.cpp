@@ -916,9 +916,9 @@ void NonlinearStatic::run() {
     bool        converged      = false;
     std::string failure_reason = "NONE";
 
-    const Index configured_max_iterations = static_cast<Index>(max_iterations);
-    const Index configured_max_increments = static_cast<Index>(max_increments);
-    const Index configured_slow_iterations = static_cast<Index>(slow_iterations);
+    const Index configured_max_iterations = max_iterations;
+    const Index configured_max_increments = max_increments;
+    const Index configured_slow_iterations = slow_iterations;
 
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
@@ -935,9 +935,9 @@ void NonlinearStatic::run() {
         increments.maximum_increment  = maximum_increment;
         increments.growth_factor      = growth_factor;
         increments.cutback_factor     = cutback_factor;
-        increments.fast_iterations    = static_cast<Index>(fast_iterations);
+        increments.fast_iterations    = fast_iterations;
         increments.slow_iterations    = configured_slow_iterations;
-        increments.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
+        increments.maximum_cutbacks   = maximum_cutbacks;
         increments.adaptive           = adaptive_increments;
 
         load_control.begin_increment_trial    = begin_increment_trial;
@@ -981,9 +981,9 @@ void NonlinearStatic::run() {
         increments.growth_factor         = growth_factor;
         increments.cutback_factor        = cutback_factor;
         increments.severe_cutback_factor = cutback_factor;
-        increments.fast_iterations       = static_cast<Index>(fast_iterations);
+        increments.fast_iterations       = fast_iterations;
         increments.slow_iterations       = configured_slow_iterations;
-        increments.maximum_cutbacks      = static_cast<Index>(maximum_cutbacks);
+        increments.maximum_cutbacks      = maximum_cutbacks;
         increments.adaptive              = adaptive_increments;
 
         arc_length_control.begin_increment_trial    = begin_increment_trial;

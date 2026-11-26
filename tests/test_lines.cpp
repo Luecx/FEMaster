@@ -26,7 +26,7 @@ protected:
         : line(generateNodeIds())
     {
         // Get the number of nodes from the size of node_ids
-        N = line.node_ids.size();
+        N = static_cast<Index>(line.node_ids.size());
 
         // Initialize node coordinates based on the number of nodes
         node_coords.resize(N, 3);  // N nodes, 3 coordinates each (assuming 3D space)
@@ -39,8 +39,8 @@ protected:
     }
 
     // Helper function to generate node IDs
-    std::array<ID, LineType::num_nodes> generateNodeIds() {
-        std::array<ID, LineType::num_nodes> ids;
+    std::array<Index, LineType::num_nodes> generateNodeIds() {
+        std::array<Index, LineType::num_nodes> ids;
         for (Index i = 0; i < LineType::num_nodes; ++i) {
             ids[i] = i;
         }
@@ -57,7 +57,7 @@ TYPED_TEST_SUITE(LineTest, LineTypes);
 
 // A) Test that the sum of shape functions at random points is always 1
 TYPED_TEST(LineTest, ShapeFunctionSumToOneAtRandomPoints) {
-    Index N = this->line.node_ids.size();
+    Index N = static_cast<Index>(this->line.node_ids.size());
     Precision min_r = this->line.min_r();
     Precision max_r = this->line.max_r();
     // Random number generator for sampling points in local coordinate range
@@ -65,7 +65,7 @@ TYPED_TEST(LineTest, ShapeFunctionSumToOneAtRandomPoints) {
     std::uniform_real_distribution<Precision> distribution(min_r, max_r);
 
     // Test at 10 random points
-    for (int i = 0; i < 10; ++i) {
+    for (Index i = 0; i < 10; ++i) {
         Precision r = distribution(generator);
         Eigen::Matrix<Precision, Eigen::Dynamic, 1> N_vals = this->line.shape_function(r);
         Precision sum = N_vals.sum();
@@ -75,7 +75,7 @@ TYPED_TEST(LineTest, ShapeFunctionSumToOneAtRandomPoints) {
 
 // B) Test that shape functions are 1 at their respective nodes and 0 at others
 TYPED_TEST(LineTest, ShapeFunctionsAreOneAtNodes) {
-    Index N = this->line.node_ids.size();
+    Index N = static_cast<Index>(this->line.node_ids.size());
     Precision min_r = this->line.min_r();
     Precision max_r = this->line.max_r();
 
@@ -102,7 +102,7 @@ TYPED_TEST(LineTest, ShapeFunctionsAreOneAtNodes) {
 
 // C) Test that the shape function derivatives are correct using numerical approximation
 TYPED_TEST(LineTest, ShapeFunctionDerivativesAreCorrect) {
-    Index N = this->line.node_ids.size();
+    Index N = static_cast<Index>(this->line.node_ids.size());
     Precision delta = 1e-6;  // Small perturbation for numerical derivative
     Precision min_r = this->line.min_r() + delta;
     Precision max_r = this->line.max_r() - delta;
@@ -110,7 +110,7 @@ TYPED_TEST(LineTest, ShapeFunctionDerivativesAreCorrect) {
     std::uniform_real_distribution<Precision> distribution(min_r, max_r);
 
     // Test at 10 random points
-    for (int i = 0; i < 10; ++i) {
+    for (Index i = 0; i < 10; ++i) {
         Precision r = distribution(generator);
         Eigen::Matrix<Precision, Eigen::Dynamic, 1> N_plus = this->line.shape_function(r + delta);
         Eigen::Matrix<Precision, Eigen::Dynamic, 1> N_minus = this->line.shape_function(r - delta);
@@ -126,7 +126,7 @@ TYPED_TEST(LineTest, ShapeFunctionDerivativesAreCorrect) {
 
 // D) Test that the second derivatives are correct using numerical approximation
 TYPED_TEST(LineTest, ShapeFunctionSecondDerivativesAreCorrect) {
-    Index N = this->line.node_ids.size();
+    Index N = static_cast<Index>(this->line.node_ids.size());
     Precision delta = 1e-6;  // Small perturbation for numerical second derivative
     Precision min_r = this->line.min_r() + delta;
     Precision max_r = this->line.max_r() - delta;
@@ -134,7 +134,7 @@ TYPED_TEST(LineTest, ShapeFunctionSecondDerivativesAreCorrect) {
     std::uniform_real_distribution<Precision> distribution(min_r, max_r);
 
     // Test at 10 random points
-    for (int i = 0; i < 10; ++i) {
+    for (Index i = 0; i < 10; ++i) {
         Precision r = distribution(generator);
         Eigen::Matrix<Precision, Eigen::Dynamic, 1> N_plus = this->line.shape_function(r + delta);
         Eigen::Matrix<Precision, Eigen::Dynamic, 1> N_ = this->line.shape_function(r);
@@ -151,7 +151,7 @@ TYPED_TEST(LineTest, ShapeFunctionSecondDerivativesAreCorrect) {
 
 // E) Test that the closest point is found correctly
 TYPED_TEST(LineTest, ClosestPointIsFoundCorrectly) {
-    Index N = this->line.node_ids.size();
+    Index N = static_cast<Index>(this->line.node_ids.size());
 
     model::Field node_coords_system{"NODE_COORDS", model::FieldDomain::NODE, 5, 3};
     node_coords_system(0, 0) = 0.0; node_coords_system(0, 1) = 0.0; node_coords_system(0, 2) = 0.0;
@@ -162,7 +162,7 @@ TYPED_TEST(LineTest, ClosestPointIsFoundCorrectly) {
 
 
     unsigned int seed = 12345;
-    for(int n = 0; n < 100; n++) {
+    for(Index n = 0; n < 100; n++) {
         // Define a point p in space (e.g., off the line)
         Eigen::Matrix<Precision, 3, 1> p(rand_r(&seed) % 1000 / 1000.0,
                                          rand_r(&seed) % 1000 / 1000.0,

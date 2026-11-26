@@ -18,11 +18,11 @@ ShellMaterialStress::ShellMaterialStress(const Vec5& values)
 
 // Map named physical stress components onto the underlying vector
 Precision& ShellMaterialStress::operator[](Component component) {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 Precision ShellMaterialStress::operator[](Component component) const {
-    return values_(static_cast<int>(component));
+    return values_(static_cast<Index>(component));
 }
 
 /**

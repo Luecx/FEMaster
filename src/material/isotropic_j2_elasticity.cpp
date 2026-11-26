@@ -355,12 +355,12 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrain&              str
         Eigen::Matrix<Precision, 1, 5> Cza;
 
         for (Index i = 0; i < 5; ++i) {
-            const Index row = retained[static_cast<std::size_t>(i)];
+            const Index row = retained[i];
             Caz(i) = tangent_3d(row, eliminated);
             Cza(i) = tangent_3d(eliminated, row);
 
             for (Index j = 0; j < 5; ++j) {
-                const Index column = retained[static_cast<std::size_t>(j)];
+                const Index column = retained[j];
                 Caa(i, j) = tangent_3d(row, column);
             }
         }

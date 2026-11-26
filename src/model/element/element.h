@@ -46,24 +46,24 @@ namespace fem::model {
  * Castable provides mutable and const runtime access to concrete element types.
  */
 struct ElementInterface : public Castable {
-    ID elem_id           = 0;
-    ID elem_nodal_offset = 0;
-    ID elem_ip_offset    = 0;
-    ID elem_mp_offset    = 0;
+    Index elem_id           = 0;
+    Index elem_nodal_offset = 0;
+    Index elem_ip_offset    = 0;
+    Index elem_mp_offset    = 0;
 
     Section::Ptr _section    = nullptr;
     ModelData*   _model_data = nullptr;
 
-    explicit ElementInterface(ID elem_id_in)
+    explicit ElementInterface(Index elem_id_in)
         : elem_id(elem_id_in) {}
 
     virtual ~ElementInterface() = default;
 
     virtual ElDofs dofs() const       = 0;
-    virtual Dim    dimensions() const = 0;
-    virtual Dim    n_nodes() const    = 0;
-    virtual Dim    num_ip() const     = 0;
-    virtual const ID* nodes() const   = 0;
+    virtual Index  dimensions() const = 0;
+    virtual Index  n_nodes() const    = 0;
+    virtual Index  num_ip() const     = 0;
+    virtual const Index* nodes() const = 0;
 
     /**
      * @brief Returns an independent copy preserving the concrete element type.
@@ -75,14 +75,14 @@ struct ElementInterface : public Castable {
      */
     virtual ElementPtr copy() const = 0;
 
-    virtual ID* nodes() {
-        return const_cast<ID*>(static_cast<const ElementInterface*>(this)->nodes());
+    virtual Index* nodes() {
+        return const_cast<Index*>(static_cast<const ElementInterface*>(this)->nodes());
     }
 
     virtual Index num_mp_per_ip() const { return 1; }
 
-    virtual SurfacePtr surface(ID) { return nullptr; }
-    virtual LinePtr line(ID) { return nullptr; }
+    virtual SurfacePtr surface(Index) { return nullptr; }
+    virtual LinePtr line(Index) { return nullptr; }
 
     virtual std::string type_name() const { return std::string{}; }
 
@@ -93,25 +93,25 @@ struct ElementInterface : public Castable {
     std::string label() const {
         const bool mapped = _model_data != nullptr
                          && elem_id >= 0
-                         && static_cast<std::size_t>(elem_id) < _model_data->element_mapping.size()
-                         && std::get<0>(_model_data->element_mapping[static_cast<std::size_t>(elem_id)]) != nullptr;
+                         && elem_id < static_cast<Index>(_model_data->element_mapping.size())
+                         && std::get<0>(_model_data->element_mapping[elem_id]) != nullptr;
         if (!mapped) return std::to_string(elem_id);
 
-        const auto& [instance, local_id] = _model_data->element_mapping[static_cast<std::size_t>(elem_id)];
+        const auto& [instance, local_id] = _model_data->element_mapping[elem_id];
         return instance->label(local_id);
     }
 
-    ID* begin() { return nodes(); }
-    ID* end() { return nodes() + n_nodes(); }
-    const ID* begin() const { return nodes(); }
-    const ID* end() const { return nodes() + n_nodes(); }
+    Index* begin() { return nodes(); }
+    Index* end() { return nodes() + n_nodes(); }
+    const Index* begin() const { return nodes(); }
+    const Index* end() const { return nodes() + n_nodes(); }
 
     Index ip_index(Index local_ip) const {
-        return static_cast<Index>(elem_ip_offset) + local_ip;
+        return elem_ip_offset + local_ip;
     }
 
     Index mp_index(Index local_ip, Index local_mp = 0) const {
-        return static_cast<Index>(elem_mp_offset)
+        return elem_mp_offset
              + local_ip * num_mp_per_ip()
              + local_mp;
     }
@@ -128,14 +128,14 @@ struct ElementInterface : public Castable {
         return _section->material_;
     }
 
-    Vec3 node_position(ID local_id) const {
+    Vec3 node_position(Index local_id) const {
         logging::error(_model_data != nullptr,
             "no model data assigned to element ", label());
         logging::error(_model_data->positions != nullptr,
             "positions field not set in model data");
-        logging::error(local_id >= 0 && local_id < static_cast<ID>(n_nodes()),
+        logging::error(local_id >= 0 && local_id < n_nodes(),
             "local node id ", local_id, " out of range for element ", label());
-        return _model_data->positions->row_vec3(static_cast<Index>(nodes()[static_cast<Index>(local_id)]));
+        return _model_data->positions->row_vec3(nodes()[local_id]);
     }
 };
 

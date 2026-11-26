@@ -44,8 +44,8 @@ struct CudaCSR{
     std::shared_ptr<CudaArray<int          >> m_row_ptr;
 
     // Nonzero and column counts used to validate compatible transfers.
-    size_t m_nnz;
-    size_t m_cols;
+    Index m_nnz;
+    Index m_cols;
 
     public:
     // Upload independent storage, or reuse the topology of a matching matrix.
@@ -71,9 +71,9 @@ struct CudaCSR{
             , m_nnz(similar.m_nnz)
             , m_cols(similar.m_cols) {
         // Eigen dimensions are nonnegative; compare in the device count type.
-        runtime_check(static_cast<size_t>(matrix.nonZeros()) == m_nnz,
+        runtime_check(matrix.nonZeros() == m_nnz,
             "cannot construct matrix with same column indices and row pointers");
-        runtime_check(static_cast<size_t>(matrix.cols()) == m_cols,
+        runtime_check(matrix.cols() == m_cols,
             "cannot construct matrix with same column indices and row pointers");
 
         // Match the shared CSR ordering through compressed CSC storage of A^T.
@@ -85,9 +85,9 @@ struct CudaCSR{
     // Download into a matrix with compatible nonzero and column counts.
     void download(SparseMatrix &matrix) {
         // Eigen dimensions are nonnegative; compare in the device count type.
-        runtime_check(static_cast<size_t>(matrix.nonZeros()) == m_nnz,
+        runtime_check(matrix.nonZeros() == m_nnz,
             "cannot construct matrix with same column indices and row pointers");
-        runtime_check(static_cast<size_t>(matrix.cols()) == m_cols,
+        runtime_check(matrix.cols() == m_cols,
             "cannot construct matrix with same column indices and row pointers");
 
         // Restore device CSR arrays through CSC storage of the transpose.
@@ -109,15 +109,15 @@ struct CudaCSR{
     CudaArray<int      >& row_ptr() {
         return *m_row_ptr;
     }
-    size_t nnz() const {
+    Index nnz() const {
         return m_nnz;
     }
-    size_t cols() const {
+    Index cols() const {
         return m_cols;
     }
 
-    static size_t estimate_mem(SparseMatrix &matrix, bool only_values=false) {
-        size_t s = CudaArray<CudaPrecision>::estimate_mem(matrix.nonZeros());
+    static Index estimate_mem(SparseMatrix &matrix, bool only_values=false) {
+        Index s = CudaArray<CudaPrecision>::estimate_mem(matrix.nonZeros());
         if(!only_values) {
             s += CudaArray<int>::estimate_mem(matrix.nonZeros());
             s += CudaArray<int>::estimate_mem(matrix.rows() + 1);

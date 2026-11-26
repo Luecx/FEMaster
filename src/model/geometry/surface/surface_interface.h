@@ -41,14 +41,14 @@ struct SurfaceInterface {
 
     virtual ~SurfaceInterface() = default;
 
-    virtual ID* nodes() = 0;
-    virtual const ID* nodes() const = 0;
+    virtual Index* nodes() = 0;
+    virtual const Index* nodes() const = 0;
     virtual Ptr copy() const = 0;
 
-    ID* begin() { return nodes(); }
-    ID* end() { return nodes() + n_nodes; }
-    const ID* begin() const { return nodes(); }
-    const ID* end() const { return nodes() + n_nodes; }
+    Index* begin() { return nodes(); }
+    Index* end() { return nodes() + n_nodes; }
+    const Index* begin() const { return nodes(); }
+    const Index* end() const { return nodes() + n_nodes; }
 
     virtual Vec3 local_to_global(const Vec2& local, const Field& node_coords) const = 0;
     virtual Vec2 global_to_local(const Vec3& global, const Field& node_coords, bool clip = false) const = 0;

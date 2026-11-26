@@ -66,12 +66,12 @@ struct BeamElement : StructuralElement {
     // Global identifiers of the beam nodes in element-local interpolation
     // order. Geometry evaluation, degree-of-freedom gathering and load
     // distribution consistently use this fixed-size connectivity.
-    std::array<ID, N> node_ids{};
+    std::array<Index, N> node_ids{};
 
     // Construct from the element identifier and ordered connectivity. Beam
     // orientation is a section property and is therefore not part of element
     // topology.
-    BeamElement(ID elem_id, std::array<ID, N> node_ids_in);
+    BeamElement(Index elem_id, std::array<Index, N> node_ids_in);
 
     // Polymorphic destruction through the structural-element interface.
     ~BeamElement() override;
@@ -156,12 +156,12 @@ struct BeamElement : StructuralElement {
     // Fixed topology and degree-of-freedom metadata required by the common
     // element interface, together with direct connectivity access. Beam
     // elements expose no surface representation through this base class.
-    ElDofs     dofs() const override;
-    Dim        dimensions() const override;
-    Dim        n_nodes() const override;
-    Dim        num_ip() const override;
-    const ID*  nodes() const override;
-    SurfacePtr surface(ID surface_id) override;
+    ElDofs       dofs() const override;
+    Index        dimensions() const override;
+    Index        n_nodes() const override;
+    Index        num_ip() const override;
+    const Index* nodes() const override;
+    SurfacePtr   surface(Index surface_id) override;
 
     // Recover nodal beam resultants in the original section frame.
     bool compute_beam_section_forces(

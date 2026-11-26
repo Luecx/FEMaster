@@ -16,15 +16,15 @@
 namespace fem {
 namespace logging {
 
-inline int indentation_level = 0;
-inline std::size_t g_console_width = 102; // default; configurable
+inline Index indentation_level = 0;
+inline Index g_console_width = 102; // default; configurable
 inline bool g_enabled = true;
 
-inline void set_console_width(std::size_t cols) {
-    g_console_width = std::max<std::size_t>(cols, 20);
+inline void set_console_width(Index cols) {
+    g_console_width = std::max<Index>(cols, 20);
 }
 
-inline std::size_t get_console_width() {
+inline Index get_console_width() {
     return g_console_width;
 }
 
@@ -52,7 +52,7 @@ inline void down() {
 
 inline std::string get_indentation() {
     std::string result;
-    for (int i = 0; i < indentation_level; ++i) {
+    for (Index i = 0; i < indentation_level; ++i) {
         result += "  "; // 2 spaces per level
     }
     return result;
@@ -67,16 +67,16 @@ inline bool is_space_or_tab(char c) {
 }
 
 inline std::string leading_ws_of(const std::string& s) {
-    std::size_t i = 0;
-    while (i < s.size() && is_space_or_tab(s[i])) ++i;
+    Index i = 0;
+    while (i < static_cast<Index>(s.size()) && is_space_or_tab(s[i])) ++i;
     return s.substr(0, i);
 }
 
 // Split by '\n' but keep empty segments (so trailing/leading newlines are honored)
 inline std::vector<std::string> split_lines_hard(const std::string& s) {
     std::vector<std::string> parts;
-    std::size_t start = 0;
-    for (std::size_t i = 0; i < s.size(); ++i) {
+    Index start = 0;
+    for (Index i = 0; i < static_cast<Index>(s.size()); ++i) {
         if (s[i] == '\n') {
             parts.emplace_back(s.substr(start, i - start));
             start = i + 1;
@@ -102,25 +102,25 @@ inline void emit_line(const std::string& prefix, const std::string& text) {
  */
 inline void wrap_and_emit_segment(const std::string& base_prefix,
                                   const std::string& segment,
-                                  std::size_t max_cols)
+                                  Index max_cols)
 {
     // leading WS of this segment (spaces/tabs only) — replicated on wrapped lines
     const std::string seg_leading_ws = leading_ws_of(segment);
 
     // For the *first* physical line of this segment:
     std::string cur_prefix = base_prefix;
-    std::size_t cur_prefix_len = cur_prefix.size();
+    Index cur_prefix_len = static_cast<Index>(cur_prefix.size());
 
     // For *continuation* lines:
     const std::string cont_prefix = base_prefix + seg_leading_ws;
-    const std::size_t cont_prefix_len = cont_prefix.size();
+    const Index cont_prefix_len = static_cast<Index>(cont_prefix.size());
 
     // Work on a view into segment
-    std::size_t pos = 0;
-    const std::size_t N = segment.size();
+    Index pos = 0;
+    const Index N = static_cast<Index>(segment.size());
 
     // Helper to compute available width for current prefix
-    auto avail_for_text = [&](std::size_t prefix_len) -> std::size_t {
+    auto avail_for_text = [&](Index prefix_len) -> Index {
         if (max_cols <= prefix_len) return 0;
         return max_cols - prefix_len;
     };
@@ -130,9 +130,9 @@ inline void wrap_and_emit_segment(const std::string& base_prefix,
     while (pos < N) {
         // Decide prefix for this physical line
         const std::string& prefix = first_line ? cur_prefix : cont_prefix;
-        const std::size_t prefix_len = first_line ? cur_prefix_len : cont_prefix_len;
+        const Index prefix_len = first_line ? cur_prefix_len : cont_prefix_len;
 
-        std::size_t avail = avail_for_text(prefix_len);
+        Index avail = avail_for_text(prefix_len);
         if (avail == 0) {
             // Degenerate case: no room; emit empty line to avoid infinite loop.
             emit_line(prefix, "");
@@ -142,7 +142,7 @@ inline void wrap_and_emit_segment(const std::string& base_prefix,
 
         // Remaining text of this segment for this line
         const char* data = segment.data() + pos;
-        std::size_t remaining = N - pos;
+        Index remaining = N - pos;
 
         if (remaining <= avail) {
             // Fits entirely
@@ -151,9 +151,9 @@ inline void wrap_and_emit_segment(const std::string& base_prefix,
         }
 
         // Try to break at last whitespace within the window
-        std::size_t break_pos = avail;
+        Index break_pos = avail;
         // Scan backward to find a natural break on space/tab
-        std::size_t i = avail;
+        Index i = avail;
         while (i > 0 && !is_space_or_tab(data[i - 1])) --i;
         if (i > 0) {
             break_pos = i;
@@ -199,7 +199,7 @@ void log_wrapped_with_prefix(const std::string& prefix, Args&&... args) {
     const std::string content = content_stream.str();
 
     const std::string base_prefix = prefix + logging::get_indentation() + " ";
-    const std::size_t max_cols = get_console_width();
+    const Index max_cols = get_console_width();
 
     if (content.empty()) {
         // Always emit at least one blank line with prefix
@@ -209,7 +209,7 @@ void log_wrapped_with_prefix(const std::string& prefix, Args&&... args) {
 
     // Split on hard newlines and wrap each segment
     const auto segments = split_lines_hard(content);
-    for (std::size_t s = 0; s < segments.size(); ++s) {
+    for (Index s = 0; s < static_cast<Index>(segments.size()); ++s) {
         wrap_and_emit_segment(base_prefix, segments[s], max_cols);
     }
 }
@@ -222,7 +222,7 @@ inline std::string process(T value, std::ostringstream& stream) {
 }
 
 template<>
-inline std::string process<int>(int value, std::ostringstream& stream) {
+inline std::string process<Index>(Index value, std::ostringstream& stream) {
     stream << value;
     return stream.str();
 }

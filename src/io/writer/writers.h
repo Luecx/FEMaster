@@ -46,7 +46,7 @@ class ResultWriters {
 
     void write_model_data(const model::ModelData& model_data);
 
-    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void add_loadcase(Index id, WriterStepType step_type = WriterStepType::Static);
 
     void write_field(const model::Field& field,
                      const std::string& field_name,

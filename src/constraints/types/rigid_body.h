@@ -34,7 +34,7 @@ namespace constraint {
 
 class RigidBody : public fem::Printable {
 public:
-    ID                        ref_node;
+    Index                     ref_node;
     model::NodeRegion::Ptr    ref_region = nullptr;
     model::ElementRegion::Ptr elements   = nullptr;
     model::NodeRegion::Ptr    tie_nodes  = nullptr;
@@ -43,7 +43,7 @@ public:
 public:
     // At least one of the element, tie or pin sets must be given. A node must
     // not appear in both the tie and the pin node set.
-    RigidBody(ID                        ref_node,
+    RigidBody(Index                     ref_node,
               model::ElementRegion::Ptr elements,
               model::NodeRegion::Ptr    tie_nodes,
               model::NodeRegion::Ptr    pin_nodes);

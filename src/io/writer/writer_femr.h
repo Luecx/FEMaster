@@ -37,7 +37,7 @@ public:
     void open(const std::string& filename);
     void close();
     void write_model_data(const model::ModelData& model_data);
-    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void add_loadcase(Index id, WriterStepType step_type = WriterStepType::Static);
     void write_field(const model::Field& field,
                      const std::string& field_name,
                      const model::ModelData* model_data = nullptr,
@@ -51,7 +51,7 @@ private:
     void ensure_frame(const std::string& field_name, Precision frame_value);
 
     std::ofstream file_;
-    int current_loadcase_{0};
+    Index current_loadcase_{0};
     WriterStepType current_step_type_{WriterStepType::Static};
     std::uint32_t current_frame_{0};
     std::uint64_t next_field_id_{1};

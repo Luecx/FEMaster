@@ -68,7 +68,7 @@ class C3D8I final : public C3D8 {
 public:
     // Fixed topology and local enhanced-mode dimensions
     static constexpr Index N       = 8;
-    static constexpr Dim   D       = 3;
+    static constexpr Index D       = 3;
     static constexpr Index ndof    = N * D;
     static constexpr Index n_modes = 13;
 
@@ -136,7 +136,7 @@ public:
     using NonlinearPoints = std::array<NonlinearPoint, 8>;
 
     // Construction and element identity
-    C3D8I(ID elem_id, const std::array<ID, N>& node_ids);
+    C3D8I(Index elem_id, const std::array<Index, N>& node_ids);
     ~C3D8I() override = default;
 
     ElementPtr copy() const override { return std::make_shared<C3D8I>(elem_id, node_ids); }

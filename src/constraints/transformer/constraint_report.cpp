@@ -72,7 +72,7 @@ std::string format_entry(const EquationEntry& entry, const EquationFormatOptions
 
     // Encode the addressed degree of freedom through its node identifier and
     // local DOF index.
-    oss << 'N' << entry.node_id << '.' << static_cast<int>(entry.dof);
+    oss << 'N' << entry.node_id << '.' << entry.dof;
 
     return oss.str();
 }
@@ -110,7 +110,7 @@ std::string build_lhs(const Equation& equation, const EquationFormatOptions& opt
 
     // Process entries in their stored order. No sorting or coefficient
     // consolidation is performed by the reporting layer.
-    for (std::size_t idx = 0; idx < equation.entries.size(); ++idx) {
+    for (Index idx = 0; idx < static_cast<Index>(equation.entries.size()); ++idx) {
         const auto& entry = equation.entries[idx];
 
         // signbit() also detects a negative signed zero, preserving the sign
@@ -210,8 +210,8 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
 
     // Track the widest left-hand side and source tag. These widths define the
     // alignment columns of the final report.
-    std::size_t max_lhs = 0;
-    std::size_t max_tag = 0;
+    Index max_lhs = 0;
+    Index max_tag = 0;
 
     // Pre-format every equation and collect the maximum field widths.
     for (const auto& eq : equations) {
@@ -220,7 +220,7 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
 
         // Expand the left-hand-side column width whenever a longer expression
         // is encountered.
-        max_lhs = std::max<std::size_t>(max_lhs, lhs.size());
+        max_lhs = std::max<Index>(max_lhs, static_cast<Index>(lhs.size()));
 
         // Convert the equation origin into a compact source tag.
         std::string tag = make_tag(eq.source, eq.source_index);
@@ -229,7 +229,7 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
             // Enclose visible source tags in brackets and update the required
             // tag-column width.
             tag = '[' + tag + ']';
-            max_tag = std::max<std::size_t>(max_tag, tag.size());
+            max_tag = std::max<Index>(max_tag, static_cast<Index>(tag.size()));
         }
 
         // Move the completed strings into their storage arrays because the
@@ -245,7 +245,7 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
     // Mark the first equation of every consecutive source group. Repeated tags
     // inside one group are suppressed later to make related equations easier to
     // scan visually.
-    for (std::size_t i = 0; i < tags.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(tags.size()); ++i) {
         if (i == 0) {
             // The first equation always starts a new group.
             first_in_group.push_back(true);
@@ -257,7 +257,7 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
     }
 
     // Assemble the final aligned output one equation at a time.
-    for (std::size_t i = 0; i < equations.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(equations.size()); ++i) {
         std::ostringstream oss;
 
         // Keep fixed-point formatting active for consistency, although the
@@ -275,7 +275,7 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
             } else {
                 // Suppress repeated tags within a consecutive group while
                 // preserving exactly the same horizontal space.
-                oss << std::string(static_cast<std::size_t>(max_tag), ' ') << ' ';
+                oss << std::string(max_tag, ' ') << ' ';
             }
         }
 

@@ -153,12 +153,12 @@ void register_point_mass(fem::io::dsl::Registry& registry, model::Model& model) 
                     // without colliding with the non-negative dense element ids
                     // established by compile(). They remain outside all element-
                     // domain enumeration and are assembled through point_elements.
-                    for (const ID node : *nodes) {
-                        const ID id = -1 - static_cast<ID>(model._data->point_elements.size());
+                    for (const Index node : *nodes) {
+                        const Index id = -1 - static_cast<Index>(model._data->point_elements.size());
                         section_region->add(id);
 
                         auto point = std::make_shared<model::PointElement>(
-                            id, std::array<ID, model::PointElement::N>{node});
+                            id, std::array<Index, model::PointElement::N>{node});
                         point->_model_data = model._data.get();
                         point->set_section(section);
                         model._data->point_elements.push_back(std::move(point));

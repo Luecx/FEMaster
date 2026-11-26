@@ -80,7 +80,7 @@ void DLoad::apply(
 
     // Omitted components contribute no traction
     Vec3 traction = Vec3::Zero();
-    for (Dim i = 0; i < 3; ++i) {
+    for (Index i = 0; i < 3; ++i) {
         if (std::isfinite(values_[i])) traction[i] = scale * values_[i];
     }
 
@@ -109,7 +109,7 @@ void DLoad::apply(
     DynamicVector force;
     DynamicMatrix stiffness;
 
-    for (ID surface_id : *region_) {
+    for (Index surface_id : *region_) {
         const auto& surface = model_data.surfaces[surface_id];
         if (!surface) continue;
 
@@ -124,10 +124,10 @@ void DLoad::apply(
         );
 
         // Scatter the local force into the global nodal load
-        const ID* nodes = surface->nodes();
+        const Index* nodes = surface->nodes();
 
         for (Index i = 0; i < surface->n_nodes; ++i) {
-            for (Dim d = 0; d < 3; ++d) {
+            for (Index d = 0; d < 3; ++d) {
                 load(nodes[i], d) += force(3 * i + d);
             }
         }
@@ -159,7 +159,7 @@ std::string DLoad::str() const {
     // Report the stored traction before amplitude scaling or transformation.
     os << "DLOAD: target=SFSET "
        << (region_ ? region_->name : std::string("?")) << " ("
-       << (region_ ? static_cast<int>(region_->size()) : 0) << "), values=["
+       << (region_ ? region_->size() : 0) << "), values=["
        << values_[0] << ", " << values_[1] << ", " << values_[2] << "]";
 
     if (orientation_) os << ", orientation=" << orientation_->name;

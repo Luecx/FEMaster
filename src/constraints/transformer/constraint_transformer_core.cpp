@@ -68,7 +68,7 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
 
     for (Index master = 0; master < n_master; ++master) {
         const Index gid = map_.masters[master];
-        logging::error(gid < map_.full_size && full_to_master[gid] == n_master,
+        logging::error(gid >= 0 && gid < map_.full_size && full_to_master[gid] == n_master,
             "[ConstraintTransformer] invalid or repeated master DOF: ", gid);
         full_to_master[gid] = master;
     }
@@ -76,18 +76,18 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
     std::vector<DofLocation> locations(n_master);
     std::vector<Index>       active_nodes;
     std::vector<char>        found(n_master, false);
-    active_nodes.reserve(static_cast<std::size_t>(dofs.nodes()));
+    active_nodes.reserve(dofs.nodes());
 
     // Walk the original node-by-component numbering once. A node belongs to
     // the geometric extent even when its active DOFs are all slaves.
-    for (Index node = 0; node < static_cast<Index>(dofs.nodes()); ++node) {
+    for (Index node = 0; node < dofs.nodes(); ++node) {
         bool active = false;
         for (Eigen::Index component = 0; component < dofs.width(); ++component) {
             const auto gid = dofs(node, component);
             if (gid < 0) continue;
 
             active = true;
-            logging::error(static_cast<Index>(gid) < map_.full_size,
+            logging::error(gid < map_.full_size,
                 "[ConstraintTransformer] active DOF index out of range: ", gid);
 
             const Index master = full_to_master[gid];
@@ -95,7 +95,7 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
 
             logging::error(!found[master],
                 "[ConstraintTransformer] master DOF appears more than once: ", gid);
-            locations[master] = {node, static_cast<int>(component)};
+            locations[master] = {node, component};
             found[master]     = true;
         }
         if (active) active_nodes.push_back(node);
@@ -114,7 +114,7 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
 }
 
 const DofLocation& ConstraintTransformer::master_location(Index master) const {
-    logging::error(dof_locations_initialized_ &&
+    logging::error(dof_locations_initialized_ && master >= 0 &&
                    master < static_cast<Index>(master_locations_.size()),
         "[ConstraintTransformer] master location is unavailable: ", master);
     return master_locations_[master];

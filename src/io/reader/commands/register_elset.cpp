@@ -132,12 +132,12 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START").desc("First Part-local element identifier")
-                    .one<ID>().name("END"  ).desc("Last Part-local element identifier")
-                    .one<ID>().name("INC"  ).desc("Non-zero identifier increment")
-                        .on_missing(ID{1}).on_empty(ID{1})
+                    .one<Index>().name("START").desc("First Part-local element identifier")
+                    .one<Index>().name("END"  ).desc("Last Part-local element identifier")
+                    .one<Index>().name("INC"  ).desc("Non-zero identifier increment")
+                        .on_missing(Index{1}).on_empty(Index{1})
                 )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+                .bind([&model, ctx](Index first, Index last, Index inc) {
                     // Validate the Part scope and arithmetic progression
                     logging::error(ctx->instance.empty(),
                         "ELSET: INSTANCE is only valid at assembly level");
@@ -152,10 +152,10 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                     const auto destination = part->elem_sets.activate(ctx->name);
 
                     // Insert the inclusive progression as sparse Part-local identifiers
-                    for (ID id = first;; id += inc) {
+                    for (Index id = first;; id += inc) {
                         destination->add(id);
 
-                        const ID next = static_cast<ID>(id + inc);
+                        const Index next = id + inc;
                         if (inc > 0 ? next > last : next < last) break;
                     }
                 })
@@ -169,12 +169,12 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
             .segment(dsl::Segment::make()
                 .range(dsl::LineRange{}.min(1))
                 .pattern(dsl::Pattern::make()
-                    .one<ID>().name("START").desc("First Instance-local element identifier")
-                    .one<ID>().name("END"  ).desc("Last Instance-local element identifier")
-                    .one<ID>().name("INC"  ).desc("Non-zero identifier increment")
-                        .on_missing(ID{1}).on_empty(ID{1})
+                    .one<Index>().name("START").desc("First Instance-local element identifier")
+                    .one<Index>().name("END"  ).desc("Last Instance-local element identifier")
+                    .one<Index>().name("INC"  ).desc("Non-zero identifier increment")
+                        .on_missing(Index{1}).on_empty(Index{1})
                 )
-                .bind([&model, ctx](ID first, ID last, ID inc) {
+                .bind([&model, ctx](Index first, Index last, Index inc) {
                     // Validate the compiled scope and arithmetic progression
                     logging::error(inc != 0,
                         "ELSET/GENERATE: increment must not be zero");
@@ -186,13 +186,13 @@ void register_elset(dsl::Registry& registry, model::Model& model) {
                     const auto destination = model._data->elem_sets.activate(ctx->name);
 
                     // Map every Instance-local identifier into dense assembly space
-                    for (ID id = first;; id += inc) {
-                        const ID compiled_id = ctx->instance.empty()
+                    for (Index id = first;; id += inc) {
+                        const Index compiled_id = ctx->instance.empty()
                             ? model.compiled_element_id(id)
                             : model.compiled_element_id(id, ctx->instance);
                         destination->add(compiled_id);
 
-                        const ID next = static_cast<ID>(id + inc);
+                        const Index next = id + inc;
                         if (inc > 0 ? next > last : next < last) break;
                     }
                 })

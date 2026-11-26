@@ -50,9 +50,9 @@ struct TestSection final : Section {
 };
 
 struct TestElement final : model::ElementInterface {
-    std::array<ID, 1> node_ids{0};
+    std::array<Index, 1> node_ids{0};
 
-    explicit TestElement(ID id)
+    explicit TestElement(Index id)
         : ElementInterface(id) {}
 
     model::ElementPtr copy() const override {
@@ -65,15 +65,15 @@ struct TestElement final : model::ElementInterface {
         return ElDofs{true, false, false, false, false, false};
     }
 
-    Dim dimensions() const override {
+    Index dimensions() const override {
         return 1;
     }
 
-    Dim n_nodes() const override {
+    Index n_nodes() const override {
         return 1;
     }
 
-    Dim num_ip() const override {
+    Index num_ip() const override {
         return 2;
     }
 
@@ -81,7 +81,7 @@ struct TestElement final : model::ElementInterface {
         return 2;
     }
 
-    const ID* nodes() const override {
+    const Index* nodes() const override {
         return node_ids.data();
     }
 };

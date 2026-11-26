@@ -99,7 +99,7 @@ using PlaneTriangle = std::array<Vec2, 3>;
  * active slave subtriangle.
  */
 struct ProjectedSegment {
-    ID                master_surface_id = ID(-1);
+    Index             master_surface_id = Index(-1);
     LocalTriangle     master_local {};
     PlaneTriangle     master_plane {};
     SurfacePolygon<6> overlap;
@@ -121,7 +121,7 @@ struct MortarConstraint {
     Precision characteristic_length = Precision(0);
     Precision minimum_geometric_gap = std::numeric_limits<Precision>::max();
 
-    std::unordered_map<ID, Vec3> gradient;
+    std::unordered_map<Index, Vec3> gradient;
 };
 
 /**
@@ -136,12 +136,12 @@ struct MortarConstraint {
  * @return `true` when the id is in range and references a non-null surface.
  */
 bool valid_surface_id(
-    ID                                                surface_id,
+    Index                                            surface_id,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces
 ) {
     return surface_id >= 0 &&
-           static_cast<std::size_t>(surface_id) < surfaces.size() &&
-           static_cast<bool>(surfaces[static_cast<std::size_t>(surface_id)]);
+           surface_id < static_cast<Index>(surfaces.size()) &&
+           static_cast<bool>(surfaces[surface_id]);
 }
 
 /**
@@ -279,7 +279,7 @@ std::vector<LocalTriangle> local_triangles(
         std::vector<LocalTriangle> triangles;
         triangles.reserve(boundary.size());
 
-        for (std::size_t i = 0; i < boundary.size(); ++i) {
+        for (Index i = 0; i < static_cast<Index>(boundary.size()); ++i) {
             triangles.push_back({
                 boundary[i],
                 boundary[(i + 1) % boundary.size()],
@@ -298,7 +298,7 @@ std::vector<LocalTriangle> local_triangles(
     }
 
     triangles.reserve(domain.size() - 2);
-    for (std::size_t i = 1; i + 1 < domain.size(); ++i) {
+    for (Index i = 1; i + 1 < domain.size(); ++i) {
         triangles.push_back({domain[0], domain[i], domain[i + 1]});
     }
 
@@ -410,11 +410,11 @@ bool build_dual_basis(
  */
 void add_translational_force(
     model::NodeData& nodal_forces,
-    ID               node_id,
+    Index            node_id,
     const Vec3&      force
 ) {
-    const Index row = static_cast<Index>(node_id);
-    for (Dim component = 0; component < 3; ++component) {
+    const Index row = node_id;
+    for (Index component = 0; component < 3; ++component) {
         nodal_forces(row, component) += force(component);
     }
 }
@@ -426,9 +426,9 @@ void add_translational_force(
  * node, so insertion and accumulation are performed in one place.
  */
 void add_gradient(
-    std::unordered_map<ID, Vec3>& gradient,
-    ID                            node_id,
-    const Vec3&                   value
+    std::unordered_map<Index, Vec3>& gradient,
+    Index                            node_id,
+    const Vec3&                      value
 ) {
     auto [it, inserted] = gradient.try_emplace(node_id, Vec3::Zero());
     (void) inserted;
@@ -443,20 +443,20 @@ void add_gradient(
  * noise from outer products of constraint gradients.
  */
 void add_tangent_block(
-    ID                 row_node,
-    ID                 col_node,
+    Index              row_node,
+    Index              col_node,
     const Mat3&        block,
     model::SystemDofs& system_nodal_dofs,
     TripletList&       triplets
 ) {
-    for (Dim local_row = 0; local_row < 3; ++local_row) {
-        const int global_row = system_nodal_dofs(row_node, local_row);
+    for (Index local_row = 0; local_row < 3; ++local_row) {
+        const Index global_row = system_nodal_dofs(row_node, local_row);
         if (global_row < 0) {
             continue;
         }
 
-        for (Dim local_col = 0; local_col < 3; ++local_col) {
-            const int global_col = system_nodal_dofs(col_node, local_col);
+        for (Index local_col = 0; local_col < 3; ++local_col) {
+            const Index global_col = system_nodal_dofs(col_node, local_col);
             if (global_col < 0) {
                 continue;
             }
@@ -711,23 +711,15 @@ void Contact::assemble(
         math::quadrature::ORDER_QUARTIC
     };
 
-    int num_threads = 1;
+    Index num_threads = 1;
 #ifdef _OPENMP
-    num_threads = std::max(
-        1,
-        std::min(
-            static_cast<int>(global_config.max_threads),
-            static_cast<int>(slave_surfaces->size())
-        )
-    );
+    num_threads = std::max<Index>(1, std::min(global_config.max_threads, slave_surfaces->size()));
 #endif
 
     // Every worker accumulates complete mortar constraints independently. This
     // avoids locks around unordered-map and gradient updates in the nested
     // slave/master/overlap/quadrature loops.
-    std::vector<std::unordered_map<ID, MortarConstraint>> thread_constraints(
-        static_cast<std::size_t>(num_threads)
-    );
+    std::vector<std::unordered_map<Index, MortarConstraint>> thread_constraints(num_threads);
 
     std::atomic_bool   assembly_failed{false};
     std::exception_ptr assembly_exception = nullptr;
@@ -738,29 +730,27 @@ void Contact::assemble(
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
-    for (Index slave_index = 0;
-         slave_index < static_cast<Index>(slave_surfaces->size());
-         ++slave_index) {
+    for (Index slave_index = 0; slave_index < slave_surfaces->size(); ++slave_index) {
 #ifdef _OPENMP
         if (assembly_failed.load(std::memory_order_relaxed)) {
             continue;
         }
         const int thread_id = omp_get_thread_num();
 #else
-        const int thread_id = 0;
+        const Index thread_id = 0;
 #endif
 
-        auto& constraints = thread_constraints[static_cast<std::size_t>(thread_id)];
+        auto& constraints = thread_constraints[static_cast<Index>(thread_id)];
 
         try {
-            const ID slave_surface_id =
-                slave_surfaces->at(static_cast<std::size_t>(slave_index));
+            const Index slave_surface_id =
+                slave_surfaces->at(slave_index);
 
             if (!valid_surface_id(slave_surface_id, surfaces)) {
                 continue;
             }
 
-            const auto& slave = surfaces[static_cast<std::size_t>(slave_surface_id)];
+            const auto& slave = surfaces[slave_surface_id];
 
             // The dual basis and support are defined on the complete slave
             // element, not separately on the later overlap segments.
@@ -789,7 +779,7 @@ void Contact::assemble(
             // -----------------------------------------------------------------
             for (const LocalTriangle& slave_local : local_triangles(slave)) {
                 std::array<Vec3, 3> slave_global;
-                for (std::size_t i = 0; i < slave_global.size(); ++i) {
+                for (Index i = 0; i < static_cast<Index>(slave_global.size()); ++i) {
                     slave_global[i] = slave->local_to_global(slave_local[i], node_coords);
                 }
 
@@ -867,12 +857,12 @@ void Contact::assemble(
                 // Brute-force all explicitly paired master facets. This is the
                 // parameter-free correctness baseline: there is no DISTANCE gate
                 // and no persistent spatial-search or partner state.
-                for (ID master_surface_id : *master_surfaces) {
+                for (Index master_surface_id : *master_surfaces) {
                     if (!valid_surface_id(master_surface_id, surfaces)) {
                         continue;
                     }
 
-                    const auto& master = surfaces[static_cast<std::size_t>(master_surface_id)];
+                    const auto& master = surfaces[master_surface_id];
                     if (surfaces_share_node(*slave, *master)) {
                         continue;
                     }
@@ -898,7 +888,7 @@ void Contact::assemble(
                         }
 
                         PlaneTriangle master_plane;
-                        for (std::size_t i = 0; i < master_plane.size(); ++i) {
+                        for (Index i = 0; i < static_cast<Index>(master_plane.size()); ++i) {
                             const Vec3 master_global =
                                 master->local_to_global(master_local[i], node_coords);
                             master_plane[i] = project(master_global);
@@ -941,14 +931,14 @@ void Contact::assemble(
                 // -------------------------------------------------------------
                 // 4. Integrate overlap and select one physical master layer
                 // -------------------------------------------------------------
-                for (std::size_t segment_id = 0; segment_id < segments.size(); ++segment_id) {
+                for (Index segment_id = 0; segment_id < static_cast<Index>(segments.size()); ++segment_id) {
                     const ProjectedSegment& segment = segments[segment_id];
                     const Vec2 origin = segment.overlap[0];
 
                     // A clipped convex polygon is integrated by a triangle fan
                     // around its first vertex. The stored quadrature is defined
                     // on the reference triangle and scaled by the 2D Jacobian.
-                    for (std::size_t fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
+                    for (Index fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
                         const Vec2 edge_r = segment.overlap[fan]     - origin;
                         const Vec2 edge_s = segment.overlap[fan + 1] - origin;
 
@@ -991,7 +981,7 @@ void Contact::assemble(
                             // plane point. Select the physically nearest opposing
                             // layer; deterministic segment-id tie breaking avoids
                             // non-repeatable ownership at equal distance.
-                            std::size_t selected_segment = segments.size();
+                            Index selected_segment = static_cast<Index>(segments.size());
                             Precision selected_distance =
                                 std::numeric_limits<Precision>::max();
 
@@ -999,8 +989,8 @@ void Contact::assemble(
                             Vec3 selected_master_normal = Vec3::Zero();
                             Precision selected_gap      = Precision(0);
 
-                            for (std::size_t candidate_id = 0;
-                                 candidate_id < segments.size();
+                            for (Index candidate_id = 0;
+                                 candidate_id < static_cast<Index>(segments.size());
                                  ++candidate_id) {
                                 const ProjectedSegment& candidate = segments[candidate_id];
                                 const Vec3 master_lambda =
@@ -1011,7 +1001,7 @@ void Contact::assemble(
                                     continue;
                                 }
 
-                                const auto& master = surfaces[static_cast<std::size_t>(
+                                const auto& master = surfaces[static_cast<Index>(
                                     candidate.master_surface_id
                                 )];
 
@@ -1049,7 +1039,7 @@ void Contact::assemble(
                                 }
 
                                 const bool better =
-                                    selected_segment == segments.size() ||
+                                    selected_segment == static_cast<Index>(segments.size()) ||
                                     candidate_distance <
                                         selected_distance - projection_selection_tolerance ||
                                     (std::abs(candidate_distance - selected_distance) <=
@@ -1073,7 +1063,7 @@ void Contact::assemble(
                                 continue;
                             }
 
-                            const auto& master = surfaces[static_cast<std::size_t>(
+                            const auto& master = surfaces[static_cast<Index>(
                                 segments[selected_segment].master_surface_id
                             )];
 
@@ -1163,7 +1153,7 @@ void Contact::assemble(
     // -------------------------------------------------------------------------
     // 6. Reduce thread-local constraints into global slave-node constraints
     // -------------------------------------------------------------------------
-    std::unordered_map<ID, MortarConstraint> constraints;
+    std::unordered_map<Index, MortarConstraint> constraints;
 
     for (auto& local_constraints : thread_constraints) {
         for (auto& [constraint_id, local] : local_constraints) {

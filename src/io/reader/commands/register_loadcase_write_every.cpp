@@ -71,7 +71,7 @@ void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& par
                                     lc->set_write_every_time(static_cast<double>(value));
                                 } else {
                                     // Treat as step count; clamp to >=1
-                                    const int steps = std::max<int>(1, static_cast<int>(std::llround(value)));
+                                    const Index steps = std::max<Index>(1, static_cast<Index>(std::llround(value)));
                                     lc->set_write_every(steps);
                                 }
                                 return;

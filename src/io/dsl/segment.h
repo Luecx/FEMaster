@@ -115,8 +115,8 @@ private:
         using Inv        = detail::Invoker<std::tuple_element_t<I, args_tuple>...>;
 
         // Optional: sanity check against the pattern (can be relaxed if desired)
-        const std::size_t need_lambda  = detail::token_count_for_pack<std::tuple_element_t<I, args_tuple>...>();
-        const std::size_t need_pattern = _pattern.required_tokens();
+        const Index need_lambda  = detail::token_count_for_pack<std::tuple_element_t<I, args_tuple>...>();
+        const Index need_pattern = _pattern.required_tokens();
         if (need_pattern != 0 && need_pattern != need_lambda) {
             std::ostringstream os;
             os << "Pattern token count (" << need_pattern

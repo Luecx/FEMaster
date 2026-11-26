@@ -39,7 +39,7 @@ namespace model {
  * @brief Names and categorizes a collection of model entity identifiers.
  *
  * The RegionTypes template argument fixes the entity kind without adding runtime
- * storage. The inherited Collection<ID> owns the identifier values and immutable
+ * storage. The inherited Collection<Index> owns the identifier values and immutable
  * name. Construction preserves insertion order and allows repeated identifiers;
  * consumers may change those inherited policies where their use requires it.
  *
@@ -51,13 +51,13 @@ namespace model {
  * @tparam RT NODE, ELEMENT, SURFACE or LINE entity kind.
  */
 template<RegionTypes RT>
-struct Region : public Collection<ID> {
+struct Region : public Collection<Index> {
     // Shared ownership of this concrete entity-kind collection.
     using Ptr = std::shared_ptr<Region<RT>>;
 
     // Construction with insertion-order storage and permitted duplicates.
     explicit Region(std::string name)
-        : Collection<ID>(std::move(name), true, false) {}
+        : Collection<Index>(std::move(name), true, false) {}
 
     // Log region metadata and up to four stored identifiers.
     void info();
@@ -86,7 +86,7 @@ void Region<RT>::info() {
     logging::info(true, "   Type: ", RT);
     logging::info(true, "   Size: ", this->size());
     logging::info(true, "   IDs : ");
-    for (size_t i = 0; i < std::min<size_t>(4, this->size()); ++i) {
+    for (Index i = 0; i < std::min<Index>(4, this->size()); ++i) {
         logging::info(true, "      ", this->at(i));
     }
 }

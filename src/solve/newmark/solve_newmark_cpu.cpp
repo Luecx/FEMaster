@@ -32,10 +32,10 @@ namespace {
     // Detect whether M is (numerically) diagonal (i.e., lumped mass).
     inline bool is_lumped_mass(const SparseMatrix& M, double eps = 0.0)
     {
-        for (int k = 0; k < M.outerSize(); ++k) {
+        for (Index k = 0; k < M.outerSize(); ++k) {
             for (SparseMatrix::InnerIterator it(M, k); it; ++it) {
-                const int i = it.row();
-                const int j = it.col();
+                const Index i = it.row();
+                const Index j = it.col();
                 if (i != j) {
                     if (eps <= 0.0) {
                         if (it.value() != Precision(0)) return false;
@@ -85,7 +85,7 @@ namespace {
         void factorize() {
         #ifdef USE_MKL
             if (global_config.max_threads > 0) {
-                mkl_set_num_threads(global_config.max_threads);
+                mkl_set_num_threads(static_cast<int>(global_config.max_threads));
             }
         #endif
             fact.compute(A);
@@ -111,7 +111,7 @@ namespace {
                                                const DynamicVector& v0,
                                                const DynamicVector& f0)
     {
-        const auto n = static_cast<Eigen::Index>(u0.size());
+        const auto n = u0.size();
         DynamicVector rhs = f0 - C * v0 - K * u0;
 
         if (is_lumped_mass(M)) {
@@ -188,15 +188,15 @@ newmark_linear_cpu(const SparseMatrix& M,
     const double t_end   = opts.t_end;
 
     // Banner + matrix stats
-    const auto N   = static_cast<long long>(M.rows());
+    const Index N   = M.rows();
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
     logging::info(true, "IMPLICIT NEWMARK-β (fixed Δt) — linear transient");
     logging::info(true, "-----------------------------------------------------------------------------------------------");
     logging::info(true, "n dof  : ", N);
-    logging::info(true, "nnz(M) : ", static_cast<long long>(M.nonZeros()));
-    logging::info(true, "nnz(C) : ", static_cast<long long>(C.nonZeros()));
-    logging::info(true, "nnz(K) : ", static_cast<long long>(K.nonZeros()));
+    logging::info(true, "nnz(M) : ", M.nonZeros());
+    logging::info(true, "nnz(C) : ", C.nonZeros());
+    logging::info(true, "nnz(K) : ", K.nonZeros());
     logging::info(true, "dt      : ", std::scientific, std::setprecision(6), dt);
     logging::info(true, "t_start : ", std::scientific, std::setprecision(6), t_start);
     logging::info(true, "t_end   : ", std::scientific, std::setprecision(6), t_end);
@@ -220,7 +220,7 @@ newmark_linear_cpu(const SparseMatrix& M,
     tBuild.start();
     eff.build(a0, a1);
     tBuild.stop();
-    logging::info(true, "A built: nnz(A) = ", static_cast<long long>(eff.A.nonZeros()),
+    logging::info(true, "A built: nnz(A) = ", eff.A.nonZeros(),
                        ", time = ", tBuild.elapsed(), " ms.");
 
     logging::info(true, "Factorizing A (single factorization) ...");
@@ -247,8 +247,8 @@ newmark_linear_cpu(const SparseMatrix& M,
 
     // Time stepping
     const double Tspan = std::max(0.0, t_end - t_start);
-    const int n_steps = static_cast<int>(std::ceil(Tspan / dt));
-    const int print_stride = std::max(1, n_steps / 20); // ~20 prints total
+    const Index n_steps = static_cast<Index>(std::ceil(Tspan / dt));
+    const Index print_stride = std::max<Index>(1, n_steps / 20); // ~20 prints total
 
     NewmarkResult out;
     out.t.reserve(n_steps + 1);
@@ -275,7 +275,7 @@ newmark_linear_cpu(const SparseMatrix& M,
     Timer tLoop{};
     tLoop.start();
 
-    for (int k = 0; k < n_steps; ++k) {
+    for (Index k = 0; k < n_steps; ++k) {
         const double tnp1 = t_start + (k + 1) * dt;
 
         // r_{n+1} = f_{n+1} + M(...) + C(...)

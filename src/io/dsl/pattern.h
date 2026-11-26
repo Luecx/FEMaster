@@ -188,15 +188,15 @@ struct Pattern {
      * @return `true` if normalization/completion succeeded, `false` otherwise.
      */
     bool normalize_and_complete_tokens(std::vector<std::string>& toks, std::string& err_out) const {
-        std::size_t pos = 0;
+        Index pos = 0;
 
         for (const auto& e_ptr : _elems) {
             const auto cnt = e_ptr->count();
 
-            for (std::size_t i = 0; i < cnt; ++i) {
-                const std::size_t idx = pos + i;
+            for (Index i = 0; i < cnt; ++i) {
+                const Index idx = pos + i;
 
-                if (idx < toks.size()) {
+                if (idx < static_cast<Index>(toks.size())) {
                     // present token
                     if (toks[idx].empty()) {
                         // empty token: only allowed if element permits empty and we have a default
@@ -251,8 +251,8 @@ struct Pattern {
      *
      * @return Total token count required by the pattern.
      */
-    std::size_t required_tokens() const {
-        std::size_t n = 0;
+    Index required_tokens() const {
+        Index n = 0;
         for (const auto& e : _elems) {
             n += e->count();
         }

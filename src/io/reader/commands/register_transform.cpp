@@ -134,7 +134,7 @@ void register_transform(fem::io::dsl::Registry& registry, Parser& parser) {
                     // degrees of freedom themselves.
                     auto nodes = model._data->node_sets.get(*nset);
 
-                    for (const fem::ID node_id : *nodes) {
+                    for (const fem::Index node_id : *nodes) {
                         auto [it, inserted] = transforms.emplace(node_id, orientation);
 
                         logging::error(inserted || it->second == orientation,

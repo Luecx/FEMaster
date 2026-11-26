@@ -22,7 +22,7 @@
 namespace fem {
 namespace model {
 
-C3D13::C3D13(ID p_elem_id, const std::array<ID, 13>& p_node_ids)
+C3D13::C3D13(Index p_elem_id, const std::array<Index, 13>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
 /**
@@ -46,23 +46,23 @@ const math::quadrature::Quadrature& C3D13::integration_scheme() const {
  * @param surface_id One-based face identifier.
  * @return Requested surface, or nullptr for an invalid identifier.
  */
-SurfacePtr C3D13::surface(ID surface_id) {
+SurfacePtr C3D13::surface(Index surface_id) {
     switch (surface_id) {
         case 1:
             return std::make_shared<Surface8>(
-                std::array<ID, 8> {node_ids[0], node_ids[3], node_ids[2], node_ids[1], node_ids[8], node_ids[7], node_ids[6], node_ids[5]});
+                std::array<Index, 8> {node_ids[0], node_ids[3], node_ids[2], node_ids[1], node_ids[8], node_ids[7], node_ids[6], node_ids[5]});
         case 2:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[0], node_ids[1], node_ids[4], node_ids[5], node_ids[10], node_ids[9]});
+                std::array<Index, 6> {node_ids[0], node_ids[1], node_ids[4], node_ids[5], node_ids[10], node_ids[9]});
         case 3:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[1], node_ids[2], node_ids[4], node_ids[6], node_ids[11], node_ids[10]});
+                std::array<Index, 6> {node_ids[1], node_ids[2], node_ids[4], node_ids[6], node_ids[11], node_ids[10]});
         case 4:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[2], node_ids[3], node_ids[4], node_ids[7], node_ids[12], node_ids[11]});
+                std::array<Index, 6> {node_ids[2], node_ids[3], node_ids[4], node_ids[7], node_ids[12], node_ids[11]});
         case 5:
             return std::make_shared<Surface6>(
-                std::array<ID, 6> {node_ids[3], node_ids[0], node_ids[4], node_ids[8], node_ids[9], node_ids[12]});
+                std::array<Index, 6> {node_ids[3], node_ids[0], node_ids[4], node_ids[8], node_ids[9], node_ids[12]});
         default: return nullptr;
     }
 }

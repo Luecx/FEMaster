@@ -255,7 +255,7 @@ TEST(BeamSectionReader, BothKeywordsConstructBeamSections) {
         out << "*PROFILE, NAME=P1\n100, 800, 600, 400\n";
         out << "*NODE\n1, 0, 0, 0\n2, 10, 0, 0\n3, 20, 0, 0\n4, 30, 0, 0\n5, 40, 0, 0\n";
         out << "*ELEMENT, TYPE=B31\n1, 1, 2\n2, 2, 3\n3, 3, 4\n4, 4, 5\n";
-        for (int id = 1; id <= 4; ++id) {
+        for (Index id = 1; id <= 4; ++id) {
             out << "*ELSET, ELSET=SET" << id << "\n" << id << "\n";
         }
         out << "*BEAM SECTION, ELSET=SET1, MATERIAL=STEEL, PROFILE=P1\n0, 0, -1\n";

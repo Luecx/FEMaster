@@ -96,7 +96,7 @@ struct Registry {
                 case Kind::ParentCommandIs: {
                     std::ostringstream stream;
                     stream << parent << ".command in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -107,7 +107,7 @@ struct Registry {
                 case Kind::ParentKeyEquals: {
                     std::ostringstream stream;
                     stream << parent << ".keys[\"" << condition.key << "\"] in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -124,7 +124,7 @@ struct Registry {
                 case Kind::KeyEquals: {
                     std::ostringstream stream;
                     stream << self << ".keys[\"" << condition.key << "\"] in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -142,7 +142,7 @@ struct Registry {
 
                 case Kind::All: {
                     std::ostringstream stream;
-                    for (std::size_t i = 0; i < condition.children.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.children.size()); ++i) {
                         if (i) stream << " AND ";
                         stream << recurse(condition.children[i], self, parent, recurse);
                     }
@@ -151,7 +151,7 @@ struct Registry {
 
                 case Kind::Any: {
                     std::ostringstream stream;
-                    for (std::size_t i = 0; i < condition.children.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.children.size()); ++i) {
                         if (i) stream << " OR ";
                         stream << recurse(condition.children[i], self, parent, recurse);
                     }
@@ -167,10 +167,10 @@ struct Registry {
             return {};
         };
 
-        const auto format_range = [](std::size_t minimum, std::size_t maximum) {
+        const auto format_range = [](Index minimum, Index maximum) {
             std::ostringstream stream;
             stream << "[" << minimum << "..";
-            if (maximum == std::numeric_limits<std::size_t>::max()) stream << "∞";
+            if (maximum == std::numeric_limits<Index>::max()) stream << "∞";
             else stream << maximum;
             stream << "]";
             return stream.str();
@@ -179,7 +179,7 @@ struct Registry {
         const auto render_pattern = [compact](const Pattern& pattern) {
             std::vector<std::string> headers;
             headers.reserve(pattern.required_tokens());
-            std::size_t unnamed = 1;
+            Index unnamed = 1;
 
             struct DocRow {
                 std::string left;
@@ -189,14 +189,14 @@ struct Registry {
             std::vector<DocRow> docs;
 
             for (const auto& element : pattern._elems) {
-                const std::size_t count = element->count();
-                const std::string base  = element->name_base();
-                const std::string doc   = element->description();
-                const char* type        = element->type_name();
+                const Index count      = element->count();
+                const std::string base = element->name_base();
+                const std::string doc  = element->description();
+                const char* type       = element->type_name();
 
                 if (!base.empty()) {
                     if (count > 1) {
-                        for (std::size_t i = 1; i <= count; ++i) {
+                        for (Index i = 1; i <= count; ++i) {
                             headers.push_back(base + std::to_string(i));
                         }
                         docs.push_back({base + "1 - " + base + std::to_string(count), doc, type});
@@ -205,7 +205,7 @@ struct Registry {
                         docs.push_back({base, doc, type});
                     }
                 } else {
-                    for (std::size_t i = 0; i < count; ++i) {
+                    for (Index i = 0; i < count; ++i) {
                         const std::string name = "t" + std::to_string(unnamed++);
                         headers.push_back(name);
                         docs.push_back({name, doc, type});
@@ -215,7 +215,7 @@ struct Registry {
 
             if (!headers.empty()) {
                 std::ostringstream stream;
-                for (std::size_t i = 0; i < headers.size(); ++i) {
+                for (Index i = 0; i < static_cast<Index>(headers.size()); ++i) {
                     if (i) stream << ", ";
                     stream << headers[i];
                 }
@@ -266,7 +266,7 @@ struct Registry {
                         if (entry->has_default) header << ", default=\"" << entry->default_value << "\"";
                         if (!entry->allowed.empty()) {
                             header << ", allowed={";
-                            for (std::size_t i = 0; i < entry->allowed.size(); ++i) {
+                            for (Index i = 0; i < static_cast<Index>(entry->allowed.size()); ++i) {
                                 if (i) header << ", ";
                                 header << entry->allowed[i];
                             }
@@ -278,7 +278,7 @@ struct Registry {
                         if (!entry->alternatives.empty()) {
                             std::ostringstream aliases;
                             aliases << "    aliases: ";
-                            for (std::size_t i = 0; i < entry->alternatives.size(); ++i) {
+                            for (Index i = 0; i < static_cast<Index>(entry->alternatives.size()); ++i) {
                                 if (i) aliases << ", ";
                                 aliases << entry->alternatives[i];
                             }
@@ -300,7 +300,7 @@ struct Registry {
                 continue;
             }
 
-            for (std::size_t variant_index = 0; variant_index < command_spec.variants_.size(); ++variant_index) {
+            for (Index variant_index = 0; variant_index < static_cast<Index>(command_spec.variants_.size()); ++variant_index) {
                 const Variant& variant = command_spec.variants_[variant_index];
                 fem::logging::info(true,
                     "  - Variant #", variant_index + 1, " — When: ",
@@ -340,7 +340,7 @@ struct Registry {
                 case Kind::ParentCommandIs: {
                     std::ostringstream stream;
                     stream << parent << ".command in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -350,7 +350,7 @@ struct Registry {
                 case Kind::ParentKeyEquals: {
                     std::ostringstream stream;
                     stream << parent << ".keys[\"" << condition.key << "\"] in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -362,7 +362,7 @@ struct Registry {
                 case Kind::KeyEquals: {
                     std::ostringstream stream;
                     stream << self << ".keys[\"" << condition.key << "\"] in { ";
-                    for (std::size_t i = 0; i < condition.values.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.values.size()); ++i) {
                         if (i) stream << ", ";
                         stream << condition.values[i];
                     }
@@ -377,7 +377,7 @@ struct Registry {
                          + (condition.bool_value ? "true" : "false");
                 case Kind::All: {
                     std::ostringstream stream;
-                    for (std::size_t i = 0; i < condition.children.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.children.size()); ++i) {
                         if (i) stream << " AND ";
                         stream << recurse(condition.children[i], self, parent, recurse);
                     }
@@ -385,7 +385,7 @@ struct Registry {
                 }
                 case Kind::Any: {
                     std::ostringstream stream;
-                    for (std::size_t i = 0; i < condition.children.size(); ++i) {
+                    for (Index i = 0; i < static_cast<Index>(condition.children.size()); ++i) {
                         if (i) stream << " OR ";
                         stream << recurse(condition.children[i], self, parent, recurse);
                     }
@@ -405,7 +405,7 @@ struct Registry {
             return;
         }
 
-        for (std::size_t index = 0; index < command_spec->variants_.size(); ++index) {
+        for (Index index = 0; index < static_cast<Index>(command_spec->variants_.size()); ++index) {
             const Variant& variant = command_spec->variants_[index];
             std::cout << "- Variant #" << index + 1 << " — When: "
                       << (variant.has_condition_
@@ -425,7 +425,7 @@ struct Registry {
         const auto render_pattern = [](const Pattern& pattern, std::ostream& stream) {
             std::vector<std::string> headers;
             headers.reserve(pattern.required_tokens());
-            std::size_t unnamed = 1;
+            Index unnamed = 1;
 
             struct DocRow {
                 std::string left;
@@ -435,21 +435,21 @@ struct Registry {
             std::vector<DocRow> docs;
 
             for (const auto& element : pattern._elems) {
-                const std::size_t count = element->count();
-                const std::string base  = element->name_base();
-                const std::string doc   = element->description();
-                const char* type        = element->type_name();
+                const Index count      = element->count();
+                const std::string base = element->name_base();
+                const std::string doc  = element->description();
+                const char* type       = element->type_name();
 
                 if (!base.empty()) {
                     if (count > 1) {
-                        for (std::size_t i = 1; i <= count; ++i) headers.push_back(base + std::to_string(i));
+                        for (Index i = 1; i <= count; ++i) headers.push_back(base + std::to_string(i));
                         docs.push_back({base + "1 - " + base + std::to_string(count), doc, type});
                     } else {
                         headers.push_back(base);
                         docs.push_back({base, doc, type});
                     }
                 } else {
-                    for (std::size_t i = 0; i < count; ++i) {
+                    for (Index i = 0; i < count; ++i) {
                         const std::string name = "t" + std::to_string(unnamed++);
                         headers.push_back(name);
                         docs.push_back({name, doc, type});
@@ -458,7 +458,7 @@ struct Registry {
             }
 
             stream << "Header: ";
-            for (std::size_t i = 0; i < headers.size(); ++i) {
+            for (Index i = 0; i < static_cast<Index>(headers.size()); ++i) {
                 if (i) stream << ", ";
                 stream << headers[i];
             }
@@ -476,7 +476,7 @@ struct Registry {
             return;
         }
 
-        for (std::size_t variant_index = 0; variant_index < command_spec->variants_.size(); ++variant_index) {
+        for (Index variant_index = 0; variant_index < static_cast<Index>(command_spec->variants_.size()); ++variant_index) {
             const Variant& variant = command_spec->variants_[variant_index];
             std::cout << "Variant #" << variant_index + 1 << ":\n";
             for (const Segment& segment : variant._segments) render_pattern(segment._pattern, std::cout);
@@ -495,7 +495,7 @@ struct Registry {
         std::regex expression;
         if (regex) expression = std::regex(query, std::regex::icase);
 
-        int hits = 0;
+        Index hits = 0;
         for (const std::string& name : names) {
             const Command& command_spec = _map.at(name);
             const auto matches = [&](const std::string& text) {
@@ -533,7 +533,7 @@ struct Registry {
             return value.find(query) != std::string::npos;
         };
 
-        int hits = 0;
+        Index hits = 0;
         for (const std::string& name : names) {
             const Command& command_spec = _map.at(name);
             bool found = false;

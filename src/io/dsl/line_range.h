@@ -24,6 +24,8 @@
 #include <cstddef>
 #include <limits>
 
+#include "../../core/types_num.h"
+
 namespace fem {
 namespace io {
 namespace dsl {
@@ -34,17 +36,17 @@ namespace dsl {
  */
 struct LineRange {
     /** Inclusive lower bound (defaults to 1). */
-    std::size_t min_ = 1;
+    Index min_ = 1;
 
     /** Inclusive upper bound (defaults to the maximum representable `size_t`). */
-    std::size_t max_ = std::numeric_limits<std::size_t>::max();
+    Index max_ = std::numeric_limits<Index>::max();
 
     /**
      * @brief Sets the inclusive minimum number of lines.
      * @param v New minimum (must be ≤ current `max_` to be meaningful).
      * @return Reference to `*this` for fluent chaining.
      */
-    LineRange& min(std::size_t v) {
+    LineRange& min(Index v) {
         min_ = v;
         return *this;
     }
@@ -54,7 +56,7 @@ struct LineRange {
      * @param v New maximum (should be ≥ current `min_` to be meaningful).
      * @return Reference to `*this` for fluent chaining.
      */
-    LineRange& max(std::size_t v) {
+    LineRange& max(Index v) {
         max_ = v;
         return *this;
     }

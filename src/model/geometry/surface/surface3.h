@@ -17,7 +17,7 @@ struct Surface3 : public Surface<3> {
     using Surface<3>::num_nodes;
     using Surface<3>::num_nodes_per_edge;
 
-    explicit Surface3(const std::array<ID, 3>& node_ids);
+    explicit Surface3(const std::array<Index, 3>& node_ids);
 
     Ptr copy() const override { return std::make_shared<Surface3>(*this); }
 

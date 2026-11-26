@@ -57,8 +57,8 @@ int main(int argc, char** argv) {
         .help("Path to the input file (.inp default extension). Optional in documentation mode.");
 
     program.add_argument("--ncpus")
-        .default_value(1)
-        .scan<'i', int>()
+        .default_value(fem::Index{1})
+        .scan<'i', fem::Index>()
         .help("Number of CPUs to use (default: 1)");
 
     program.add_argument("--output")
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
 
     namespace fs = std::filesystem;
 
-    const int         ncpus    = program.get<int>("--ncpus");
+    const fem::Index  ncpus    = program.get<fem::Index>("--ncpus");
     const std::string format   = program.get<std::string>("--format");
     const bool        doc_mode = program.get<bool>("--document");
     std::string       input_file  = program.get<std::string>("input_file");
@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
         fem::io::reader::Parser parser;
 
         // Enforce exactly one action
-        int actions = 0;
+        fem::Index actions = 0;
         actions += program.get<bool>("--doc-list") ? 1 : 0;
         actions += program.is_used("--doc-show") ? 1 : 0;
         actions += program.is_used("--doc-tokens") ? 1 : 0;

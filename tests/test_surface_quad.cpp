@@ -29,15 +29,15 @@ protected:
         }};
 
         for (Index node = 0; node < 8; ++node) {
-            for (Dim component = 0; component < 3; ++component) {
+            for (Index component = 0; component < 3; ++component) {
                 node_coords(node, component) = coordinates[node][component];
             }
         }
     }
 
     // Helper function to generate IDs for surface nodes
-    std::array<ID, SurfaceType::num_nodes> generate_ids() {
-        std::array<ID, SurfaceType::num_nodes> ids{};
+    std::array<Index, SurfaceType::num_nodes> generate_ids() {
+        std::array<Index, SurfaceType::num_nodes> ids{};
 
         for (Index i = 0; i < SurfaceType::num_nodes; ++i) {
             ids[i] = i;
@@ -94,7 +94,7 @@ TYPED_TEST_P(SurfaceTest, ProjectionWithoutClipping) {
 TYPED_TEST_P(SurfaceTest, InBoundsSampling) {
     unsigned int seed = 12345;
 
-    for (int i = 0; i < 10000; ++i) {
+    for (Index i = 0; i < 10000; ++i) {
         double r = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
         double s = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
 
@@ -111,7 +111,7 @@ TYPED_TEST_P(SurfaceTest, InBoundsSampling) {
 TYPED_TEST_P(SurfaceTest, ShapeFunctionEvaluation) {
     unsigned int seed = 23456;
 
-    for (int i = 0; i < 100; ++i) {
+    for (Index i = 0; i < 100; ++i) {
         double r = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
         double s = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
 
@@ -138,7 +138,7 @@ TYPED_TEST_P(SurfaceTest, LocalToGlobalTransformation) {
 
     // sample 1000 random points and make sure the mapping is fine.
     unsigned int seed = 34567;
-    for (int i = 0; i < 1000; i++) {
+    for (Index i = 0; i < 1000; i++) {
         double r = -2.0 + 4.0 * (rand_r(&seed) % 1000) / 1000.0;
         double s = -2.0 + 4.0 * (rand_r(&seed) % 1000) / 1000.0;
 

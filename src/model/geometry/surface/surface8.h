@@ -17,7 +17,7 @@ struct Surface8 : public Surface<8> {
     using Surface<8>::num_nodes;
     using Surface<8>::num_nodes_per_edge;
 
-    explicit Surface8(const std::array<ID, 8>& node_ids);
+    explicit Surface8(const std::array<Index, 8>& node_ids);
 
     Ptr copy() const override { return std::make_shared<Surface8>(*this); }
 

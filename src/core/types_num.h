@@ -13,17 +13,17 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace fem {
 
 using Time  = std::uint64_t; ///< Time value expressed in milliseconds.
-using ID    = std::int32_t;  ///< Identifier type for nodes, elements, etc.
-using Dim   = std::uint8_t;  ///< Spatial dimension (2 or 3).
-using Index = std::uint64_t; ///< Generic index type for large arrays.
 
-// Wide identifier for external entity labels that combine an instance and a local id
-using ExternalID = std::int64_t;
+// Signed 64-bit type for all ids, indices, counts and sizes. Matches Eigen::Index on every platform.
+using Index = std::ptrdiff_t;
+
+static_assert(sizeof(Index) == 8, "FEMaster requires a 64-bit Index type");
 
 #ifdef DOUBLE_PRECISION
 using Precision = double; ///< CPU precision type (double).

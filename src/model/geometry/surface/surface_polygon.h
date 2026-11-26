@@ -35,7 +35,7 @@ template<std::size_t MP>
 class SurfacePolygon {
     // Fixed-capacity vertex storage and number of active vertices
     std::array<Vec2, MP> points_{};
-    std::size_t          size_ = 0;
+    Index                size_ = 0;
 public:
     // Construction
     SurfacePolygon() = default;
@@ -44,12 +44,12 @@ public:
     // Number of active vertices currently stored in the fixed-capacity array.
     // Unused array entries do not belong to the polygon and are ignored by all
     // geometric operations.
-    [[nodiscard]] std::size_t size() const;
+    [[nodiscard]] Index size() const;
 
     // Checked access to vertices in their boundary order. The mutable overload
     // allows callers to update coordinates without changing the polygon size.
-    [[nodiscard]] const Vec2& operator[](std::size_t index) const;
-    [[nodiscard]] Vec2&       operator[](std::size_t index);
+    [[nodiscard]] const Vec2& operator[](Index index) const;
+    [[nodiscard]] Vec2&       operator[](Index index);
 
     // Append a vertex while preserving the existing boundary order. The
     // compile-time capacity is enforced by the implementation.

@@ -67,17 +67,17 @@ class FrdWriter {
     std::ofstream file_path;
 
     // Dense global node/element IDs mapped to original instance identifiers
-    std::vector<ExternalID> node_ids;
-    std::vector<ExternalID> element_ids;
+    std::vector<Index> node_ids;
+    std::vector<Index> element_ids;
 
     // Writer state
     bool model_data_written = false;
 
-    int current_step         = 1;
-    int current_result_block = 0;
-    int current_global_frame = 0;
-    int last_frame_step      = -1;
-    int last_frame_id        = -1;
+    Index current_step         = 1;
+    Index current_result_block = 0;
+    Index current_global_frame = 0;
+    Index last_frame_step      = -1;
+    Index last_frame_id        = -1;
 
     WriterStepType current_step_type = WriterStepType::Static;
 
@@ -93,7 +93,7 @@ class FrdWriter {
     void close();
 
     // Analysis-step metadata
-    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
+    void add_loadcase(Index id, WriterStepType step_type = WriterStepType::Static);
 
     // Mesh and result output
     void write_model_data(const model::ModelData& model_data);
@@ -116,7 +116,7 @@ class FrdWriter {
     void write_result_header(const std::string& field_name,
                              Precision          frame_value,
                              Index              rows,
-                             int                data_type);
+                             Index              data_type);
 };
 
 } // namespace writer

@@ -113,16 +113,16 @@ protected:
     // an active equation do not exist in the system and are skipped.
     static void add_load_tangent_block(TripletList&             load_tangent,
                                        const model::SystemDofs& system_dof_ids,
-                                       ID                       row_node,
-                                       Dim                      row_dof,
-                                       ID                       col_node,
+                                       Index                    row_node,
+                                       Index                    row_dof,
+                                       Index                    col_node,
                                        const Mat3&              block) {
-        for (Dim i = 0; i < 3; ++i) {
-            const int row = system_dof_ids(row_node, row_dof + i);
+        for (Index i = 0; i < 3; ++i) {
+            const Index row = system_dof_ids(row_node, row_dof + i);
             if (row < 0) continue;
 
-            for (Dim j = 0; j < 3; ++j) {
-                const int col = system_dof_ids(col_node, j);
+            for (Index j = 0; j < 3; ++j) {
+                const Index col = system_dof_ids(col_node, j);
                 if (col < 0 || block(i, j) == Precision(0)) continue;
 
                 load_tangent.emplace_back(row, col, block(i, j));

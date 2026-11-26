@@ -36,8 +36,8 @@ Quadrature::Quadrature(Domain d, Order o)
     scheme = it->second;
 }
 
-Point Quadrature::get_point(ID n) const {
-    return scheme.points[static_cast<std::size_t>(n)];
+Point Quadrature::get_point(Index n) const {
+    return scheme.points[n];
 }
 
 Index Quadrature::count() const {

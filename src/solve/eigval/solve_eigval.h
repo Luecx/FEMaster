@@ -64,7 +64,7 @@ enum class EigvalMode {
 struct EigvalOpts {
     EigvalMode mode = EigvalMode::Regular; ///< Transform / operator
     double    sigma = 0.0;               ///< Shift (used by ShiftInvert/Buckling/Cayley)
-    int       maxit = 3000;              ///< Max Arnoldi/Lanczos iterations
+    Index     maxit = 3000;              ///< Max Arnoldi/Lanczos iterations
     double    tol   = 1e-8;              ///< Relative residual tolerance
 
     /// Sorting rule for returned eigenvalues.
@@ -82,7 +82,7 @@ struct EigvalOpts {
 std::vector<EigvalPair>
 eigvals(SolverDevice device,
         const SparseMatrix& A,
-        int k,
+        Index k,
         const EigvalOpts& opts = {});
 
 /**
@@ -98,7 +98,7 @@ std::vector<EigvalPair>
 eigvals(SolverDevice device,
         const SparseMatrix& A,
         const SparseMatrix& B,
-        int k,
+        Index k,
         const EigvalOpts& opts);
 
 /**

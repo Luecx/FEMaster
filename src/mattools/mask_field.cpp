@@ -36,8 +36,7 @@ model::Field mask_field(const model::Field& field,
                         const BooleanMatrix& mask,
                         const std::string& name) {
     // Validate compatible shapes before accessing any mask entry.
-    logging::error(field.rows == static_cast<Index>(mask.rows())
-                   && field.components == static_cast<Index>(mask.cols()),
+    logging::error(field.rows == mask.rows() && field.components == mask.cols(),
         "mask_field: field/mask shape mismatch");
 
     // Preserve metadata and initialize undefined entries before selection.

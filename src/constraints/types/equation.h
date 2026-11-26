@@ -33,9 +33,9 @@ namespace constraint {
  * Each entry contributes `coeff * dof(node_id, dof)` to the overall equation.
  */
 struct EquationEntry {
-    ID node_id{};   ///< Global node identifier.
-    Dim dof{};      ///< Degree-of-freedom index associated with the node.
-    Precision coeff{}; ///< Scalar coefficient applied to the DOF.
+    Index     node_id{}; ///< Global node identifier.
+    Index     dof{};     ///< Degree-of-freedom index associated with the node.
+    Precision coeff{};   ///< Scalar coefficient applied to the DOF.
 };
 
 /**

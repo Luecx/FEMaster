@@ -35,8 +35,8 @@ ShiftInvertOpGeneral::ShiftInvertOpGeneral(const SparseMatrix& A,
     ensure_compressed(_B_ref);
 }
 
-int ShiftInvertOpGeneral::rows() const { return static_cast<int>(_A_ref.rows()); }
-int ShiftInvertOpGeneral::cols() const { return static_cast<int>(_A_ref.cols()); }
+Index ShiftInvertOpGeneral::rows() const { return _A_ref.rows(); }
+Index ShiftInvertOpGeneral::cols() const { return _A_ref.cols(); }
 
 void ShiftInvertOpGeneral::set_shift(const Scalar& s) {
     _sigma = s;
@@ -75,7 +75,7 @@ void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
 {
 #ifdef USE_MKL
     // Configure MKL threads from global config each apply (cheap).
-    mkl_set_num_threads(global_config.max_threads);
+    mkl_set_num_threads(static_cast<int>(global_config.max_threads));
 #endif
 
     // Basic dimension check to be defensive.
@@ -86,13 +86,13 @@ void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
 
     _factorize_if_needed();
 
-    const int n = static_cast<int>(_A_ref.rows());
+    const Index n = _A_ref.rows();
     Eigen::Map<const Eigen::Matrix<Scalar, Eigen::Dynamic, 1>> x(x_in, n);
     Eigen::Matrix<Scalar, Eigen::Dynamic, 1> y = _ldl.solve(x);
     if (_ldl.info() != Eigen::Success) {
         throw std::runtime_error("ShiftInvertOpGeneral: solve() failed");
     }
 
-    std::memcpy(y_out, y.data(), sizeof(Scalar) * static_cast<size_t>(n));
+    std::memcpy(y_out, y.data(), sizeof(Scalar) * n);
 }
 } // namespace fem::solver

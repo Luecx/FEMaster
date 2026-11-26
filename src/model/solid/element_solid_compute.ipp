@@ -104,7 +104,7 @@ void SolidElement<N>::compute_stress_strain(
     const Field*     base_temperature
 ) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     const bool exact_displacement = base_displacement == &target_displacement;
 
@@ -117,7 +117,7 @@ void SolidElement<N>::compute_stress_strain(
     logging::error((!strain || strain->domain == FieldDomain::ELEMENT_NODAL)
                 && (!stress || stress->domain == FieldDomain::ELEMENT_NODAL),
         "SolidElement: stress/strain recovery requires ELEMENT_NODAL output");
-    logging::error(rst.rows() == static_cast<Eigen::Index>(N),
+    logging::error(rst.rows() == N,
         "SolidElement: stress/strain recovery requires element-nodal coordinates");
 
     const auto& scheme = this->integration_scheme_stiffness();
@@ -146,8 +146,7 @@ void SolidElement<N>::compute_stress_strain(
         const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision temperature =
-                (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
+            const Precision temperature = (*temperature_field)(this->node_ids[node], 0);
             result(node) = alpha * (temperature - T_zero);
         }
 
@@ -234,15 +233,15 @@ void SolidElement<N>::compute_stress_strain(
     // Nodal values are reconstructed from the integration-point samples in
     // natural coordinates using the topology-specific constant operator.
     const RowMatrix& E      = this->extrapolation_matrix();
-    logging::error(E.rows() == rst.rows() && E.cols() == static_cast<Eigen::Index>(scheme.count()),
+    logging::error(E.rows() == rst.rows() && E.cols() == scheme.count(),
         "SolidElement: invalid extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_strain = E * ip_strain;
     const RowMatrix nodal_stress = E * ip_stress;
 
     for (Eigen::Index n = 0; n < rst.rows(); ++n) {
-        const Index row = static_cast<Index>(offset + n);
-        for (Dim component = 0; component < n_strain; ++component) {
+        const Index row = offset + n;
+        for (Index component = 0; component < n_strain; ++component) {
             if (strain) (*strain)(row, component) = nodal_strain(n, component);
             if (stress) (*stress)(row, component) = nodal_stress(n, component);
         }
@@ -269,7 +268,7 @@ void SolidElement<N>::compute_stress_strain(
 template<Index N>
 bool SolidElement<N>::compute_peeq(Field& peeq) {
     // First element-nodal result row belonging to this element.
-    Index offset = static_cast<Index>(this->elem_nodal_offset);
+    Index offset = this->elem_nodal_offset;
 
     logging::error(peeq.domain == FieldDomain::ELEMENT_NODAL && peeq.components == 1,
         "SolidElement: PEEQ recovery requires scalar ELEMENT_NODAL output");
@@ -284,7 +283,7 @@ bool SolidElement<N>::compute_peeq(Field& peeq) {
     const auto& state = this->_model_data->material_state_old;
     if (!state || state->components < j2->state_size()) {
         for (Index node = 0; node < N; ++node) {
-            peeq(static_cast<Index>(offset) + node, 0) = Precision(0);
+            peeq(offset + node, 0) = Precision(0);
         }
         return true;
     }
@@ -301,12 +300,12 @@ bool SolidElement<N>::compute_peeq(Field& peeq) {
 
     // Extrapolate the scalar integration-point history to the element nodes.
     const RowMatrix& E      = this->extrapolation_matrix();
-    logging::error(E.rows() == N && E.cols() == static_cast<Eigen::Index>(scheme.count()),
+    logging::error(E.rows() == N && E.cols() == scheme.count(),
         "SolidElement: invalid PEEQ extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_peeq = E * ip_peeq;
     for (Index node = 0; node < N; ++node) {
-        peeq(static_cast<Index>(offset) + node, 0) = nodal_peeq(node, 0);
+        peeq(offset + node, 0) = nodal_peeq(node, 0);
     }
 
     return true;
@@ -403,8 +402,7 @@ MapMatrix SolidElement<N>::evaluate(
         const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision temperature =
-                (*temperature_field)(static_cast<Index>(this->node_ids[node]), 0);
+            const Precision temperature = (*temperature_field)(this->node_ids[node], 0);
             result(node) = alpha * (temperature - T_zero);
         }
 
@@ -565,7 +563,7 @@ MapMatrix SolidElement<N>::evaluate(
                     const Precision tangent_geometric_coefficient = det0 * point.w * dNa.dot(stress_linear_base * dNb);
                     const Precision geometric_coefficient         = det0 * point.w * dNa.dot(stress_geometric   * dNb);
 
-                    for (Dim d = 0; d < D; ++d) {
+                    for (Index d = 0; d < D; ++d) {
                         if (need_tangent)   tangent  (D * a + d, D * b + d) += tangent_geometric_coefficient;
                         if (with_geometric) geometric(D * a + d, D * b + d) += geometric_coefficient;
                     }
@@ -578,7 +576,7 @@ MapMatrix SolidElement<N>::evaluate(
     if (affine_force) force.noalias() += tangent * delta;
     if (with_force) {
         for (Index a = 0; a < N; ++a) {
-            for (Dim d = 0; d < D; ++d) {
+            for (Index d = 0; d < D; ++d) {
                 (*internal_force)(elem_nodal_offset + a, d) += force(D * a + d);
             }
         }
@@ -635,7 +633,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
     logging::error(heat_flux.components >= D,
         "SolidElement: heat-flux field requires at least three components");
 
-    const Index offset = static_cast<Index>(this->elem_nodal_offset);
+    const Index offset = this->elem_nodal_offset;
     logging::error(offset + N <= heat_flux.rows,
         "SolidElement: heat-flux field is too small for element ", this->label());
 
@@ -667,7 +665,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
         );
 
         const Vec3 flux = -conductivity * dN_dX.transpose() * local_temperature;
-        for (Dim component = 0; component < D; ++component) {
+        for (Index component = 0; component < D; ++component) {
             ip_flux(ip, component) = flux(component);
         }
     }
@@ -677,7 +675,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
     // reproducing their admissible recovery space instead of evaluating a
     // potentially singular nodal Jacobian directly.
     const RowMatrix& E      = this->extrapolation_matrix();
-    logging::error(E.rows() == static_cast<Eigen::Index>(N) && E.cols() == static_cast<Eigen::Index>(scheme.count()),
+    logging::error(E.rows() == N && E.cols() == scheme.count(),
         "SolidElement: invalid heat-flux extrapolation matrix for element ", this->label());
 
     const RowMatrix nodal_flux = E * ip_flux;
@@ -688,7 +686,7 @@ void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperatu
     // therefore evaluate different elements without synchronization.
     for (Index local_node = 0; local_node < N; ++local_node) {
         const Index row = offset + local_node;
-        for (Dim component = 0; component < D; ++component) {
+        for (Index component = 0; component < D; ++component) {
             heat_flux(row, component) = nodal_flux(local_node, component);
         }
     }
@@ -742,7 +740,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     logging::error(angles_field->components == 3,
         "Field '", angles_field->name, "': material orientation requires 3 components");
 
-    const Index row    = static_cast<Index>(this->elem_id);
+    const Index row    = this->elem_id;
     const Vec3  angles = angles_field->row_vec3(row);
 
     const Mat3 additional_rotation = cos::RectangularSystem::euler(

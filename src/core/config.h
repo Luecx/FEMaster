@@ -22,7 +22,7 @@ namespace fem {
  * @brief Holds shared runtime configuration values.
  */
 struct Config {
-    ID max_threads = 1; ///< Maximum number of threads used by the solver.
+    Index max_threads = 1; ///< Maximum number of threads used by the solver.
 };
 
 /**

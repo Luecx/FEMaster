@@ -18,9 +18,9 @@ using namespace fem;
 
 namespace {
 
-constexpr ID AUTO = model::Part::AUTO_ID_BEGIN;
+constexpr Index AUTO = model::Part::AUTO_ID_BEGIN;
 
-void add_hex(model::Model& model, ID element_id) {
+void add_hex(model::Model& model, Index element_id) {
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
@@ -85,7 +85,7 @@ TEST(Model_Ids, AutomaticIdOverflowIsRejected) {
 
     const auto part = model._data->parts.get();
     ASSERT_NE(part, nullptr);
-    part->next_surface_id = std::numeric_limits<ID>::max();
+    part->next_surface_id = std::numeric_limits<Index>::max();
 
     EXPECT_THROW(model.set_surface(-1, 0, 1), std::runtime_error);
 }
@@ -157,28 +157,28 @@ TEST(Model_Ids, MixedIdsCompileToDenseSurfaces) {
 TEST(Model_Ids, LargeAutomaticSurfaceSetScalesLinearly) {
     model::Model model;
 
-    constexpr ID n_elements = 50000;
-    for (ID i = 0; i < 8; ++i) {
+    constexpr Index n_elements = 50000;
+    for (Index i = 0; i < 8; ++i) {
         model.set_node(i, static_cast<Precision>(i & 1), static_cast<Precision>((i >> 1) & 1), static_cast<Precision>(i >> 2));
     }
-    for (ID i = 0; i < n_elements; ++i) {
+    for (Index i = 0; i < n_elements; ++i) {
         model.set_element<model::C3D8>(i, 0, 1, 3, 2, 4, 5, 7, 6);
     }
 
     const auto start = std::chrono::steady_clock::now();
-    for (ID side = 1; side <= 6; ++side) {
+    for (Index side = 1; side <= 6; ++side) {
         model.set_surface(SET_ELEM_ALL, side);
     }
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     const auto part = model._data->parts.get();
     ASSERT_NE(part, nullptr);
-    EXPECT_EQ(part->surfaces.size(), static_cast<std::size_t>(6 * n_elements));
+    EXPECT_EQ(part->surfaces.size(), 6 * n_elements);
     EXPECT_EQ(part->next_surface_id, AUTO + 6 * n_elements);
 
     // 300k surfaces took minutes with the quadratic search; generous bound
     EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 10);
 
     model.compile();
-    EXPECT_EQ(model._data->surfaces.size(), static_cast<std::size_t>(6 * n_elements));
+    EXPECT_EQ(model._data->surfaces.size(), 6 * n_elements);
 }

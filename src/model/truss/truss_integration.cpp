@@ -171,7 +171,7 @@ void T3::integrate_vector_field(
                      * L0;
 
     for (Index local_node = 0; local_node < N; ++local_node) {
-        const Index node = static_cast<Index>(node_ids[local_node]);
+        const Index node = node_ids[local_node];
 
         node_loads(node, 0) += Precision(0.5) * force(0);
         node_loads(node, 1) += Precision(0.5) * force(1);

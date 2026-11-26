@@ -51,8 +51,8 @@ FieldMatrix::FieldMatrix(Index rows, Index cols)
     : rows_(rows),
       cols_(cols) {
     // Convert dimensions to the vector storage type before multiplication.
-    const auto row_count = static_cast<std::size_t>(rows);
-    const auto col_count = static_cast<std::size_t>(cols);
+    const auto row_count = rows;
+    const auto col_count = cols;
 
     data_.resize(row_count * col_count);
 }
@@ -86,8 +86,8 @@ Index FieldMatrix::cols() const {
  *
  * @return The number of stored Precision values.
  */
-std::size_t FieldMatrix::size() const {
-    return data_.size();
+Index FieldMatrix::size() const {
+    return static_cast<Index>(data_.size());
 }
 
 /**
@@ -197,14 +197,12 @@ bool FieldMatrix::has_any_finite() const {
  * @param col Zero-based column index.
  * @return Position of the selected scalar in the contiguous vector.
  */
-std::size_t FieldMatrix::offset(Index row, Index col) const {
+Index FieldMatrix::offset(Index row, Index col) const {
     // Reject invalid coordinates before computing the flattened index.
-    logging::error(row < rows_ && col < cols_,
+    logging::error(row >= 0 && row < rows_ && col >= 0 && col < cols_,
         "FieldMatrix: index (", row, ", ", col, ") is outside ", rows_, "x", cols_);
 
-    return static_cast<std::size_t>(row) *
-           static_cast<std::size_t>(cols_) +
-           static_cast<std::size_t>(col);
+    return row * cols_ + col;
 }
 
 // Field metadata, access and arithmetic
@@ -392,7 +390,7 @@ bool Field::has_any_finite() const {
  * @return True when every component of the row is finite.
  */
 bool Field::has_valid_row(Index row) const {
-    logging::error(row < rows,
+    logging::error(row >= 0 && row < rows,
         "Field '", name, "': row ", row, " is outside the field");
 
     // Classify the complete row before reporting invalid numerical values
@@ -505,7 +503,7 @@ Vec6 Field::row_vec6(Index row) const {
 Field& Field::operator+=(Precision scalar) {
     Precision* field_data = values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         field_data[i] += scalar;
     }
 
@@ -523,7 +521,7 @@ Field& Field::operator+=(Precision scalar) {
 Field& Field::operator-=(Precision scalar) {
     Precision* field_data = values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         field_data[i] -= scalar;
     }
 
@@ -541,7 +539,7 @@ Field& Field::operator-=(Precision scalar) {
 Field& Field::operator*=(Precision scalar) {
     Precision* field_data = values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         field_data[i] *= scalar;
     }
 
@@ -564,7 +562,7 @@ Field& Field::operator/=(Precision scalar) {
 
     Precision* field_data = values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         field_data[i] /= scalar;
     }
 
@@ -587,7 +585,7 @@ Field& Field::operator+=(const Field& other) {
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         lhs[i] += rhs[i];
     }
 
@@ -610,7 +608,7 @@ Field& Field::operator-=(const Field& other) {
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         lhs[i] -= rhs[i];
     }
 
@@ -633,7 +631,7 @@ Field& Field::operator*=(const Field& other) {
     Precision*       lhs = values.data();
     const Precision* rhs = other.values.data();
 
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (Index i = 0; i < values.size(); ++i) {
         lhs[i] *= rhs[i];
     }
 
@@ -748,7 +746,7 @@ void Field::validate_compatible(const Field& other,
     // Compare the entity domain separately from the rectangular field shape.
     logging::error(domain == other.domain,
         "Field '", name, "': domain mismatch in '", operation, "' (",
-        static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")"
+        static_cast<Index>(domain), " vs ", static_cast<Index>(other.domain), ")"
     );
 
     logging::error(rows == other.rows && components == other.components,
@@ -820,12 +818,12 @@ Field Field::nodal_gather(const ModelData&   model_data,
         "Field '", name, "': row count does not match element-nodal offsets");
 
     for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
-        const auto& element = model_data.elements[static_cast<std::size_t>(elem_idx)];
+        const auto& element = model_data.elements[elem_idx];
         if (!element) continue;
 
         const Index offset = static_cast<Index>(offsets(elem_idx, 0));
         const Index end    = static_cast<Index>(offsets(elem_idx + 1, 0));
-        logging::error(end >= offset && end - offset == static_cast<Index>(element->n_nodes()),
+        logging::error(end >= offset && end - offset == element->n_nodes(),
             "Field '", name, "': invalid element-nodal row span at element ", elem_idx);
     }
 
@@ -835,12 +833,12 @@ Field Field::nodal_gather(const ModelData&   model_data,
             for (const auto& element : *list) {
                 if (!element) continue;
 
-                const Index offset = static_cast<Index>(element->elem_nodal_offset);
-                for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
+                const Index offset = element->elem_nodal_offset;
+                for (Index local = 0; local < element->n_nodes(); ++local) {
                     if (!has_valid_row(offset + local)) continue;
 
-                    const Index node = static_cast<Index>(element->nodes()[local]);
-                    logging::error(node < node_count,
+                    const Index node = element->nodes()[local];
+                    logging::error(node >= 0 && node < node_count,
                         "Field '", name, "': invalid node ID ", node);
                     visit(node, offset + local);
                 }
@@ -849,21 +847,20 @@ Field Field::nodal_gather(const ModelData&   model_data,
     };
 
     // Count contributions and convert them to contiguous per-node gather ranges
-    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
+    std::vector<Index> node_offsets(node_count + 1, Index(0));
     for_each_row([&](Index node, Index /*row*/) {
-        ++node_offsets[static_cast<std::size_t>(node + 1)];
+        ++node_offsets[node + 1];
     });
 
     for (Index node = 0; node < node_count; ++node) {
-        node_offsets[static_cast<std::size_t>(node + 1)] +=
-            node_offsets[static_cast<std::size_t>(node)];
+        node_offsets[node + 1] += node_offsets[node];
     }
 
-    std::vector<Index> source_rows  (static_cast<std::size_t>(node_offsets.back()));
+    std::vector<Index> source_rows  (node_offsets.back());
     std::vector<Index> write_offsets = node_offsets;
 
     for_each_row([&](Index node, Index row) {
-        source_rows[static_cast<std::size_t>(write_offsets[static_cast<std::size_t>(node)]++)] = row;
+        source_rows[write_offsets[node]++] = row;
     });
 
     // Independent global-node reductions; no atomics or worker-local fields.
@@ -871,9 +868,9 @@ Field Field::nodal_gather(const ModelData&   model_data,
     Field nodal = model_data.create_field_(result_name, FieldDomain::NODE, components, average);
 
     parallel::for_index(node_count, global_config.max_threads,
-        [&](Index node, int /*worker*/) {
-            const Index begin = node_offsets[static_cast<std::size_t>(node)];
-            const Index end   = node_offsets[static_cast<std::size_t>(node + 1)];
+        [&](Index node, Index /*worker*/) {
+            const Index begin = node_offsets[node];
+            const Index end   = node_offsets[node + 1];
             if (begin == end) return;
 
             for (Index component = 0; component < components; ++component) {
@@ -881,7 +878,7 @@ Field Field::nodal_gather(const ModelData&   model_data,
             }
 
             for (Index entry = begin; entry < end; ++entry) {
-                const Index source = source_rows[static_cast<std::size_t>(entry)];
+                const Index source = source_rows[entry];
                 for (Index component = 0; component < components; ++component) {
                     nodal(node, component) += (*this)(source, component);
                 }

@@ -35,7 +35,7 @@ namespace model {
  * the common `BeamElement` base.
  */
 struct B33 : BeamElement<2> {
-    B33(ID elem_id, std::array<ID, 2> node_ids_in)
+    B33(Index elem_id, std::array<Index, 2> node_ids_in)
         : BeamElement(elem_id, node_ids_in) {}
 
     // Instance expansion copies only persistent element topology. Sections,
@@ -186,7 +186,7 @@ struct B33 : BeamElement<2> {
         const Field*     base_temperature
     ) override {
         // First element-nodal result row belonging to this element.
-        Index offset = static_cast<Index>(this->elem_nodal_offset);
+        Index offset = this->elem_nodal_offset;
 
         (void) base_temperature;
         // Linear recovery accepts both representations of the reference state,
@@ -203,9 +203,9 @@ struct B33 : BeamElement<2> {
         const Precision L = length();
 
         StaticMatrix<12, 1> u_global;
-        for (int i = 0; i < 2; ++i) {
-            Vec6 ug = target_displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
-            for (int d = 0; d < 6; ++d) u_global(6 * i + d) = ug(d);
+        for (Index i = 0; i < 2; ++i) {
+            Vec6 ug = target_displacement.row_vec6(this->nodes()[i]);
+            for (Index d = 0; d < 6; ++d) u_global(6 * i + d) = ug(d);
         }
 
         StaticMatrix<12, 12> T = transformation();
@@ -226,8 +226,7 @@ struct B33 : BeamElement<2> {
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                temperature += (*target_temperature)(
-                    static_cast<Index>(this->node_ids[node]), 0);
+                temperature += (*target_temperature)(this->node_ids[node], 0);
             }
             temperature *= Precision(0.5);
             thermal_strain = alpha * (temperature - T0);
@@ -236,7 +235,7 @@ struct B33 : BeamElement<2> {
         const Precision axial_force = E * A * (axial_strain - thermal_strain);
 
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
-            const Index row = static_cast<Index>(offset + i);
+            const Index row = offset + i;
             if (strain) {
                 for (Index j = 0; j < strain->components; ++j) (*strain)(row, j) = Precision(0);
                 (*strain)(row, 0) = axial_strain;
@@ -276,7 +275,7 @@ struct B33 : BeamElement<2> {
 
         StaticVector<12> u_global;
         for (Index node = 0; node < 2; ++node) {
-            const Vec6 u = target_displacement.row_vec6(static_cast<Index>(node_ids[node]));
+            const Vec6 u = target_displacement.row_vec6(node_ids[node]);
             for (Index dof = 0; dof < 6; ++dof) {
                 u_global(6 * node + dof) = u(dof);
             }
@@ -295,8 +294,7 @@ struct B33 : BeamElement<2> {
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                temperature += (*temperature_field)(
-                    static_cast<Index>(this->node_ids[node]), 0);
+                temperature += (*temperature_field)(this->node_ids[node], 0);
             }
 
             temperature *= Precision(0.5);
@@ -332,12 +330,12 @@ struct B33 : BeamElement<2> {
         Kg42 *= f;
 
         StaticMatrix<12, 12> Kg_local = StaticMatrix<12, 12>::Zero();
-        const int map_y[4] = {2, 4, 8, 10};
-        const int map_z[4] = {1, 5, 7, 11};
+        const Index map_y[4] = {2, 4, 8, 10};
+        const Index map_z[4] = {1, 5, 7, 11};
 
-        auto scatter = [&](const Eigen::Matrix<Precision, 4, 4>& B, const int map[4]) {
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
+        auto scatter = [&](const Eigen::Matrix<Precision, 4, 4>& B, const Index map[4]) {
+            for (Index r = 0; r < 4; ++r)
+                for (Index c = 0; c < 4; ++c)
                     Kg_local(map[r], map[c]) += B(r, c);
         };
 
@@ -346,7 +344,7 @@ struct B33 : BeamElement<2> {
         return T.transpose() * Kg_local * T;
     }
 
-    LinePtr line(ID line_id) override {
+    LinePtr line(Index line_id) override {
         (void) line_id;
         return std::make_shared<Line2A>(this->node_ids);
     }

@@ -63,15 +63,15 @@ namespace {
 // One FRD result component, e.g. the stress Sxy component
 struct FRDComponent {
     std::string name;
-    int entity   = 1; // scalar = 1, vector = 2, tensor = 4
-    int index_1  = 0; // first vector or tensor index
-    int index_2  = 0; // second tensor index
-    bool derived = false;
+    Index entity  = 1; // scalar = 1, vector = 2, tensor = 4
+    Index index_1 = 0; // first vector or tensor index
+    Index index_2 = 0; // second tensor index
+    bool  derived = false;
 
-    static FRDComponent scalar(const std::string& name, int index   ) { return {name, 1, index, 0, false};}
-    static FRDComponent vector(const std::string& name, int index   ) { return {name, 2, index, 0, false};}
-    static FRDComponent tensor(const std::string& name, int i, int j) { return {name, 4, i, j, false};}
-    static FRDComponent vcnorm(const std::string& name)               { return {name, 2, 0, 0, true };}
+    static FRDComponent scalar(const std::string& name, Index index     ) { return {name, 1, index, 0, false};}
+    static FRDComponent vector(const std::string& name, Index index     ) { return {name, 2, index, 0, false};}
+    static FRDComponent tensor(const std::string& name, Index i, Index j) { return {name, 4, i, j, false};}
+    static FRDComponent vcnorm(const std::string& name)                   { return {name, 2, 0, 0, true };}
 };
 
 /**
@@ -93,10 +93,10 @@ struct FRDField {
  */
 void append_string_left(std::string& buffer,
                         std::string_view value,
-                        std::size_t width) {
+                        Index width) {
     buffer.append(value);
 
-    if (value.size() < width) {
+    if (static_cast<Index>(value.size()) < width) {
         buffer.append(width - value.size(), ' ');
     }
 }
@@ -107,7 +107,7 @@ void append_string_left(std::string& buffer,
 template<typename T>
 void append_integer(std::string& buffer,
                     T value,
-                    std::size_t width = 0) {
+                    Index width = 0) {
     char tmp[32];
 
     const auto [end, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
@@ -115,7 +115,7 @@ void append_integer(std::string& buffer,
     logging::error(ec == std::errc{},
         "FrdWriter: failed to format integer");
 
-    const std::size_t length = static_cast<std::size_t>(end - tmp);
+    const Index length = end - tmp;
 
     if (length < width) {
         buffer.append(width - length, ' ');
@@ -132,7 +132,7 @@ void append_integer(std::string& buffer,
  */
 void append_float(std::string& buffer,
                   Precision value,
-                  std::size_t width = 12) {
+                  Index width = 12) {
     char tmp[64];
 
     const auto [end, ec] = std::to_chars(
@@ -146,7 +146,7 @@ void append_float(std::string& buffer,
     logging::error(ec == std::errc{},
         "FrdWriter: failed to format floating-point value");
 
-    const std::size_t length = static_cast<std::size_t>(end - tmp);
+    const Index length = end - tmp;
 
     if (length < width) {
         buffer.append(width - length, ' ');
@@ -163,23 +163,23 @@ void append_float(std::string& buffer,
  * Approximately one worker is enabled per 4096 rows or elements. The count is
  * bounded by the configured FEMaster thread count and by 32 writer threads.
  */
-ID output_thread_count(Index work_items) {
+Index output_thread_count(Index work_items) {
 #ifndef _OPENMP
     (void) work_items;
     return 1;
 #else
     const Index blocks = std::max<Index>(1, (work_items + 4095) / 4096);
-    const ID useful_threads = static_cast<ID>(std::min<Index>(blocks, 32));
+    const Index useful_threads = std::min<Index>(blocks, 32);
 
-    return std::max<ID>(1, std::min<ID>(global_config.max_threads, useful_threads));
+    return std::max<Index>(1, std::min<Index>(global_config.max_threads, useful_threads));
 #endif
 }
 
 /**
  * Creates one independent text buffer for every formatting worker.
  */
-std::vector<std::string> create_thread_buffers(ID num_threads) {
-    std::vector<std::string> buffers(static_cast<std::size_t>(num_threads));
+std::vector<std::string> create_thread_buffers(Index num_threads) {
+    std::vector<std::string> buffers(num_threads);
 
     for (auto& buffer : buffers) {
         buffer.reserve(4 * 1024 * 1024);
@@ -210,7 +210,7 @@ void write_thread_buffers(std::ofstream& file_path,
  * @param s Field name supplied by the result writer.
  * @return Positive FRD frame identifier.
  */
-int frd_frame(const std::string& s) {
+Index frd_frame(const std::string& s) {
     std::string out;
 
     for (unsigned char c : s) {
@@ -233,14 +233,14 @@ int frd_frame(const std::string& s) {
  * @param element Compiled element to classify.
  * @return FRD topology code or zero if unsupported.
  */
-int frd_element_type(const model::ElementInterface& element) {
+Index frd_element_type(const model::ElementInterface& element) {
     const auto* structural = element.as<model::StructuralElement>();
 
     if (!structural) {
         return 0;
     }
 
-    const Dim n_nodes = element.n_nodes();
+    const Index n_nodes = element.n_nodes();
 
     if (structural->is_shell()) {
         if (n_nodes == 3) return 7;
@@ -274,7 +274,7 @@ int frd_element_type(const model::ElementInterface& element) {
  * @param step_type Analysis category of the current writer step.
  * @return CalculiX FRD increment-type identifier.
  */
-int frd_increment_type(WriterStepType step_type) {
+Index frd_increment_type(WriterStepType step_type) {
     switch (step_type) {
         case WriterStepType::Dynamic:        return 1;
         case WriterStepType::Eigenfrequency: return 2;
@@ -640,7 +640,7 @@ void append_node_block_header(std::string& buffer, Index node_count) {
  * Appends one -1 node-coordinate record.
  */
 void append_node_line(std::string& buffer,
-                      ExternalID node_id,
+                      Index node_id,
                       Precision x,
                       Precision y,
                       Precision z) {
@@ -656,7 +656,7 @@ void append_node_line(std::string& buffer,
  * Appends the FRD element-block header.
  */
 void append_element_block_header(std::string& buffer,
-                                 std::size_t element_count) {
+                                 Index element_count) {
     buffer.append("    3C");
     buffer.append(18, ' ');
     append_integer(buffer, element_count, 12);
@@ -672,10 +672,10 @@ void append_element_block_header(std::string& buffer,
  * id. Both are zero when the element has no section or material.
  */
 void append_element_header_line(std::string& buffer,
-                                ExternalID   element_id,
-                                int          type,
-                                ID           group_id,
-                                ID           material_id) {
+                                Index        element_id,
+                                Index        type,
+                                Index        group_id,
+                                Index        material_id) {
     buffer.append(" -1");
     append_integer(buffer, element_id, 10);
     append_integer(buffer, type, 5);
@@ -691,13 +691,13 @@ void append_element_header_line(std::string& buffer,
  * nodes continue on a new -2 record.
  */
 void append_element_connectivity(std::string& buffer,
-                                 const std::vector<ID>& connectivity,
-                                 const std::vector<ExternalID>& node_ids,
-                                 ExternalID element_id) {
-    for (std::size_t local = 0; local < connectivity.size(); ++local) {
-        const ID node_id = connectivity[local];
+                                 const std::vector<Index>& connectivity,
+                                 const std::vector<Index>& node_ids,
+                                 Index element_id) {
+    for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
+        const Index node_id = connectivity[local];
 
-        logging::error(static_cast<std::size_t>(node_id) < node_ids.size(),
+        logging::error(node_id >= 0 && node_id < static_cast<Index>(node_ids.size()),
             "FrdWriter: element ", element_id,
             " references node ", node_id,
             " outside the FRD node mapping");
@@ -710,11 +710,7 @@ void append_element_connectivity(std::string& buffer,
             buffer.append(" -2");
         }
 
-        append_integer(
-            buffer,
-            node_ids[static_cast<std::size_t>(node_id)],
-            10
-        );
+        append_integer(buffer, node_ids[node_id], 10);
     }
 
     buffer.push_back('\n');
@@ -724,9 +720,9 @@ void append_element_connectivity(std::string& buffer,
  * Appends one 1PSTEP result-step metadata record.
  */
 void append_result_step_line(std::string& buffer,
-                             int block,
-                             int frame,
-                             int step) {
+                             Index block,
+                             Index frame,
+                             Index step) {
     buffer.append("    1PSTEP");
     append_integer(buffer, block, 26);
     append_integer(buffer, frame, 12);
@@ -737,7 +733,7 @@ void append_result_step_line(std::string& buffer,
 /**
  * Appends one 1PMODE metadata record.
  */
-void append_result_mode_line(std::string& buffer, int frame) {
+void append_result_mode_line(std::string& buffer, Index frame) {
     buffer.append("    1PMODE");
     append_integer(buffer, frame, 26);
     buffer.push_back('\n');
@@ -747,10 +743,10 @@ void append_result_mode_line(std::string& buffer, int frame) {
  * Appends the 100CL result-control record.
  */
 void append_result_control_line(std::string& buffer,
-                                int global_frame,
+                                Index global_frame,
                                 Precision value,
                                 Index rows,
-                                int ictype,
+                                Index ictype,
                                 const char* analysis) {
     buffer.append("  100CL  ");
     append_integer(buffer, 100 + global_frame, 3);
@@ -778,10 +774,10 @@ void append_result_control_line(std::string& buffer,
  */
 void append_field_definition_line(std::string& buffer,
                                   const FRDField& field,
-                                  int data_type) {
+                                  Index data_type) {
     buffer.append(" -4  ");
     append_string_left(buffer, field.name, 8);
-    append_integer(buffer, static_cast<int>(field.components.size()), 5);
+    append_integer(buffer, static_cast<Index>(field.components.size()), 5);
     append_integer(buffer, data_type, 5);
     buffer.push_back('\n');
 }
@@ -812,7 +808,7 @@ void append_component_definition_line(std::string& buffer,
  * Higher-order solids permute midside nodes in their FRD connectivity. The
  * same mapping is required for their unaveraged element-nodal result rows.
  */
-Index frd_local_node(Index local, int type) {
+Index frd_local_node(Index local, Index type) {
     if (type == 4) {
         constexpr Index order[] = {
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -835,8 +831,8 @@ Index frd_local_node(Index local, int type) {
  * The record uses FRD long ASCII identifiers followed by the field components.
  */
 void append_result_element_node_lines(std::string& buffer,
-                                      ExternalID element_id,
-                                      ExternalID node_id,
+                                      Index element_id,
+                                      Index node_id,
                                       const model::Field& field,
                                       Index row,
                                       const FRDField& frd) {
@@ -866,7 +862,7 @@ void append_result_element_node_lines(std::string& buffer,
  * components continue on -2 records after every six values.
  */
 void append_result_node_lines(std::string& buffer,
-                              ExternalID node_id,
+                              Index node_id,
                               const model::Field& field,
                               Index row,
                               const FRDField& frd) {
@@ -967,7 +963,7 @@ void FrdWriter::close() {
  * @param id Analysis-step identifier.
  * @param step_type Physical type of the analysis step.
  */
-void FrdWriter::add_loadcase(int id, WriterStepType step_type) {
+void FrdWriter::add_loadcase(Index id, WriterStepType step_type) {
     logging::error(file_path.is_open(),
         "FrdWriter: cannot add loadcase: file is not open");
 
@@ -1005,8 +1001,7 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         "FrdWriter: cannot write model data: file is not open");
     logging::error(model_data.positions != nullptr,
         "FrdWriter: model_data.positions is not initialized");
-    logging::error(model_data.node_mapping.size()
-                    == static_cast<std::size_t>(model_data.positions->rows),
+    logging::error(static_cast<Index>(model_data.node_mapping.size()) == model_data.positions->rows,
         "FrdWriter: node mapping does not match positions field");
 
     if (model_data_written) {
@@ -1014,11 +1009,11 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
     }
 
     // FRD identifier fields are ten characters wide
-    constexpr ExternalID max_frd_id = 9999999999;
+    constexpr Index max_frd_id = 9999999999;
 
     // Build the dense-to-FRD node numbering once for this output file
     node_ids.resize(model_data.node_mapping.size());
-    for (std::size_t i = 0; i < model_data.node_mapping.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(model_data.node_mapping.size()); ++i) {
         const auto& [instance, local_id] = model_data.node_mapping[i];
 
         logging::error(instance != nullptr,
@@ -1035,7 +1030,7 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         "FrdWriter: element mapping does not match compiled elements");
 
     element_ids.resize(model_data.element_mapping.size());
-    for (std::size_t i = 0; i < model_data.element_mapping.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(model_data.element_mapping.size()); ++i) {
         if (!model_data.elements[i]) continue;
 
         const auto& [instance, local_id] = model_data.element_mapping[i];
@@ -1114,7 +1109,7 @@ void FrdWriter::write_field(const model::Field& field,
 void FrdWriter::write_nodes(const model::ModelData& model_data) {
     const auto& positions = *model_data.positions;
 
-    logging::error(node_ids.size() == static_cast<std::size_t>(positions.rows),
+    logging::error(static_cast<Index>(node_ids.size()) == positions.rows,
         "FrdWriter: node id mapping does not match positions field");
 
     // Write the block header before the parallel node data
@@ -1124,12 +1119,12 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
     file_path.write(header.data(), static_cast<std::streamsize>(header.size()));
 
     // Format contiguous node ranges independently
-    const ID num_threads = output_thread_count(positions.rows);
+    const Index num_threads = output_thread_count(positions.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = positions.rows * thread       / num_threads;
             const Index end   = positions.rows * (thread + 1) / num_threads;
@@ -1137,7 +1132,7 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
             for (Index row = begin; row < end; ++row) {
                 append_node_line(
                     buffer,
-                    node_ids[static_cast<std::size_t>(row)],
+                    node_ids[row],
                     positions(row, 0),
                     positions(row, 1),
                     positions(row, 2)
@@ -1169,7 +1164,7 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
  * @param model_data Compiled model containing structural element topology.
  */
 void FrdWriter::write_elements(const model::ModelData& model_data) {
-    std::size_t element_count = 0;
+    Index element_count = 0;
 
     // Determine the number advertised in the FRD element block header
     for (const auto& element : model_data.elements) {
@@ -1204,25 +1199,25 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
 
     // Divide the compiled element range into contiguous worker blocks
     const Index compiled_count = static_cast<Index>(model_data.elements.size());
-    const ID num_threads = output_thread_count(compiled_count);
+    const Index num_threads = output_thread_count(compiled_count);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = compiled_count * thread       / num_threads;
             const Index end   = compiled_count * (thread + 1) / num_threads;
 
             for (Index elem_row = begin; elem_row < end; ++elem_row) {
                 const auto& element =
-                    model_data.elements[static_cast<std::size_t>(elem_row)];
+                    model_data.elements[elem_row];
 
                 if (!element) {
                     continue;
                 }
 
-                const int type = frd_element_type(*element);
+                const Index type = frd_element_type(*element);
 
                 if (type == 0) {
                     continue;
@@ -1232,29 +1227,29 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                 // can respect section and material boundaries during nodal averaging.
                 // Ids exceeding the five-column FRD fields are written as 0.
                 const auto& section     = element->_section;
-                const ID    section_id  = section                       ? section->id_             : 0;
-                const ID    mat_id      = section && section->material_ ? section->material_->id() : 0;
-                const ID    group_id    = section_id <= 99999 ? section_id : 0;
-                const ID    material_id = mat_id     <= 99999 ? mat_id     : 0;
+                const Index section_id  = section                       ? section->id_             : 0;
+                const Index mat_id      = section && section->material_ ? section->material_->id() : 0;
+                const Index group_id    = section_id <= 99999 ? section_id : 0;
+                const Index material_id = mat_id     <= 99999 ? mat_id     : 0;
 
                 append_element_header_line(
                     buffer,
-                    element_ids[static_cast<std::size_t>(elem_row)],
+                    element_ids[elem_row],
                     type,
                     group_id,
                     material_id
                 );
 
                 // Copy connectivity so FRD-specific high-order permutations remain local
-                std::vector<ID> connectivity;
-                connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
+                std::vector<Index> connectivity;
+                connectivity.reserve(element->n_nodes());
 
-                for (ID node_id : *element) {
+                for (Index node_id : *element) {
                     connectivity.push_back(node_id);
                 }
 
                 // Use the same local-node ordering as element-nodal result records
-                const std::vector<ID> internal = connectivity;
+                const std::vector<Index> internal = connectivity;
                 for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
                     connectivity[local] = internal[frd_local_node(local, type)];
                 }
@@ -1263,7 +1258,7 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                     buffer,
                     connectivity,
                     node_ids,
-                    element_ids[static_cast<std::size_t>(elem_row)]
+                    element_ids[elem_row]
                 );
             }
         });
@@ -1280,12 +1275,12 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
 void FrdWriter::write_result_header(const std::string& field_name,
                                     Precision          frame_value,
                                     Index              rows,
-                                    int                data_type) {
+                                    Index              data_type) {
     // Resolve field metadata and analysis-frame numbering
     const FRDField& frd   = frd_field(field_name);
-    int             frame = frd_frame(field_name);
-    const int       step  = current_step > 0 ? current_step : 1;
-    const int       block = ++current_result_block;
+    Index           frame = frd_frame(field_name);
+    const Index     step  = current_step > 0 ? current_step : 1;
+    const Index     block = ++current_result_block;
 
     if (current_step_type == WriterStepType::Dynamic) {
         ++frame;
@@ -1305,8 +1300,8 @@ void FrdWriter::write_result_header(const std::string& field_name,
         last_frame_id   = frame;
     }
 
-    const int   global_frame = current_global_frame;
-    const int   ictype       = frd_increment_type(current_step_type);
+    const Index global_frame = current_global_frame;
+    const Index ictype       = frd_increment_type(current_step_type);
     const char* analysis     = frd_analysis_name(current_step_type);
 
     // Build all compact result metadata records in one local buffer
@@ -1355,7 +1350,7 @@ void FrdWriter::write_result_header(const std::string& field_name,
 void FrdWriter::write_nodal_field(const model::Field& field,
                                   const std::string& field_name,
                                   Precision frame_value) {
-    logging::error(node_ids.size() == static_cast<std::size_t>(field.rows),
+    logging::error(static_cast<Index>(node_ids.size()) == field.rows,
         "FrdWriter: node id mapping does not match field rows");
 
     // Preserve all nodal rows, including partially masked reaction vectors
@@ -1363,12 +1358,12 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     const FRDField& frd = frd_field(field_name);
 
     // Format contiguous node-result ranges independently
-    const ID num_threads = output_thread_count(field.rows);
+    const Index num_threads = output_thread_count(field.rows);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = field.rows * thread       / num_threads;
             const Index end   = field.rows * (thread + 1) / num_threads;
@@ -1376,7 +1371,7 @@ void FrdWriter::write_nodal_field(const model::Field& field,
             for (Index row = begin; row < end; ++row) {
                 append_result_node_lines(
                     buffer,
-                    node_ids[static_cast<std::size_t>(row)],
+                    node_ids[row],
                     field,
                     row,
                     frd
@@ -1423,43 +1418,43 @@ void FrdWriter::write_element_nodal_field(const model::Field& field,
     const FRDField& frd = frd_field(field_name);
 
     // Format element-major output in the same FRD order as the connectivity
-    const ID num_threads = output_thread_count(element_count);
+    const Index num_threads = output_thread_count(element_count);
     auto thread_buffers = create_thread_buffers(num_threads);
 
-    parallel::for_index(num_threads, static_cast<int>(num_threads),
-        [&](ID thread, int /*worker*/) {
-            auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+    parallel::for_index(num_threads, num_threads,
+        [&](Index thread, Index /*worker*/) {
+            auto& buffer = thread_buffers[thread];
 
             const Index begin = element_count * thread       / num_threads;
             const Index end   = element_count * (thread + 1) / num_threads;
 
             for (Index elem_row = begin; elem_row < end; ++elem_row) {
-                const auto& element = model_data.elements[static_cast<std::size_t>(elem_row)];
+                const auto& element = model_data.elements[elem_row];
                 if (!element) continue;
 
-                const int type = frd_element_type(*element);
+                const Index type = frd_element_type(*element);
                 if (type == 0) continue;
 
                 const Index offset = static_cast<Index>(
                     (*model_data.element_nodal_offsets)(elem_row, 0));
 
-                std::vector<ID> connectivity;
-                connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
-                for (ID node_id : *element) {
+                std::vector<Index> connectivity;
+                connectivity.reserve(element->n_nodes());
+                for (Index node_id : *element) {
                     connectivity.push_back(node_id);
                 }
 
                 for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
                     const Index internal = frd_local_node(local, type);
-                    const Index node     = static_cast<Index>(connectivity[internal]);
+                    const Index node     = connectivity[internal];
 
-                    logging::error(node < node_ids.size(),
+                    logging::error(node >= 0 && node < static_cast<Index>(node_ids.size()),
                         "FrdWriter: element-nodal result references unknown node ", node);
 
                     append_result_element_node_lines(
                         buffer,
-                        element_ids[static_cast<std::size_t>(elem_row)],
-                        node_ids[static_cast<std::size_t>(node)],
+                        element_ids[elem_row],
+                        node_ids[node],
                         field,
                         offset + internal,
                         frd

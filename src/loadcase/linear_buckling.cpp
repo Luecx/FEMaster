@@ -84,7 +84,7 @@ struct BucklingMode {
  */
 static void print_buckling_summary(const std::vector<BucklingMode>& modes,
                                    double sigma_used,
-                                   int k_requested) {
+                                   Index k_requested) {
     logging::info(true, "");
     logging::info(true, "Buckling summary");
     logging::up();
@@ -93,7 +93,7 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
     logging::down();
 
     logging::info(true, std::setw(6), "Idx", std::setw(24), "Buckling factor lambda");
-    for (size_t i = 0; i < modes.size(); ++i) {
+    for (Index i = 0; i < static_cast<Index>(modes.size()); ++i) {
         logging::info(true,
                       std::setw(6), i + 1,
                       std::setw(24), std::fixed, std::setprecision(9),
@@ -320,7 +320,7 @@ void LinearBuckling::run() {
     // (10) Solve generalized EVP in reduced space: A * phi = lambda * (-B) * phi
     // Many libraries expect the "K x = lambda M x" form; we pass (-B) as the "mass" side.
 
-    const int k_req = std::max(1, std::min<int>(num_eigenvalues, std::max<int>(1, int(A.rows()))));
+    const Index k_req = std::max<Index>(1, std::min<Index>(num_eigenvalues, std::max<Index>(1, A.rows())));
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::Buckling;     // your solver's mode for buckling EVP
     eigopt.sigma = sigma;                           // shift to guide convergence
@@ -360,7 +360,7 @@ void LinearBuckling::run() {
 
     model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
     for (Index i = 0; i < num_modes; ++i) {
-        auto& mode = modes[static_cast<std::size_t>(i)];
+        auto& mode = modes[i];
         lambdas(i) = mode.lambda;
 
         output.begin_frame(mode.lambda, "_" + std::to_string(i + 1));

@@ -67,7 +67,7 @@ Precision yield_stress_at(const YieldCurve& yield_curve, Precision eqp) {
     }
 
     // Search the active linear interpolation interval.
-    for (std::size_t i = 1; i < yield_curve.size(); ++i) {
+    for (Index i = 1; i < static_cast<Index>(yield_curve.size()); ++i) {
         const YieldPoint& left  = yield_curve[i - 1];
         const YieldPoint& right = yield_curve[i];
 
@@ -108,7 +108,7 @@ Precision hardening_slope_at(const YieldCurve& yield_curve, Precision eqp) {
         return Precision(0);
     }
 
-    for (std::size_t i = 1; i < yield_curve.size(); ++i) {
+    for (Index i = 1; i < static_cast<Index>(yield_curve.size()); ++i) {
         const YieldPoint& left  = yield_curve[i - 1];
         const YieldPoint& right = yield_curve[i];
 
