@@ -922,3 +922,54 @@ TEST(Reader_ConstraintMethod, BucklingAndFrequencyAllowNullspaceOverride) {
         std::filesystem::remove(path);
     }
 }
+
+TEST(Reader_Conditions, AbaqusShellPressureUsesNegativeFace) {
+    const std::string input_path = "tests/TMP_SHELL_DLOAD_P.INP";
+    const std::string output_path = "tests/TMP_SHELL_DLOAD_P.RES";
+    {
+        std::ofstream out(input_path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n3, 1, 1, 0\n4, 0, 1, 0\n";
+        out << "*ELEMENT, TYPE=S4, ELSET=SHELLS\n1, 1, 2, 3, 4\n";
+        out << "*MATERIAL, NAME=MAT\n*ELASTIC\n1000., 0.3\n";
+        out << "*SHELL SECTION, ELSET=SHELLS, MATERIAL=MAT\n1.\n";
+        out << "*DLOAD, NAME=BAQ\nSHELLS, P, 2.\n";
+        out << "*DLOAD, NAME=POS\nSHELLS, P1, 2.\n";
+        out << "*DLOAD, NAME=NEG\nSHELLS, P2, 2.\n";
+    }
+    io::reader::Parser parser;
+    ASSERT_NO_THROW(parser.run(input_path, output_path));
+    const auto& cols = parser.model()._data->load_cols;
+    const auto p  = std::dynamic_pointer_cast<bc::PLoad>(cols.get("BAQ")->first());
+    const auto p1 = std::dynamic_pointer_cast<bc::PLoad>(cols.get("POS")->first());
+    const auto p2 = std::dynamic_pointer_cast<bc::PLoad>(cols.get("NEG")->first());
+    ASSERT_NE(p, nullptr);
+    ASSERT_NE(p1, nullptr);
+    ASSERT_NE(p2, nullptr);
+    ASSERT_EQ(p->region_->size(), 1u);
+    ASSERT_EQ(p1->region_->size(), 1u);
+    ASSERT_EQ(p2->region_->size(), 1u);
+    EXPECT_EQ(p->region_->at(0), p2->region_->at(0));
+    EXPECT_NE(p->region_->at(0), p1->region_->at(0));
+    EXPECT_DOUBLE_EQ(p->pressure_, 2.);
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+}
+
+TEST(Reader_Conditions, AbaqusBarePressureRejectsSolid) {
+    const std::string input_path = "tests/TMP_SOLID_DLOAD_P.INP";
+    const std::string output_path = "tests/TMP_SOLID_DLOAD_P.RES";
+    {
+        std::ofstream out(input_path);
+        ASSERT_TRUE(out.is_open());
+        out << "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n3, 0, 1, 0\n4, 0, 0, 1\n";
+        out << "*ELEMENT, TYPE=C3D4, ELSET=SOLIDS\n1, 1, 2, 3, 4\n";
+        out << "*MATERIAL, NAME=MAT\n*ELASTIC\n1000., 0.3\n";
+        out << "*SOLID SECTION, ELSET=SOLIDS, MATERIAL=MAT\n";
+        out << "*DLOAD, NAME=BAQ\nSOLIDS, P, 2.\n";
+    }
+    io::reader::Parser parser;
+    EXPECT_THROW(parser.run(input_path, output_path), std::exception);
+    std::filesystem::remove(input_path);
+    std::filesystem::remove(output_path);
+}
