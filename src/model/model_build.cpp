@@ -185,8 +185,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
             bool added = false;
 
             for (Index cluster = 0; cluster < static_cast<Index>(cluster_sums.size()); ++cluster) {
-                const Vec3 cluster_normal =
-                    cluster_sums[cluster].normalized();
+                const Vec3 cluster_normal = cluster_sums[cluster].normalized();
 
                 if (normal.dot(cluster_normal) < cos_equalize) continue;
 
@@ -205,8 +204,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 
         // Write each averaged cluster direction to its non-prescribed rows
         for (Index cluster = 0; cluster < static_cast<Index>(cluster_sums.size()); ++cluster) {
-            const Vec3 equalized_normal =
-                cluster_sums[cluster].normalized();
+            const Vec3 equalized_normal = cluster_sums[cluster].normalized();
 
             for (Index row : cluster_rows[cluster]) {
                 if (prescribed_rows[row]) continue;
@@ -838,8 +836,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
                     "stiffness scale field must use ELEMENT domain");
                 logging::error(stiffness_scalar->components == 1,
                     "stiffness scale field must have 1 component");
-                geometric_stiffness *=
-                    (*stiffness_scalar)(structural->elem_id, 0);
+                geometric_stiffness *= (*stiffness_scalar)(structural->elem_id, 0);
             }
 
             return geometric_stiffness;

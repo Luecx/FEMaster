@@ -64,9 +64,9 @@ Tie::Tie(model::LineRegion::Ptr master, model::SurfaceRegion::Ptr slave, Precisi
     , distance(max_distance)
     , adjust(do_adjust) {}
 
-static std::vector<Index> collect_slave_nodes(const model::NodeRegion::Ptr& slave_nodes,
-                                           const model::SurfaceRegion::Ptr& slave_surfaces,
-                                           model::ModelData&                model_data) {
+static std::vector<Index> collect_slave_nodes(const model::NodeRegion::Ptr&    slave_nodes,
+                                              const model::SurfaceRegion::Ptr& slave_surfaces,
+                                              model::ModelData&                model_data) {
     std::vector<Index> out;
 
     if (slave_nodes) {
@@ -246,7 +246,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
     const math::quadrature::Quadrature triangle_quadrature {math::quadrature::DOMAIN_ISO_TRI,
                                                             math::quadrature::ORDER_QUARTIC};
 
-    std::vector<Index>                 candidate_patch_ids {};
+    std::vector<Index>                    candidate_patch_ids {};
     candidate_patch_ids.reserve(64);
 
     std::unordered_map<Index, MortarRow> mortar_rows {};
@@ -365,7 +365,7 @@ Equations Tie::get_surface_surface_equations(model::SystemDofs& system_nodal_dof
                             G(row, col) += weight * Ns(row) * Ns(col);
                         }
 
-                        for (Index col  = 0; col < master->n_nodes; ++col) {
+                        for (Index col = 0; col < master->n_nodes; ++col) {
                             const Index master_node = master->nodes()[col];
                             const auto  col_it      = local_master_index.find(master_node);
 

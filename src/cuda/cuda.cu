@@ -79,7 +79,7 @@ void Manager::destroy_cuda() {
 }
 
 Index Manager::mem_free() {
-    std::size_t free_bytes  = 0;
+    std::size_t free_bytes = 0;
     std::size_t total_bytes = 0;
     runtime_check_cuda(cudaMemGetInfo(&free_bytes, &total_bytes));
     return static_cast<Index>(free_bytes);

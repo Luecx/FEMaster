@@ -72,7 +72,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                     .one<Precision>().name("THICKNESS")
                         .on_missing(Precision{1}).on_empty(Precision{1})
                     .one<Index>().name("INTEGRATIONPOINTS")
-                        .on_missing(5).on_empty(5)
+                        .on_missing(Index{5}).on_empty(Index{5})
                 )
                 .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness, Index integration_points) {
                     const auto part = model._data->parts.get();
@@ -154,7 +154,7 @@ void register_shell_section(fem::io::dsl::Registry& registry, model::Model& mode
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Precision>().name("THICKNESS")
                     .one<Index>().name("INTEGRATIONPOINTS")
-                        .on_missing(3).on_empty(3)
+                        .on_missing(Index{3}).on_empty(Index{3})
                     .one<std::string>().name("MATERIAL")
                     .one<Precision>().name("ANGLE")
                         .on_missing(Precision{0}).on_empty(Precision{0})

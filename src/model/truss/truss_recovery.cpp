@@ -177,8 +177,7 @@ std::pair<Precision, Precision> T3::evaluate_axial_response(
 
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*temperature_field)(
-                node_ids[node], 0);
+            temperature += (*temperature_field)(node_ids[node], 0);
         }
 
         temperature /= static_cast<Precision>(N);

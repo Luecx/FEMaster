@@ -68,10 +68,7 @@ SystemDofs Model::build_thermal_dofs() {
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        active_nodes[node].store(
-            false,
-            std::memory_order_relaxed
-        );
+        active_nodes[node].store(false, std::memory_order_relaxed);
     }
 
     std::atomic_bool   failed{false};
@@ -97,10 +94,7 @@ SystemDofs Model::build_thermal_dofs() {
                     "Model: thermal element ", element->label(),
                     " references node ", node_id, " outside the compiled node domain");
 
-                active_nodes[node_id].store(
-                    true,
-                    std::memory_order_relaxed
-                );
+                active_nodes[node_id].store(true, std::memory_order_relaxed);
             }
         } catch (...) {
             failed.store(true, std::memory_order_relaxed);

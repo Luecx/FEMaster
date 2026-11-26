@@ -105,9 +105,7 @@ SparseMatrix ConstraintTransformer::assemble_lagrange_matrix(const SparseMatrix&
 
     const Index total_size = system_.dofs + system_.equations;
     TripletList entries{};
-    entries.reserve(static_cast<Index>(
-        K.nonZeros() + 2 * system_.C.nonZeros() + system_.equations
-    ));
+    entries.reserve(static_cast<Index>(K.nonZeros() + 2 * system_.C.nonZeros() + system_.equations));
 
     // Embed structural stiffness in the displacement block of the saddle-point system.
     mattools::append_sparse_block(entries, K);

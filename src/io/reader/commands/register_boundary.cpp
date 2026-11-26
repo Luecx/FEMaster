@@ -94,7 +94,7 @@ void register_boundary(fem::io::dsl::Registry& registry, Parser& parser) {
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET")
                     .one<Index>().name("FIRST_DOF")
-                    .one<Index>().name("LAST_DOF").on_missing(-1).on_empty(-1)
+                    .one<Index>().name("LAST_DOF").on_missing(Index{-1}).on_empty(Index{-1})
                     .one<Precision>().name("MAGNITUDE").on_missing(Precision{0}).on_empty(Precision{0})
                 )
                 .bind([&parser, amplitude](const std::string& target,

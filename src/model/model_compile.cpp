@@ -482,8 +482,8 @@ void Model::compile() {
 
         // Transform local nodal coordinates and establish the dense node map
         for (const Index local_id : sorted_ids(source->nodes)) {
-            const Index global_id   = next_node++;
-            const Vec3  position    = instance->rotation * source->nodes.at(local_id) + instance->translation;
+            const Index global_id = next_node++;
+            const Vec3  position  = instance->rotation * source->nodes.at(local_id) + instance->translation;
 
             node_map.emplace(local_id, global_id);
             _data->node_mapping[global_id] = {instance, local_id};

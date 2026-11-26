@@ -66,10 +66,10 @@ struct FRDComponent {
     Index entity  = 1; // scalar = 1, vector = 2, tensor = 4
     Index index_1 = 0; // first vector or tensor index
     Index index_2 = 0; // second tensor index
-    bool derived  = false;
+    bool  derived = false;
 
-    static FRDComponent scalar(const std::string& name, Index index   )   { return {name, 1, index, 0, false};}
-    static FRDComponent vector(const std::string& name, Index index   )   { return {name, 2, index, 0, false};}
+    static FRDComponent scalar(const std::string& name, Index index     ) { return {name, 1, index, 0, false};}
+    static FRDComponent vector(const std::string& name, Index index     ) { return {name, 2, index, 0, false};}
     static FRDComponent tensor(const std::string& name, Index i, Index j) { return {name, 4, i, j, false};}
     static FRDComponent vcnorm(const std::string& name)                   { return {name, 2, 0, 0, true };}
 };
@@ -697,7 +697,7 @@ void append_element_connectivity(std::string& buffer,
     for (Index local = 0; local < static_cast<Index>(connectivity.size()); ++local) {
         const Index node_id = connectivity[local];
 
-        logging::error(node_id < static_cast<Index>(node_ids.size()),
+        logging::error(node_id >= 0 && node_id < static_cast<Index>(node_ids.size()),
             "FrdWriter: element ", element_id,
             " references node ", node_id,
             " outside the FRD node mapping");
@@ -710,11 +710,7 @@ void append_element_connectivity(std::string& buffer,
             buffer.append(" -2");
         }
 
-        append_integer(
-            buffer,
-            node_ids[node_id],
-            10
-        );
+        append_integer(buffer, node_ids[node_id], 10);
     }
 
     buffer.push_back('\n');
@@ -1005,8 +1001,7 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         "FrdWriter: cannot write model data: file is not open");
     logging::error(model_data.positions != nullptr,
         "FrdWriter: model_data.positions is not initialized");
-    logging::error(model_data.node_mapping.size()
-                    == model_data.positions->rows,
+    logging::error(static_cast<Index>(model_data.node_mapping.size()) == model_data.positions->rows,
         "FrdWriter: node mapping does not match positions field");
 
     if (model_data_written) {
@@ -1453,7 +1448,7 @@ void FrdWriter::write_element_nodal_field(const model::Field& field,
                     const Index internal = frd_local_node(local, type);
                     const Index node     = connectivity[internal];
 
-                    logging::error(node < static_cast<Index>(node_ids.size()),
+                    logging::error(node >= 0 && node < static_cast<Index>(node_ids.size()),
                         "FrdWriter: element-nodal result references unknown node ", node);
 
                     append_result_element_node_lines(

@@ -68,7 +68,7 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
 
     for (Index master = 0; master < n_master; ++master) {
         const Index gid = map_.masters[master];
-        logging::error(gid < map_.full_size && full_to_master[gid] == n_master,
+        logging::error(gid >= 0 && gid < map_.full_size && full_to_master[gid] == n_master,
             "[ConstraintTransformer] invalid or repeated master DOF: ", gid);
         full_to_master[gid] = master;
     }
@@ -114,7 +114,7 @@ void ConstraintTransformer::initialize_dof_locations(const model::SystemDofs& do
 }
 
 const DofLocation& ConstraintTransformer::master_location(Index master) const {
-    logging::error(dof_locations_initialized_ &&
+    logging::error(dof_locations_initialized_ && master >= 0 &&
                    master < static_cast<Index>(master_locations_.size()),
         "[ConstraintTransformer] master location is unavailable: ", master);
     return master_locations_[master];

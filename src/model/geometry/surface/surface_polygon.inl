@@ -64,7 +64,7 @@ Index SurfacePolygon<MP>::size() const {
 template<std::size_t MP>
 const Vec2& SurfacePolygon<MP>::operator[](Index index) const {
     // Only the first size_ entries of points_ belong to the actual polygon
-    logging::error(index < size_,
+    logging::error(index >= 0 && index < size_,
         "SurfacePolygon point index is out of bounds");
 
     return points_[index];
@@ -79,7 +79,7 @@ const Vec2& SurfacePolygon<MP>::operator[](Index index) const {
 template<std::size_t MP>
 Vec2& SurfacePolygon<MP>::operator[](Index index) {
     // Only the first size_ entries of points_ belong to the actual polygon
-    logging::error(index < size_,
+    logging::error(index >= 0 && index < size_,
         "SurfacePolygon point index is out of bounds");
 
     return points_[index];

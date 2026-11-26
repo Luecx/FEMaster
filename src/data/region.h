@@ -39,7 +39,7 @@ namespace model {
  * @brief Names and categorizes a collection of model entity identifiers.
  *
  * The RegionTypes template argument fixes the entity kind without adding runtime
- * storage. The inherited Collection<ID> owns the identifier values and immutable
+ * storage. The inherited Collection<Index> owns the identifier values and immutable
  * name. Construction preserves insertion order and allows repeated identifiers;
  * consumers may change those inherited policies where their use requires it.
  *

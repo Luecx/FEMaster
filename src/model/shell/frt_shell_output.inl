@@ -50,8 +50,7 @@ Precision FRTShell<N>::thermal_strain_at(
 
     Precision free_strain = Precision(0);
     for (Index node = 0; node < num_nodes; ++node) {
-        const Precision temperature =
-            (*temperature_field)(this->node_ids[node], 0);
+        const Precision temperature = (*temperature_field)(this->node_ids[node], 0);
         free_strain += shape(node) * alpha * (temperature - zero);
     }
 

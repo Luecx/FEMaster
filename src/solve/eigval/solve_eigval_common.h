@@ -55,7 +55,7 @@ inline Index choose_ncv(Index n, Index k) {
     const Index lo = k + 2;
     const Index hi = 2 * k + 20;
     Index ncv      = std::min(n, std::max(lo, hi));
-    if (ncv <= k)  ncv = std::min(n, k + 2);
+    if (ncv <= k) ncv = std::min(n, k + 2);
     return ncv;
 }
 

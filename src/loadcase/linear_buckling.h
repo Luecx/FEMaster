@@ -47,8 +47,8 @@ namespace fem { namespace loadcase {
  */
 struct LinearBuckling : public LoadCase {
     // User inputs
-    Index num_eigenvalues = 10;                 ///< Number of buckling modes requested.
-    Precision sigma = 0;                        ///< Target shift for eigenvalue search (0 = smallest).
+    Index num_eigenvalues = 10;               ///< Number of buckling modes requested.
+    Precision sigma = 0;                      ///< Target shift for eigenvalue search (0 = smallest).
 
     // === Debug / diagnostics ===
     /// If non-empty, write elastic stiffness (K, A) here.

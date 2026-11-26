@@ -72,9 +72,9 @@ void Temperature::apply(
 ) {
     // Exactly one semantic target is permitted. The resulting node indices
     // must refer to the compiled geometry used by the thermal system.
-    const Index active_regions = static_cast<Index>(node_region_  != nullptr)
-                             + static_cast<Index>(surface_region_ != nullptr)
-                             + static_cast<Index>(element_region_ != nullptr);
+    const Index active_regions = static_cast<Index>(node_region_    != nullptr)
+                               + static_cast<Index>(surface_region_ != nullptr)
+                               + static_cast<Index>(element_region_ != nullptr);
 
     logging::error(active_regions == 1,
         "TEMPERATURE: exactly one node, surface or element region must be configured");
@@ -93,10 +93,7 @@ void Temperature::apply(
     #pragma omp parallel for schedule(static, 4096) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
 #endif
     for (Index node = 0; node < node_count; ++node) {
-        selected[node].store(
-            false,
-            std::memory_order_relaxed
-        );
+        selected[node].store(false, std::memory_order_relaxed);
     }
 
     std::atomic_bool   failed{false};
@@ -106,10 +103,7 @@ void Temperature::apply(
         logging::error(node_id >= 0 && node_id < node_count,
             "TEMPERATURE: node ", node_id, " is outside the compiled node domain");
 
-        selected[node_id].store(
-            true,
-            std::memory_order_relaxed
-        );
+        selected[node_id].store(true, std::memory_order_relaxed);
     };
 
     // Direct node selections need no topology expansion.

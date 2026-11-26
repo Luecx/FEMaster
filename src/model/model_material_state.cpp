@@ -113,7 +113,7 @@ void Model::initialize_material_state(Field& state) const {
 
             for (Index ip = 0; ip < element->num_ip(); ++ip) {
                 const Index row = element->mp_index(ip, mp);
-                logging::error(row < state.rows,
+                logging::error(row >= 0 && row < state.rows,
                     "Material point row ", row,
                     " is out of range for element ", element->label());
 

@@ -52,9 +52,9 @@ std::shared_ptr<SurfaceInterface> FRTShellS6::surface(Index surface_id) {
     return std::make_shared<Surface6>(
         surface_id == 1
             ? std::array<Index, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2],
-                                this->nodes()[3], this->nodes()[4], this->nodes()[5]}
+                                   this->nodes()[3], this->nodes()[4], this->nodes()[5]}
             : std::array<Index, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1],
-                                this->nodes()[5], this->nodes()[4], this->nodes()[3]}
+                                   this->nodes()[5], this->nodes()[4], this->nodes()[3]}
     );
 }
 
@@ -358,23 +358,15 @@ void FRTShellS6::apply_mitc_natural(
         return Precision(0.5) * sqrt3 * (b - a);
     };
 
-    const Precision m_rt_1 = mean(data.tying_strain_nat[9](gamma_r3),
-                                  data.tying_strain_nat[10](gamma_r3));
-    const Precision l_rt_1 = slope(data.tying_strain_nat[9](gamma_r3),
-                                   data.tying_strain_nat[10](gamma_r3));
-    const Precision m_st_2 = mean(data.tying_strain_nat[11](gamma_s3),
-                                  data.tying_strain_nat[12](gamma_s3));
-    const Precision l_st_2 = slope(data.tying_strain_nat[11](gamma_s3),
-                                   data.tying_strain_nat[12](gamma_s3));
+    const Precision m_rt_1 = mean(data.tying_strain_nat[9](gamma_r3), data.tying_strain_nat[10](gamma_r3));
+    const Precision l_rt_1 = slope(data.tying_strain_nat[9](gamma_r3), data.tying_strain_nat[10](gamma_r3));
+    const Precision m_st_2 = mean(data.tying_strain_nat[11](gamma_s3), data.tying_strain_nat[12](gamma_s3));
+    const Precision l_st_2 = slope(data.tying_strain_nat[11](gamma_s3), data.tying_strain_nat[12](gamma_s3));
 
-    const Precision m_rt_3 = mean(data.tying_strain_nat[13](gamma_r3),
-                                  data.tying_strain_nat[14](gamma_r3));
-    const Precision l_rt_3 = slope(data.tying_strain_nat[13](gamma_r3),
-                                   data.tying_strain_nat[14](gamma_r3));
-    const Precision m_st_3 = mean(data.tying_strain_nat[13](gamma_s3),
-                                  data.tying_strain_nat[14](gamma_s3));
-    const Precision l_st_3 = slope(data.tying_strain_nat[13](gamma_s3),
-                                   data.tying_strain_nat[14](gamma_s3));
+    const Precision m_rt_3 = mean(data.tying_strain_nat[13](gamma_r3), data.tying_strain_nat[14](gamma_r3));
+    const Precision l_rt_3 = slope(data.tying_strain_nat[13](gamma_r3), data.tying_strain_nat[14](gamma_r3));
+    const Precision m_st_3 = mean(data.tying_strain_nat[13](gamma_s3), data.tying_strain_nat[14](gamma_s3));
+    const Precision l_st_3 = slope(data.tying_strain_nat[13](gamma_s3), data.tying_strain_nat[14](gamma_s3));
 
     const Precision a1 = m_rt_1 - l_rt_1;
     const Precision b1 = Precision(2) * l_rt_1;
@@ -397,29 +389,21 @@ void FRTShellS6::apply_mitc_natural(
         };
 
         const StaticMatrix<1, num_dofs> m_rt1 =
-            mean_row(data.tying_B_nat[9].row(gamma_r3),
-                     data.tying_B_nat[10].row(gamma_r3));
+            mean_row(data.tying_B_nat[9].row(gamma_r3), data.tying_B_nat[10].row(gamma_r3));
         const StaticMatrix<1, num_dofs> l_rt1 =
-            slope_row(data.tying_B_nat[9].row(gamma_r3),
-                      data.tying_B_nat[10].row(gamma_r3));
+            slope_row(data.tying_B_nat[9].row(gamma_r3), data.tying_B_nat[10].row(gamma_r3));
         const StaticMatrix<1, num_dofs> m_st2 =
-            mean_row(data.tying_B_nat[11].row(gamma_s3),
-                     data.tying_B_nat[12].row(gamma_s3));
+            mean_row(data.tying_B_nat[11].row(gamma_s3), data.tying_B_nat[12].row(gamma_s3));
         const StaticMatrix<1, num_dofs> l_st2 =
-            slope_row(data.tying_B_nat[11].row(gamma_s3),
-                      data.tying_B_nat[12].row(gamma_s3));
+            slope_row(data.tying_B_nat[11].row(gamma_s3), data.tying_B_nat[12].row(gamma_s3));
         const StaticMatrix<1, num_dofs> m_rt3 =
-            mean_row(data.tying_B_nat[13].row(gamma_r3),
-                     data.tying_B_nat[14].row(gamma_r3));
+            mean_row(data.tying_B_nat[13].row(gamma_r3), data.tying_B_nat[14].row(gamma_r3));
         const StaticMatrix<1, num_dofs> l_rt3 =
-            slope_row(data.tying_B_nat[13].row(gamma_r3),
-                      data.tying_B_nat[14].row(gamma_r3));
+            slope_row(data.tying_B_nat[13].row(gamma_r3), data.tying_B_nat[14].row(gamma_r3));
         const StaticMatrix<1, num_dofs> m_st3 =
-            mean_row(data.tying_B_nat[13].row(gamma_s3),
-                     data.tying_B_nat[14].row(gamma_s3));
+            mean_row(data.tying_B_nat[13].row(gamma_s3), data.tying_B_nat[14].row(gamma_s3));
         const StaticMatrix<1, num_dofs> l_st3 =
-            slope_row(data.tying_B_nat[13].row(gamma_s3),
-                      data.tying_B_nat[14].row(gamma_s3));
+            slope_row(data.tying_B_nat[13].row(gamma_s3), data.tying_B_nat[14].row(gamma_s3));
 
         const StaticMatrix<1, num_dofs> A1 = m_rt1 - l_rt1;
         const StaticMatrix<1, num_dofs> B1 = Precision(2) * l_rt1;

@@ -96,7 +96,7 @@ Precision estimate_eigenvalue_ritz(
     Vec3 maximum = -minimum;
 
     for (Index node : transformer.active_nodes()) {
-        logging::error(node < positions.rows,
+        logging::error(node >= 0 && node < positions.rows,
             "Ritz estimator: active node outside position field: ", node);
 
         const Vec3 x(positions(node, 0), positions(node, 1), positions(node, 2));

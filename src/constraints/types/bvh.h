@@ -17,7 +17,7 @@
  *  for (each master element) bvh.add_element(id, node_coords, elem_nodes, n_nodes);
  *  bvh.finalize();
  *
- *  std::vector<ID> candidates;
+ *  std::vector<Index> candidates;
  *  candidates.reserve(64);
  *  const auto& cand = bvh.query_point(p, &candidates);
  *
@@ -301,8 +301,7 @@ private:
             perm_.begin() + mid,
             perm_.begin() + end,
             [&](Index a, Index b) {
-                return elems_[a].centroid(axis) <
-                       elems_[b].centroid(axis);
+                return elems_[a].centroid(axis) < elems_[b].centroid(axis);
             });
 
         const Index left  = build_recursive(begin, mid);

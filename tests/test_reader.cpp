@@ -170,7 +170,7 @@ TEST(Reader_Parser, LinearStaticUsesNamedAmplitudeAtStepTime) {
         const auto at_end = parser.model().build_load_matrix(
             active->initial_conditions, active->target_conditions,
             linear->step_period, Precision(1), model::SystemDofs{}, nullptr);
-        const Index node_id  = parser.model().compiled_node_id(1);
+        const Index   node_id  = parser.model().compiled_node_id(1);
 
         EXPECT_DOUBLE_EQ(at_start(node_id, 2), Precision(0));
         EXPECT_DOUBLE_EQ(at_middle(node_id, 2), Precision(-250));

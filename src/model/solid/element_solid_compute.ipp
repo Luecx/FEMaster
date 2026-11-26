@@ -146,8 +146,7 @@ void SolidElement<N>::compute_stress_strain(
         const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision temperature =
-                (*temperature_field)(this->node_ids[node], 0);
+            const Precision temperature = (*temperature_field)(this->node_ids[node], 0);
             result(node) = alpha * (temperature - T_zero);
         }
 
@@ -403,8 +402,7 @@ MapMatrix SolidElement<N>::evaluate(
         const Precision alpha  = material->get_thermal_expansion();
 
         for (Index node = 0; node < N; ++node) {
-            const Precision temperature =
-                (*temperature_field)(this->node_ids[node], 0);
+            const Precision temperature = (*temperature_field)(this->node_ids[node], 0);
             result(node) = alpha * (temperature - T_zero);
         }
 

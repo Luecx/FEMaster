@@ -241,13 +241,7 @@ void write_indexed_field_header(std::ofstream& file_path,
 void write_dense_field(std::ofstream& file_path,
                        const model::Field& field,
                        const std::string& field_name) {
-    write_dense_field_header(
-        file_path,
-        field_name,
-        field.domain,
-        field.components,
-        field.rows
-    );
+    write_dense_field_header(file_path, field_name, field.domain, field.components, field.rows);
 
     // Allocate one contiguous output buffer for every formatting worker
     const Index num_threads = output_thread_count(field.rows);
@@ -391,7 +385,7 @@ void write_element_location_field(std::ofstream& file_path,
                 const Index begin = static_cast<Index>(offsets(elem_row, 0));
                 const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
 
-                logging::error(begin <= end && end <= field.rows,
+                logging::error(begin >= 0 && begin <= end && end <= field.rows,
                     "ResWriter: invalid ", offset_name, " span for element ", elem_row);
 
                 const std::string& elem_id =

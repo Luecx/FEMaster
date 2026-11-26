@@ -629,8 +629,8 @@ TEST(Elements_C3D8I, CompleteHyperelasticTangentsAndRigidMotions) {
                     model::Field rotated = displacement;
                     StaticMatrix<24, 24> rotation = StaticMatrix<24, 24>::Zero();
                     for (Index node = 0; node < 8; ++node) {
-                        const Vec3 current   = coords[node] + Vec3(displacement(node, 0), displacement(node, 1), displacement(node, 2));
-                        const Vec3 value     = Q * current + translation - coords[node];
+                        const Vec3 current = coords[node] + Vec3(displacement(node, 0), displacement(node, 1), displacement(node, 2));
+                        const Vec3 value   = Q * current + translation - coords[node];
                         for (Index component = 0; component < 3; ++component) {
                             rotated(node, component) = value(component);
                         }

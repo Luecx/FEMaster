@@ -42,7 +42,7 @@ void check_uniform_thermal_load(
     using namespace fem;
 
     model::Model model;
-    for (Index i = 0; i < N; ++i) {
+    for (Index i = 0; i < static_cast<Index>(N); ++i) {
         model.set_node(i, coords[i].x(), coords[i].y(), coords[i].z());
     }
     add_shell<Shell>(model, std::make_index_sequence<N>{});
@@ -155,8 +155,7 @@ void check_uniform_thermal_load(
 
         bool planar_xy = true;
         for (Index node = 1; node < static_cast<Index>(N); ++node) {
-            planar_xy = planar_xy
-                && std::abs(coords[node].z() - coords[0].z()) < 1e-12;
+            planar_xy = planar_xy && std::abs(coords[node].z() - coords[0].z()) < 1e-12;
         }
 
         for (Index node = 0; node < static_cast<Index>(N); ++node) {

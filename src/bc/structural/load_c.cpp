@@ -116,7 +116,7 @@ void CLoad::apply(
         const Vec3 global_moment = axes * moment;
 
         for (Index i = 0; i < 3; ++i) {
-            load(node_id, i      ) += global_force [i];
+            load(node_id, i    ) += global_force [i];
             load(node_id, i + 3) += global_moment[i];
         }
 

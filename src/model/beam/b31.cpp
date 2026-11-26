@@ -128,15 +128,14 @@ Mat3 right_jacobian_inverse_directional(
 } // namespace
 
 Vec3 B31::node_position_reference(Index local_node) const {
-    logging::error(local_node < N,
+    logging::error(local_node >= 0 && local_node < N,
         "B31: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
         "B31: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions_reference != nullptr,
         "B31: reference positions field is not initialized");
 
-    return this->_model_data->positions_reference->row_vec3(
-        node_ids[local_node]);
+    return this->_model_data->positions_reference->row_vec3(node_ids[local_node]);
 }
 
 Precision B31::reference_length() const {
@@ -176,8 +175,7 @@ B31::Vec12 B31::element_displacement(const Field* displacement) const {
         "B31: displacement field requires six components");
 
     for (Index node = 0; node < N; ++node) {
-        q.template segment<6>(node * dofs_per_node) =
-            displacement->row_vec6(node_ids[node]);
+        q.template segment<6>(node * dofs_per_node) = displacement->row_vec6(node_ids[node]);
     }
     return q;
 }
@@ -340,8 +338,7 @@ Vec6 B31::thermal_strain(Index point, const Field* temperature) {
     auto material = get_material();
     if (!material->has_thermal_expansion()) return strain;
 
-    const Precision value = (*temperature)(
-        node_ids[point], 0);
+    const Precision value = (*temperature)(node_ids[point], 0);
     strain(0) =
         material->get_thermal_expansion()
         * (value - material->get_thermal_zero_temperature());

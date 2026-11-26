@@ -45,7 +45,7 @@ SparseMatrix extract_connected_rows(const SparseMatrix&       matrix,
 
     rows.clear();
     for (const Index seed : seeds) {
-        logging::error(seed < n_rows,
+        logging::error(seed >= 0 && seed < n_rows,
             "extract_connected_rows: seed row ", seed, " out of range");
         if (row_visited[seed]) continue;
         row_visited[seed] = true;

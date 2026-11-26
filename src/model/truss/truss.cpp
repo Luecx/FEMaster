@@ -116,7 +116,7 @@ material::Elasticity* T3::get_elasticity() {
  * @return Reference position X_i.
  */
 Vec3 T3::node_position_reference(Index local_node) const {
-    logging::error(local_node < N,
+    logging::error(local_node >= 0 && local_node < N,
         "T3: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
         "T3: no model data assigned to element ", this->label());
@@ -138,7 +138,7 @@ Vec3 T3::node_position_reference(Index local_node) const {
  * @return Current model position x_i.
  */
 Vec3 T3::node_position_current(Index local_node) const {
-    logging::error(local_node < N,
+    logging::error(local_node >= 0 && local_node < N,
         "T3: local node index out of range in element ", this->label());
     logging::error(this->_model_data != nullptr,
         "T3: no model data assigned to element ", this->label());

@@ -297,16 +297,14 @@ void Convection::apply_matrix(
                 [h](const Vec3&) -> Precision { return h; }
             );
 
-            logging::error(local.rows() == surface->n_nodes
-                        && local.cols() == surface->n_nodes,
+            logging::error(local.rows() == surface->n_nodes && local.cols() == surface->n_nodes,
                 "CONVECTION: local boundary matrix does not match surface connectivity");
             logging::error(local.allFinite(),
                 "CONVECTION: local boundary matrix contains NaN or Inf");
 
             for (Index i = 0; i < surface->n_nodes; ++i) {
                 const Index node_i = surface->nodes()[i];
-                logging::error(node_i >= 0
-                            && node_i < system_dof_ids.nodes(),
+                logging::error(node_i >= 0 && node_i < system_dof_ids.nodes(),
                     "CONVECTION: surface references invalid node ", node_i);
 
                 const Index row = system_dof_ids(node_i, 0);
@@ -315,18 +313,14 @@ void Convection::apply_matrix(
 
                 for (Index j = 0; j < surface->n_nodes; ++j) {
                     const Index node_j = surface->nodes()[j];
-                    logging::error(node_j >= 0
-                                && node_j < system_dof_ids.nodes(),
+                    logging::error(node_j >= 0 && node_j < system_dof_ids.nodes(),
                         "CONVECTION: surface references invalid node ", node_j);
 
                     const Index col = system_dof_ids(node_j, 0);
                     logging::error(col >= 0,
                         "CONVECTION: surface references thermally inactive node ", node_j);
 
-                    const Precision value = local(
-                        i,
-                        j
-                    );
+                    const Precision value = local(i, j);
 
                     if (value != Precision(0)) {
                         local_triplets.emplace_back(row, col, value);

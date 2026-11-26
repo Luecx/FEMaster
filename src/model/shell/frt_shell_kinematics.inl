@@ -87,9 +87,7 @@ typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
 
     // Gather the element rows once in local nodal ordering
     for (Index node = 0; node < num_nodes; ++node) {
-        values.row(node) = positions.row_vec6(
-            this->node_ids[node]
-        ).transpose();
+        values.row(node) = positions.row_vec6(this->node_ids[node]).transpose();
     }
 
     return values;

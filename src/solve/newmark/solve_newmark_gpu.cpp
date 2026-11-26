@@ -302,7 +302,7 @@ private:
 };
 
 struct ForceBasisGpu {
-    int   n       = 0;
+    int n = 0;
     Index n_basis = 0;
     cuda::CudaArray<CudaPrecision> alpha_values;
     std::vector<std::unique_ptr<cuda::CudaVector>> force_vectors;
@@ -333,8 +333,7 @@ struct ForceBasisGpu {
             for (Index step = 0; step <= n_steps; ++step) {
                 const double time = t_start + static_cast<double>(step) * dt;
                 const Precision scale = amplitude ? amplitude->evaluate(time) : Precision(1);
-                alpha_host[step * n_basis + basis_idx] =
-                    static_cast<CudaPrecision>(scale);
+                alpha_host[step * n_basis + basis_idx] = static_cast<CudaPrecision>(scale);
             }
         }
 
@@ -440,7 +439,7 @@ newmark_linear_gpu(const SparseMatrix& M,
     const double a5 = dt * (gamma / (2.0 * beta) - 1.0);
 
     const double Tspan = std::max(0.0, t_end - t_start);
-    const Index n_steps   = static_cast<Index>(std::ceil(Tspan / dt));
+    const Index n_steps = static_cast<Index>(std::ceil(Tspan / dt));
     const Index n_history = static_cast<Index>(n) * (n_steps + 1);
 
     logging::info(true, "");

@@ -62,9 +62,9 @@ std::shared_ptr<SurfaceInterface> FRTShellS8::surface(Index surface_id) {
     return std::make_shared<Surface8>(
         surface_id == 1
             ? std::array<Index, 8>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
-                                this->nodes()[4], this->nodes()[5], this->nodes()[6], this->nodes()[7]}
+                                   this->nodes()[4], this->nodes()[5], this->nodes()[6], this->nodes()[7]}
             : std::array<Index, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
-                                this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]}
+                                   this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]}
     );
 }
 
@@ -618,11 +618,9 @@ void FRTShellS8::apply_mitc_natural(
 
     if (B_nat) {
         const StaticMatrix<1, num_dofs> rt_B_mean =
-            Precision(0.5) * (data.tying_B_nat[12].row(gamma_r3)
-                            + data.tying_B_nat[13].row(gamma_r3));
+            Precision(0.5) * (data.tying_B_nat[12].row(gamma_r3) + data.tying_B_nat[13].row(gamma_r3));
         const StaticMatrix<1, num_dofs> st_B_mean =
-            Precision(0.5) * (data.tying_B_nat[18].row(gamma_s3)
-                            + data.tying_B_nat[19].row(gamma_s3));
+            Precision(0.5) * (data.tying_B_nat[18].row(gamma_s3) + data.tying_B_nat[19].row(gamma_s3));
 
         Mat2x6N shear_B = Mat2x6N::Zero();
 

@@ -188,7 +188,7 @@ newmark_linear_cpu(const SparseMatrix& M,
     const double t_end   = opts.t_end;
 
     // Banner + matrix stats
-    const Index N  = M.rows();
+    const Index N   = M.rows();
     logging::info(true, "");
     logging::info(true, "===============================================================================================");
     logging::info(true, "IMPLICIT NEWMARK-β (fixed Δt) — linear transient");

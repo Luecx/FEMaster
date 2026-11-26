@@ -173,8 +173,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
     logging::error(valid_node_ids,
         "Sparsity pattern element node is outside the global DOF mapping: ", invalid_node);
 
-    const Index num_threads = parallel::worker_count(
-        node_count, global_config.max_threads, min_batch_size);
+    const Index num_threads = parallel::worker_count(node_count, global_config.max_threads, min_batch_size);
 
     // ---------------------------------------------------------------------
     // 2. Construct compact node-to-element incidence
@@ -203,8 +202,8 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
                 continue;
             }
 
-            const Index n_nodes = element->n_nodes();
-            const Index* nodes  = element->nodes();
+            const Index  n_nodes = element->n_nodes();
+            const Index* nodes   = element->nodes();
 
             for (Index i = 0; i < n_nodes; ++i) {
                 incident_elements[next[nodes[i]]++] = e;
@@ -290,8 +289,7 @@ SparseMatrix SystemDofs::pattern(const std::vector<ElementPtr>& elements) const 
 
             // Each active DOF of this node has the same row count.
             // Row-count capacity is checked before storing the length.
-            outer[col] = rows.size() <= static_cast<Index>(
-                std::numeric_limits<StorageIndex>::max())
+            outer[col] = static_cast<Index>(rows.size()) <= std::numeric_limits<StorageIndex>::max()
                 ? static_cast<StorageIndex>(rows.size())
                 : StorageIndex(-2);
         }

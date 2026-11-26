@@ -135,8 +135,7 @@ void register_thermal_conditions(fem::io::dsl::Registry& registry, Parser& parse
                     }
                     const auto region = parser.model().resolve_node_region(target);
                     for (const Index id : region->data()) {
-                        logging::error(id >= 0 &&
-                            id < data.temperature_target->rows,
+                        logging::error(id >= 0 && id < data.temperature_target->rows,
                             "TEMPERATURE: node index out of bounds: ", id);
                         (*data.temperature_target)(id, 0) = value;
                     }

@@ -37,9 +37,7 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
     report.rhs_norm    = system.d.size() == 0 ? Precision(0) : system.d.norm();
 
     // Store equations by row and count each DOF's global participation
-    std::vector<std::vector<std::pair<Index, Precision>>> rows(
-        system.equations
-    );
+    std::vector<std::vector<std::pair<Index, Precision>>> rows(system.equations);
     std::vector<Index> column_count(system.dofs, 0);
 
     for (Index column = 0; column < system.C.outerSize(); ++column) {
@@ -55,9 +53,7 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
     std::vector<char> is_slave(system.dofs, 0);
     std::vector<Precision> pivot_constant(system.dofs, Precision(0));
-    std::vector<std::vector<std::pair<Index, Precision>>> pivot_dependencies(
-        system.dofs
-    );
+    std::vector<std::vector<std::pair<Index, Precision>>> pivot_dependencies(system.dofs);
 
     map.slaves.reserve(system.equations);
 
@@ -76,8 +72,7 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
 
         Expanded result{};
         result.constant = pivot_constant[column];
-        for (const auto& [dependency, coefficient] :
-             pivot_dependencies[column]) {
+        for (const auto& [dependency, coefficient] : pivot_dependencies[column]) {
             const Expanded expanded_dependency = self(self, dependency);
             result.constant += coefficient * expanded_dependency.constant;
             for (const auto& [master, value] : expanded_dependency.coefficients) {

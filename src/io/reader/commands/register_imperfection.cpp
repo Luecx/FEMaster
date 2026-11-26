@@ -70,10 +70,10 @@ void read_res(const std::string&           filename,
         "IMPERFECTION: cannot open RES file ", filename);
 
     // Track written frame identities and requested displacement blocks
-    std::string               line;
+    std::string                  line;
     std::map<std::string, Index> numbered_frames;
-    std::set<Index>             processed_frames;
-    std::set<Index>             found_frames;
+    std::set<Index>              processed_frames;
+    std::set<Index>              found_frames;
 
     Index current_step   = -1;
     Index frame_count    = 0;
@@ -356,7 +356,7 @@ void register_imperfection(fem::io::dsl::Registry& registry, model::Model& model
                     .one<Precision>().name("DX")
                     .one<Precision>().name("DY")
                     .one<Precision>().name("DZ"))
-                .bind([&model](const  std::string& node, Precision dx, Precision dy, Precision dz) {
+                .bind([&model](const std::string& node, Precision dx, Precision dy, Precision dz) {
                     const Index id    = model.compiled_node_id(node);
                     const Vec3  delta = Vec3(dx, dy, dz);
 

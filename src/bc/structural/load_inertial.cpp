@@ -247,8 +247,8 @@ std::string InertialLoad::str() const {
 
     os << "INERTIAL: target=ELSET "
        << (region_ ? region_->name : std::string("?"))
-       << " (" << (region_ ? region_->size()                : 0) << ")"
-       << ", center=[" << center_    (0) << ", " << center_ (1) << ", " << center_    (2) << "]"
+       << " (" << (region_ ? region_->size() : 0) << ")"
+       << ", center=[" << center_    (0) << ", " << center_    (1) << ", " << center_    (2) << "]"
        << ", a0=["     << center_acc_(0) << ", " << center_acc_(1) << ", " << center_acc_(2) << "]"
        << ", omega=["  << omega_     (0) << ", " << omega_     (1) << ", " << omega_     (2) << "]"
        << ", alpha=["  << alpha_     (0) << ", " << alpha_     (1) << ", " << alpha_     (2) << "]"

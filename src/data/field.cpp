@@ -199,12 +199,10 @@ bool FieldMatrix::has_any_finite() const {
  */
 Index FieldMatrix::offset(Index row, Index col) const {
     // Reject invalid coordinates before computing the flattened index.
-    logging::error(row < rows_ && col < cols_,
+    logging::error(row >= 0 && row < rows_ && col >= 0 && col < cols_,
         "FieldMatrix: index (", row, ", ", col, ") is outside ", rows_, "x", cols_);
 
-    return row *
-           cols_ +
-           col;
+    return row * cols_ + col;
 }
 
 // Field metadata, access and arithmetic
@@ -392,7 +390,7 @@ bool Field::has_any_finite() const {
  * @return True when every component of the row is finite.
  */
 bool Field::has_valid_row(Index row) const {
-    logging::error(row < rows,
+    logging::error(row >= 0 && row < rows,
         "Field '", name, "': row ", row, " is outside the field");
 
     // Classify the complete row before reporting invalid numerical values
@@ -840,7 +838,7 @@ Field Field::nodal_gather(const ModelData&   model_data,
                     if (!has_valid_row(offset + local)) continue;
 
                     const Index node = element->nodes()[local];
-                    logging::error(node < node_count,
+                    logging::error(node >= 0 && node < node_count,
                         "Field '", name, "': invalid node ID ", node);
                     visit(node, offset + local);
                 }
@@ -855,8 +853,7 @@ Field Field::nodal_gather(const ModelData&   model_data,
     });
 
     for (Index node = 0; node < node_count; ++node) {
-        node_offsets[node + 1] +=
-            node_offsets[node];
+        node_offsets[node + 1] += node_offsets[node];
     }
 
     std::vector<Index> source_rows  (node_offsets.back());

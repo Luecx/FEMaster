@@ -174,8 +174,7 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
     // T^T K T is exactly the principal submatrix K(masters, masters).
     bool ordered_masters = true;
     for (Index master = 1; master < n_master(); ++master) {
-        if (masters[master - 1] >=
-            masters[master]) {
+        if (masters[master - 1] >= masters[master]) {
             ordered_masters = false;
             break;
         }
@@ -183,8 +182,7 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
 
     if (X.nonZeros() == 0 && ordered_masters) {
         logging::error(
-            matrix.rows() == full_size &&
-            matrix.cols() == full_size,
+            matrix.rows() == full_size && matrix.cols() == full_size,
             "[ConstraintMap::reduce_matrix] matrix size does not match full constraint space"
         );
 
@@ -194,16 +192,14 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
         std::vector<Index> full_to_reduced(full_size, invalid);
         for (Index reduced_dof = 0; reduced_dof < n_master(); ++reduced_dof) {
             const Index full_dof = masters[reduced_dof];
-            logging::error(full_dof < full_size,
+            logging::error(full_dof >= 0 && full_dof < full_size,
                 "[ConstraintMap::reduce_matrix] master DOF out of range: ", full_dof);
             full_to_reduced[full_dof] = reduced_dof;
         }
 
         // Count retained entries per reduced column so Eigen can allocate the
         // output sparsity exactly before the ordered insertion pass.
-        Eigen::VectorXi nonzeros_per_column = Eigen::VectorXi::Zero(
-            n_master()
-        );
+        Eigen::VectorXi nonzeros_per_column = Eigen::VectorXi::Zero(n_master());
 
         for (Index reduced_col = 0; reduced_col < n_master(); ++reduced_col) {
             const Index full_col = masters[reduced_col];
@@ -217,10 +213,7 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
             nonzeros_per_column[reduced_col] = count;
         }
 
-        SparseMatrix reduced(
-            n_master(),
-            n_master()
-        );
+        SparseMatrix reduced(n_master(), n_master());
         reduced.reserve(nonzeros_per_column);
 
         // The master list is strictly ordered and every source column stores its
@@ -232,10 +225,7 @@ SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
                 const Index reduced_row = full_to_reduced[entry.row()];
                 if (reduced_row == invalid) continue;
 
-                reduced.insert(
-                    reduced_row,
-                    reduced_col
-                ) = entry.value();
+                reduced.insert(reduced_row, reduced_col) = entry.value();
             }
         }
 

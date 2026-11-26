@@ -229,8 +229,7 @@ bool ArcLengthControl::solve(
                         const DynamicVector current_load = load_derivative
                             ? load_derivative(q, lambda)
                             : reference_load;
-                        logging::error(current_load.size() == n
-                                    && current_load.allFinite(),
+                        logging::error(current_load.size() == n && current_load.allFinite(),
                             "ArcLengthControl: load derivative has invalid size or values");
 
                         const DynamicVector delta_q      = q - q_accepted_;

@@ -125,9 +125,9 @@ void Support::apply(
     Precision
 ) {
     // Validate the semantic target before traversing compiled topology
-    const Index active_regions = static_cast<Index>(node_region_  != nullptr)
-                             + static_cast<Index>(element_region_ != nullptr)
-                             + static_cast<Index>(surface_region_ != nullptr);
+    const Index active_regions = static_cast<Index>(node_region_    != nullptr)
+                               + static_cast<Index>(element_region_ != nullptr)
+                               + static_cast<Index>(surface_region_ != nullptr);
 
     logging::error(active_regions == 1,
         "SUPPORT: exactly one node, element or surface region must be configured");

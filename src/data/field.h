@@ -63,8 +63,8 @@ enum class FieldDomain : std::uint8_t {
  *
  * Storage uses offset(row, col) = row * cols + col. Sized construction allocates
  * zero-initialized values; the default object is an empty matrix. Dimensions use
- * the unsigned Index type, and callers must ensure their product fits storage
- * size and available memory. Indexing checks both upper bounds through logging.
+ * the signed Index type, and callers must ensure their product fits storage
+ * size and available memory. Indexing checks both bounds through logging.
  *
  * Copies own independent scalar vectors. data() exposes non-owning contiguous
  * pointers whose lifetime follows the storage; assignment or object destruction

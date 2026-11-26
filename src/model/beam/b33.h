@@ -226,8 +226,7 @@ struct B33 : BeamElement<2> {
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                temperature += (*target_temperature)(
-                    this->node_ids[node], 0);
+                temperature += (*target_temperature)(this->node_ids[node], 0);
             }
             temperature *= Precision(0.5);
             thermal_strain = alpha * (temperature - T0);
@@ -295,8 +294,7 @@ struct B33 : BeamElement<2> {
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < 2; ++node) {
-                temperature += (*temperature_field)(
-                    this->node_ids[node], 0);
+                temperature += (*temperature_field)(this->node_ids[node], 0);
             }
 
             temperature *= Precision(0.5);

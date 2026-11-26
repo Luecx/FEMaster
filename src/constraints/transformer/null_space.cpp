@@ -442,8 +442,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
         for (Index local_column = 0;
              local_column < static_cast<Index>(preprocessed.used_columns.size());
              ++local_column) {
-            full_solution[preprocessed.used_columns[local_column]] =
-                reduced_solution[local_column];
+            full_solution[preprocessed.used_columns[local_column]] = reduced_solution[local_column];
         }
         for (Index column = 0; column < system.dofs; ++column) {
             if (preprocessed.fixed_columns[column]) {

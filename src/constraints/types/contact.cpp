@@ -136,7 +136,7 @@ struct MortarConstraint {
  * @return `true` when the id is in range and references a non-null surface.
  */
 bool valid_surface_id(
-    Index                                             surface_id,
+    Index                                            surface_id,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces
 ) {
     return surface_id >= 0 &&
@@ -713,21 +713,13 @@ void Contact::assemble(
 
     Index num_threads = 1;
 #ifdef _OPENMP
-    num_threads = std::max<Index>(
-        1,
-        std::min(
-            global_config.max_threads,
-            slave_surfaces->size()
-        )
-    );
+    num_threads = std::max<Index>(1, std::min(global_config.max_threads, slave_surfaces->size()));
 #endif
 
     // Every worker accumulates complete mortar constraints independently. This
     // avoids locks around unordered-map and gradient updates in the nested
     // slave/master/overlap/quadrature loops.
-    std::vector<std::unordered_map<Index, MortarConstraint>> thread_constraints(
-        num_threads
-    );
+    std::vector<std::unordered_map<Index, MortarConstraint>> thread_constraints(num_threads);
 
     std::atomic_bool   assembly_failed{false};
     std::exception_ptr assembly_exception = nullptr;
@@ -738,9 +730,7 @@ void Contact::assemble(
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(num_threads)
 #endif
-    for (Index slave_index = 0;
-         slave_index < slave_surfaces->size();
-         ++slave_index) {
+    for (Index slave_index = 0; slave_index < slave_surfaces->size(); ++slave_index) {
 #ifdef _OPENMP
         if (assembly_failed.load(std::memory_order_relaxed)) {
             continue;

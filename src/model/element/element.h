@@ -59,10 +59,10 @@ struct ElementInterface : public Castable {
 
     virtual ~ElementInterface() = default;
 
-    virtual ElDofs dofs() const        = 0;
-    virtual Index  dimensions() const  = 0;
-    virtual Index  n_nodes() const     = 0;
-    virtual Index  num_ip() const      = 0;
+    virtual ElDofs dofs() const       = 0;
+    virtual Index  dimensions() const = 0;
+    virtual Index  n_nodes() const    = 0;
+    virtual Index  num_ip() const     = 0;
     virtual const Index* nodes() const = 0;
 
     /**

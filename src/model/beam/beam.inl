@@ -359,8 +359,7 @@ MapMatrix BeamElement<N>::evaluate(
 
             Precision temperature = Precision(0);
             for (Index node = 0; node < N; ++node) {
-                temperature += (*target_temperature)(
-                    node_ids[node], 0);
+                temperature += (*target_temperature)(node_ids[node], 0);
             }
             temperature /= static_cast<Precision>(N);
 
@@ -483,8 +482,7 @@ bool BeamElement<N>::compute_beam_section_forces(
         const Precision alpha = material->get_thermal_expansion();
         Precision temperature = Precision(0);
         for (Index node = 0; node < N; ++node) {
-            temperature += (*target_temperature)(
-                node_ids[node], 0);
+            temperature += (*target_temperature)(node_ids[node], 0);
         }
         temperature /= static_cast<Precision>(N);
 
