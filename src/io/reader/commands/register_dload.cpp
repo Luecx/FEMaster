@@ -54,6 +54,7 @@
 #include "../../../bc/structural/load_v.h"
 #include "../../../core/logging.h"
 #include "../../../model/model.h"
+#include "../../../model/shell/shell.h"
 #include "../../../model/geometry/surface/surface_interface.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -74,7 +75,7 @@ namespace dsl = fem::io::dsl;
  * orientation. GRAV maps the prescribed gravity vector to the translational
  * acceleration of bc::InertialLoad so density scaling remains part of the load
  * integration. An empty GRAV target includes all compiled elements and auxiliary
- * point masses; explicit targets select only their element region. P<n> and
+ * point masses; explicit targets select only their element region. P for shells selects the negative side (positive element-normal pressure).
  * P<n> extracts face n from every target element and creates a private compiled
  * surface region for bc::PLoad. TRVEC<n> is currently rejected.
  *
@@ -93,7 +94,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
         command.allow_if(dsl::Condition::parent_is({"ROOT", "ASSEMBLY", "LOADCASE", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS"}));
         command.doc(
             "Create FEMaster surface tractions or Abaqus-compatible element-based "
-            "BX/BY/BZ, GRAV and P<n> loads (TRVEC unsupported)."
+            "BX/BY/BZ, GRAV, shell P and P<n> loads (TRVEC unsupported)."
         );
 
         // Resolved modifiers are reset on entry and shared by this occurrence's rows.
@@ -182,7 +183,7 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
             return face_id;
         };
 
-        const auto materialize_face_region = [&parser](const std::string& target, ID face_id) {
+        const auto materialize_face_region = [&parser](const std::string& target, ID face_id, bool shell_pressure) {
             auto& model    = parser.model();
             auto  elements = model.resolve_element_region(target);
 
@@ -201,6 +202,16 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                 auto& element = model._data->elements[static_cast<std::size_t>(element_id)];
                 logging::error(element != nullptr,
                     "DLOAD: compiled element ", element_id, " is not configured");
+
+                if (shell_pressure) {
+                    const auto* ptr = element.get();
+                    logging::error(
+                        dynamic_cast<const model::ShellElement<3>*>(ptr) != nullptr ||
+                        dynamic_cast<const model::ShellElement<4>*>(ptr) != nullptr ||
+                        dynamic_cast<const model::ShellElement<6>*>(ptr) != nullptr ||
+                        dynamic_cast<const model::ShellElement<8>*>(ptr) != nullptr,
+                        "DLOAD: P requires a shell element; use P<n> for explicit faces");
+                }
 
                 auto surface = element->surface(face_id);
                 logging::error(surface != nullptr,
@@ -374,14 +385,17 @@ void register_dload(dsl::Registry& registry, Parser& parser) {
                     // P<n> addresses face n of every target element. Follower
                     // pressure follows the current normal and area and requires
                     // the load tangent of a nonlinear analysis.
-                    if (type.size() > 1 && type[0] == 'P') {
+                    if (type == "P" || (type.size() > 1 && type[0] == 'P')) {
                         logging::error(direction_omitted,
                             "DLOAD: ", type, " accepts no direction components");
 
-                        const ID face_id = parse_face_id(type, "P");
+                        // Abaqus shell P acts along the positive element normal.
+                        // Face 2 reverses the normal used by inward pressure integration.
+                        const bool shell_pressure = type == "P";
+                        const ID face_id = shell_pressure ? 2 : parse_face_id(type, "P");
 
                         auto load = std::make_shared<bc::PLoad>();
-                        load->region_    = materialize_face_region(element_target, face_id);
+                        load->region_    = materialize_face_region(element_target, face_id, shell_pressure);
                         load->pressure_  = magnitude;
                         load->amplitude_ = *amplitude;
                         load->follower_  = *follower;
