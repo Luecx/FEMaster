@@ -25,7 +25,6 @@
 #include "../geometry/surface/surface.h"
 #include "../model_data.h"
 
-#include <ostream>
 #include <string>
 #include <tuple>
 
@@ -90,27 +89,17 @@ struct ElementInterface : public Castable {
     // Element id as given in the input, for diagnostics. Compiled elements map
     // their dense elem_id through ModelData::element_mapping to the original
     // part-local id ("ID" or "INSTANCE.ID"). Elements without such an entry
-    // (part elements before compile(), synthesized point elements) print elem_id.
-    // Formatting is deferred to streaming because logging evaluates its
-    // arguments on every check, not only when a message is printed.
-    struct Label {
-        const ElementInterface* element;
+    // (part elements before compile(), synthesized point elements) report elem_id.
+    std::string label() const {
+        const bool mapped = _model_data != nullptr
+                         && elem_id >= 0
+                         && static_cast<std::size_t>(elem_id) < _model_data->element_mapping.size()
+                         && std::get<0>(_model_data->element_mapping[static_cast<std::size_t>(elem_id)]) != nullptr;
+        if (!mapped) return std::to_string(elem_id);
 
-        friend std::ostream& operator<<(std::ostream& os, const Label& label) {
-            const ID   id     = label.element->elem_id;
-            const auto data   = label.element->_model_data;
-            const bool mapped = data != nullptr
-                             && id >= 0
-                             && static_cast<std::size_t>(id) < data->element_mapping.size()
-                             && std::get<0>(data->element_mapping[static_cast<std::size_t>(id)]) != nullptr;
-            if (!mapped) return os << id;
-
-            const auto& [instance, local_id] = data->element_mapping[static_cast<std::size_t>(id)];
-            return os << instance->label(local_id);
-        }
-    };
-
-    Label label() const { return Label{this}; }
+        const auto& [instance, local_id] = _model_data->element_mapping[static_cast<std::size_t>(elem_id)];
+        return instance->label(local_id);
+    }
 
     ID* begin() { return nodes(); }
     ID* end() { return nodes() + n_nodes(); }
