@@ -26,6 +26,7 @@
 #include "../model_data.h"
 
 #include <string>
+#include <tuple>
 
 namespace fem::model {
 
@@ -85,6 +86,21 @@ struct ElementInterface : public Castable {
 
     virtual std::string type_name() const { return std::string{}; }
 
+    // Element id as given in the input, for diagnostics. Compiled elements map
+    // their dense elem_id through ModelData::element_mapping to the original
+    // part-local id ("ID" or "INSTANCE.ID"). Elements without such an entry
+    // (part elements before compile(), synthesized point elements) report elem_id.
+    std::string label() const {
+        const bool mapped = _model_data != nullptr
+                         && elem_id >= 0
+                         && static_cast<std::size_t>(elem_id) < _model_data->element_mapping.size()
+                         && std::get<0>(_model_data->element_mapping[static_cast<std::size_t>(elem_id)]) != nullptr;
+        if (!mapped) return std::to_string(elem_id);
+
+        const auto& [instance, local_id] = _model_data->element_mapping[static_cast<std::size_t>(elem_id)];
+        return instance->label(local_id);
+    }
+
     ID* begin() { return nodes(); }
     ID* end() { return nodes() + n_nodes(); }
     const ID* begin() const { return nodes(); }
@@ -106,19 +122,19 @@ struct ElementInterface : public Castable {
 
     material::MaterialPtr material() {
         logging::error(_section != nullptr,
-            "no section assigned to element ", elem_id);
+            "no section assigned to element ", label());
         logging::error(_section->material_ != nullptr,
-            "no material assigned to element ", elem_id);
+            "no material assigned to element ", label());
         return _section->material_;
     }
 
     Vec3 node_position(ID local_id) const {
         logging::error(_model_data != nullptr,
-            "no model data assigned to element ", elem_id);
+            "no model data assigned to element ", label());
         logging::error(_model_data->positions != nullptr,
             "positions field not set in model data");
         logging::error(local_id >= 0 && local_id < static_cast<ID>(n_nodes()),
-            "local node id ", local_id, " out of range for element ", elem_id);
+            "local node id ", local_id, " out of range for element ", label());
         return _model_data->positions->row_vec3(static_cast<Index>(nodes()[static_cast<Index>(local_id)]));
     }
 };

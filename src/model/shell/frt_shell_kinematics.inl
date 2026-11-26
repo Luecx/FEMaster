@@ -78,7 +78,7 @@ void transform_in_plane_rows(
 template<Index N>
 typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
     logging::error(this->_model_data            != nullptr,
-                   "FRTShell: no model data assigned to element ", this->elem_id);
+                   "FRTShell: no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions != nullptr,
                    "FRTShell: POSITION field is not set");
 

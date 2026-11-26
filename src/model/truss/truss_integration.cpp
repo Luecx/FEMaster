@@ -46,7 +46,7 @@ Precision density_scale(T3& element, bool scale_by_density) {
 
     auto material = element.get_material();
     logging::error(material->has_density(),
-       "T3: material density is required when scale_by_density=true for element ", element.elem_id);
+       "T3: material density is required when scale_by_density=true for element ", element.label());
 
     return material->get_density();
 }

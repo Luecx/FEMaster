@@ -29,9 +29,9 @@ BeamElement<N>::~BeamElement() = default;
 template<Index N>
 BeamSection* BeamElement<N>::get_section() {
     logging::error(this->_section != nullptr,
-        "Section not set for element ", this->elem_id);
+        "Section not set for element ", this->label());
     logging::error(this->_section->template as<BeamSection>() != nullptr,
-        "Section is not a beam section for element ", this->elem_id);
+        "Section is not a beam section for element ", this->label());
     return this->_section->template as<BeamSection>();
 }
 
@@ -44,7 +44,7 @@ template<Index N>
 material::MaterialPtr BeamElement<N>::get_material() {
     BeamSection* section = get_section();
     logging::error(section->material_ != nullptr,
-        "Material not set for element ", this->elem_id);
+        "Material not set for element ", this->label());
     return section->material_;
 }
 
@@ -52,11 +52,11 @@ template<Index N>
 material::IsotropicElasticity* BeamElement<N>::get_elasticity() {
     BeamSection* section = get_section();
     logging::error(section->material_ != nullptr,
-        "Material not set for element ", this->elem_id);
+        "Material not set for element ", this->label());
     logging::error(section->material_->has_elasticity(),
         "Material has no elasticity assigned");
     logging::error(section->material_->elasticity()->template as<material::IsotropicElasticity>() != nullptr,
-        "Material is not isotropic for element ", this->elem_id);
+        "Material is not isotropic for element ", this->label());
     return section->material_->elasticity()->template as<material::IsotropicElasticity>();
 }
 
@@ -65,7 +65,7 @@ Vec3 BeamElement<N>::orientation_direction() {
     constexpr Precision kOrientationEps = static_cast<Precision>(1e-12);
     BeamSection* section = get_section();
     logging::error(section->direction_.norm() > kOrientationEps,
-        "Beam element ", this->elem_id, " requires a non-zero section n1 vector");
+        "Beam element ", this->label(), " requires a non-zero section n1 vector");
     return section->direction_.normalized();
 }
 
@@ -88,7 +88,7 @@ Precision BeamElement<N>::length() {
 template<Index N>
 Precision BeamElement<N>::length_reference() {
     logging::error(this->_model_data != nullptr && this->_model_data->positions_reference != nullptr,
-        "Beam element ", this->elem_id, ": reference positions are not initialized");
+        "Beam element ", this->label(), ": reference positions are not initialized");
 
     // Sum the straight segment lengths of the undeformed centerline
     const auto& reference = *this->_model_data->positions_reference;
@@ -113,7 +113,7 @@ Precision BeamElement<N>::length_reference() {
 template<Index N>
 Vec3 BeamElement<N>::midpoint_reference() {
     logging::error(this->_model_data != nullptr && this->_model_data->positions_reference != nullptr,
-        "Beam element ", this->elem_id, ": reference positions are not initialized");
+        "Beam element ", this->label(), ": reference positions are not initialized");
 
     // Average the undeformed nodal positions
     const auto& reference = *this->_model_data->positions_reference;
@@ -135,7 +135,7 @@ Mat3 BeamElement<N>::base_rotation_matrix() {
     // Validate the element axis before normalizing its direction
     const Vec3 axis = this->node_position(1) - this->node_position(0);
     logging::error(axis.norm() > Precision(1e-12),
-        "Beam element ", this->elem_id, ": degenerate beam axis");
+        "Beam element ", this->label(), ": degenerate beam axis");
 
     Vec3 x = axis.normalized();
     Vec3 y = orientation_direction();
@@ -143,7 +143,7 @@ Mat3 BeamElement<N>::base_rotation_matrix() {
 
     // Reject a section direction parallel to the element axis
     logging::error(z.norm() > Precision(1e-12),
-        "Beam element ", this->elem_id, ": section n1 is parallel to the beam axis");
+        "Beam element ", this->label(), ": section n1 is parallel to the beam axis");
 
     z.normalize();
     y = z.cross(x).normalized();
@@ -287,7 +287,7 @@ void BeamElement<N>::validate_reference_base_displacement(const Field* base_disp
     }
     logging::error(reference_base,
         "BeamElement: finite-rotation base displacement is not implemented yet for element ",
-        this->elem_id);
+        this->label());
 }
 
 /**
@@ -317,7 +317,7 @@ MapMatrix BeamElement<N>::evaluate(
     validate_reference_base_displacement(base_displacement);
     logging::error(internal_force == nullptr || target_displacement != nullptr,
         "BeamElement: internal-force evaluation requires displacement for element ",
-        this->elem_id);
+        this->label());
 
     if (tangent != nullptr) {
         MapMatrix mapped(tangent, N * 6, N * 6);
@@ -522,7 +522,7 @@ Precision BeamElement<N>::integrate_scalar_field(bool scale_by_density, const Sc
     if (scale_by_density) {
         auto mat = get_material();
         logging::error(mat && mat->has_density(),
-            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "BeamElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
     return field(x_mid) * (rho * A * L);
@@ -541,7 +541,7 @@ Vec3 BeamElement<N>::integrate_vector_field(bool scale_by_density, const VecFiel
     if (scale_by_density) {
         auto mat = get_material();
         logging::error(mat && mat->has_density(),
-            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "BeamElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
     return field(x_mid) * (rho * A * L);
@@ -564,7 +564,7 @@ void BeamElement<N>::integrate_vector_field(
     if (scale_by_density) {
         auto mat = get_material();
         logging::error(mat && mat->has_density(),
-            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "BeamElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -603,7 +603,7 @@ DynamicMatrix BeamElement<N>::integrate_shape_products(bool scale_by_density) {
     if (scale_by_density) {
         auto mat = get_material();
         logging::error(mat && mat->has_density(),
-            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "BeamElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -625,7 +625,7 @@ Mat3 BeamElement<N>::integrate_tensor_field(bool scale_by_density, const TenFiel
     if (scale_by_density) {
         auto mat = get_material();
         logging::error(mat && mat->has_density(),
-            "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "BeamElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
     return field(x_mid) * (rho * A * L);

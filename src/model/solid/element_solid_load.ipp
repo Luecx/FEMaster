@@ -44,7 +44,7 @@ Precision SolidElement<N>::integrate_scalar_field(bool scale_by_density, const S
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -93,7 +93,7 @@ Vec3 SolidElement<N>::integrate_vector_field(bool scale_by_density, const VecFie
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -144,7 +144,7 @@ void SolidElement<N>::integrate_vector_field(Field& node_loads, bool scale_by_de
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -198,7 +198,7 @@ DynamicMatrix SolidElement<N>::integrate_shape_products(bool scale_by_density) {
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 
@@ -240,7 +240,7 @@ Mat3 SolidElement<N>::integrate_tensor_field(bool scale_by_density, const TenFie
     if (scale_by_density) {
         auto mat = this->material();
         logging::error(mat != nullptr && mat->has_density(),
-            "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            "SolidElement: material density is required when scale_by_density=true for element ", this->label());
         rho = mat->get_density();
     }
 

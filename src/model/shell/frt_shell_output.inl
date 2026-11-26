@@ -140,7 +140,7 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
     const Precision reference_det = reference_covariant.determinant();
     logging::error(std::abs(reference_det) > Precision(1e-14),
                    "FRTShell: singular reference shell basis during stress recovery in element ",
-                   this->elem_id);
+                   this->label());
 
     return current_covariant * reference_covariant.inverse();
 }
@@ -200,7 +200,7 @@ Mat3 FRTShell<N>::deformation_gradient_increment_at(
 
     const Precision reference_det = reference_covariant.determinant();
     logging::error(std::abs(reference_det) > Precision(1e-14),
-        "FRTShell: singular reference shell basis during stress linearization in element ", this->elem_id);
+        "FRTShell: singular reference shell basis during stress linearization in element ", this->label());
 
     Mat3 delta_covariant;
     delta_covariant.col(0) = delta_x_a + z * delta_d_a;
@@ -689,7 +689,7 @@ bool FRTShell<N>::compute_shell_section_forces(
         }
 
         logging::error(resultant_e1.norm() > projection_tolerance,
-            "FRTShell: selected output axis cannot define a tangential resultant basis for element ", this->elem_id);
+            "FRTShell: selected output axis cannot define a tangential resultant basis for element ", this->label());
 
         resultant_e1.normalize();
         const Vec3 resultant_e2 = normal.cross(resultant_e1).normalized();

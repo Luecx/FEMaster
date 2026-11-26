@@ -137,7 +137,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 
         const auto surface = structural->surface(1);
         logging::error(surface != nullptr,
-            "Model: shell element ", structural->elem_id,
+            "Model: shell element ", structural->label(),
             " does not provide a reference surface");
 
         const Index offset  = static_cast<Index>(structural->elem_nodal_offset);
@@ -147,7 +147,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
         const DynamicMatrix natural_coords = surface->node_coords_natural();
         logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes && static_cast<Index>(natural_coords.cols()) == 2,
             "Model: natural surface node coordinates do not match shell element ",
-            structural->elem_id);
+            structural->label());
 
         for (Index local_node = 0; local_node < n_nodes; ++local_node) {
             const ID    node_id = structural->nodes()[local_node];
@@ -165,7 +165,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
                 normal = surface->normal(*_data->positions_reference, local);
 
                 logging::error(normal.allFinite() && normal.norm() > normal_tolerance,
-                    "Model: invalid shell normal in element ", structural->elem_id,
+                    "Model: invalid shell normal in element ", structural->label(),
                     " at local node ", local_node);
                 normal.normalize();
             }

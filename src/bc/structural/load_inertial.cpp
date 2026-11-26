@@ -137,7 +137,7 @@ void InertialLoad::apply(
         const auto* section = point._section->as<PointMassSection>();
 
         logging::error(section != nullptr,
-            "INERTIAL: point element ", point.elem_id, " has a non-point-mass section");
+            "INERTIAL: point element ", point.label(), " has a non-point-mass section");
         logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
             "INERTIAL: point-element node ", node_id, " is outside positions field with ", positions.rows, " rows");
 
@@ -178,7 +178,7 @@ void InertialLoad::apply(
         const DynamicMatrix products = element.integrate_shape_products(true);
 
         logging::error(products.rows() == n_nodes && products.cols() == n_nodes,
-            "INERTIAL: element ", element.elem_id, " returned an invalid shape-product operator");
+            "INERTIAL: element ", element.label(), " returned an invalid shape-product operator");
 
         for (Index i = 0; i < n_nodes; ++i) {
             for (Index j = 0; j < n_nodes; ++j) {

@@ -116,7 +116,7 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
         const auto gradient = shape_derivatives_reference(reference_coords, point.r, point.s, point.t, det0);
 
         logging::error(std::isfinite(det0) && det0 > Precision(0),
-            "C3D8R: invalid reference determinant in element ", elem_id, "\ndet(J0): ", det0);
+            "C3D8R: invalid reference determinant in element ", label(), "\ndet(J0): ", det0);
 
         const Precision measure = det0 * point.w;
         integrated_gradient     += gradient * measure;
@@ -124,7 +124,7 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
     }
 
     logging::error(std::isfinite(reference_volume) && reference_volume > Precision(0),
-        "C3D8R: invalid reference volume in element ", elem_id, "\nvolume: ", reference_volume);
+        "C3D8R: invalid reference volume in element ", label(), "\nvolume: ", reference_volume);
 
     return integrated_gradient / reference_volume;
 }
@@ -150,7 +150,7 @@ Precision C3D8R::hourglass_material_scale() {
         (material_tangent(3, 3) + material_tangent(4, 4) + material_tangent(5, 5)) / Precision(3);
 
     logging::error(std::isfinite(shear_scale) && shear_scale > Precision(0),
-        "C3D8R: invalid initial mean shear stiffness in element ", elem_id, "\nscale: ", shear_scale);
+        "C3D8R: invalid initial mean shear stiffness in element ", label(), "\nscale: ", shear_scale);
 
     return shear_scale;
 }
@@ -191,7 +191,7 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
         default_hourglass_coefficient * material_scale * reference_volume * gradient_scale;
 
     logging::error(std::isfinite(hourglass_scale) && hourglass_scale > Precision(0),
-        "C3D8R: invalid hourglass stiffness in element ", elem_id, "\nscale: ", hourglass_scale);
+        "C3D8R: invalid hourglass stiffness in element ", label(), "\nscale: ", hourglass_scale);
 
     const StaticMatrix<N, N> scalar_stiffness = hourglass_scale * modes * modes.transpose();
 

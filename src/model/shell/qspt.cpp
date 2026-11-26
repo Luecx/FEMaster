@@ -50,7 +50,7 @@ const math::quadrature::Quadrature& QSPT::integration_scheme() const {
 
 Precision QSPT::volume() {
     logging::error(this->_model_data != nullptr,
-        "no model data assigned to element ", this->elem_id);
+        "no model data assigned to element ", this->label());
     logging::error(this->_model_data->positions != nullptr,
         "positions field not set in model data");
     return this->get_section()->thickness_ * geometry.area(*this->_model_data->positions);
@@ -77,7 +77,7 @@ QSPT::GeometryData QSPT::geometry_data() {
     for (Index i = 0; i < 4; ++i) {
         data.edge_lengths[i] = data.edges[i].norm();
         logging::error(data.edge_lengths[i] > kGeomTol,
-                       "QSPT edge length is zero for element ", this->elem_id, " at edge ", i);
+                       "QSPT edge length is zero for element ", this->label(), " at edge ", i);
     }
 
     const auto node1_lev = [&]() {
@@ -115,14 +115,14 @@ QSPT::GeometryData QSPT::geometry_data() {
     logging::error(data.h12 > kGeomTol && data.h13 > kGeomTol &&
                    data.h23 > kGeomTol && data.h24 > kGeomTol &&
                    data.h34 > kGeomTol && data.h31 > kGeomTol,
-                   "QSPT leverage became singular for element ", this->elem_id);
+                   "QSPT leverage became singular for element ", this->label());
 
     const Precision a1 = data.edges[0].cross(-data.edges[3]).norm();
     const Precision a2 = (-data.edges[1]).cross(data.edges[2]).norm();
     data.area = Precision(0.5) * (a1 + a2);
 
     logging::error(data.area > kGeomTol,
-        "QSPT area is zero for element ", this->elem_id);
+        "QSPT area is zero for element ", this->label());
 
     return data;
 }
@@ -180,7 +180,7 @@ Precision QSPT::effective_shear_modulus() {
     const Precision thickness = this->get_section()->thickness_;
     const Precision g         = tangent(2, 2) / thickness;
     logging::error(std::abs(g) > kGeomTol,
-                   "QSPT requires a non-zero in-plane shear modulus for element ", this->elem_id);
+                   "QSPT requires a non-zero in-plane shear modulus for element ", this->label());
     return g;
 }
 
@@ -188,7 +188,7 @@ QSPT::ShearState QSPT::shear_state() {
     const GeometryData data = geometry_data();
     const Precision h = data.h12 * data.h23 / (data.h13 * data.h24);
     logging::error(h > kGeomTol,
-        "QSPT metric parameter h became invalid for element ", this->elem_id);
+        "QSPT metric parameter h became invalid for element ", this->label());
 
     ShearState state;
     state.edge_lengths = data.edge_lengths;
@@ -209,7 +209,7 @@ QSPT::ShearState QSPT::shear_state() {
 
     state.flexibility = data.area / (effective_shear_modulus() * this->get_section()->thickness_);
     logging::error(state.flexibility > kGeomTol,
-                   "QSPT flexibility became singular for element ", this->elem_id);
+                   "QSPT flexibility became singular for element ", this->label());
     return state;
 }
 

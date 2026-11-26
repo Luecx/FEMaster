@@ -190,11 +190,11 @@ void accumulate_point_mass_mass(const model::ModelData& model_data,
         logging::error(point != nullptr,
             "InertiaRelief: auxiliary point-element storage contains a non-point element");
         logging::error(point->_section != nullptr,
-            "InertiaRelief: auxiliary point element ", point->elem_id, " has no section");
+            "InertiaRelief: auxiliary point element ", point->label(), " has no section");
 
         const auto* section = point->_section->as<PointMassSection>();
         logging::error(section != nullptr,
-            "InertiaRelief: auxiliary point element ", point->elem_id,
+            "InertiaRelief: auxiliary point element ", point->label(),
             " has a non-point-mass section");
 
         if (section->mass_ == Precision(0)) continue;
@@ -256,7 +256,7 @@ void accumulate_structural_inertia(const model::ModelData& model_data,
 
             const auto* section = point->_section->as<PointMassSection>();
             logging::error(section != nullptr,
-                "InertiaRelief: point element ", point->elem_id,
+                "InertiaRelief: point element ", point->label(),
                 " has a non-point-mass section");
             inertia.diagonal() += section->rotary_inertia_;
         }
@@ -295,11 +295,11 @@ void accumulate_point_mass_inertia(const model::ModelData& model_data,
         logging::error(point != nullptr,
             "InertiaRelief: auxiliary point-element storage contains a non-point element");
         logging::error(point->_section != nullptr,
-            "InertiaRelief: auxiliary point element ", point->elem_id, " has no section");
+            "InertiaRelief: auxiliary point element ", point->label(), " has no section");
 
         const auto* section = point->_section->as<PointMassSection>();
         logging::error(section != nullptr,
-            "InertiaRelief: auxiliary point element ", point->elem_id,
+            "InertiaRelief: auxiliary point element ", point->label(),
             " has a non-point-mass section");
 
         const ID node_id = point->nodes()[0];

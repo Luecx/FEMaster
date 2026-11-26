@@ -77,7 +77,7 @@ std::tuple<Field, Field> Model::compute_stress(
                 if (rst.rows() == 0) return;
 
                 logging::error(rst.rows() == sel->n_nodes(),
-                    "Element ", sel->elem_id, " returned ", rst.rows(),
+                    "Element ", sel->label(), " returned ", rst.rows(),
                     " nodal stress coordinates, expected ", sel->n_nodes());
                 sel->compute_stress_strain(
                     &element_strain,
